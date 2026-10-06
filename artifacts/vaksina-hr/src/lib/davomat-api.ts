@@ -657,6 +657,69 @@ export function saveZonePresence(body: {
   });
 }
 
+export type AccessAuditAction = "method" | "zone" | "zone_unlock";
+
+export type AccessAuditItem = {
+  id: number;
+  createdAt: string;
+  actorUserId: number | null;
+  actorName: string;
+  actorRole: string | null;
+  actorLogin: string | null;
+  action: AccessAuditAction;
+  batchId: string | null;
+  batchSize: number | null;
+  targetUserId: number;
+  targetName: string;
+  targetPosition: string | null;
+  targetLocation: string | null;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  ipAddress: string | null;
+};
+
+export type AccessAuditEditor = {
+  id: number;
+  fullName: string;
+  role: string;
+  login: string;
+  status: string;
+  isBoshAdmin: boolean;
+  changes: number;
+  lastAt: string | null;
+};
+
+export type AccessAuditResponse = {
+  items: AccessAuditItem[];
+  total: number;
+  actors: Array<{ userId: number | null; name: string; changes: number; lastAt: string }>;
+  editors: AccessAuditEditor[];
+};
+
+export function canViewAccessAudit() {
+  return apiJson<{ allowed: boolean }>("/davomat/access-audit/can");
+}
+
+export function fetchAccessAudit(filters: {
+  q?: string;
+  actorUserId?: number | null;
+  action?: AccessAuditAction | "";
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const qs = new URLSearchParams();
+  if (filters.q?.trim()) qs.set("q", filters.q.trim());
+  if (filters.actorUserId) qs.set("actorUserId", String(filters.actorUserId));
+  if (filters.action) qs.set("action", filters.action);
+  if (filters.from) qs.set("from", filters.from);
+  if (filters.to) qs.set("to", filters.to);
+  qs.set("limit", String(filters.limit ?? 50));
+  qs.set("offset", String(filters.offset ?? 0));
+  return apiJson<AccessAuditResponse>(`/davomat/access-audit?${qs}`);
+}
+
 export function unlockZonePresence(userId: number) {
   return apiJson<{ ok: boolean; userId: number; zone: WorkplaceInfo["zonePresence"] }>("/davomat/zone-presence/unlock", {
     method: "POST",

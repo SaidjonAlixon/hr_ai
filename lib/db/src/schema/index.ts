@@ -24,6 +24,7 @@ export * from "./webauthn";
 export * from "./face-profiles";
 export * from "./attendance";
 export * from "./zone-presence";
+export * from "./davomat-access-audit";
 export * from "./telegram";
 export * from "./payroll";
 export * from "./settlement";

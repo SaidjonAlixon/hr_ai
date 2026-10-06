@@ -2069,6 +2069,27 @@ CREATE TABLE IF NOT EXISTS zone_presence_rules (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS zone_presence_enabled_idx ON zone_presence_rules (enabled);
+CREATE TABLE IF NOT EXISTS davomat_access_audit (
+  id SERIAL PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  actor_user_id INTEGER,
+  actor_name TEXT NOT NULL,
+  actor_role TEXT,
+  actor_login TEXT,
+  action TEXT NOT NULL,
+  batch_id TEXT,
+  batch_size INTEGER,
+  target_user_id INTEGER NOT NULL,
+  target_name TEXT NOT NULL,
+  target_position TEXT,
+  target_location TEXT,
+  before JSONB,
+  after JSONB,
+  ip_address TEXT
+);
+CREATE INDEX IF NOT EXISTS davomat_access_audit_created_idx ON davomat_access_audit (created_at);
+CREATE INDEX IF NOT EXISTS davomat_access_audit_target_idx ON davomat_access_audit (target_user_id);
+CREATE INDEX IF NOT EXISTS davomat_access_audit_actor_idx ON davomat_access_audit (actor_user_id);
 `;
 
 export async function ensureZonePresenceSchema(): Promise<void> {

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { Building2, Loader2, QrCode, ScanFace, Search, ShieldOff, Store } from "lucide-react";
+import { Building2, History, Loader2, QrCode, ScanFace, Search, ShieldOff, Store, Users } from "lucide-react";
+import BloklashTarix from "@/components/davomat/BloklashTarix";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -11,6 +12,7 @@ import { hasFullPlatformAccess, userRoleLabel } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { displayBranchName } from "@/lib/pharmacy-staff-api";
 import {
+  canViewAccessAudit,
   fetchDavomatMethodAccess,
   saveDavomatMethodAccess,
   saveDavomatMethodAccessBulk,
@@ -101,6 +103,17 @@ export default function DavomatBloklashPage() {
   const [zoneWindow, setZoneWindow] = useState(15);
   const [zoneMethod, setZoneMethod] = useState<"FACE_ID" | "QR">("FACE_ID");
   const [zoneBusy, setZoneBusy] = useState(false);
+  const [canAudit, setCanAudit] = useState(false);
+  const [tab, setTab] = useState<"xodimlar" | "tarix">("xodimlar");
+
+  useEffect(() => {
+    if (!allowed || user?.role !== "admin") return;
+    let alive = true;
+    canViewAccessAudit()
+      .then((r) => { if (alive) setCanAudit(Boolean(r.allowed)); })
+      .catch(() => { if (alive) setCanAudit(false); });
+    return () => { alive = false; };
+  }, [allowed, user?.role]);
 
   const openZone = (row: DavomatMethodAccessRow) => {
     setZoneRow(row);
@@ -271,7 +284,7 @@ export default function DavomatBloklashPage() {
   if (!allowed) {
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
-        <p className="text-sm font-medium text-rose-700">Bloklash oynasi faqat admin uchun.</p>
+        <p className="text-sm font-medium text-rose-700">Bloklash oynasi faqat admin, direktor va asoschi uchun.</p>
         <Link href="/davomat" className="mt-3 inline-block text-sm font-semibold text-[#0b3a5c] underline">
           Davomat hisobotga qaytish
         </Link>
@@ -289,12 +302,29 @@ export default function DavomatBloklashPage() {
             Xodimga Face ID va QR ni alohida qoldirish yoki o‘chirish. Yashil hudud tasdiqi hammada o‘chiq — kerakli xodimga soat, oyna va usulni admin belgilaydi.
           </p>
         </div>
-        <Button type="button" variant="outline" className="h-9" onClick={() => void load()} disabled={loading}>
-          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-          Yangilash
-        </Button>
+        {tab === "xodimlar" ? (
+          <Button type="button" variant="outline" className="h-9" onClick={() => void load()} disabled={loading}>
+            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Yangilash
+          </Button>
+        ) : null}
       </div>
 
+      {canAudit ? (
+        <div className="inline-flex w-fit rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+          <TabButton active={tab === "xodimlar"} onClick={() => setTab("xodimlar")}>
+            <Users className="h-4 w-4" /> Xodimlar
+          </TabButton>
+          <TabButton active={tab === "tarix"} onClick={() => setTab("tarix")}>
+            <History className="h-4 w-4" /> Tarix
+          </TabButton>
+        </div>
+      ) : null}
+
+      {tab === "tarix" && canAudit ? (
+        <BloklashTarix />
+      ) : (
+      <>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat label="Jami xodim" value={rows.length} />
         <Stat label="Ofis" value={counts.ofis} />
@@ -469,6 +499,8 @@ export default function DavomatBloklashPage() {
         <ShieldOff className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         Ikkalasi ham o‘chsa, xodim davomat qila olmaydi. Koordinator uchun QR standart holatda yopiq — bu yerda ochsangiz, faqat shu xodimga ochiladi.
       </p>
+      </>
+      )}
       <Dialog open={ask != null} onOpenChange={(open) => { if (!open && !askBusy) setAsk(null); }}>
         <DialogContent>
           <DialogHeader>
@@ -576,6 +608,21 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: "ro
       <p className="text-[11px] text-slate-500">{label}</p>
       <p className={cn("text-lg font-semibold", tone === "rose" ? "text-rose-600" : "text-[#0f2744]")}>{value}</p>
     </div>
+  );
+}
+
+function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition-colors",
+        active ? "bg-[#0b3a5c] text-white shadow-sm" : "text-slate-600 hover:bg-slate-100",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 

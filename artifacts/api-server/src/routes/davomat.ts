@@ -33,7 +33,16 @@ import {
   hasFullPlatformAccess,
   canViewFullDavomatDashboard,
   isReviziyaRole,
+  isBoshAdmin,
 } from "../lib/roles";
+import {
+  accessEditors,
+  auditActorStats,
+  listAccessAudit,
+  methodStatesOf,
+  recordAccessChanges,
+  zoneStateOf,
+} from "../lib/davomat-access-audit";
 import { getActorDepartmentId, resolveDeptHeadContext, isDeptHeadRole } from "../lib/dept-staff";
 import {
   ensureTamojniSkladDepartmentId,
@@ -7688,7 +7697,7 @@ router.get("/davomat/methods", requireAuth, async (req: AuthRequest, res): Promi
 /** Admin: xodimning Face ID / QR ruxsati */
 router.get("/davomat/method-access", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!hasFullPlatformAccess(req.userRole)) {
-    res.status(403).json({ error: "Faqat admin", code: "method_admin" });
+    res.status(403).json({ error: "Faqat admin, direktor yoki asoschi", code: "method_admin" });
     return;
   }
   try {
@@ -7753,7 +7762,7 @@ router.get("/davomat/method-access", requireAuth, async (req: AuthRequest, res):
 
 router.patch("/davomat/method-access", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!hasFullPlatformAccess(req.userRole)) {
-    res.status(403).json({ error: "Faqat admin", code: "method_admin" });
+    res.status(403).json({ error: "Faqat admin, direktor yoki asoschi", code: "method_admin" });
     return;
   }
   try {
@@ -7777,6 +7786,7 @@ router.patch("/davomat/method-access", requireAuth, async (req: AuthRequest, res
       res.status(404).json({ error: "Xodim topilmadi" });
       return;
     }
+    const before = await readDavomatAccess(userId);
     await db
       .update(usersTable)
       .set({
@@ -7785,6 +7795,15 @@ router.patch("/davomat/method-access", requireAuth, async (req: AuthRequest, res
       })
       .where(eq(usersTable.id, userId));
     const saved = await readDavomatAccess(userId);
+    await recordAccessChanges(
+      [{
+        targetUserId: userId,
+        action: "method",
+        before: { face: before.face, qr: before.qr },
+        after: { face: saved.face, qr: saved.qr },
+      }],
+      { actorUserId: req.userId, ipAddress: clientIp(req) },
+    );
     res.json({ ok: true, userId, face: saved.face, qr: saved.qr });
   } catch (err) {
     console.error("PATCH /davomat/method-access", err);
@@ -7794,7 +7813,7 @@ router.patch("/davomat/method-access", requireAuth, async (req: AuthRequest, res
 
 router.post("/davomat/method-access/bulk", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!hasFullPlatformAccess(req.userRole)) {
-    res.status(403).json({ error: "Faqat admin", code: "method_admin" });
+    res.status(403).json({ error: "Faqat admin, direktor yoki asoschi", code: "method_admin" });
     return;
   }
   try {
@@ -7811,13 +7830,24 @@ router.post("/davomat/method-access/bulk", requireAuth, async (req: AuthRequest,
       res.status(400).json({ error: "Face ID yoki QR holati kerak" });
       return;
     }
+    const beforeById = await methodStatesOf(userIds as number[]);
     await db
       .update(usersTable)
       .set({
         ...(typeof face === "boolean" ? { davomatFaceAllowed: face } : {}),
         ...(typeof qr === "boolean" ? { davomatQrAllowed: qr } : {}),
       })
-      .where(inArray(usersTable.id, userIds));
+      .where(inArray(usersTable.id, userIds as number[]));
+    const afterById = await methodStatesOf(userIds as number[]);
+    await recordAccessChanges(
+      [...afterById].map(([targetUserId, after]) => ({
+        targetUserId,
+        action: "method" as const,
+        before: { ...(beforeById.get(targetUserId) ?? after) },
+        after: { ...after },
+      })),
+      { actorUserId: req.userId, ipAddress: clientIp(req) },
+    );
     res.json({ ok: true, updated: userIds.length });
   } catch (err) {
     console.error("POST /davomat/method-access/bulk", err);
@@ -7827,7 +7857,7 @@ router.post("/davomat/method-access/bulk", requireAuth, async (req: AuthRequest,
 
 router.patch("/davomat/zone-presence", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!hasFullPlatformAccess(req.userRole)) {
-    res.status(403).json({ error: "Faqat admin", code: "zone_admin" });
+    res.status(403).json({ error: "Faqat admin, direktor yoki asoschi", code: "zone_admin" });
     return;
   }
   const userId = Number(req.body?.userId);
@@ -7836,13 +7866,18 @@ router.patch("/davomat/zone-presence", requireAuth, async (req: AuthRequest, res
     return;
   }
   try {
-    const zone = await saveZoneRule({
-      userId,
+    const before = await zoneStateOf(userId);
+    const next = {
       enabled: Boolean(req.body?.enabled),
       intervalHours: clampIntervalHours(req.body?.intervalHours),
       windowMinutes: clampWindowMinutes(req.body?.windowMinutes),
       method: parseZoneMethod(req.body?.method),
-    });
+    };
+    const zone = await saveZoneRule({ userId, ...next });
+    await recordAccessChanges(
+      [{ targetUserId: userId, action: "zone", before: { ...before }, after: { ...next } }],
+      { actorUserId: req.userId, ipAddress: clientIp(req) },
+    );
     res.json({ ok: true, userId, zone });
   } catch (err) {
     console.error("PATCH /davomat/zone-presence", err);
@@ -7852,7 +7887,7 @@ router.patch("/davomat/zone-presence", requireAuth, async (req: AuthRequest, res
 
 router.post("/davomat/zone-presence/unlock", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!hasFullPlatformAccess(req.userRole)) {
-    res.status(403).json({ error: "Faqat admin", code: "zone_admin" });
+    res.status(403).json({ error: "Faqat admin, direktor yoki asoschi", code: "zone_admin" });
     return;
   }
   const userId = Number(req.body?.userId);
@@ -7861,11 +7896,91 @@ router.post("/davomat/zone-presence/unlock", requireAuth, async (req: AuthReques
     return;
   }
   try {
+    const wasBlocked = (await zoneViewForUser(userId)).status === "blocked";
     const zone = await unlockZoneDay({ userId, adminUserId: req.userId! });
+    await recordAccessChanges(
+      [{
+        targetUserId: userId,
+        action: "zone_unlock",
+        before: { blocked: wasBlocked },
+        after: { blocked: zone.status === "blocked" },
+      }],
+      { actorUserId: req.userId, ipAddress: clientIp(req) },
+    );
     res.json({ ok: true, userId, zone });
   } catch (err) {
     console.error("POST /davomat/zone-presence/unlock", err);
     res.status(503).json({ error: "Ruxsat berilmadi" });
+  }
+});
+
+async function isBoshAdminRequest(req: AuthRequest): Promise<boolean> {
+  if (!req.userId || req.userRole !== "admin") return false;
+  const [me] = await db
+    .select({ role: usersTable.role, login: usersTable.login })
+    .from(usersTable)
+    .where(eq(usersTable.id, req.userId))
+    .limit(1);
+  return isBoshAdmin(me);
+}
+
+/** Bloklash oynasi tarixi — faqat bosh admin. */
+router.get("/davomat/access-audit/can", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  res.json({ allowed: await isBoshAdminRequest(req) });
+});
+
+router.get("/davomat/access-audit", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!(await isBoshAdminRequest(req))) {
+    res.status(403).json({ error: "Tarixni faqat bosh admin ko‘radi", code: "bosh_admin_only" });
+    return;
+  }
+  try {
+    const num = (v: unknown) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+    };
+    const actionRaw = String(req.query.action || "");
+    const action = actionRaw === "method" || actionRaw === "zone" || actionRaw === "zone_unlock" ? actionRaw : undefined;
+    const limit = Math.min(200, num(req.query.limit) ?? 50);
+    const offset = Math.max(0, Number(req.query.offset) || 0);
+    const [list, actorStats, editors] = await Promise.all([
+      listAccessAudit({
+        q: String(req.query.q || ""),
+        actorUserId: num(req.query.actorUserId),
+        targetUserId: num(req.query.targetUserId),
+        action,
+        from: String(req.query.from || "") || undefined,
+        to: String(req.query.to || "") || undefined,
+        limit,
+        offset,
+      }),
+      auditActorStats(),
+      accessEditors(),
+    ]);
+    const statByActor = new Map(actorStats.map((s) => [s.actorUserId, s]));
+    res.json({
+      items: list.items,
+      total: list.total,
+      actors: actorStats
+        .map((s) => ({ userId: s.actorUserId, name: s.actorName, changes: Number(s.changes), lastAt: s.lastAt }))
+        .sort((a, b) => b.changes - a.changes),
+      editors: editors.map((u) => {
+        const s = statByActor.get(u.id);
+        return {
+          id: u.id,
+          fullName: u.fullName,
+          role: u.role,
+          login: u.login,
+          status: u.status,
+          isBoshAdmin: isBoshAdmin(u),
+          changes: s ? Number(s.changes) : 0,
+          lastAt: s?.lastAt ?? null,
+        };
+      }),
+    });
+  } catch (err) {
+    console.error("GET /davomat/access-audit", err);
+    res.status(503).json({ error: "Tarix yuklanmadi" });
   }
 });
 

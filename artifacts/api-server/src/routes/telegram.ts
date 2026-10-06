@@ -579,7 +579,7 @@ async function handleUpdate(update: TelegramUpdate) {
         if (!handled) {
           await sendMessage(
             msg.chat.id,
-            "Rasmni hozir tahlil qilib bo‘lmadi. Muammoni matn bilan yozing yoki /yordam.",
+            "Muammoni qisqa matn bilan yozing (masalan: «kirmadi», «smena», «javob olish», «Face ID», «joylashuv») yoki /yordam.",
           );
         }
       });

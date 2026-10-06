@@ -153,26 +153,8 @@ export async function sendMessage(
   });
 }
 
-export async function sendChatAction(chatId: number | string, action: "typing" | "upload_photo" = "typing") {
-  return tgCall("sendChatAction", { chat_id: chatId, action });
-}
-
 export async function deleteMessage(chatId: number | string, messageId: number) {
   return tgCall<boolean>("deleteMessage", { chat_id: chatId, message_id: messageId });
-}
-
-/** Telegram serveridagi faylni yuklab olish (rasm, hujjat) */
-export async function downloadTelegramFile(fileId: string, maxBytes = 5_000_000): Promise<Buffer | null> {
-  const token = botToken();
-  if (!token) return null;
-  const file = await tgCall<{ file_path?: string; file_size?: number }>("getFile", { file_id: fileId });
-  if (!file.file_path || (file.file_size && file.file_size > maxBytes)) return null;
-  const res = await fetch(`${TG_API}/file/bot${token}/${file.file_path}`, {
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
-  if (!res.ok) return null;
-  const buf = Buffer.from(await res.arrayBuffer());
-  return buf.length > maxBytes ? null : buf;
 }
 
 /** Faylni Telegram chatga yuborish (private chat_id = telegram user id) */

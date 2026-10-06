@@ -374,7 +374,3 @@ export function resolvePunchErrorCode(parts: {
 export function listKnownPunchErrorCodes(): string[] {
   return Object.keys(HELP);
 }
-
-export function listPunchErrorHelp(): PunchErrorHelp[] {
-  return Object.entries(HELP).map(([code, h]) => ({ code, ...h }));
-}

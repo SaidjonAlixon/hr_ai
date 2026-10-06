@@ -23,6 +23,7 @@ import {
   ROLE_LABEL_UZ,
   sendDocument,
   sendMessage,
+  setMiniAppMenuButton,
   setMyCommands,
   setWebhook,
   statusLabelUz,
@@ -849,6 +850,7 @@ router.post("/telegram/setup", async (req, res): Promise<void> => {
       { command: "chiqish", description: "Bog‘lanishni uzish" },
       { command: "yordam", description: "Yordam" },
     ]);
+    await setMiniAppMenuButton("Tizimga kirish", `${base}/tg`);
     const info = await getWebhookInfo();
     res.json({ ok: true, webhookUrl, info });
   } catch (err) {

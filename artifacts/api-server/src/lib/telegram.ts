@@ -166,6 +166,13 @@ export async function setMyCommands(
   return tgCall("setMyCommands", { commands });
 }
 
+/** Chatdagi «Menyu» o‘rniga Mini App tugmasi (barcha foydalanuvchilar uchun). */
+export async function setMiniAppMenuButton(text: string, url: string) {
+  return tgCall("setChatMenuButton", {
+    menu_button: { type: "web_app", text, web_app: { url } },
+  });
+}
+
 export function newAuthToken(): string {
   return crypto.randomBytes(24).toString("hex");
 }

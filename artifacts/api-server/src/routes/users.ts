@@ -8,13 +8,7 @@ import { requireAuth } from "../middlewares/auth";
 import { ensureEmployeeForNewUser, removeEmployeesForUser } from "../lib/user-employee-sync";
 import { archiveAndDeleteUser, purgeDismissedArchive, purgeUserCompletely, sweepDismissedUsers } from "../lib/dismiss-user";
 import { canManageUsers, canDeleteUsers, canChangeStaffStatus } from "../lib/roles";
-import { setSessionCookie } from "../lib/session";
-import {
-  clientIp,
-  createServerSession,
-  isDeviceSecurityEnforced,
-  writeLoginAudit,
-} from "../lib/device-security";
+import { clientIp, createServerSession, writeLoginAudit } from "../lib/device-security";
 import { formatPersonName } from "../lib/person-name";
 import { resolveDepartmentIdForRole } from "../lib/role-departments";
 
@@ -610,18 +604,13 @@ router.post("/users/:id/enter", requireAuth, async (req: AuthRequest, res): Prom
 
   const ip = clientIp(req);
   const ua = String(req.headers["user-agent"] || "");
-  const enforced = !canManageUsers(user.role) && (await isDeviceSecurityEnforced(user));
-  if (!enforced) {
-    setSessionCookie(res, user.id);
-  } else {
-    await createServerSession({
-      userId: user.id,
-      deviceRowId: null,
-      ipAddress: ip,
-      userAgent: `admin-enter:${req.userId ?? 0}`,
-      res,
-    });
-  }
+  await createServerSession({
+    userId: user.id,
+    deviceRowId: null,
+    ipAddress: ip,
+    userAgent: `admin-enter:${req.userId ?? 0}`,
+    res,
+  });
 
   await writeLoginAudit({
     userId: user.id,

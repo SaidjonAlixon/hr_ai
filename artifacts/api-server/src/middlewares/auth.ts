@@ -13,7 +13,6 @@ import {
   clientIp,
   isDeviceSecurityEnforced,
   isAdminEnterSession,
-  isLegacySessionCookie,
   parseSecureSessionCookie,
   readDeviceCookie,
   sha256,
@@ -78,34 +77,8 @@ async function loadSessionUserOnce(
     };
   }
 
-  if (!isLegacySessionCookie(sessionCookie)) return null;
-  let decoded: { userId?: number };
-  try {
-    decoded = JSON.parse(Buffer.from(sessionCookie, "base64").toString());
-  } catch {
-    return null;
-  }
-  if (!decoded?.userId) return null;
-
-  const [user] = await db
-    .select({
-      id: usersTable.id,
-      role: usersTable.role,
-      status: usersTable.status,
-      deviceSecurityEnforced: usersTable.deviceSecurityEnforced,
-    })
-    .from(usersTable)
-    .where(eq(usersTable.id, decoded.userId))
-    .limit(1);
-
-  if (!user || (user.status !== "active" && user.status !== "on_leave")) {
-    return null;
-  }
-  return {
-    id: user.id,
-    role: user.role,
-    deviceSecurityEnforced: Boolean(user.deviceSecurityEnforced),
-  };
+  // Eski imzosiz `{"userId":N}` cookie qabul qilinmaydi — uni har kim soxtalashtira oladi.
+  return null;
 }
 
 async function enforceDeviceIfNeeded(

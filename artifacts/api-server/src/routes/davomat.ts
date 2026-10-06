@@ -133,7 +133,7 @@ import {
   type WorkSlotRow,
   type ResolvedDaySlot,
 } from "../lib/work-slots";
-import { setSessionCookie } from "../lib/session";
+import { sessionUserIdFromCookie, setSessionCookie } from "../lib/session";
 import {
   hoursForStaff,
   workScheduleForStaff,
@@ -2836,13 +2836,9 @@ async function matchFaceUserId(
 }
 
 /** Cookie sessiyasi — login/parol bilan kirgan user (majburiy emas). */
-function readSessionUserId(req: { cookies?: Record<string, unknown> }): number | null {
-  const sessionCookie = req.cookies?.session;
-  if (!sessionCookie || typeof sessionCookie !== "string") return null;
+async function readSessionUserId(req: { cookies?: Record<string, unknown> }): Promise<number | null> {
   try {
-    const decoded = JSON.parse(Buffer.from(sessionCookie, "base64").toString()) as { userId?: number };
-    const id = Number(decoded?.userId);
-    return Number.isFinite(id) && id > 0 ? id : null;
+    return await sessionUserIdFromCookie(req.cookies?.session);
   } catch {
     return null;
   }
@@ -4382,7 +4378,7 @@ async function resolveFaceAtSite(opts: {
 
 /** Face ID tanilgan user — to‘liq profil + sessiya shu akkauntga */
 async function adoptFaceSession(res: import("express").Response, userId: number) {
-  setSessionCookie(res, userId);
+  await setSessionCookie(res, userId, { userAgent: "face-id" });
   const [row] = await db
     .select({
       id: usersTable.id,
@@ -5062,6 +5058,7 @@ router.get("/davomat/me/status", requireAuth, async (req: AuthRequest, res): Pro
 /** HR/Direktor: yuboriladigan xabar matnini ko‘rish */
 router.get("/davomat/announce/preview", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireDavomat(req, res)) return;
+  const { davomatBroadcastTelegramReady, davomatBroadcastMessage } = await import("../jobs/davomat-reminders");
   const tg = davomatBroadcastTelegramReady();
   res.json({
     text: davomatBroadcastMessage(),
@@ -5076,6 +5073,9 @@ router.get("/davomat/announce/preview", requireAuth, async (req: AuthRequest, re
 router.post("/davomat/announce", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireDavomat(req, res)) return;
   try {
+    const { forceBroadcastDavomatToAll, davomatBroadcastTelegramReady } = await import(
+      "../jobs/davomat-reminders"
+    );
     const linked = await ensureAllActiveUsersLinked();
     const sent = await forceBroadcastDavomatToAll();
     const tg = davomatBroadcastTelegramReady();
@@ -5160,7 +5160,7 @@ router.post("/davomat/face-verify", async (req, res): Promise<void> => {
       return;
     }
 
-    const sessionUserId = readSessionUserId(req);
+    const sessionUserId = await readSessionUserId(req);
     let expectedUserId: number | undefined;
     let expectedFullName: string | undefined;
     if (sessionUserId) {
@@ -5310,7 +5310,7 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       return;
     }
 
-    const sessionUserId = readSessionUserId(req);
+    const sessionUserId = await readSessionUserId(req);
     let expectedUserId: number | undefined;
     let expectedFullName: string | undefined;
     if (sessionUserId) {

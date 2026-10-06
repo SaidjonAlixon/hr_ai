@@ -656,7 +656,7 @@ router.post("/telegram/mini-auth", async (req, res): Promise<void> => {
         return;
       }
 
-      setTelegramSessionCookie(res, linked.id);
+      await setTelegramSessionCookie(res, linked.id, { userAgent: "telegram-mini-app" });
       const { telegramId: _tg, ...safe } = linked as typeof linked & { telegramId?: string | null };
       res.json({ user: safe, ok: true });
       return;
@@ -704,7 +704,7 @@ router.post("/telegram/mini-auth", async (req, res): Promise<void> => {
       await linkTelegram(user.id, row.telegramUserId);
     }
 
-    setTelegramSessionCookie(res, user.id);
+    await setTelegramSessionCookie(res, user.id, { userAgent: "telegram-mini-app" });
     const { telegramId: _tg, ...safe } = user as typeof user & { telegramId?: string | null };
     res.json({ user: safe, ok: true });
   } catch (err) {

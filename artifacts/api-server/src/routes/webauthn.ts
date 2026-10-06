@@ -19,6 +19,7 @@ import {
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { rpFromRequest, webauthnUnsupportedHostMessage } from "../lib/webauthn-rp";
 import { setSessionCookie } from "../lib/session";
+import { clientIp } from "../lib/device-security";
 
 const router: IRouter = Router();
 
@@ -353,7 +354,10 @@ router.post("/auth/webauthn/login/verify", async (req, res): Promise<void> => {
     })
     .where(eq(webauthnCredentialsTable.id, cred.id));
 
-  setSessionCookie(res, user.id);
+  await setSessionCookie(res, user.id, {
+    ipAddress: clientIp(req),
+    userAgent: String(req.headers["user-agent"] || ""),
+  });
   const fullUser = await getUserWithDept(user.id);
   res.json({ user: fullUser });
 });

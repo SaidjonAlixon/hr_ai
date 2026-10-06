@@ -145,7 +145,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
 
     // ========== Opt-in yo‘q — eski login ==========
     if (!enforced) {
-      setSessionCookie(res, user.id);
+      await setSessionCookie(res, user.id, { ipAddress: ip, userAgent: ua });
       await writeLoginAudit({
         userId: user.id,
         ipAddress: ip,

@@ -69,36 +69,27 @@ Vercel → Project → Settings → Environment Variables dagi qiymatlarni ko‘
 
 Neon → Connection string → **Pooled emas, Direct** (hostda `-pooler` yo‘q) URL’ni oling.
 
+Sinov paytida `.env` da `BACKGROUND_JOBS=0` turishi shart — aks holda VPS ham Vercel bilan birga xodimlarga eslatma yuboradi.
+
 ```bash
-sudo -iu hrapp
-cd /opt/hr_ai
-NEON_URL='postgresql://USER:PASS@ep-xxx.REGION.aws.neon.tech/neondb?sslmode=require'
-LOCAL_URL="$(grep ^DATABASE_URL= .env | cut -d= -f2- | cut -d'?' -f1)"
-
-pg_dump --format=custom --no-owner --no-acl -f /tmp/neon.dump "$NEON_URL"
-pg_restore --clean --if-exists --no-owner --no-acl -d "$LOCAL_URL" /tmp/neon.dump
-psql "$LOCAL_URL" -c "SELECT count(*) AS users FROM users;"
-
-bash deploy/deploy.sh
+sudo -iu hrapp NEON_URL='postgresql://USER:PASS@ep-xxx.REGION.aws.neon.tech/neondb?sslmode=require' \
+  bash /opt/hr_ai/deploy/migrate-from-neon.sh
+sudo -iu hrapp bash /opt/hr_ai/deploy/deploy.sh
 ```
 
-`pg_restore` Neon’ga xos rollar (`neon_superuser`) yoki extension haqida ogohlantirish berishi mumkin — bu normal, jadvallar va ma’lumot tiklanadi. `users` soni Neon’dagi bilan bir xil bo‘lsa — tayyor.
+Skript oxirida asosiy jadvallar sonini Neon bilan solishtiradi — hammasi `OK` bo‘lishi kerak.
 
-Endi `https://hr.vaksina.uz` ochiladi — login, davomat, Face ID, fayllarni tekshiring. Bu sinov — Telegram botlar hali Vercel’da.
+Endi `https://hr.vaksina.uz` ochiladi — login, davomat, Face ID, fayllarni tekshiring. Bu sinov — Telegram botlar hali Vercel’da, sinovda kiritilgan ma’lumot haqiqiy ko‘chishda ustidan yoziladi.
 
 ### 4.2. Haqiqiy ko‘chish (kechasi, ~15–30 daqiqa)
 
 Dump olingandan keyin Neon’ga yozilgan ma’lumot ko‘chmaydi — shuning uchun xodimlar ishlamaydigan vaqtda:
 
 ```bash
-sudo -iu hrapp
-cd /opt/hr_ai
-NEON_URL='...4.1 dagi bilan bir xil...'
-LOCAL_URL="$(grep ^DATABASE_URL= .env | cut -d= -f2- | cut -d'?' -f1)"
-pm2 stop hr-api
-pg_dump --format=custom --no-owner --no-acl -f /tmp/neon-final.dump "$NEON_URL"
-pg_restore --clean --if-exists --no-owner --no-acl -d "$LOCAL_URL" /tmp/neon-final.dump
-pm2 start hr-api
+sudo -iu hrapp pm2 stop hr-api
+sudo -iu hrapp NEON_URL='...4.1 dagi bilan bir xil...' bash /opt/hr_ai/deploy/migrate-from-neon.sh
+sudo -iu hrapp sed -i 's/^BACKGROUND_JOBS=.*/BACKGROUND_JOBS=1/' /opt/hr_ai/.env
+sudo -iu hrapp pm2 restart hr-api --update-env
 ```
 
 ## 5. Telegram va Vercel’ni yangi serverga o‘tkazish

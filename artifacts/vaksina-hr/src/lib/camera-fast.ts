@@ -105,7 +105,16 @@ function remember(facing: CameraFacing, stream: MediaStream, constraints: MediaS
 }
 
 async function tryGet(constraints: MediaStreamConstraints, timeoutMs = 10000): Promise<MediaStream> {
-  return withTimeout(navigator.mediaDevices.getUserMedia(constraints), timeoutMs);
+  const request = navigator.mediaDevices.getUserMedia(constraints);
+  try {
+    return await withTimeout(request, timeoutMs);
+  } catch (e) {
+    // Kech kelgan stream kamerani band qilib, keyingi preview’ni qora qilib qo‘ymasin (iOS)
+    if (e instanceof Error && e.message === "camera_timeout") {
+      void request.then((s) => s.getTracks().forEach((t) => t.stop())).catch(() => undefined);
+    }
+    throw e;
+  }
 }
 
 /** Birinchi marta — eng oddiy so‘rov (dialog 1 marta). Denied bo‘lsa ham keyinroq qayta urinish mumkin. */
@@ -205,9 +214,11 @@ export async function openCameraFast(facing: CameraFacing): Promise<MediaStream>
   let lastErr: unknown;
   let denied = false;
 
+  let attempt = 0;
   for (const constraints of preferredConstraints(facing, stored)) {
     try {
-      const stream = await tryGet(constraints, 6000);
+      // 1-urinishda ruxsat oynasi chiqishi mumkin — foydalanuvchiga vaqt beramiz
+      const stream = await tryGet(constraints, attempt++ === 0 ? 20000 : 8000);
       await resetDigitalZoom(stream);
       const got = reportedFacing(stream);
       // Faqat aniq noto‘g‘ri kamerani rad etamiz; facing noma’lum bo‘lsa qabul

@@ -96,13 +96,30 @@ export function workShiftForUserRole(
   };
 }
 
+/** «41°13'09.3"N 69°16'22.9"E» yoki «41.21, 69.27» — joy nomi emas */
+function isCoordinateText(text: string): boolean {
+  const s = text.trim();
+  return /\d\s*°/.test(s) || /^-?\d{1,3}\.\d+\s*[,;\s]\s*-?\d{1,3}\.\d+$/.test(s);
+}
+
+/** Label ichidan koordinata qismlarini olib tashlaydi */
+function stripCoordinates(label?: string | null): string {
+  return String(label || "")
+    .split(/[·|]/)
+    .map((part) => part.trim())
+    .filter((part) => part && !isCoordinateText(part))
+    .join(" · ");
+}
+
 /** Hero kartochkada «Ish joyi» ostidagi nom */
 export function workplaceDisplayTitle(
   userRole?: string | null,
-  site?: { kind?: "branch" | "office"; label?: string } | null,
-  employeeLocation?: string | null,
+  rawSite?: { kind?: "branch" | "office"; label?: string } | null,
+  rawEmployeeLocation?: string | null,
   labels?: { mainOffice?: string; branchUnset?: string },
 ): string {
+  const site = rawSite ? { ...rawSite, label: stripCoordinates(rawSite.label) } : rawSite;
+  const employeeLocation = stripCoordinates(rawEmployeeLocation);
   const siteLabel = site?.label?.trim() || "";
   const r = String(userRole || "").trim();
 

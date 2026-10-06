@@ -126,7 +126,7 @@ function PoseArrow({ pose }: { pose: FacePose }) {
   return (
     <div
       className={cn(
-        "flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-foreground dark:text-white ring-1 ring-white/35 backdrop-blur-sm",
+        "flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-white ring-1 ring-white/35 backdrop-blur-sm",
         pose !== "center" && "animate-bounce",
       )}
     >
@@ -160,6 +160,8 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
   const [facing, setFacing] = useState<CameraFacing>("user");
   const [switching, setSwitching] = useState(false);
   const [camRetryKey, setCamRetryKey] = useState(0);
+  /** Kadr kelmasa (qora ekran) avtomatik qayta ochishlar soni */
+  const autoReopenRef = useRef(0);
   const facingRef = useRef<CameraFacing>("user");
   facingRef.current = facing;
 
@@ -179,6 +181,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
       facingRef.current = "user";
       setSwitching(false);
       setCamRetryKey(0);
+      autoReopenRef.current = 0;
       return;
     }
 
@@ -237,11 +240,16 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
       if (alignMisses >= ALIGN_MISS_FRAMES) setAligned(false);
     };
 
+    let frameWatch: number | null = null;
     const stopCamera = () => {
       running = false;
       if (hintTimer != null) {
         window.clearTimeout(hintTimer);
         hintTimer = null;
+      }
+      if (frameWatch != null) {
+        window.clearTimeout(frameWatch);
+        frameWatch = null;
       }
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
@@ -307,6 +315,32 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
           video.play().catch(() => undefined),
           new Promise((resolve) => window.setTimeout(resolve, 900)),
         ]);
+        video.onloadedmetadata = () => {
+          if (video.paused) void video.play().catch(() => undefined);
+        };
+        // iOS: track «muted» bo‘lib qolsa yoki kadr kelmasa — preview qora; kamerani qayta ochamiz
+        const scheduleFrameCheck = (ms: number) => {
+          if (frameWatch != null) window.clearTimeout(frameWatch);
+          frameWatch = window.setTimeout(() => {
+            frameWatch = null;
+            if (cancelled || !running || streamRef.current !== stream) return;
+            const track = stream.getVideoTracks()[0];
+            const noFrames = video.readyState < 2 || video.videoWidth < 8;
+            const dead = !track || track.readyState !== "live" || track.muted;
+            if (!noFrames && !dead) return;
+            if (video.paused && !dead) void video.play().catch(() => undefined);
+            if (autoReopenRef.current < 2) {
+              autoReopenRef.current += 1;
+              setCamRetryKey((k) => k + 1);
+            } else {
+              setError(tRef.current("davomat.scanCamFailed"));
+            }
+          }, ms);
+        };
+        scheduleFrameCheck(2500);
+        stream.getVideoTracks().forEach((track) => {
+          track.addEventListener("mute", () => scheduleFrameCheck(1200));
+        });
         setSwitching(false);
         setHint(
           isFaceModelsReady()
@@ -609,6 +643,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
     setHint(t("davomat.scanCamOpening"));
     setFacing("user");
     facingRef.current = "user";
+    autoReopenRef.current = 0;
     setCamRetryKey((k) => k + 1);
   };
 
@@ -616,7 +651,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
-        className="w-[calc(100%-0.75rem)] max-w-sm gap-0 overflow-hidden rounded-[28px] border-0 bg-zinc-950 p-0 text-foreground dark:text-white !max-h-[100dvh] !overflow-hidden z-[110]"
+        className="w-[calc(100%-0.75rem)] max-w-sm gap-0 overflow-hidden rounded-[28px] border-0 bg-zinc-950 p-0 text-white !max-h-[100dvh] !overflow-hidden z-[110]"
       >
         <DialogHeader className="sr-only">
           <DialogTitle>
@@ -691,7 +726,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
                 key={p.key}
                 className={cn(
                   "h-1.5 w-6 rounded-full",
-                  i < poseIndex ? "bg-emerald-400" : i === poseIndex ? "bg-card" : "bg-white/20",
+                  i < poseIndex ? "bg-emerald-400" : i === poseIndex ? "bg-white" : "bg-white/20",
                 )}
                 style={
                   i === poseIndex && poseFill
@@ -725,7 +760,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
           <Button
             type="button"
             variant="ghost"
-            className="w-full rounded-full text-foreground dark:text-white hover:bg-white/10 hover:text-foreground dark:text-white"
+            className="w-full rounded-full text-white hover:bg-white/10 hover:text-white"
             onClick={() => onOpenChange(false)}
           >
             <X className="mr-1.5 h-4 w-4" />

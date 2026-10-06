@@ -142,10 +142,24 @@ export async function requestCameraPermission(
   }
 
   let stream: MediaStream | null = null;
+  let settled = false;
+  const request = navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+  request.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
   try {
     stream = await Promise.race([
-      navigator.mediaDevices.getUserMedia({ audio: false, video: true }),
-      timeoutReject(hardTimeoutMs, 3),
+      request,
+      timeoutReject(hardTimeoutMs, 3).catch((err) => {
+        // Kech kelgan stream kamerani band qilib qolmasin
+        if (!settled) void request.then(stopStream).catch(() => undefined);
+        throw err;
+      }),
     ]);
     markCameraGranted();
     if (!keepStream) {

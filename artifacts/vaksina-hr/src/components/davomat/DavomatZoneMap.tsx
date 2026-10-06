@@ -67,7 +67,7 @@ function userNavIcon(heading: number, inside: boolean) {
   return L.divIcon({
     className: "dv-lf-user",
     html: `<div class="dv-lf-user-wrap ${inside ? "is-in" : "is-out"}">
-      <div class="dv-lf-nav" data-dv-nav="1" style="transform:rotate(${rot}deg)">
+      <div class="dv-lf-nav" data-dv-nav="1" data-rot="${rot}" style="transform:rotate(${rot}deg)">
         <div class="dv-lf-nav-cone" aria-hidden="true">
           <svg viewBox="0 0 120 120" width="120" height="120">
             <defs>
@@ -98,7 +98,14 @@ function setMarkerHeading(marker: L.Marker | null, heading: number) {
   if (!marker) return;
   const el = marker.getElement();
   const nav = el?.querySelector<HTMLElement>("[data-dv-nav]");
-  if (nav) nav.style.transform = `rotate(${heading}deg)`;
+  if (!nav) return;
+  // 359° → 1° o‘tishda marker teskari aylanib ketmasin — eng qisqa yo‘l
+  const prev = Number(nav.dataset.rot);
+  const base = Number.isFinite(prev) ? prev : heading;
+  const next = base + ((((heading - base) % 360) + 540) % 360) - 180;
+  if (Math.abs(next - base) < 0.5 && Number.isFinite(prev)) return;
+  nav.dataset.rot = String(next);
+  nav.style.transform = `rotate(${next}deg)`;
 }
 
 /** Dark OSM map + green zone + live Yandex-style nav cursor */

@@ -958,6 +958,8 @@ export default function DavomatFacePage() {
   const compassRef = useRef<number | null>(null);
   const lastCompassRef = useRef<number | null>(null);
   const hasAbsoluteCompassRef = useRef(false);
+  /** Kompas ~60 Hz keladi — butun sahifa qayta chizilmasin, ≤4 marta/s yangilanadi */
+  const compassCommitRef = useRef<{ at: number; timer: number | null }>({ at: 0, timer: null });
   const punchLockRef = useRef(false);
   const gpsShareLockRef = useRef(false);
   const tgBootRef = useRef(false);
@@ -1027,7 +1029,13 @@ export default function DavomatFacePage() {
 
   /** Face ID model — kamera ruxsatini fonida qayta so‘ramaymiz (bir marta yetadi) */
   useEffect(() => {
-    preloadFaceModels();
+    // ~7 MB model: sahifa, xarita va API birinchi yuklansin; Face ID bosilsa darhol yuklanadi
+    const idle = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number })
+      .requestIdleCallback;
+    const preloadTimer = window.setTimeout(() => {
+      if (idle) idle(() => preloadFaceModels(), { timeout: 3000 });
+      else preloadFaceModels();
+    }, 2500);
     void queryCameraPermission().then((state) => {
       if (state === "granted") setCameraGranted(true);
     });
@@ -1035,6 +1043,7 @@ export default function DavomatFacePage() {
     void warmCamera("user").then((ok) => {
       if (ok) setCameraGranted(true);
     });
+    return () => window.clearTimeout(preloadTimer);
   }, []);
 
   useEffect(() => {
@@ -1198,14 +1207,22 @@ export default function DavomatFacePage() {
     const deg = deviceHeadingFromOrientation(ev);
     if (deg == null) return;
     lastCompassRef.current = deg;
-    setGps((prev) => {
-      if (!prev) return prev;
-      if (prev.heading != null) {
-        const delta = Math.abs(((prev.heading - deg) + 540) % 360 - 180);
-        if (delta < 1) return prev;
-      }
-      return { ...prev, heading: deg };
-    });
+    const c = compassCommitRef.current;
+    if (c.timer != null) return;
+    c.timer = window.setTimeout(() => {
+      c.timer = null;
+      c.at = performance.now();
+      const next = lastCompassRef.current;
+      if (next == null) return;
+      setGps((prev) => {
+        if (!prev) return prev;
+        if (prev.heading != null) {
+          const delta = Math.abs(((prev.heading - next) + 540) % 360 - 180);
+          if (delta < 3) return prev;
+        }
+        return { ...prev, heading: next };
+      });
+    }, Math.max(0, 250 - (performance.now() - c.at)));
   }, []);
 
   const startCompass = useCallback(async () => {
@@ -1285,6 +1302,10 @@ export default function DavomatFacePage() {
       window.removeEventListener("deviceorientationabsolute", onCompass as EventListener, true);
       window.removeEventListener("deviceorientation", onCompass as EventListener, true);
       compassRef.current = null;
+      if (compassCommitRef.current.timer != null) {
+        window.clearTimeout(compassCommitRef.current.timer);
+        compassCommitRef.current.timer = null;
+      }
     };
   }, [t, onCompass, startCompass, startWatch]);
 

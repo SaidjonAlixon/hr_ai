@@ -4664,7 +4664,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
         : {
             latitude: DAVOMAT_SITE_LAT,
             longitude: DAVOMAT_SITE_LNG,
-            label: DAVOMAT_SITE_LABEL,
+            label: `Asosiy ofis · ${DAVOMAT_SITE_LABEL}`,
             kind: "office" as const,
           };
     const todayRec = todayRecEarly;
@@ -4929,7 +4929,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
 router.get("/davomat/site", async (_req, res): Promise<void> => {
   res.json({
     allowedMeters: DAVOMAT_OFFICE_GEOFENCE_METERS,
-    label: DAVOMAT_SITE_LABEL,
+    label: `Asosiy ofis · ${DAVOMAT_SITE_LABEL}`,
     latitude: DAVOMAT_SITE_LAT,
     longitude: DAVOMAT_SITE_LNG,
     kind: "office",

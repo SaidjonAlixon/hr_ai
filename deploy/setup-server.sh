@@ -144,7 +144,7 @@ chmod 700 /var/backups/hr
 touch /var/log/hr-backup.log
 chown "$APP_USER:$APP_USER" /var/log/hr-backup.log
 CRON_LINE="15 3 * * * $APP_DIR/deploy/backup-db.sh >> /var/log/hr-backup.log 2>&1"
-( crontab -u "$APP_USER" -l 2>/dev/null | grep -v 'backup-db.sh' ; echo "$CRON_LINE" ) | crontab -u "$APP_USER" -
+{ crontab -u "$APP_USER" -l 2>/dev/null | grep -v 'backup-db.sh' || true; echo "$CRON_LINE"; } | crontab -u "$APP_USER" -
 
 cat <<DONE
 

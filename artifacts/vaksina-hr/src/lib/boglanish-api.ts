@@ -58,6 +58,29 @@ export async function fetchBoglanishStatus(): Promise<BoglanishStatus> {
   return (await res.json()) as BoglanishStatus;
 }
 
+export type BoglanishOverviewBranch = BoglanishBranch & {
+  mudirPhone: string;
+  vacant: boolean;
+  coordinatorId: number | null;
+  coordinatorName: string;
+  coordinatorPhone: string;
+  updatedByName: string;
+  updatedByRole: string;
+};
+
+export type BoglanishOverview = {
+  total: number;
+  filled: number;
+  missing: number;
+  branches: BoglanishOverviewBranch[];
+};
+
+export async function fetchBoglanishOverview(): Promise<BoglanishOverview> {
+  const res = await fetch("/api/boglanish/overview", { credentials: "include" });
+  if (!res.ok) throw new Error(await readError(res));
+  return (await res.json()) as BoglanishOverview;
+}
+
 export async function saveBoglanishBranch(
   branchEmployeeId: number,
   payload: BoglanishSavePayload,

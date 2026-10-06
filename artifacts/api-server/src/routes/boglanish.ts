@@ -1,9 +1,10 @@
 import { Router, type IRouter, type Response } from "express";
-import { eq } from "drizzle-orm";
-import { db, employeesTable, pool } from "@workspace/db";
+import { eq, inArray } from "drizzle-orm";
+import { db, employeesTable, pool, usersTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { canAccessBoglanish } from "../lib/roles";
+import { isVacancyPlaceholder } from "../lib/vacancy-slot";
 
 const router: IRouter = Router();
 
@@ -246,6 +247,77 @@ router.get("/boglanish/status", requireAuth, async (req: AuthRequest, res: Respo
   } catch (err) {
     console.error("[boglanish/status]", err);
     res.status(500).json({ error: "Status yuklanmadi" });
+  }
+});
+
+/** Admin: barcha filiallar — kim to‘ldirgan, kim to‘ldirmagan. */
+router.get("/boglanish/overview", requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+  if (req.userRole !== "admin") {
+    res.status(403).json({ error: "Faqat admin uchun" });
+    return;
+  }
+  try {
+    const all = await db
+      .select({
+        id: employeesTable.id,
+        fullName: employeesTable.fullName,
+        location: employeesTable.location,
+        orgRole: employeesTable.orgRole,
+        reportsToId: employeesTable.reportsToId,
+        userId: employeesTable.userId,
+        employmentStatus: employeesTable.employmentStatus,
+      })
+      .from(employeesTable)
+      .where(inArray(employeesTable.orgRole, ["manager", "coordinator"]));
+    const alive = all.filter((e) => e.employmentStatus !== "dismissed");
+    const coordById = new Map(alive.filter((e) => e.orgRole === "coordinator").map((e) => [e.id, e]));
+    const branches = alive.filter((e) => e.orgRole === "manager");
+
+    const contacts = await loadContacts(branches.map((b) => b.id));
+    const userIds = new Set<number>();
+    for (const b of branches) if (b.userId) userIds.add(b.userId);
+    for (const c of coordById.values()) if (c.userId) userIds.add(c.userId);
+    const { rows: updaters } = await pool.query<{ branch_employee_id: number; updated_by_user_id: number | null }>(
+      `SELECT branch_employee_id, updated_by_user_id FROM branch_contacts WHERE branch_employee_id = ANY($1::int[])`,
+      [branches.map((b) => b.id)],
+    );
+    for (const u of updaters) if (u.updated_by_user_id) userIds.add(u.updated_by_user_id);
+    const users = userIds.size
+      ? await db
+          .select({ id: usersTable.id, fullName: usersTable.fullName, role: usersTable.role, phone: usersTable.phone })
+          .from(usersTable)
+          .where(inArray(usersTable.id, [...userIds]))
+      : [];
+    const userById = new Map(users.map((u) => [u.id, u]));
+    const updaterByBranch = new Map(updaters.map((u) => [u.branch_employee_id, u.updated_by_user_id]));
+
+    const items = branches
+      .map((b) => {
+        const contact = contacts.get(b.id);
+        const base = contactPayload(b, contact, true);
+        const coord = b.reportsToId ? coordById.get(b.reportsToId) : undefined;
+        const vacant = isVacancyPlaceholder(b);
+        const updaterId = updaterByBranch.get(b.id) ?? null;
+        const updater = updaterId ? userById.get(updaterId) : undefined;
+        return {
+          ...base,
+          mudirName: vacant ? "" : b.fullName,
+          mudirPhone: (b.userId && userById.get(b.userId)?.phone) || "",
+          vacant,
+          coordinatorId: coord?.id ?? null,
+          coordinatorName: coord?.fullName ?? "",
+          coordinatorPhone: (coord?.userId && userById.get(coord.userId)?.phone) || "",
+          updatedByName: updater?.fullName ?? "",
+          updatedByRole: updater?.role ?? "",
+        };
+      })
+      .sort((a, b) => a.branchName.localeCompare(b.branchName, "uz"));
+
+    const filled = items.filter((i) => i.complete).length;
+    res.json({ total: items.length, filled, missing: items.length - filled, branches: items });
+  } catch (err) {
+    console.error("[boglanish/overview]", err);
+    res.status(500).json({ error: "Ro‘yxat yuklanmadi" });
   }
 });
 

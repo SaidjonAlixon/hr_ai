@@ -33,6 +33,7 @@ import {
   saveBoglanishBranch,
   type BoglanishBranch,
 } from "../../lib/boglanish-api";
+import BoglanishAdminOverview from "../../components/boglanish/BoglanishAdminOverview";
 
 type Draft = {
   primaryPhone: string;
@@ -61,6 +62,12 @@ function normalizeTelegramInput(raw: string): string {
 }
 
 export default function BoglanishPage() {
+  const { user } = useAuth();
+  if (user?.role === "admin") return <BoglanishAdminOverview />;
+  return <BoglanishEditor />;
+}
+
+function BoglanishEditor() {
   const { t } = useI18n();
   const { toast } = useToast();
   const { user } = useAuth();

@@ -64,6 +64,16 @@ export function canSetPrivateTaskVisibility(role?: string | null): boolean {
   return r === "admin" || isDirectorRole(r) || r === "direktor_yordamchisi";
 }
 
+/** Bosh admin — boshqa adminlarni ham butunlay o‘chira oladi; uni hech kim o‘chira olmaydi. */
+export function isBoshAdmin(user?: { role?: string | null; login?: string | null } | null): boolean {
+  if ((user?.role ?? "").trim().toLowerCase() !== "admin") return false;
+  const logins = String(process.env.BOSH_ADMIN_LOGINS || "vaksina_admin")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return logins.includes((user?.login ?? "").trim().toLowerCase());
+}
+
 /** Admin, asoschi yoki korxona direktori. Foydalanuvchilar bo‘limi — faqat admin. */
 export function hasFullPlatformAccess(role?: string | null): boolean {
   const r = (role ?? "").trim().toLowerCase();

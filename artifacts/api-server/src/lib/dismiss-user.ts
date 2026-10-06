@@ -312,10 +312,13 @@ async function employeeIdsForUser(userId: number): Promise<number[]> {
  * Odamni hech qayerda qoldirmaydi: arxiv, davomat, javob, darslik, atestatsiya va login.
  * Boshqa odamlarga berilgan topshiriqlar qoladi, lekin bu odamning ismi ulanmaydi.
  */
-export async function purgeUserCompletely(userId: number): Promise<boolean> {
+export async function purgeUserCompletely(
+  userId: number,
+  opts: { allowAdmin?: boolean } = {},
+): Promise<boolean> {
   const [user] = await db.select({ id: usersTable.id, role: usersTable.role }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   if (!user) return false;
-  if (user.role === "admin") throw new Error("Adminni butunlay o‘chirib bo‘lmaydi");
+  if (user.role === "admin" && !opts.allowAdmin) throw new Error("Adminni faqat bosh admin butunlay o‘chira oladi");
 
   const empIds = await employeeIdsForUser(userId);
   if (empIds.length) {

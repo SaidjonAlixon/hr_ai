@@ -7,7 +7,7 @@ import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { ensureEmployeeForNewUser, removeEmployeesForUser } from "../lib/user-employee-sync";
 import { archiveAndDeleteUser, purgeDismissedArchive, purgeUserCompletely, sweepDismissedUsers } from "../lib/dismiss-user";
-import { canManageUsers, canDeleteUsers, canChangeStaffStatus } from "../lib/roles";
+import { canManageUsers, canDeleteUsers, canChangeStaffStatus, isBoshAdmin } from "../lib/roles";
 import { clientIp, createServerSession, writeLoginAudit } from "../lib/device-security";
 import { formatPersonName } from "../lib/person-name";
 import { resolveDepartmentIdForRole } from "../lib/role-departments";
@@ -144,6 +144,19 @@ function requireAdminOnly(req: AuthRequest, res: import("express").Response): bo
     res.status(403).json({ error: "Foydalanuvchini faqat admin o‘chira oladi" });
     return false;
   }
+  return true;
+}
+
+/** Bosh admin akkauntiga faqat uning o‘zi tegadi (kirish, login, tahrir, o‘chirish). */
+async function blockedByBoshAdmin(req: AuthRequest, res: import("express").Response, targetId: number): Promise<boolean> {
+  if (req.userId === targetId) return false;
+  const [target] = await db
+    .select({ role: usersTable.role, login: usersTable.login })
+    .from(usersTable)
+    .where(eq(usersTable.id, targetId))
+    .limit(1);
+  if (!isBoshAdmin(target)) return false;
+  res.status(403).json({ error: "Bosh admin akkauntini o‘zgartirib bo‘lmaydi" });
   return true;
 }
 
@@ -570,6 +583,7 @@ router.post("/users/:id/enter", requireAuth, async (req: AuthRequest, res): Prom
     res.status(400).json({ error: "Noto‘g‘ri ID" });
     return;
   }
+  if (await blockedByBoshAdmin(req, res, id)) return;
 
   const [row] = await db.select().from(usersTable).where(eq(usersTable.id, id));
   if (!row) {
@@ -636,6 +650,7 @@ router.post("/users/:id/regenerate-login", requireAuth, async (req: AuthRequest,
     res.status(400).json({ error: "O‘zingizning login/parolingizni shu yerda yangilay olmaysiz" });
     return;
   }
+  if (await blockedByBoshAdmin(req, res, id)) return;
 
   const [row] = await db.select().from(usersTable).where(eq(usersTable.id, id));
   if (!row) {
@@ -666,6 +681,7 @@ router.patch("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<v
   if (!requireUsersAdmin(req, res)) return;
 
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  if (await blockedByBoshAdmin(req, res, id)) return;
   const [existing] = await db
     .select({ id: usersTable.id, role: usersTable.role })
     .from(usersTable)
@@ -774,9 +790,19 @@ router.delete("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<
 
   const reason = String((req.query as { reason?: string }).reason || "").trim() || null;
   const mode = String((req.query as { mode?: string }).mode || "archive");
+  if (await blockedByBoshAdmin(req, res, id)) return;
+  const accountCols = { role: usersTable.role, login: usersTable.login };
+  const [target] = await db.select(accountCols).from(usersTable).where(eq(usersTable.id, id)).limit(1);
+  const [actor] = req.userId
+    ? await db.select(accountCols).from(usersTable).where(eq(usersTable.id, req.userId)).limit(1)
+    : [];
+  if (mode === "purge" && target?.role === "admin" && !isBoshAdmin(actor)) {
+    res.status(403).json({ error: "Adminni faqat bosh admin butunlay o‘chira oladi" });
+    return;
+  }
   try {
     const ok = mode === "purge"
-      ? await purgeUserCompletely(id)
+      ? await purgeUserCompletely(id, { allowAdmin: isBoshAdmin(actor) })
       : await archiveAndDeleteUser(id, { actorId: req.userId ?? null, reason });
     if (!ok) {
       res.status(404).json({ error: "Topilmadi" });

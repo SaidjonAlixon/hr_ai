@@ -108,6 +108,14 @@ function rule(n: number): string {
   return "Oylik 50% · bo‘shatish";
 }
 
+/** Xodim yana kech qolsa / kelmasa nima bo‘lishi */
+export function disciplineNextStep(strikes: number): string {
+  if (strikes <= 2) return `yana ${3 - strikes} marta — 1 kunlik ish haqining 100% jarima`;
+  if (strikes === 3) return "yana 1 marta — 1 oylik ish haqining 50% jarima";
+  if (strikes === 4) return "yana 1 marta — ishdan bo‘shatish masalasi, o‘sha kuni tizim bloklanadi";
+  return "ishdan bo‘shatish masalasi ko‘rib chiqiladi; har yangi holatda tizim bloklanadi";
+}
+
 function fit(text: string, font: PDFFont, size: number, max: number): string {
   const t = String(text || "").replace(/\s+/g, " ").trim() || "—";
   if (font.widthOfTextAtSize(t, size) <= max) return t;
@@ -140,10 +148,11 @@ type Draw = {
   y: number;
   pageNo: number;
   headLine: string;
+  audience: string;
 };
 
 function footer(d: Draw) {
-  d.page.drawText(`VAKSINA HR  ·  Intizom hisoboti  ·  ${d.pageNo}-sahifa  ·  Maxfiy — faqat rahbariyat uchun`, {
+  d.page.drawText(`VAKSINA HR  ·  Intizom hisoboti  ·  ${d.pageNo}-sahifa  ·  Maxfiy — ${d.audience}`, {
     x: M,
     y: 16,
     size: 7.5,
@@ -254,7 +263,12 @@ function drawPerson(d: Draw, p: DisciplinePerson, index: number, fg: RGB) {
     d.y = y;
   });
 
-  const notes = [...lockLines.map((t) => ({ t, bold: true, color: rgb(0.62, 0.05, 0.16) })), ...historyLines.map((t) => ({ t, bold: false, color: MUTED }))];
+  const nextLines = wrap(`Keyingi qadam: ${disciplineNextStep(p.strikes)}`, d.bold, 8, width - 16);
+  const notes = [
+    ...nextLines.map((t) => ({ t, bold: true, color: fg })),
+    ...lockLines.map((t) => ({ t, bold: true, color: rgb(0.62, 0.05, 0.16) })),
+    ...historyLines.map((t) => ({ t, bold: false, color: MUTED })),
+  ];
   ensure(d, 6 + notes.length * 11);
   d.y -= 4;
   for (const n of notes) {
@@ -281,12 +295,87 @@ function summarizeHistory(p: DisciplinePerson): string {
     .join(";  ");
 }
 
-export async function renderDisciplinePdf(report: DisciplineReport): Promise<Buffer> {
+const COORD_COLS = [
+  { label: "Koordinator", w: 215 },
+  { label: "Xodim", w: 52 },
+  { label: "5+ marta", w: 58 },
+  { label: "4 marta", w: 52 },
+  { label: "3 marta", w: 52 },
+  { label: "Jami jarima", w: 110 },
+];
+
+function drawCoordinatorSummary(d: Draw, people: DisciplinePerson[]) {
+  const width = PAGE_W - M * 2;
+  const groups = new Map<string, DisciplinePerson[]>();
+  for (const p of people) {
+    const key = p.coordinator || "Biriktirilmagan";
+    groups.set(key, [...(groups.get(key) ?? []), p]);
+  }
+  const rows = [...groups.entries()]
+    .map(([name, list]) => ({
+      name,
+      count: list.length,
+      s5: list.filter((p) => p.strikes >= 5).length,
+      s4: list.filter((p) => p.strikes === 4).length,
+      s3: list.filter((p) => p.strikes === 3).length,
+      amount: list.reduce((s, p) => s + p.monthAmount, 0),
+    }))
+    .sort(
+      (a, b) =>
+        Number(a.name === "Biriktirilmagan") - Number(b.name === "Biriktirilmagan") ||
+        b.s5 - a.s5 ||
+        b.count - a.count ||
+        a.name.localeCompare(b.name, "uz"),
+    );
+
+  ensure(d, 40 + Math.min(rows.length, 6) * 14);
+  d.page.drawText("KOORDINATORLAR KESIMIDA", { x: M, y: d.y - 10, size: 8, font: d.bold, color: NAVY });
+  d.y -= 16;
+  const drawHead = () => {
+    const y = d.y - 14;
+    d.page.drawRectangle({ x: M, y, width, height: 14, color: NAVY });
+    let x = M;
+    for (const c of COORD_COLS) {
+      d.page.drawText(c.label, { x: x + 4, y: y + 4, size: 7.5, font: d.bold, color: PAPER });
+      x += c.w;
+    }
+    d.y = y;
+  };
+  drawHead();
+  rows.forEach((r, i) => {
+    if (d.y - 14 < BOTTOM) {
+      newPage(d);
+      drawHead();
+    }
+    const y = d.y - 14;
+    if (i % 2 === 1) d.page.drawRectangle({ x: M, y, width, height: 14, color: ZEBRA });
+    const cells = [r.name, String(r.count), r.s5 ? String(r.s5) : "—", r.s4 ? String(r.s4) : "—", r.s3 ? String(r.s3) : "—", som(r.amount)];
+    let x = M;
+    cells.forEach((value, ci) => {
+      const col = COORD_COLS[ci]!;
+      const color = ci === 2 && r.s5 ? LEVELS[0]!.fg : ci === 3 && r.s4 ? LEVELS[1]!.fg : ci === 0 && r.name === "Biriktirilmagan" ? MUTED : INK;
+      const f = ci === 0 || ci === 5 || (ci === 2 && r.s5) ? d.bold : d.font;
+      d.page.drawText(fit(value, f, 8, col.w - 8), { x: x + 4, y: y + 4, size: 8, font: f, color });
+      x += col.w;
+    });
+    d.page.drawLine({ start: { x: M, y }, end: { x: M + width, y }, thickness: 0.4, color: LINE });
+    d.y = y;
+  });
+  d.y -= 14;
+}
+
+export type DisciplinePdfOptions = {
+  /** Berilsa — faqat shu koordinator xodimlari uchun hisobot */
+  coordinatorName?: string;
+};
+
+export async function renderDisciplinePdf(report: DisciplineReport, opts: DisciplinePdfOptions = {}): Promise<Buffer> {
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);
   const font = await doc.embedFont(await readFont("DejaVuSans.ttf"), { subset: true });
   const bold = await doc.embedFont(await readFont("DejaVuSans-Bold.ttf"), { subset: true });
   const generated = stamp(report.generatedAt);
+  const coord = opts.coordinatorName?.trim() || null;
   const d: Draw = {
     doc,
     font,
@@ -294,14 +383,23 @@ export async function renderDisciplinePdf(report: DisciplineReport): Promise<Buf
     page: doc.addPage([PAGE_W, PAGE_H]),
     y: PAGE_H,
     pageNo: 1,
-    headLine: `VAKSINA HR  ·  Intizom hisoboti  ·  ${monthTitle(report.month)}  ·  ${generated}`,
+    headLine: coord
+      ? `VAKSINA HR  ·  Intizom hisoboti  ·  ${coord} xodimlari  ·  ${monthTitle(report.month)}  ·  ${generated}`
+      : `VAKSINA HR  ·  Intizom hisoboti  ·  ${monthTitle(report.month)}  ·  ${generated}`,
+    audience: coord ? `faqat koordinator ${coord} uchun` : "faqat rahbariyat uchun",
   };
   const width = PAGE_W - M * 2;
 
   d.page.drawRectangle({ x: 0, y: PAGE_H - 84, width: PAGE_W, height: 84, color: NAVY });
   d.page.drawText("VAKSINA HR  ·  MAXFIY", { x: M, y: PAGE_H - 22, size: 9, font: bold, color: rgb(0.73, 0.85, 0.95) });
-  d.page.drawText("Intizom hisoboti — davomat jarimalari", { x: M, y: PAGE_H - 44, size: 17, font: bold, color: PAPER });
-  d.page.drawText(`${monthTitle(report.month)}  ·  yangilangan: ${generated}`, {
+  d.page.drawText(coord ? "Intizom hisoboti — sizning xodimlaringiz" : "Intizom hisoboti — davomat jarimalari", {
+    x: M,
+    y: PAGE_H - 44,
+    size: 17,
+    font: bold,
+    color: PAPER,
+  });
+  d.page.drawText(fit(`${coord ? `Koordinator: ${coord}  ·  ` : ""}${monthTitle(report.month)}  ·  yangilangan: ${generated}`, font, 10, width), {
     x: M,
     y: PAGE_H - 64,
     size: 10,
@@ -310,6 +408,20 @@ export async function renderDisciplinePdf(report: DisciplineReport): Promise<Buf
   });
   d.y = PAGE_H - 100;
   footer(d);
+
+  if (coord) {
+    const warnText =
+      "Ushbu hisobotdagi xodimlar sizga biriktirilgan. Har bir holat bo‘yicha sababni aniqlang, xodim bilan suhbat o‘tkazing va HR ga asosli ma’lumot (F.I.Sh., sana, sabab, tasdiqlovchi hujjat) bering. Agar bu holatlar bo‘yicha ma’lumotga ega bo‘lmasangiz yoki o‘z vaqtida chora ko‘rmasangiz — sizga ham jarima qo‘llaniladi.";
+    const warnLines = wrap(warnText, bold, 8.5, width - 18);
+    const warnH = 20 + warnLines.length * 11.5;
+    d.page.drawRectangle({ x: M, y: d.y - warnH, width, height: warnH, color: rgb(0.996, 0.902, 0.91) });
+    d.page.drawRectangle({ x: M, y: d.y - warnH, width: 3, height: warnH, color: rgb(0.75, 0.07, 0.2) });
+    d.page.drawText("KOORDINATOR DIQQATIGA", { x: M + 10, y: d.y - 12, size: 7.5, font: bold, color: rgb(0.62, 0.05, 0.16) });
+    warnLines.forEach((line, i) => {
+      d.page.drawText(line, { x: M + 10, y: d.y - 25 - i * 11.5, size: 8.5, font: bold, color: rgb(0.5, 0.04, 0.13) });
+    });
+    d.y -= warnH + 10;
+  }
 
   const ruleText =
     "Qoida: 1-marta va 2-marta — 1 kunlik ish haqining 30%; 3-marta — 1 kunlik ish haqining 100%; 4-marta — 1 oylik ish haqining 50%; 5-marta va undan keyin — har safar 1 oylikning 50%, ishdan bo‘shatish masalasi ko‘riladi va xodim o‘sha kuni tizimga kira olmaydi. Kech kelish va kelmaslik bir xil hisoblanadi.";
@@ -341,6 +453,8 @@ export async function renderDisciplinePdf(report: DisciplineReport): Promise<Buf
 
   if (!report.people.length) {
     d.page.drawText("Shu oyda 3 va undan ko‘p marta jarima olgan xodim yo‘q.", { x: M, y: d.y - 14, size: 11, font, color: MUTED });
+  } else if (!coord) {
+    drawCoordinatorSummary(d, report.people);
   }
 
   let counter = 0;

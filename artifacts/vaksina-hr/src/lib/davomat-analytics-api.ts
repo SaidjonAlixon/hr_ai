@@ -94,6 +94,7 @@ export type DavomatAnalytics = {
   byShift: Array<{
     key: string;
     label: string;
+    departments?: Array<{ name: string; headcount: number }>;
     segment?: "office" | "pharmacy";
     start?: string;
     end?: string;

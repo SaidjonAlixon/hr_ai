@@ -1,13 +1,14 @@
 /**
  * Intizom: davomat jarimalari bo‘yicha eskalatsiya.
- * 3-martadan boshlab adminga yig‘ma PDF boradi; 5-marta va undan keyin
+ * 3-martadan boshlab har 4 soatda (DIGEST_HOURS) adminga umumiy, har bir
+ * koordinatorga faqat o‘z xodimlari bo‘yicha PDF boradi; 5-marta va undan keyin
  * xodim o‘sha kuni tizimga kira olmaydi (admin/HR ochib bera oladi).
  */
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db, pool, notificationsTable, usersTable } from "@workspace/db";
 import { logger } from "./logger";
 import { loadJarimaSnapshot } from "./kpi-payroll";
-import { coordinatorNamesFor } from "./davomat-shift-report";
+import { coordinatorNamesFor, coordinatorsFor, type CoordHit } from "./davomat-shift-report";
 import { isTelegramConfigured, sendDocument } from "./telegram";
 import { renderDisciplinePdf } from "./discipline-pdf";
 import { activeLockFor, invalidateLockCache, LOCK_MESSAGE, todayTashkent } from "./discipline-lock";
@@ -84,6 +85,7 @@ export type DisciplineEventRow = {
 
 export type DisciplinePerson = {
   userId: number;
+  employeeId: number | null;
   fullName: string;
   position: string;
   branch: string;
@@ -128,6 +130,7 @@ export async function buildDisciplineReport(month: string): Promise<DisciplineRe
     if (!p) {
       p = {
         userId,
+        employeeId: null,
         fullName: "",
         position: "",
         branch: "",
@@ -158,6 +161,7 @@ export async function buildDisciplineReport(month: string): Promise<DisciplineRe
       p.branch = r.branch || p.branch;
       p.shift = r.shift || p.shift;
       p.coordinator = r.coordinator || p.coordinator;
+      p.employeeId = (r.employee_id as number | null) ?? p.employeeId;
     } else {
       p.history.push(ev);
     }
@@ -279,7 +283,6 @@ async function scanOnce(): Promise<void> {
   );
   for (const r of released) invalidateLockCache(r.user_id);
 
-  const lockedNow: Fresh[] = [];
   for (const f of fresh) {
     if (f.n < LOCK_FROM || f.date < yesterday) continue;
     const { rowCount } = await pool.query(
@@ -287,91 +290,249 @@ async function scanOnce(): Promise<void> {
        VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (user_id, lock_day) DO NOTHING`,
       [f.userId, today, month, f.n, f.date, f.kind],
     );
-    if (rowCount) {
-      invalidateLockCache(f.userId);
-      lockedNow.push(f);
-    }
-  }
-
-  const { rows: pending } = await pool.query(
-    `SELECT id, user_id, n, event_date, kind, full_name, branch, coordinator
-       FROM discipline_events
-      WHERE month = $1 AND n >= $2 AND notified_at IS NULL
-      ORDER BY n DESC, event_date DESC`,
-    [month, ESCALATE_FROM],
-  );
-  if (!pending.length) return;
-
-  const sent = await notifyAdmins(month, pending, lockedNow, yesterday);
-  if (sent) {
-    await pool.query(`UPDATE discipline_events SET notified_at = NOW() WHERE id = ANY($1::int[])`, [pending.map((r) => r.id)]);
+    if (rowCount) invalidateLockCache(f.userId);
   }
 }
 
-async function notifyAdmins(
-  month: string,
-  pending: Array<Record<string, any>>,
-  lockedNow: Fresh[],
-  recentFrom: string,
-): Promise<boolean> {
+/** Intizom hisoboti shu soatlarda (Toshkent vaqti) yuboriladi — har 4 soatda */
+export const DIGEST_HOURS = [8, 12, 16, 20];
+
+function tashkentHour(d = new Date()): number {
+  return Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Tashkent", hour: "2-digit", hour12: false }).format(d)) % 24;
+}
+
+const hhmm = (h: number) => `${String(h).padStart(2, "0")}:00`;
+
+function digestSlot(now = new Date()): { id: string; hour: number } | null {
+  const hour = tashkentHour(now);
+  const slot = [...DIGEST_HOURS].reverse().find((h) => h <= hour);
+  return slot == null ? null : { id: `${todayTashkent()}T${hhmm(slot)}`, hour: slot };
+}
+
+function nextDigestLabel(hour: number): string {
+  const next = DIGEST_HOURS.find((h) => h > hour);
+  return next != null ? `bugun ${hhmm(next)}` : `ertaga ${hhmm(DIGEST_HOURS[0]!)}`;
+}
+
+/** Hisobotdagi koordinatorlarni joriy rahbarlik zanjiri bo‘yicha yangilaydi */
+export async function attachLiveCoordinators(report: DisciplineReport): Promise<Map<number, CoordHit>> {
+  const ids = report.people.map((p) => p.employeeId).filter((id): id is number => id != null);
+  const hits = await coordinatorsFor(ids);
+  for (const p of report.people) {
+    const hit = p.employeeId != null ? hits.get(p.employeeId) : undefined;
+    if (hit) p.coordinator = hit.name;
+  }
+  return hits;
+}
+
+let digesting: Promise<void> | null = null;
+
+/** Joriy 4 soatlik slot uchun hisobot hali yuborilmagan bo‘lsa — yuboradi */
+export function runDisciplineDigest(): Promise<void> {
+  if (!digesting) {
+    digesting = digestOnce()
+      .catch((err) => logger.error({ err }, "Intizom hisoboti yuborilmadi"))
+      .finally(() => {
+        digesting = null;
+      });
+  }
+  return digesting;
+}
+
+async function digestOnce(): Promise<void> {
+  const slot = digestSlot();
+  if (!slot) return;
+  const { rowCount } = await pool.query(`INSERT INTO discipline_digests (slot) VALUES ($1) ON CONFLICT (slot) DO NOTHING`, [slot.id]);
+  if (!rowCount) return;
+  try {
+    const stats = await sendDigest(slot.hour);
+    await pool.query(`UPDATE discipline_digests SET people = $2, admins = $3, coordinators = $4 WHERE slot = $1`, [
+      slot.id,
+      stats.people,
+      stats.admins,
+      stats.coordinators,
+    ]);
+    logger.info({ slot: slot.id, ...stats }, "Intizom hisoboti yuborildi");
+  } catch (err) {
+    await pool.query(`DELETE FROM discipline_digests WHERE slot = $1`, [slot.id]).catch(() => undefined);
+    throw err;
+  }
+}
+
+function consequence(n: number, lockedToday: boolean): string {
+  if (n >= LOCK_FROM) return lockedToday ? "bugun tizim bloklandi, ishdan bo‘shatish masalasi" : "ishdan bo‘shatish masalasi";
+  if (n === 4) return "1 oylikning 50% jarima";
+  return "1 kunlik ish haqining 100% jarima";
+}
+
+function lastEvent(p: DisciplinePerson): DisciplineEventRow | undefined {
+  return [...p.events].sort((a, b) => b.n - a.n)[0];
+}
+
+/** Telegram caption 1024 belgidan oshmasin — ro‘yxat qismini qisqartiradi */
+function buildCaption(head: string[], items: string[], tail: string[], limit = 1000): string {
+  const join = (list: string[], rest: number) =>
+    [...head, ...list, ...(rest > 0 ? [`… yana ${rest} ta (PDF da)`] : []), ...tail].join("\n");
+  for (let n = items.length; n >= 0; n--) {
+    const text = join(items.slice(0, n), items.length - n);
+    if (text.length <= limit) return text;
+  }
+  return join([], items.length).slice(0, limit);
+}
+
+async function sendDigest(hour: number): Promise<{ people: number; admins: number; coordinators: number }> {
+  const today = todayTashkent();
+  const month = today.slice(0, 7);
+  const report = await buildDisciplineReport(month);
+  if (!report.people.length) return { people: 0, admins: 0, coordinators: 0 };
+
+  const coordHits = await attachLiveCoordinators(report);
+  const { rows: pendingRows } = await pool.query(
+    `SELECT id, user_id FROM discipline_events WHERE month = $1 AND n >= $2 AND notified_at IS NULL`,
+    [month, ESCALATE_FROM],
+  );
+  const freshUsers = new Set(pendingRows.map((r) => r.user_id as number));
+  const { rows: lockRows } = await pool.query(
+    `SELECT user_id FROM discipline_locks WHERE lock_day = $1 AND cleared_at IS NULL`,
+    [today],
+  );
+  const lockedToday = new Set(lockRows.map((r) => r.user_id as number));
+
+  const asOf = `${fmtYmd(today)}, ${hhmm(hour)} holatiga`;
+  const nextLabel = nextDigestLabel(hour);
+  const tg = isTelegramConfigured();
+
+  const describe = (p: DisciplinePerson, withCoord: boolean) => {
+    const ev = lastEvent(p);
+    const what = ev ? `${kindLabel(ev.kind).toLowerCase()} ${fmtYmd(ev.date)}` : "";
+    const place = [p.branch || "filial yo‘q", withCoord && p.coordinator ? `koord.: ${p.coordinator}` : ""].filter(Boolean).join(", ");
+    return `${freshUsers.has(p.userId) ? "🆕 " : "• "}${p.fullName} (${place}) — ${p.strikes}-marta${what ? `, ${what}` : ""} — ${consequence(p.strikes, lockedToday.has(p.userId))}`;
+  };
+
+  // Koordinatorlar bo‘yicha guruhlash
+  const groups = new Map<number, { hit: CoordHit; people: DisciplinePerson[] }>();
+  const unassigned: DisciplinePerson[] = [];
+  for (const p of report.people) {
+    const hit = p.employeeId != null ? coordHits.get(p.employeeId) : undefined;
+    if (!hit) {
+      unassigned.push(p);
+      continue;
+    }
+    const g = groups.get(hit.id) ?? { hit, people: [] };
+    g.people.push(p);
+    groups.set(hit.id, g);
+  }
+
+  const coordUserIds = [...groups.values()].map((g) => g.hit.userId).filter((id): id is number => id != null);
+  const coordUsers = coordUserIds.length
+    ? await db
+        .select({ id: usersTable.id, status: usersTable.status, telegramId: usersTable.telegramId })
+        .from(usersTable)
+        .where(inArray(usersTable.id, coordUserIds))
+    : [];
+  const coordUserById = new Map(coordUsers.map((u) => [u.id, u]));
+
+  let coordinatorsSent = 0;
+  const noTelegram: string[] = [];
+  for (const { hit, people } of groups.values()) {
+    const user = hit.userId != null ? coordUserById.get(hit.userId) : undefined;
+    if (!user || user.status !== "active") {
+      noTelegram.push(hit.name);
+      continue;
+    }
+    const freshCount = people.filter((p) => freshUsers.has(p.userId)).length;
+    const caption = buildCaption(
+      [
+        "⚠️ Intizom hisoboti — sizning xodimlaringiz",
+        asOf,
+        "",
+        `Hurmatli ${hit.name}! Sizga biriktirilgan ${people.length} nafar xodim shu oyda 3 va undan ko‘p marta davomat jarimasi oldi${freshCount ? ` (${freshCount} tasi yangi)` : ""}:`,
+      ],
+      people.map((p) => describe(p, false)),
+      [
+        "",
+        "❗️ Har bir holat sababini bugunoq aniqlang, xodim bilan suhbat o‘tkazing va HR ga asosli ma’lumot bering.",
+        "Agar bu holatlar bo‘yicha ma’lumotga ega bo‘lmasangiz — sizga ham jarima qo‘llaniladi.",
+        "",
+        `PDF da: har bir xodimning sanalari, sabablari, jarima summalari va oldingi tarixi. Keyingi yangilanish: ${nextLabel}.`,
+      ],
+    );
+    await db.insert(notificationsTable).values({ userId: user.id, text: caption.slice(0, 2000), type: "discipline_alert" });
+    const chatId = String(user.telegramId || hit.telegramId || "").trim();
+    if (!chatId || !tg) {
+      noTelegram.push(hit.name);
+      continue;
+    }
+    try {
+      const pdf = await renderDisciplinePdf({ month, generatedAt: report.generatedAt, people }, { coordinatorName: hit.name });
+      await sendDocument(chatId, pdf, `intizom_${month}_${today}_${hhmm(hour).replace(":", "")}.pdf`, {
+        mimeType: "application/pdf",
+        caption,
+      });
+      coordinatorsSent += 1;
+    } catch (err) {
+      noTelegram.push(hit.name);
+      logger.error({ err, coordinatorId: hit.id }, "Intizom PDF koordinatorga yuborilmadi");
+    }
+  }
+
   const admins = await db
     .select({ id: usersTable.id, telegramId: usersTable.telegramId, status: usersTable.status })
     .from(usersTable)
     .where(eq(usersTable.role, "admin"));
-  const active = admins.filter((a) => a.status === "active");
-  if (!active.length) return true;
+  const activeAdmins = admins.filter((a) => a.status === "active");
 
-  const recent = pending.filter((r) => r.event_date >= recentFrom);
-  const older = pending.length - recent.length;
-  const lockedIds = new Set(lockedNow.map((l) => l.userId));
-  const line = (r: Record<string, any>) => {
-    const tail =
-      r.n >= LOCK_FROM
-        ? lockedIds.has(r.user_id)
-          ? " — bugun tizim bloklandi, ishdan bo‘shatish masalasi"
-          : " — ishdan bo‘shatish masalasi"
-        : r.n === 4
-          ? " — 1 oylikning 50% jarima"
-          : " — 1 kunlik ish haqining 100% jarima";
-    return `• ${r.full_name} (${r.branch || "filial yo‘q"}${r.coordinator ? `, koord.: ${r.coordinator}` : ""}) — ${r.n}-marta, ${kindLabel(r.kind).toLowerCase()}, ${fmtYmd(r.event_date)}${tail}`;
-  };
+  const by = (pred: (p: DisciplinePerson) => boolean) => report.people.filter(pred).length;
+  const total = report.people.reduce((s, p) => s + p.monthAmount, 0);
+  const freshPeople = report.people.filter((p) => freshUsers.has(p.userId));
+  const delivery = [
+    `📨 Koordinatorlarga yuborildi: ${coordinatorsSent} ta`,
+    ...(noTelegram.length
+      ? [`Telegram ulanmagan: ${noTelegram.slice(0, 3).join(", ")}${noTelegram.length > 3 ? ` va yana ${noTelegram.length - 3} ta` : ""}`]
+      : []),
+    ...(unassigned.length ? [`Koordinator biriktirilmagan: ${unassigned.length} xodim`] : []),
+  ];
+  const adminCaption = buildCaption(
+    [
+      "📊 Intizom hisoboti — davomat jarimalari",
+      asOf,
+      "",
+      `Shu oy 3+ marta: ${report.people.length} xodim (5+: ${by((p) => p.strikes >= 5)} · 4: ${by((p) => p.strikes === 4)} · 3: ${by((p) => p.strikes === 3)}) · jami ${Math.round(total).toLocaleString("ru-RU").replace(/\u00a0/g, " ")} so‘m`,
+      "",
+      freshPeople.length ? `🆕 Oxirgi hisobotdan beri yangi holatlar (${freshPeople.length}):` : "Oxirgi hisobotdan beri yangi holat yo‘q — umumiy holat yangilandi.",
+    ],
+    freshPeople.map((p) => describe(p, true)),
+    ["", ...delivery, "", `Keyingi yangilanish: ${nextLabel}.`],
+  );
 
-  const caption = [
-    "⚠️ Intizom ogohlantirishi — davomat jarimalari",
-    "",
-    ...(recent.length ? recent.slice(0, 8).map(line) : ["Yangi holatlar yo‘q, umumiy holat yangilandi."]),
-    ...(recent.length > 8 ? [`… yana ${recent.length - 8} ta`] : []),
-    ...(older > 0 ? ["", `Avvalgi kunlardagi ${older} ta holat ham hisobotga qo‘shildi.`] : []),
-    "",
-    "PDF da: shu oyda 3 va undan ko‘p marta jarima olgan barcha xodimlar — filial, koordinator, sana, summa va oldingi tarix bilan.",
-  ].join("\n");
-
-  for (const admin of active) {
+  for (const admin of activeAdmins) {
     await db.insert(notificationsTable).values({
       userId: admin.id,
-      text: caption.slice(0, 2000),
+      text: adminCaption.slice(0, 2000),
       type: "discipline_alert",
       linkUrl: "/oylik",
     });
   }
 
-  const targets = active.filter((a) => String(a.telegramId || "").trim());
-  if (!targets.length || !isTelegramConfigured()) return true;
-
-  const report = await buildDisciplineReport(month);
-  const pdf = await renderDisciplinePdf(report);
-  const file = `intizom_${month}_${todayTashkent()}.pdf`;
-  let ok = false;
-  for (const admin of targets) {
-    try {
-      await sendDocument(String(admin.telegramId), pdf, file, {
-        mimeType: "application/pdf",
-        caption: caption.slice(0, 1000),
-      });
-      ok = true;
-    } catch (err) {
-      logger.error({ err, adminId: admin.id }, "Intizom PDF admin ga yuborilmadi");
+  let adminsSent = 0;
+  const adminTargets = activeAdmins.filter((a) => String(a.telegramId || "").trim());
+  if (adminTargets.length && tg) {
+    const pdf = await renderDisciplinePdf(report);
+    for (const admin of adminTargets) {
+      try {
+        await sendDocument(String(admin.telegramId), pdf, `intizom_${month}_${today}_${hhmm(hour).replace(":", "")}.pdf`, {
+          mimeType: "application/pdf",
+          caption: adminCaption,
+        });
+        adminsSent += 1;
+      } catch (err) {
+        logger.error({ err, adminId: admin.id }, "Intizom PDF admin ga yuborilmadi");
+      }
     }
   }
-  return ok;
+
+  if (pendingRows.length) {
+    await pool.query(`UPDATE discipline_events SET notified_at = NOW() WHERE id = ANY($1::int[])`, [pendingRows.map((r) => r.id)]);
+  }
+  return { people: report.people.length, admins: adminsSent, coordinators: coordinatorsSent };
 }

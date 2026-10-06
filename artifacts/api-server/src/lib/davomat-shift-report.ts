@@ -145,7 +145,7 @@ type EmpNode = {
   employmentStatus: string | null;
 };
 
-type CoordHit = { id: number; name: string; userId: number | null; telegramId: string | null };
+export type CoordHit = { id: number; name: string; userId: number | null; telegramId: string | null };
 
 function resolveCoordinator(employeeId: number, byId: Map<number, EmpNode>): CoordHit | null {
   const start = byId.get(employeeId);
@@ -226,12 +226,19 @@ async function loadNodes(): Promise<EmpNode[]> {
 /** employeeId → koordinator ismi (rahbarlik zanjiri bo‘yicha) */
 export async function coordinatorNamesFor(employeeIds: number[]): Promise<Map<number, string>> {
   const out = new Map<number, string>();
+  for (const [id, hit] of await coordinatorsFor(employeeIds)) out.set(id, hit.name);
+  return out;
+}
+
+/** employeeId → koordinator (id, ism, user, telegram) */
+export async function coordinatorsFor(employeeIds: number[]): Promise<Map<number, CoordHit>> {
+  const out = new Map<number, CoordHit>();
   if (!employeeIds.length) return out;
   const nodes = await loadNodes();
   const byId = new Map(nodes.map((n) => [n.id, n]));
   for (const id of employeeIds) {
     const hit = resolveCoordinator(id, byId);
-    if (hit) out.set(id, hit.name);
+    if (hit) out.set(id, hit);
   }
   return out;
 }

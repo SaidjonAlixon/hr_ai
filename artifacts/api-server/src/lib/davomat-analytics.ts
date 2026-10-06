@@ -185,6 +185,8 @@ export type DavomatAnalyticsPayload = {
   byShift: Array<{
     key: string;
     label: string;
+    /** Ofis smenasidagi bo‘limlar (xodim soni bo‘yicha kamayish tartibida) */
+    departments: Array<{ name: string; headcount: number }>;
     segment: "office" | "pharmacy";
     start: string;
     end: string;
@@ -921,6 +923,7 @@ export function buildDavomatAnalytics(
       start: string;
       end: string;
       headcount: Set<number>;
+      depts: Map<string, number>;
       present: number;
       late: number;
       absent: number;
@@ -932,24 +935,32 @@ export function buildDavomatAnalytics(
     const segment: "office" | "pharmacy" =
       davomatStaffSegment(m?.userRole, m?.orgRole ?? e.orgRole) === "pharmacy" ? "pharmacy" : "office";
     const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? e.orgRole, m?.shiftType);
-    const isDefaultOffice = segment === "office" && schedule.key === "office";
-    const key = `${segment}-${schedule.key}-${schedule.start}-${schedule.end}`;
-    const label = isDefaultOffice
-      ? "Ofis"
-      : segment === "pharmacy" && !/dorixona/i.test(schedule.label)
-        ? `Dorixona · ${schedule.label}`
-        : schedule.label;
+    const kind = schedule.security ? "sec" : schedule.warehouse ? "wh" : "std";
+    const key = `${segment}-${schedule.key}-${kind}-${schedule.start}-${schedule.end}`;
+    const label =
+      segment === "office"
+        ? schedule.warehouse || schedule.security
+          ? schedule.label
+          : "Ofis"
+        : /dorixona/i.test(schedule.label)
+          ? schedule.label
+          : `Dorixona · ${schedule.label}`;
     const cur = shiftMap.get(key) ?? {
       label,
       segment,
       start: schedule.start,
       end: schedule.end,
       headcount: new Set<number>(),
+      depts: new Map<string, number>(),
       present: 0,
       late: 0,
       absent: 0,
       expected: 0,
     };
+    if (segment === "office" && !cur.headcount.has(e.id)) {
+      const dept = e.departmentName?.trim() || "Bo‘limsiz";
+      cur.depts.set(dept, (cur.depts.get(dept) ?? 0) + 1);
+    }
     cur.headcount.add(e.id);
     cur.present += e.totals.present;
     cur.late += e.totals.late;
@@ -958,19 +969,26 @@ export function buildDavomatAnalytics(
     shiftMap.set(key, cur);
   }
   const byShift = [...shiftMap.entries()]
-    .map(([key, v]) => ({
-      key,
-      label: v.label,
-      segment: v.segment,
-      start: v.start,
-      end: v.end,
-      headcount: v.headcount.size,
-      present: v.present,
-      late: v.late,
-      absent: v.absent,
-      expected: v.expected,
-      attendanceRate: pct(v.present, v.expected),
-    }))
+    .map(([key, v]) => {
+      const departments = [...v.depts.entries()]
+        .map(([name, headcount]) => ({ name, headcount }))
+        .sort((a, b) => b.headcount - a.headcount || a.name.localeCompare(b.name, "uz"));
+      const onlyDept = departments.length === 1 && departments[0]!.name !== "Bo‘limsiz" ? departments[0]!.name : null;
+      return {
+        key,
+        label: onlyDept ?? v.label,
+        departments,
+        segment: v.segment,
+        start: v.start,
+        end: v.end,
+        headcount: v.headcount.size,
+        present: v.present,
+        late: v.late,
+        absent: v.absent,
+        expected: v.expected,
+        attendanceRate: pct(v.present, v.expected),
+      };
+    })
     .sort(
       (a, b) =>
         (a.segment === b.segment ? 0 : a.segment === "office" ? -1 : 1) ||

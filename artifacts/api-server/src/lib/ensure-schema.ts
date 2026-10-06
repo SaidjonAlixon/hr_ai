@@ -2127,6 +2127,14 @@ CREATE TABLE IF NOT EXISTS discipline_locks (
   UNIQUE (user_id, lock_day)
 );
 CREATE INDEX IF NOT EXISTS discipline_locks_day_idx ON discipline_locks (lock_day);
+
+CREATE TABLE IF NOT EXISTS discipline_digests (
+  slot TEXT PRIMARY KEY,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  people INTEGER NOT NULL DEFAULT 0,
+  admins INTEGER NOT NULL DEFAULT 0,
+  coordinators INTEGER NOT NULL DEFAULT 0
+);
 `;
 
 export async function ensureZonePresenceSchema(): Promise<void> {

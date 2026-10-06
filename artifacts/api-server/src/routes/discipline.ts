@@ -3,6 +3,7 @@ import { optionalAuth, requireAuth, type AuthRequest } from "../middlewares/auth
 import { hasFullPlatformAccess, isHrRole } from "../lib/roles";
 import {
   activeLockFor,
+  attachLiveCoordinators,
   buildDisciplineReport,
   clearLock,
   listTodayLocks,
@@ -58,7 +59,9 @@ router.get("/discipline/report.pdf", requireAuth, async (req: AuthRequest, res):
   if (denyUnlessManager(req, res)) return;
   const month = /^\d{4}-\d{2}$/.test(String(req.query.month || "")) ? String(req.query.month) : todayTashkent().slice(0, 7);
   if (month === todayTashkent().slice(0, 7)) await runDisciplineScan();
-  const pdf = await renderDisciplinePdf(await buildDisciplineReport(month));
+  const report = await buildDisciplineReport(month);
+  await attachLiveCoordinators(report);
+  const pdf = await renderDisciplinePdf(report);
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="intizom_${month}.pdf"`);
   res.send(pdf);

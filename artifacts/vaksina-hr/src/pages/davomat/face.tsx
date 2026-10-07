@@ -950,6 +950,7 @@ export default function DavomatFacePage() {
   const [fingerStatus, setFingerStatus] = useState<FingerprintStatus | null>(null);
   const [fingerEnrollOpen, setFingerEnrollOpen] = useState(false);
   const [fingerScanning, setFingerScanning] = useState(false);
+  const fingerSeqRef = useRef(0);
   const fingerAllowed = fingerStatus?.enabled === true;
 
   useEffect(() => {
@@ -967,6 +968,8 @@ export default function DavomatFacePage() {
     }
   });
   const watchRef = useRef<number | null>(null);
+  /** Silliqlanmagan oxirgi GPS o‘lchovi — Keldim/Ketdimga aynan shu yuboriladi */
+  const rawGpsRef = useRef<{ lat: number; lng: number; accuracy: number; capturedAt: number } | null>(null);
   const compassRef = useRef<number | null>(null);
   const lastCompassRef = useRef<number | null>(null);
   const hasAbsoluteCompassRef = useRef(false);
@@ -1118,38 +1121,69 @@ export default function DavomatFacePage() {
     }
     setMethodsReady(false);
     pharmacyGateRef.current = false;
-    void fetchDavomatMethods()
-      .then((m) => {
-        setPharmacyStaff(m.pharmacyStaff);
-        setOfficeStaff(Boolean(m.officeStaff) || (m.methods.includes("QR") && !m.pharmacyStaff && !m.adminQrAnywhere));
-        setAdminQrAnywhere(Boolean(m.adminQrAnywhere));
-        setCanManageQr(m.canManageQr);
-        setQrMethodAllowed(m.qr !== false && m.methods.includes("QR"));
-        setFaceMethodAllowed(m.face !== false && m.methods.includes("FACE_ID"));
-        if (m.face === false && m.methods.includes("QR")) setSelectedMethod("QR");
-        else if (!m.methods.includes("QR")) setSelectedMethod("FACE_ID");
-        if (m.finger) {
-          void fetchFingerprintStatus()
-            .then((s) => {
-              setFingerStatus(s);
-              if (s.enabled && m.face === false && !m.methods.includes("QR")) setSelectedMethod("FINGERPRINT");
-            })
-            .catch(() => setFingerStatus(null));
-        } else {
-          setFingerStatus(null);
-        }
-      })
-      .catch(() => {
-        setPharmacyStaff(false);
-        setOfficeStaff(false);
-        setAdminQrAnywhere(false);
-        setCanManageQr(false);
-        setQrMethodAllowed(true);
-        setFaceMethodAllowed(true);
-      })
-      .finally(() => {
-        setMethodsReady(true);
-      });
+    let alive = true;
+    let first = true;
+    const load = () => {
+      const initial = first;
+      first = false;
+      void fetchDavomatMethods()
+        .then((m) => {
+          if (!alive) return;
+          const faceOk = m.face !== false && m.methods.includes("FACE_ID");
+          const qrOk = m.qr !== false && m.methods.includes("QR");
+          setPharmacyStaff(m.pharmacyStaff);
+          setOfficeStaff(Boolean(m.officeStaff) || (m.methods.includes("QR") && !m.pharmacyStaff && !m.adminQrAnywhere));
+          setAdminQrAnywhere(Boolean(m.adminQrAnywhere));
+          setCanManageQr(m.canManageQr);
+          setQrMethodAllowed(qrOk);
+          setFaceMethodAllowed(faceOk);
+          setSelectedMethod((cur) => {
+            if (cur === "FACE_ID" && faceOk) return cur;
+            if (cur === "QR" && qrOk) return cur;
+            if (cur === "FINGERPRINT" && m.finger) return cur;
+            if (faceOk) return "FACE_ID";
+            if (qrOk) return "QR";
+            return m.finger ? "FINGERPRINT" : cur;
+          });
+          const seq = fingerSeqRef.current;
+          if (m.finger) {
+            void fetchFingerprintStatus()
+              .then((s) => {
+                if (alive && fingerSeqRef.current === seq) setFingerStatus(s);
+              })
+              .catch(() => {
+                if (alive && initial && fingerSeqRef.current === seq) setFingerStatus(null);
+              });
+          } else if (fingerSeqRef.current === seq) {
+            setFingerStatus(null);
+          }
+        })
+        .catch(() => {
+          if (!alive || !initial) return;
+          setPharmacyStaff(false);
+          setOfficeStaff(false);
+          setAdminQrAnywhere(false);
+          setCanManageQr(false);
+          setQrMethodAllowed(true);
+          setFaceMethodAllowed(true);
+        })
+        .finally(() => {
+          if (alive) setMethodsReady(true);
+        });
+    };
+    load();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    const poll = window.setInterval(onVisible, 60_000);
+    return () => {
+      alive = false;
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+      window.clearInterval(poll);
+    };
   }, [isAuthenticated]);
 
   useEffect(() => {
@@ -1171,8 +1205,15 @@ export default function DavomatFacePage() {
     const accRaw = pos.coords.accuracy;
     const acc =
       typeof accRaw === "number" && Number.isFinite(accRaw) ? Math.round(accRaw) : 25;
+    const capturedAt = Number.isFinite(pos.timestamp) ? pos.timestamp : Date.now();
+    const prevRaw = rawGpsRef.current;
+    // Eski/keshdagi nuqta yangi aniqroq nuqtani bosib ketmasin
+    if (!prevRaw || capturedAt >= prevRaw.capturedAt) {
+      rawGpsRef.current = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: acc, capturedAt };
+    }
 
     setGps((prev) => {
+      if (prev && capturedAt < prev.at) return prev;
       // Asosiy: kompas (telefon oldi). GPS heading — yurishda / kompas yo‘q.
       let nextHeading = lastCompassRef.current;
       if (nextHeading == null && movingFast && gpsHeading != null) {
@@ -1288,20 +1329,63 @@ export default function DavomatFacePage() {
     watchRef.current = navigator.geolocation.watchPosition(
       applyGps,
       (err) => {
-        if (err.code === 1 || err.code === 2) setGps(null);
-        setGpsError(
-          err.code === 1
-            ? t("davomat.gpsDenied")
-            : err.code === 2 || err.code === 3
-              ? t(gpsEnableTipKey())
-              : t("davomat.gpsFailed"),
-        );
+        if (err.code === 1) {
+          setGps(null);
+          setGpsError(t("davomat.gpsDenied"));
+          return;
+        }
+        // Bir joyda turganda watch timeout beradi — oxirgi nuqta hali yangi bo‘lsa xato emas
+        const raw = rawGpsRef.current;
+        if (raw && Date.now() - raw.capturedAt < 40_000) return;
+        if (err.code === 2) setGps(null);
+        setGpsError(err.code === 2 || err.code === 3 ? t(gpsEnableTipKey()) : t("davomat.gpsFailed"));
       },
       // Tez yangilanish — yurishda marker harakati silliq
-      { enableHighAccuracy: true, maximumAge: 2_000, timeout: 12_000 },
+      { enableHighAccuracy: true, maximumAge: 2_000, timeout: 15_000 },
     );
     void startCompass();
   }, [t, startCompass]);
+
+  /** Telefon bir joyda tursa watch yangilanmaydi — nuqta eskirib «GPS yoqing» chiqib qolmasin */
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    let inflight = false;
+    const refresh = () => {
+      if (document.visibilityState !== "visible" || watchRef.current == null || inflight) return;
+      const raw = rawGpsRef.current;
+      if (raw && Date.now() - raw.capturedAt < 12_000) return;
+      inflight = true;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          inflight = false;
+          applyGps(pos);
+        },
+        (err) => {
+          inflight = false;
+          if (err.code === 1) {
+            setGps(null);
+            setGpsError(t("davomat.gpsDenied"));
+          }
+        },
+        { enableHighAccuracy: true, maximumAge: 5_000, timeout: 12_000 },
+      );
+    };
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      // iOS fonda watch’ni to‘xtatadi — ilovaga qaytganda qayta ulaymiz
+      if (watchRef.current != null) startWatch();
+      refresh();
+    };
+    const timer = window.setInterval(refresh, 6_000);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pageshow", onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", onVisible);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startWatch, t]);
 
   useEffect(() => {
     if (!navigator.geolocation) {
@@ -1341,7 +1425,8 @@ export default function DavomatFacePage() {
       gpsShareLockRef.current = false;
     }, 14_000);
     try {
-      const gpsAlreadyOk = Boolean(gps) && !gpsError;
+      const raw = rawGpsRef.current;
+      const gpsAlreadyOk = Boolean(gps) && !gpsError && Boolean(raw) && Date.now() - raw!.capturedAt < 30_000;
       const result = await requestDavomatPermissions({
         gpsTimeoutMs: 8_000,
         skipGps: gpsAlreadyOk,
@@ -1634,6 +1719,20 @@ export default function DavomatFacePage() {
 
   /** Face ID | QR — QR yo‘q bo‘lsa faqat Face */
   const showDualMethods = methodsReady && (qrMethodAllowed || fingerAllowed);
+
+  const fingerAssertionSet = Boolean(verified?.fingerAssertion);
+  useEffect(() => {
+    if (!fingerAssertionSet) return;
+    const timer = window.setTimeout(() => {
+      setVerified((v) => (v?.fingerAssertion ? { ...v, fingerAssertion: undefined } : v));
+      setMethodHint((h) => (h === "FINGERPRINT" ? null : h));
+      toast({
+        title: "Barmoq izi tasdig‘i muddati tugadi",
+        description: "Xavfsizlik uchun tasdiq 2 daqiqa amal qiladi. «Davom etish»ni bosib qayta tasdiqlang.",
+      });
+    }, 110_000);
+    return () => window.clearTimeout(timer);
+  }, [fingerAssertionSet, toast]);
 
   const faceVerifiedReady = Boolean(verified?.descriptor && verified.descriptor.length > 0);
   const qrVerifiedReady = Boolean(verified?.qrPayload);
@@ -2036,6 +2135,24 @@ export default function DavomatFacePage() {
     }
   };
 
+  /** Keldim/Ketdim: yangi aniq nuqta bo‘lsa darhol, aks holda yangi o‘lchovni kutamiz */
+  const punchGps = async () => {
+    type Fix = { lat: number; lng: number; accuracy: number; capturedAt: number };
+    const fresh = (r: Fix | null, maxAgeMs: number, maxAccM: number): r is Fix =>
+      Boolean(r) && Date.now() - r!.capturedAt <= maxAgeMs && r!.accuracy <= maxAccM;
+    const now = rawGpsRef.current;
+    if (fresh(now, 8_000, 80)) return now;
+    try {
+      const measured = await readLivePunchGps();
+      const latest = rawGpsRef.current;
+      return fresh(latest, 15_000, measured.accuracy - 1) ? latest : measured;
+    } catch (err) {
+      const latest = rawGpsRef.current;
+      if (fresh(latest, 30_000, 250)) return latest;
+      throw err;
+    }
+  };
+
   const punch = async (action: "in" | "out", opts?: { notes?: string }) => {
     if (workplace?.zonePresence?.status === "blocked") {
       toast({
@@ -2081,7 +2198,7 @@ export default function DavomatFacePage() {
     const mustBeOnSite = !adminQrAnywhere && !mobileAnywhere;
     if (mustBeOnSite) {
       try {
-        live = await readLivePunchGps();
+        live = await punchGps();
       } catch {
         toast({
           title: "Joylashuv qabul qilinmadi",
@@ -2094,7 +2211,7 @@ export default function DavomatFacePage() {
       }
     } else {
       try {
-        live = await readLivePunchGps();
+        live = await punchGps();
       } catch {
         live = gps
           ? { lat: gps.lat, lng: gps.lng, accuracy: gps.accuracy, capturedAt: gps.at || Date.now() }
@@ -2203,13 +2320,14 @@ export default function DavomatFacePage() {
           action,
           ...(earlyNotes ? { notes: earlyNotes } : {}),
         });
-        setMethodHint("QR");
+        // Har bir Keldim/Ketdim uchun yangi skan — eski tasdiq qayta ishlatilmaydi
+        setMethodHint(null);
         setScanOpen(false);
         setQrOpen(false);
         setVerified({
           ...verified,
           descriptor: [],
-          qrPayload: verified.qrPayload,
+          qrPayload: undefined,
           nextAction: action === "in" ? "out" : "done",
           checkIn: result.checkIn,
           checkOut: result.checkOut,
@@ -2273,6 +2391,8 @@ export default function DavomatFacePage() {
             : "done";
       setVerified({
         ...verified,
+        descriptor: [],
+        liveness: undefined,
         faceImage: snap,
         nextAction: resultNext,
         checkIn: result.checkIn,
@@ -2280,7 +2400,7 @@ export default function DavomatFacePage() {
         checkInAt: result.checkInAt ?? (resultNext === "in" ? null : verified.checkInAt),
         checkOutAt: result.checkOutAt ?? (resultNext === "in" ? null : verified.checkOutAt),
       });
-      setMethodHint("FACE_ID");
+      setMethodHint(null);
       setScanOpen(false);
       if (result.user) {
         adoptRecognizedProfile(result.user as User, result.fullName || verified.fullName);
@@ -2376,14 +2496,19 @@ export default function DavomatFacePage() {
       }
       if (
         err instanceof DavomatApiError &&
-        (err.code === "outside_geofence" || err.code === "gps_stale" || err.code === "gps_required")
+        (err.code === "outside_geofence" ||
+          err.code === "gps_stale" ||
+          err.code === "gps_required" ||
+          err.code === "gps_inaccurate")
       ) {
         toast({
           title: err.code === "outside_geofence" ? "Hududdan tashqaridasiz" : "Joylashuv qabul qilinmadi",
           description:
             err.code === "outside_geofence"
               ? err.message || "Keldim va Ketdim faqat belgilangan hududda qabul qilinadi."
-              : "GPS o‘chiq yoki eskirgan. Hududda turib, joylashuv yoqilgan holda qayta bosing.",
+              : err.code === "gps_inaccurate"
+                ? err.message
+                : "GPS o‘chiq yoki eskirgan. Hududda turib, joylashuv yoqilgan holda qayta bosing.",
           variant: "destructive",
         });
         unlock();
@@ -2602,7 +2727,9 @@ export default function DavomatFacePage() {
           .map((s) => `${s.shiftLabel} → ${s.branchLabel || `#${s.branchId}`}${s.activeNow ? " ●" : ""}`)
           .join(" · ")
       : null;
-  const cameraNeeded = faceMethodAllowed || qrMethodAllowed || !fingerAllowed;
+  /** Faqat barmoq izi tanlangan bo‘lsa kamera so‘ralmaydi */
+  const cameraNeeded =
+    selectedMethod === "FINGERPRINT" && fingerAllowed ? false : faceMethodAllowed || qrMethodAllowed || !fingerAllowed;
   const needsPerms =
     (cameraNeeded && !cameraGranted) || (!adminQrAnywhere && (!gps || Boolean(gpsError)));
   /** Ruxsat rad etilgan — GPS xizmati o‘chiqligidan ajraladi */
@@ -2751,7 +2878,7 @@ export default function DavomatFacePage() {
     }
     if (needsPerms) {
       const needGps = !adminQrAnywhere && (!gps || Boolean(gpsError));
-      const needCam = !cameraGranted;
+      const needCam = cameraNeeded && !cameraGranted;
       return {
         label: gpsSharing
           ? needGps
@@ -2838,20 +2965,7 @@ export default function DavomatFacePage() {
       return;
     }
     if (!methodReady) {
-      if (selectedMethod === "QR" && !qrMethodAllowed) {
-        toast({ title: "Aynan sizga ruxsat yo‘q", description: "QR siz uchun o‘chirilgan." });
-        return;
-      }
-      if (selectedMethod === "FACE_ID" && !faceMethodAllowed) {
-        toast({ title: "Aynan sizga ruxsat yo‘q", description: "Face ID siz uchun o‘chirilgan." });
-        return;
-      }
-      if (selectedMethod === "FINGERPRINT") {
-        if (fingerAllowed) void openFingerMethod();
-        return;
-      }
-      if (selectedMethod === "QR") openQrMethod();
-      else openFaceMethod();
+      pickMethod(selectedMethod);
       return;
     }
     if (!hasIn) {
@@ -2859,6 +2973,34 @@ export default function DavomatFacePage() {
       return;
     }
     setConfirmOut(true);
+  };
+
+  /** Usul nega ochilmayotganini aytadi — tugma «jim» qolmasin */
+  const methodBlockReason = (m: PremiumMethod): { title: string; description?: string } => {
+    if (zoneLocked) {
+      return { title: "Bugun bloklandi", description: workplace?.zonePresence?.message || "Admin bilan bog‘laning." };
+    }
+    if (done) return { title: t("davomat.closedToday") };
+    if (!methodsReady) return { title: "Yuklanmoqda…", description: "Bir soniyadan keyin qayta bosing." };
+    if (m !== "FINGERPRINT" && !cameraGranted) {
+      return {
+        title: t("davomat.permsCamBlockedTitle"),
+        description: "Brauzer sozlamalarida shu saytga kamera ruxsatini bering va qayta bosing.",
+      };
+    }
+    if (!adminQrAnywhere && (!gps || gpsError)) {
+      return { title: "Joylashuv aniqlanmadi", description: gpsError || "GPS yoqing va bir necha soniya kuting." };
+    }
+    if (m === "FACE_ID" && !isFaceIdSupported()) {
+      return { title: "Face ID ishlamaydi", description: t("davomat.faceUnsupported") };
+    }
+    if (outsideZone || !geoOk) {
+      return {
+        title: "Hududdan tashqaridasiz",
+        description: outsideWarn || "Keldim va Ketdim faqat belgilangan hududda qabul qilinadi.",
+      };
+    }
+    return { title: "Hozir ochilmadi", description: "Bir necha soniyadan keyin qayta bosing." };
   };
 
   const pickMethod = (m: PremiumMethod) => {
@@ -2871,10 +3013,23 @@ export default function DavomatFacePage() {
       return;
     }
     if (m === "FINGERPRINT" && !fingerAllowed) return;
-    if (done || busy || outsideZone) return;
-    if (m === "FACE_ID" && !canOpenFace) return;
-    if (m === "QR" && !canOpenQr) return;
-    if (m === "FINGERPRINT" && !canOpenFinger) return;
+    if (busy || fingerScanning) return;
+    if (!done && !zoneLocked && !methodReady && (needsPerms || gpsTurnOff)) {
+      setSelectedMethod(m);
+      void requestLocationPermission();
+      return;
+    }
+    const blocked =
+      done ||
+      outsideZone ||
+      (m === "FACE_ID" && !canOpenFace) ||
+      (m === "QR" && !canOpenQr) ||
+      (m === "FINGERPRINT" && !canOpenFinger);
+    if (blocked) {
+      setSelectedMethod(m);
+      toast({ ...methodBlockReason(m), variant: "destructive" });
+      return;
+    }
     setSelectedMethod(m);
     signalDavomatCoachDone();
     if (!methodReady) setMethodHint(null);
@@ -3002,6 +3157,20 @@ export default function DavomatFacePage() {
           <p className="mt-1 text-[11px] font-medium text-teal-800">Jarima tushmaydi</p>
         </div>
       ) : null}
+      {workplace?.restDay && !workplace.today.excused ? (
+        <div className="mx-auto mb-3 max-w-lg rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-sky-950">
+          <p className="text-sm font-semibold">Bugun dam kuningiz</p>
+          <p className="mt-1 text-xs leading-relaxed">{workplace.restDay.reason}</p>
+          <p className="mt-1 text-[11px] font-medium text-sky-800">
+            Kelmasangiz jarima yozilmaydi. Ishga chiqsangiz — qo‘shimcha ish sifatida belgilanadi, kechikish jarimasi yo‘q.
+          </p>
+        </div>
+      ) : workplace?.swapToday?.kind === "work" ? (
+        <div className="mx-auto mb-3 max-w-lg rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-amber-950">
+          <p className="text-sm font-semibold">Bugun almashuv kuni</p>
+          <p className="mt-1 text-xs leading-relaxed">{workplace.swapToday.with} o‘rniga ishga chiqasiz. Davomatni odatdagidek belgilang.</p>
+        </div>
+      ) : null}
       {zoneLocked || zoneDue ? (
         <div className="fixed inset-x-0 top-0 z-[80] px-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
           <div
@@ -3072,8 +3241,8 @@ export default function DavomatFacePage() {
         onPickMethod={pickMethod}
         canOpenFace={canOpenFace}
         canOpenQr={canOpenQr}
-        faceDenied={methodsReady && !faceMethodAllowed}
-        qrDenied={methodsReady && !qrMethodAllowed}
+        showFace={faceMethodAllowed}
+        showQr={qrMethodAllowed}
         showFinger={fingerAllowed}
         canOpenFinger={canOpenFinger && !fingerScanning}
         fingerHint={fingerScanning ? "Barmoqni qo‘ying…" : fingerHint}
@@ -3137,13 +3306,35 @@ export default function DavomatFacePage() {
           open={fingerEnrollOpen}
           onOpenChange={setFingerEnrollOpen}
           isTgMiniApp={isTgMiniApp}
-          onEnrolled={(status) => {
+          onEnrolled={({ enrollPass, ...status }) => {
+            fingerSeqRef.current += 1;
             setFingerStatus(status);
             setFingerEnrollOpen(false);
             setSelectedMethod("FINGERPRINT");
+            const action = (verified?.nextAction || workplace?.today.nextAction || "in") as "in" | "out" | "done";
+            if (enrollPass && action !== "done") {
+              setScanOpen(false);
+              setQrOpen(false);
+              setMethodHint("FINGERPRINT");
+              setVerified({
+                descriptor: [],
+                fingerAssertion: { enrollPass },
+                fullName: workplace?.employee.fullName || user?.fullName || t("davomat.employee"),
+                nextAction: action,
+                checkIn: workplace?.today.checkIn || "—",
+                checkOut: workplace?.today.checkOut || "—",
+                checkInAt: workplace?.today.checkInAt || null,
+                checkOutAt: workplace?.today.checkOutAt || null,
+              });
+              toast({
+                title: "✓ Barmoq izi ro‘yxatdan o‘tdi va tasdiqlandi",
+                description: action === "out" ? "Endi «Ketdim» ni bosing (2 daqiqa ichida)" : "Endi «Keldim» ni bosing (2 daqiqa ichida)",
+              });
+              return;
+            }
             toast({
               title: "✓ Barmoq izi ro‘yxatdan o‘tdi",
-              description: "Endi «Barmoq izi»ni tanlab, barmog‘ingizni qo‘ying va Keldim/Ketdimni bosing.",
+              description: "Endi «Davom etish»ni bosib, barmog‘ingizni qo‘ying.",
             });
           }}
         />

@@ -302,9 +302,15 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
             }
           });
         });
-        const video = videoRef.current;
-        if (!video) {
+        // Dialog animatsiyasi paytida <video> hali DOMda bo‘lmasligi mumkin — qisqa kutamiz
+        let video = videoRef.current;
+        for (let i = 0; !video && i < 30 && !cancelled; i++) {
+          await new Promise((r) => window.setTimeout(r, 50));
+          video = videoRef.current;
+        }
+        if (cancelled || !video) {
           stream.getTracks().forEach((track) => track.stop());
+          if (!cancelled) setError(tRef.current("davomat.scanCamFailed"));
           return;
         }
         video.srcObject = stream;

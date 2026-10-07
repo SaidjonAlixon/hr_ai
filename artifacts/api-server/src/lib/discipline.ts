@@ -11,7 +11,9 @@ import { loadJarimaSnapshot } from "./kpi-payroll";
 import { coordinatorNamesFor, coordinatorsFor, type CoordHit } from "./davomat-shift-report";
 import { isTelegramConfigured, sendDocument } from "./telegram";
 import { renderDisciplinePdf } from "./discipline-pdf";
-import { activeLockFor, invalidateLockCache, LOCK_MESSAGE, todayTashkent } from "./discipline-lock";
+import { logLetterError, syncExplanationLetters } from "./explanation-letter";
+import { FINAL_STRIKE, JARIMA_RULE, strikePenalty } from "./attendance-jarima";
+import { activeLockFor, invalidateLockCache, LOCK_MESSAGE, todayTashkent, type DisciplineLock } from "./discipline-lock";
 
 export { activeLockFor, LOCK_MESSAGE, todayTashkent };
 export const ESCALATE_FROM = 3;
@@ -33,18 +35,24 @@ export function kindLabel(kind: string): string {
 }
 
 export function strikeRule(n: number): string {
-  if (n <= 2) return "1 kunlik ish haqining 30%";
-  if (n === 3) return "1 kunlik ish haqining 100%";
-  if (n === 4) return "1 oylik ish haqining 50%";
-  return "1 oylik ish haqining 50% · ishdan bo‘shatish masalasi";
+  if (n <= 1) return "Ogohlantirish (tushuntirish xati)";
+  if (n <= 3) return "1 kunlik ish haqining 30%";
+  if (n === 4) return "1 kunlik ish haqining 100%";
+  if (n < FINAL_STRIKE) return "1 oylik ish haqining 50% · platforma bloki";
+  return "1 oylik ish haqining 50% · oxirgi ogohlantirish, ishdan bo‘shatishga rozilik";
 }
 
 export async function listTodayLocks() {
   const { rows } = await pool.query(
     `SELECT l.id, l.user_id, l.lock_day, l.strike_n, l.event_date, l.kind, l.created_at,
-            l.cleared_at, l.cleared_by_name, u.full_name
+            l.cleared_at, l.cleared_by_name, u.full_name, e.position, e.branch
        FROM discipline_locks l
-       LEFT JOIN users u ON u.id = l.user_id
+       JOIN users u ON u.id = l.user_id
+       LEFT JOIN LATERAL (
+         SELECT position, branch FROM discipline_events
+          WHERE user_id = l.user_id AND month = l.month
+          ORDER BY n DESC LIMIT 1
+       ) e ON TRUE
       WHERE l.lock_day = $1
       ORDER BY l.created_at DESC`,
     [todayTashkent()],
@@ -53,6 +61,8 @@ export async function listTodayLocks() {
     id: r.id as number,
     userId: r.user_id as number,
     fullName: (r.full_name as string) || "—",
+    position: (r.position as string) || "",
+    branch: (r.branch as string) || "",
     strikeN: r.strike_n as number,
     eventDate: r.event_date as string,
     kind: r.kind as string,
@@ -61,6 +71,8 @@ export async function listTodayLocks() {
     clearedByName: (r.cleared_by_name as string) || null,
   }));
 }
+
+export type TodayLock = Awaited<ReturnType<typeof listTodayLocks>>[number];
 
 const UZ_MONTHS = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"];
 const UZ_WEEKDAYS = ["yakshanba", "dushanba", "seshanba", "chorshanba", "payshanba", "juma", "shanba"];
@@ -71,9 +83,8 @@ function weekdayOf(ymd: string): string {
 }
 
 function penaltyOf(n: number): string {
-  if (n <= 2) return "1 kunlik ish haqining 30% jarima";
-  if (n === 3) return "1 kunlik ish haqining 100% jarima";
-  return `1 oylik ish haqining 50% jarima${n >= LOCK_FROM ? " · shu kuni platforma yopiladi" : ""}`;
+  const base = strikePenalty(n);
+  return n >= LOCK_FROM ? `${base} · shu kuni platforma yopiladi` : base.charAt(0).toUpperCase() + base.slice(1);
 }
 
 export type LockDetailsEvent = {
@@ -93,13 +104,57 @@ export type LockDetailsEvent = {
 export async function lockDetailsFor(userId: number) {
   const lock = await activeLockFor(userId);
   if (!lock) return null;
+  return detailsOfLock(lock);
+}
+
+/** Admin/HR: istalgan blok (ochilgan bo‘lsa ham) asoslari */
+export async function lockDetailsById(lockId: number) {
+  const { rows } = await pool.query(
+    `SELECT l.id, l.user_id, l.lock_day, l.strike_n, l.event_date, l.kind, l.created_at,
+            l.cleared_at, l.cleared_by_name, u.full_name
+       FROM discipline_locks l
+       JOIN users u ON u.id = l.user_id
+      WHERE l.id = $1`,
+    [lockId],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  const details = await detailsOfLock({
+    id: r.id,
+    userId: r.user_id,
+    lockDay: r.lock_day,
+    strikeN: r.strike_n,
+    eventDate: r.event_date,
+    kind: r.kind,
+  });
+  const { rows: info } = await pool.query(
+    `SELECT position, branch, shift, coordinator FROM discipline_events
+      WHERE user_id = $1 AND month = $2 ORDER BY n DESC LIMIT 1`,
+    [r.user_id, details.month],
+  );
+  return {
+    ...details,
+    id: r.id as number,
+    userId: r.user_id as number,
+    fullName: (r.full_name as string) || "—",
+    position: (info[0]?.position as string) || "",
+    branch: (info[0]?.branch as string) || "",
+    shift: (info[0]?.shift as string) || "",
+    coordinator: (info[0]?.coordinator as string) || "",
+    createdAt: r.created_at as string,
+    clearedAt: (r.cleared_at as string) || null,
+    clearedByName: (r.cleared_by_name as string) || null,
+  };
+}
+
+async function detailsOfLock(lock: DisciplineLock) {
   const month = (lock.eventDate || lock.lockDay).slice(0, 7);
   const { rows } = await pool.query(
     `SELECT employee_id, n, event_date, kind, branch, shift
        FROM discipline_events
       WHERE user_id = $1 AND month = $2
       ORDER BY n`,
-    [userId, month],
+    [lock.userId, month],
   );
 
   const checkIns = new Map<string, string>();
@@ -144,9 +199,8 @@ export async function lockDetailsFor(userId: number) {
     absent: events.filter((e) => e.kind === "absent").length,
     events,
     rules: [
-      "1–2-marta — har safar 1 kunlik ish haqining 30% jarima",
-      "3-marta — 1 kunlik ish haqining 100% jarima",
-      "4-marta va undan keyin — har safar 1 oylik ish haqining 50% jarima",
+      ...JARIMA_RULE,
+      "Har bir buzilish bo‘yicha tushuntirish xati yozib imzolanmaguncha keyingi davomat belgilanmaydi",
       `${LOCK_FROM}-marta va undan keyin — buzilish qayd etilgan kuni platforma to‘liq yopiladi`,
     ],
   };
@@ -363,6 +417,7 @@ async function scanOnce(): Promise<void> {
     month,
     people.map((p) => p.userId),
   ]);
+  await syncExplanationLetters(month, people, today).catch((err) => logLetterError(err, "sinxronlash"));
 
   const belowLock = snap.people.filter((p) => p.strikes < LOCK_FROM).map((p) => p.userId);
   const { rows: released } = await pool.query(
@@ -450,9 +505,9 @@ async function digestOnce(): Promise<void> {
 }
 
 function consequence(n: number, lockedToday: boolean): string {
-  if (n >= LOCK_FROM) return lockedToday ? "bugun tizim bloklandi, ishdan bo‘shatish masalasi" : "ishdan bo‘shatish masalasi";
-  if (n === 4) return "1 oylikning 50% jarima";
-  return "1 kunlik ish haqining 100% jarima";
+  if (n >= FINAL_STRIKE) return `1 oylikning 50% jarima, oxirgi ogohlantirish${lockedToday ? ", bugun tizim bloklandi" : ""}`;
+  if (n >= LOCK_FROM) return `1 oylikning 50% jarima${lockedToday ? ", bugun tizim bloklandi" : ""}`;
+  return strikePenalty(n);
 }
 
 function lastEvent(p: DisciplinePerson): DisciplineEventRow | undefined {

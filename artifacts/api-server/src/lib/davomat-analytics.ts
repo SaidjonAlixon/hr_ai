@@ -92,6 +92,7 @@ export type EmployeeMeta = {
   userRole: string | null;
   orgRole: string | null;
   shiftType: string | null;
+  shiftLabel?: string | null;
 };
 
 export type DavomatAnalyticsPayload = {
@@ -367,7 +368,7 @@ function filterReport(
     for (const e of employees) {
       const m = metaById.get(e.id);
       if ((m?.userRole || "") === "admin") continue;
-      const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? e.orgRole, m?.shiftType);
+      const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? e.orgRole, m?.shiftType, m?.shiftLabel);
       const day = e.days.find((x) => x.date === date);
       const st = classifyStaffDay(day, schedule).status;
       if (st === "absent") {
@@ -555,7 +556,7 @@ function buildBranchStaff(
   return staffEmps
     .map((emp) => {
       const m = metaById.get(emp.id);
-      const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? emp.orgRole, m?.shiftType);
+      const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? emp.orgRole, m?.shiftType, m?.shiftLabel);
       const day = emp.days.find((x) => x.date === targetDate);
       const cls = classifyStaffDay(day, schedule);
       const roleKey = m?.userRole || emp.orgRole || "";
@@ -588,7 +589,7 @@ function buildBranchOpenings(
 
     const branchName = resolveBranchLabel(e.location, e.fullName);
     if (!branchName) continue;
-    const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? e.orgRole, m?.shiftType);
+    const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? e.orgRole, m?.shiftType, m?.shiftLabel);
     const grace = graceMinutesFor(schedule);
     const day = e.days.find((x) => x.date === targetDate);
     const mudirDay = classifyStaffDay(day, schedule);
@@ -651,7 +652,7 @@ function buildOfficeDayBoard(
     if (davomatStaffSegment(m?.userRole, m?.orgRole ?? e.orgRole) !== "office") continue;
     if ((m?.userRole || "") === "admin") continue;
 
-    const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? e.orgRole, m?.shiftType);
+    const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? e.orgRole, m?.shiftType, m?.shiftLabel);
     const grace = graceMinutesFor(schedule);
     const day = e.days.find((x) => x.date === targetDate);
     const staffDay = classifyStaffDay(day, schedule);
@@ -934,7 +935,7 @@ export function buildDavomatAnalytics(
     const m = metaById.get(e.id);
     const segment: "office" | "pharmacy" =
       davomatStaffSegment(m?.userRole, m?.orgRole ?? e.orgRole) === "pharmacy" ? "pharmacy" : "office";
-    const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? e.orgRole, m?.shiftType);
+    const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? e.orgRole, m?.shiftType, m?.shiftLabel);
     const kind = schedule.security ? "sec" : schedule.warehouse ? "wh" : "std";
     const key = `${segment}-${schedule.key}-${kind}-${schedule.start}-${schedule.end}`;
     const label =

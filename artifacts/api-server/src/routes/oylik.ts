@@ -17,6 +17,7 @@ import {
   formatSom,
   isPayrollCalendarScope,
   loadKpiWeights,
+  loadScopedCalendars,
   loadWorkDayOverrides,
   monthBounds,
   saveKpiWeights,
@@ -31,6 +32,7 @@ import {
 } from "../lib/kpi-payroll";
 import { loadStaffFromUsers } from "../lib/staff-directory";
 import { isSbRole } from "../lib/roles";
+import { ScopeCalendar, calendarWorkStatus } from "../lib/work-calendar";
 
 const router: IRouter = Router();
 
@@ -115,7 +117,9 @@ router.patch("/oylik/calendar", requireAuth, async (req: AuthRequest, res): Prom
   const key = calendarStorageKey(scope, day);
   try {
     const now = new Date();
-    if (isWork === defaultIsWorkDay(day)) {
+    const rules = (await loadScopedCalendars()).get(scope);
+    const base = calendarWorkStatus(new ScopeCalendar(rules instanceof ScopeCalendar ? rules.rules : []), day) ?? defaultIsWorkDay(day);
+    if (isWork === base) {
       await db.delete(workCalendarDaysTable).where(eq(workCalendarDaysTable.day, key));
     } else {
       const [existing] = await db

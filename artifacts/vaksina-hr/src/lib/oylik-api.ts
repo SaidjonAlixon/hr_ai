@@ -1,5 +1,5 @@
 import { isDirectorRole } from "./roles";
-import { datesFromTo, resolveDay, weekdayShort } from "./oylik-period";
+import { datesFromTo, resolveDay, weekdayShort, type SwapDayFigure as SwapDay } from "./oylik-period";
 import { displayBranchName } from "./pharmacy-staff-api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -71,6 +71,7 @@ export type PayrollRow = {
   jarimaEvents?: Array<{ date: string; kind: "late" | "absent"; n: number; amount: number }>;
   jarimaLocked?: boolean;
   returnedDays?: Array<{ date: string; salary: number; jarima: number }>;
+  swapDays?: SwapDay[];
   daySheets?: Array<{
     day: string;
     salary: number | null;
@@ -502,6 +503,7 @@ export function useToggleWorkDay() {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["oylik"] });
+      void qc.invalidateQueries({ queryKey: ["work-calendar"] });
     },
   });
 }

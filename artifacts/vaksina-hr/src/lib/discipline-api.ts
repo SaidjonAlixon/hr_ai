@@ -5,6 +5,8 @@ export type DisciplineLockRow = {
   id: number;
   userId: number;
   fullName: string;
+  position?: string;
+  branch?: string;
   strikeN: number;
   eventDate: string;
   kind: string;
@@ -19,6 +21,42 @@ export type DisciplineSummary = {
   level4: number;
   level5: number;
   locks: DisciplineLockRow[];
+};
+
+export type DisciplineLockEvent = {
+  n: number;
+  date: string;
+  weekday: string;
+  kind: "late" | "absent";
+  kindLabel: string;
+  checkIn: string | null;
+  branch: string;
+  shift: string;
+  penalty: string;
+  trigger: boolean;
+};
+
+export type DisciplineLockDetails = {
+  id: number;
+  userId: number;
+  fullName: string;
+  position: string;
+  branch: string;
+  shift: string;
+  coordinator: string;
+  day: string;
+  month: string;
+  monthLabel: string;
+  strikeN: number;
+  triggerDate: string;
+  triggerKind: "late" | "absent";
+  late: number;
+  absent: number;
+  events: DisciplineLockEvent[];
+  rules: string[];
+  createdAt: string;
+  clearedAt: string | null;
+  clearedByName: string | null;
 };
 
 export function canSeeDiscipline(role?: string | null) {
@@ -43,6 +81,18 @@ export function useDisciplineSummary(month: string, enabled: boolean) {
   });
 }
 
+export function useDisciplineLockDetails(id: number | null) {
+  return useQuery({
+    queryKey: ["discipline-lock-details", id],
+    enabled: id != null,
+    queryFn: async (): Promise<DisciplineLockDetails> => {
+      const res = await fetch(`/api/discipline/locks/${id}/details`, { credentials: "include" });
+      if (!res.ok) throw await readError(res, "Asoslar olinmadi");
+      return res.json();
+    },
+  });
+}
+
 export function useClearDisciplineLock() {
   const qc = useQueryClient();
   return useMutation({
@@ -51,7 +101,10 @@ export function useClearDisciplineLock() {
       if (!res.ok) throw await readError(res, "Blok ochilmadi");
       return res.json();
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["discipline-summary"] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["discipline-summary"] });
+      void qc.invalidateQueries({ queryKey: ["discipline-lock-details"] });
+    },
   });
 }
 

@@ -8,6 +8,7 @@ import {
   clearLock,
   listTodayLocks,
   LOCK_MESSAGE,
+  lockDetailsById,
   lockDetailsFor,
   runDisciplineScan,
   todayTashkent,
@@ -50,6 +51,21 @@ router.get("/discipline/locks", requireAuth, async (req: AuthRequest, res): Prom
   res.json({ day: todayTashkent(), items: await listTodayLocks() });
 });
 
+router.get("/discipline/locks/:id/details", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (denyUnlessManager(req, res)) return;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) {
+    res.status(400).json({ error: "Noto‘g‘ri ID" });
+    return;
+  }
+  const details = await lockDetailsById(id);
+  if (!details) {
+    res.status(404).json({ error: "Blok topilmadi" });
+    return;
+  }
+  res.json(details);
+});
+
 router.post("/discipline/locks/:id/clear", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (denyUnlessManager(req, res)) return;
   const id = Number(req.params.id);
@@ -69,10 +85,11 @@ router.get("/discipline/report.pdf", requireAuth, async (req: AuthRequest, res):
   if (denyUnlessManager(req, res)) return;
   const month = /^\d{4}-\d{2}$/.test(String(req.query.month || "")) ? String(req.query.month) : todayTashkent().slice(0, 7);
   if (month === todayTashkent().slice(0, 7)) await runDisciplineScan();
+  const isCurrent = month === todayTashkent().slice(0, 7);
+  if (isCurrent) await runDisciplineScan();
   const report = await buildDisciplineReport(month);
   await attachLiveCoordinators(report);
-  const pdf = await renderDisciplinePdf(report);
-  res.setHeader("Content-Type", "application/pdf");
+  const pdf = await renderDisciplinePdf(report, isCurrent ? { todayLocks: await listTodayLocks(), today: todayTashkent() } : {});
   res.setHeader("Content-Disposition", `attachment; filename="intizom_${month}.pdf"`);
   res.send(pdf);
 });

@@ -100,23 +100,28 @@ export function liveDayNote(event: JarimaEvent | undefined): string {
   return event.kind === "late" ? `${event.n}-marta · Kech kelindi` : `${event.n}-marta · Kelmagansiz`;
 }
 
+type SwapDayFigure = { date: string; delta: number; note: string };
+
 export function currentDayFigures(input: {
   monthSalary: number;
   month: string;
   day: string;
   events: JarimaEvent[];
   sheet?: PayrollDaySheet | null;
+  swaps?: SwapDayFigure[];
 }): { salary: number; jarima: number; note: string } {
   const share = salaryShareOnDates(input.monthSalary, input.month, [input.day]);
   const event = input.events.find((item) => item.date === input.day);
+  const swaps = (input.swaps ?? []).filter((item) => item.date === input.day);
   const sheet = input.sheet;
   const returnedUntouched = sheet?.status === "returned" && (sheet.jarima ?? 0) === 0 && isCancelNote(sheet.note);
   if (returnedUntouched) {
     return { salary: sheet?.salary ?? share, jarima: 0, note: sheet?.note || "Qaytarilgan · jarima 0" };
   }
-  const salary = sheet?.manual && sheet.salary != null ? sheet.salary : share;
+  const swapDelta = swaps.reduce((sum, item) => sum + item.delta, 0);
+  const salary = sheet?.manual && sheet.salary != null ? sheet.salary : Math.max(0, share + swapDelta);
   const jarima = sheet?.manual && sheet.jarima != null ? sheet.jarima : Math.max(0, Math.round(event?.amount || 0));
-  const note = sheet?.manual ? (sheet.note || "") : liveDayNote(event);
+  const note = sheet?.manual ? (sheet.note || "") : [liveDayNote(event), ...swaps.map((item) => item.note)].filter(Boolean).join(" · ");
   return { salary, jarima, note };
 }
 
@@ -216,7 +221,7 @@ export async function approvePayrollDays(input: {
   month: string;
   userIds: number[];
   approvedById: number;
-  people: Array<{ userId: number | null; employeeId?: number; salary?: number; jarimaEvents?: JarimaEvent[] }>;
+  people: Array<{ userId: number | null; employeeId?: number; salary?: number; jarimaEvents?: JarimaEvent[]; swapDays?: SwapDayFigure[] }>;
 }) {
   const have = await existingMap(input.day, input.userIds);
   const byUser = new Map(input.people.filter((person) => person.userId != null).map((person) => [person.userId as number, person]));
@@ -235,6 +240,7 @@ export async function approvePayrollDays(input: {
       day: input.day,
       events: person.jarimaEvents ?? [],
       sheet: edited ? parsed : null,
+      swaps: person.swapDays,
     });
     await writeDay({
       userId,
@@ -261,7 +267,7 @@ export async function refreshPayrollDays(input: {
   month: string;
   userIds: number[];
   approvedById: number;
-  people: Array<{ userId: number | null; employeeId?: number; salary?: number; jarimaEvents?: JarimaEvent[] }>;
+  people: Array<{ userId: number | null; employeeId?: number; salary?: number; jarimaEvents?: JarimaEvent[]; swapDays?: SwapDayFigure[] }>;
 }) {
   const have = await existingMap(input.day, input.userIds);
   const byUser = new Map(input.people.filter((person) => person.userId != null).map((person) => [person.userId as number, person]));
@@ -277,6 +283,7 @@ export async function refreshPayrollDays(input: {
       day: input.day,
       events: person.jarimaEvents ?? [],
       sheet: null,
+      swaps: person.swapDays,
     });
     await writeDay({
       userId,
@@ -303,7 +310,7 @@ export async function returnPayrollDays(input: {
   month: string;
   userIds: number[];
   approvedById: number;
-  people: Array<{ userId: number | null; employeeId?: number; salary?: number; jarimaEvents?: JarimaEvent[] }>;
+  people: Array<{ userId: number | null; employeeId?: number; salary?: number; jarimaEvents?: JarimaEvent[]; swapDays?: SwapDayFigure[] }>;
 }) {
   const have = await existingMap(input.day, input.userIds);
   const byUser = new Map(input.people.filter((person) => person.userId != null).map((person) => [person.userId as number, person]));

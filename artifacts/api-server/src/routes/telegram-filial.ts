@@ -19,6 +19,7 @@ import { handleFilialBotUpdate } from "../lib/filial-bot-handler";
 import { loadFilialBranches } from "../lib/filial-bot-data";
 
 const router: IRouter = Router();
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 
 /** Status hech qachon crash qilmasin — webhook ensure alohida try */
 router.get("/telegram-filial/status", async (_req: Request, res: Response): Promise<void> => {
@@ -75,11 +76,11 @@ router.post("/telegram-filial/webhook", async (req: Request, res: Response): Pro
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
-  try {
-    await handleFilialBotUpdate(req.body as FilialTelegramUpdate);
-  } catch (err) {
-    console.error("telegram-filial webhook:", err);
-  }
+  const work = handleFilialBotUpdate(req.body as FilialTelegramUpdate).catch((err) =>
+    console.error("telegram-filial webhook:", err),
+  );
+  // Sekin javob keyingi yangilanishlarni ushlab turadi; serverless’da javobdan keyin ish to‘xtatiladi
+  if (isServerless) await work;
   res.status(200).json({ ok: true });
 });
 

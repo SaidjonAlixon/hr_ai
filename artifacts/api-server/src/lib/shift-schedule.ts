@@ -3,16 +3,102 @@
  * Faqat mudir/farmasevt/stajyor — smena; ofis — belgilangan vaqt.
  */
 import { eq } from "drizzle-orm";
-import { db, attendancePaySettingsTable } from "@workspace/db";
+import { db, pool, attendancePaySettingsTable } from "@workspace/db";
 import {
+  DEFAULT_PAY_SETTINGS,
   buildShiftDefs,
+  type AttendancePaySettings,
   type ShiftScheduleOverrides,
   type ShiftKey,
   type ShiftDefinition,
 } from "./attendance-engine";
 
-let cache: { at: number; overrides: ShiftScheduleOverrides } | null = null;
+let cache: { at: number; overrides: ShiftScheduleOverrides; settings: AttendancePaySettings } | null = null;
 const TTL_MS = 30_000;
+
+/** O‘rta smena — admin istalgan soatdan istalgan soatgacha qo‘yadi. null = 1-smena vaqti. */
+export type ExtraShiftHours = {
+  start: string;
+  end: string;
+  updatedByName: string | null;
+  updatedAt: string | null;
+};
+
+export const ORTA_HOURS_SCOPE = "dorixona:orta";
+
+let ortaHours: ExtraShiftHours | null = null;
+let hourTableReady: Promise<void> | null = null;
+
+function ensureShiftHourTable(): Promise<void> {
+  if (!hourTableReady) {
+    hourTableReady = pool
+      .query(
+        `CREATE TABLE IF NOT EXISTS shift_hour_settings (
+           scope TEXT PRIMARY KEY,
+           start_hm TEXT NOT NULL,
+           end_hm TEXT NOT NULL,
+           updated_by_id INTEGER,
+           updated_by_name TEXT,
+           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+         )`,
+      )
+      .then(() => undefined)
+      .catch((err) => {
+        hourTableReady = null;
+        throw err;
+      });
+  }
+  return hourTableReady;
+}
+
+async function readOrtaHours(): Promise<ExtraShiftHours | null> {
+  await ensureShiftHourTable();
+  const { rows } = await pool.query(
+    `SELECT start_hm, end_hm, updated_by_name, updated_at FROM shift_hour_settings WHERE scope = $1`,
+    [ORTA_HOURS_SCOPE],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  const start = hmOr(row.start_hm, "");
+  const end = hmOr(row.end_hm, "");
+  if (!start || !end) return null;
+  return {
+    start,
+    end,
+    updatedByName: row.updated_by_name || null,
+    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at ? String(row.updated_at) : null,
+  };
+}
+
+/** Sinxron: oxirgi yuklangan O‘rta smena vaqti (loadShiftScheduleOverrides dan keyin to‘g‘ri) */
+export function ortaShiftHours(): ExtraShiftHours | null {
+  return ortaHours;
+}
+
+export async function saveOrtaShiftHours(
+  hours: { start: string; end: string } | null,
+  actor: { id: number | null; name: string | null },
+): Promise<ExtraShiftHours | null> {
+  await ensureShiftHourTable();
+  if (!hours) {
+    await pool.query(`DELETE FROM shift_hour_settings WHERE scope = $1`, [ORTA_HOURS_SCOPE]);
+  } else {
+    await pool.query(
+      `INSERT INTO shift_hour_settings (scope, start_hm, end_hm, updated_by_id, updated_by_name, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (scope) DO UPDATE SET
+         start_hm = EXCLUDED.start_hm,
+         end_hm = EXCLUDED.end_hm,
+         updated_by_id = EXCLUDED.updated_by_id,
+         updated_by_name = EXCLUDED.updated_by_name,
+         updated_at = NOW()`,
+      [ORTA_HOURS_SCOPE, hours.start, hours.end, actor.id, actor.name],
+    );
+  }
+  invalidateShiftScheduleCache();
+  await loadShiftScheduleOverrides(true);
+  return ortaHours;
+}
 
 function hmOr(v: string | null | undefined, fallback: string): string {
   const s = String(v || "").trim();
@@ -45,6 +131,36 @@ export function overridesFromPayRow(
   };
 }
 
+export function paySettingsFromRow(
+  row: typeof attendancePaySettingsTable.$inferSelect | undefined | null,
+): AttendancePaySettings {
+  if (!row) return { ...DEFAULT_PAY_SETTINGS, shiftSchedule: {} };
+  return {
+    unpaidBreakByShift: {
+      one: row.unpaidBreakOneMin,
+      two: row.unpaidBreakTwoMin,
+      three: row.unpaidBreakThreeMin,
+      office: row.unpaidBreakOfficeMin,
+    },
+    breakPaid: row.breakPaid,
+    nightStartHm: row.nightStartHm,
+    nightEndHm: row.nightEndHm,
+    nightCoefficient: row.nightCoefficient,
+    dailyNormMinutes: row.dailyNormMinutes,
+    overtimeEnabled: row.overtimeEnabled,
+    graceMinutes: row.graceMinutes,
+    minRestHoursBetweenShifts: row.minRestHours,
+    maxShiftsPerDay: row.maxShiftsPerDay,
+    missingCheckoutStatus: "incomplete",
+    shiftSchedule: overridesFromPayRow(row),
+  };
+}
+
+/** Sinxron: oxirgi yuklangan davomat sozlamasi (tushlik, kechikish, smena oynalari) */
+export function cachedPaySettings(): AttendancePaySettings | undefined {
+  return cache?.settings;
+}
+
 export function invalidateShiftScheduleCache() {
   cache = null;
 }
@@ -58,7 +174,12 @@ export async function loadShiftScheduleOverrides(force = false): Promise<ShiftSc
       .where(eq(attendancePaySettingsTable.id, 1))
       .limit(1);
     const overrides = overridesFromPayRow(row);
-    cache = { at: Date.now(), overrides };
+    try {
+      ortaHours = await readOrtaHours();
+    } catch (err) {
+      console.error("readOrtaHours", err);
+    }
+    cache = { at: Date.now(), overrides, settings: paySettingsFromRow(row) };
     return overrides;
   } catch {
     return cache?.overrides || {};

@@ -28,6 +28,7 @@ import {
   invalidateShiftScheduleCache,
   overridesFromPayRow,
   loadShiftScheduleOverrides,
+  paySettingsFromRow,
 } from "../lib/shift-schedule";
 
 const router: IRouter = Router();
@@ -42,26 +43,7 @@ function isHm(v: unknown): string | null {
 }
 
 function rowToPaySettings(row: typeof attendancePaySettingsTable.$inferSelect | undefined): AttendancePaySettings {
-  if (!row) return { ...DEFAULT_PAY_SETTINGS, shiftSchedule: {} };
-  return {
-    unpaidBreakByShift: {
-      one: row.unpaidBreakOneMin,
-      two: row.unpaidBreakTwoMin,
-      three: row.unpaidBreakThreeMin,
-      office: row.unpaidBreakOfficeMin,
-    },
-    breakPaid: row.breakPaid,
-    nightStartHm: row.nightStartHm,
-    nightEndHm: row.nightEndHm,
-    nightCoefficient: row.nightCoefficient,
-    dailyNormMinutes: row.dailyNormMinutes,
-    overtimeEnabled: row.overtimeEnabled,
-    graceMinutes: row.graceMinutes,
-    minRestHoursBetweenShifts: row.minRestHours,
-    maxShiftsPerDay: row.maxShiftsPerDay,
-    missingCheckoutStatus: "incomplete",
-    shiftSchedule: overridesFromPayRow(row),
-  };
+  return paySettingsFromRow(row);
 }
 
 function serializeShifts(row: typeof attendancePaySettingsTable.$inferSelect | undefined) {

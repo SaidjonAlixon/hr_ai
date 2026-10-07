@@ -158,11 +158,15 @@ export type PayrollSlice = {
   net: number;
 };
 
+export type SwapDayFigure = { date: string; delta: number; note: string };
+
 export function resolveDay(
-  row: { salary?: number; jarimaEvents?: JarimaEvent[]; daySheets?: DaySheet[] },
+  row: { salary?: number; jarimaEvents?: JarimaEvent[]; daySheets?: DaySheet[]; swapDays?: SwapDayFigure[] },
   month: string,
   date: string,
 ) {
+  const swaps = (row.swapDays ?? []).filter((item) => item.date === date);
+  const swapDelta = swaps.reduce((sum, item) => sum + item.delta, 0);
   const share = salaryOnDates(row.salary ?? 0, month, [date]);
   const event = (row.jarimaEvents ?? []).find((item) => item.date === date);
   const sheet = (row.daySheets ?? []).find((item) => item.day === date);
@@ -196,7 +200,7 @@ export function weekdayShort(ymd: string): string {
 }
 
 export function projectPayroll(
-  row: { salary?: number; jarima?: number; jarimaNote?: string | null; jarimaEvents?: JarimaEvent[]; daySheets?: DaySheet[] },
+  row: { salary?: number; jarima?: number; jarimaNote?: string | null; jarimaEvents?: JarimaEvent[]; daySheets?: DaySheet[]; swapDays?: SwapDayFigure[] },
   month: string,
   grain: PayGrain,
   from: string,
@@ -238,10 +242,13 @@ export function projectPayroll(
   if (grain === "hafta") salary = dates.reduce((sum, date) => sum + resolveDay(row, month, date).salary, 0);
   const fiksa = Math.round(Number(row.salary) || 0);
   const shownSalary = grain === "oy" ? fiksa : salary;
+  const swapDelta = grain === "oy"
+    ? (row.swapDays ?? []).filter((item) => item.date >= from && item.date <= to).reduce((sum, item) => sum + item.delta, 0)
+    : 0;
   return {
     salary: shownSalary,
     jarima,
-    note: "",
+    note: swapDelta ? `Almashuv: ${swapDelta > 0 ? "+" : "−"}${Math.abs(swapDelta).toLocaleString("ru-RU").replace(/\u00a0/g, " ")} so‘m` : "",
     readOnly: true,
     editSalary: grain === "oy",
     editJarima: false,
@@ -250,6 +257,6 @@ export function projectPayroll(
     returnedLabel: `${approved} tasdiq · ${returned} qaytarilgan · ${waiting} kutilmoqda`,
     dirty: false,
     dayStatus: "summary",
-    net: shownSalary - jarima,
+    net: shownSalary + swapDelta - jarima,
   };
 }

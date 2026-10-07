@@ -250,30 +250,32 @@ export async function requestGpsPermission(timeoutMs = 10_000): Promise<{
     return { pos: null, error: "gps_denied" };
   }
 
-  // 1) Tez: keshlangan yoki past aniqlik (Allow dan keyin darhol)
-  try {
-    const fast = await getPositionOnce({
-      enableHighAccuracy: false,
-      maximumAge: 120_000,
-      timeout: Math.min(4_000, timeoutMs),
-    });
-    markGpsGranted();
-    return { pos: fast, error: null };
-  } catch {
-    /* keyingi urinish */
-  }
-
-  // 2) Aniqroq — qisqa kutish
+  // 1) Aniq va yangi nuqta (davomat uchun asosiy). Eski/minora nuqtasi xaritada noto‘g‘ri joy ko‘rsatardi.
+  let lastErr: GeolocationPositionError | null = null;
   try {
     const precise = await getPositionOnce({
       enableHighAccuracy: true,
-      maximumAge: 15_000,
+      maximumAge: 10_000,
       timeout: Math.min(timeoutMs, 8_000),
     });
     markGpsGranted();
     return { pos: precise, error: null };
   } catch (e) {
-    const err = e as GeolocationPositionError;
+    lastErr = e as GeolocationPositionError;
+    if (lastErr?.code === 1) return { pos: null, error: "gps_denied" };
+  }
+
+  // 2) Zaxira: tarmoq bo‘yicha, lekin 30 soniyadan eski emas (watch keyin aniqlashtiradi)
+  try {
+    const fallback = await getPositionOnce({
+      enableHighAccuracy: false,
+      maximumAge: 30_000,
+      timeout: 4_000,
+    });
+    markGpsGranted();
+    return { pos: fallback, error: null };
+  } catch (e) {
+    const err = (e as GeolocationPositionError) || lastErr;
     if (err && typeof err.code === "number") {
       return { pos: null, error: mapGpsError(err) };
     }

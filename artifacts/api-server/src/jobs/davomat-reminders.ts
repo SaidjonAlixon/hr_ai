@@ -21,6 +21,7 @@ import {
 } from "../lib/shift-hours";
 import { getEffectiveShiftDefs, warnHmBefore } from "../lib/shift-schedule";
 import { isScheduledRestDay } from "../lib/ofis-weekend";
+import { loadWorkCalendar } from "../lib/work-calendar";
 
 const FIVE_MIN_MS = 5 * 60 * 1000;
 /** Job 5 daqiqada bir — eslatma oynasi (~bir marta ushlash) */
@@ -131,6 +132,7 @@ export async function remindShiftStart15Min(): Promise<number> {
   const linked = await loadLinkedStaff();
   const roles = await userRoleMap(linked.map((e) => e.userId || 0));
   const defs = await getEffectiveShiftDefs();
+  await loadWorkCalendar();
   let sent = 0;
 
   for (const e of linked) {
@@ -138,10 +140,12 @@ export async function remindShiftStart15Min(): Promise<number> {
     const role = roles.get(e.userId) || "";
     if (
       isScheduledRestDay(ymd, {
+        employeeId: e.empId,
         userRole: role,
         orgRole: e.orgRole,
         position: e.position,
         shiftType: e.shiftType,
+        shiftLabel: e.shiftLabel,
       })
     ) {
       continue;

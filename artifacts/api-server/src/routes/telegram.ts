@@ -40,6 +40,7 @@ import {
 } from "../lib/telegram-support";
 
 const router: IRouter = Router();
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 
 function canSignIn(status?: string | null) {
   return status === "active" || status === "on_leave";
@@ -658,13 +659,12 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
     return;
   }
 
-  try {
-    await ensureTelegramSchema();
-    await handleUpdate(req.body as TelegramUpdate);
-  } catch (err) {
-    console.error("telegram webhook handler:", err);
-  }
-
+  const work = ensureTelegramSchema()
+    .then(() => handleUpdate(req.body as TelegramUpdate))
+    .catch((err) => console.error("telegram webhook handler:", err));
+  // Telegram bitta botning yangilanishlarini navbat bilan yuboradi — sekin javob keyingi xabarlarni ushlab turadi.
+  // Serverless’da javobdan keyin jarayon to‘xtatiladi, shuning uchun u yerda kutiladi.
+  if (isServerless) await work;
   res.status(200).json({ ok: true });
 });
 

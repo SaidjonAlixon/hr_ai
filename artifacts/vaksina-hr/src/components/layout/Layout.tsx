@@ -54,6 +54,7 @@ import {
   BookOpen,
   Library,
   BadgeCheck,
+  FileSignature,
 } from 'lucide-react';
 import {
   useLogout,
@@ -142,13 +143,13 @@ const NAV_SECTIONS: {
     id: 'main',
     label: 'Asosiy',
     icon: Layers,
-    paths: ['/dashboard', '/kirish', '/preboarding', '/darsliklar', '/atestatsiya', '/javob-olish', '/javob-olish/holat', '/tashkiliy-tuzilma', '/oylik', '/hisobkitob', '/reyting', '/reviziya', '/it'],
+    paths: ['/dashboard', '/kirish', '/preboarding', '/darsliklar', '/atestatsiya', '/javob-olish', '/javob-olish/holat', '/tashkiliy-tuzilma', '/oylik', '/tushuntirish-xatim', '/hisobkitob', '/reyting', '/reviziya', '/it'],
   },
   {
     id: 'attendance',
     label: 'Davomat',
     icon: AlarmClock,
-    paths: ['/davomat/analytics', '/davomat/xatoliklar', '/davomat/bloklash', '/davomat/dorixona-ochilishi', '/davomat/ofisda', '/davomat-face', '/davomat', '/davomat-qr', '/smena-filial', '/checklist-holati'],
+    paths: ['/davomat/analytics', '/davomat/xatoliklar', '/davomat/bloklash', '/davomat/dorixona-ochilishi', '/davomat/ofisda', '/davomat-face', '/davomat', '/davomat-qr', '/smena-filial', '/checklist-holati', '/admin/tushuntirish-xatlari'],
   },
   {
     id: 'work',
@@ -328,7 +329,6 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/admin/holat/xodim')) return '/admin/holat/xodim';
   if (path.startsWith('/admin/holat')) return '/admin/holat';
   if (path.startsWith('/admin/faces')) return '/admin/faces';
-  if (path.startsWith('/admin/smena-sozlamalar')) return '/admin/smena-sozlamalar';
   if (path.startsWith('/admin/davomat-qr')) return '/admin/davomat-qr';
   if (path.startsWith('/admin/test')) return '/admin/test';
   if (path.startsWith('/admin/qurilmalar')) return '/admin/qurilmalar';
@@ -824,6 +824,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         location.startsWith('/davomat-kochma') ||
         location.startsWith('/tashkiliy-tuzilma') ||
         location.startsWith('/vazifalar') ||
+        location.startsWith('/tushuntirish-xatim') ||
         location === '/notifications' ||
         location === '/profile' ||
         location.startsWith('/account');
@@ -932,6 +933,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const javobHolatNav = { name: 'Javob olish holati', path: '/javob-olish/holat', icon: Eye };
   const davomatQrNav = { name: 'Davomat QR', path: '/davomat-qr', icon: ScanFace };
   const oylikNav = { name: 'Oylik', path: '/oylik', icon: Banknote };
+  const txNav = { name: 'Tushuntirish xatlari', path: '/admin/tushuntirish-xatlari', icon: FileSignature };
+  const txMyNav = { name: 'Tushuntirish xatim', path: '/tushuntirish-xatim', icon: FileSignature };
   const hisobNav = { name: 'Oylik hisob', path: '/hisobkitob', icon: Calculator };
   const reytingNav = { name: 'Reyting', path: '/reyting', icon: Trophy };
   const darsliklarNav = { name: 'Darsliklar', path: '/darsliklar', icon: BookOpen };
@@ -1017,6 +1020,11 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         const dashIdx = next.findIndex((i) => i.path === '/dashboard');
         const at = javobIdx >= 0 ? javobIdx + 1 : dashIdx >= 0 ? dashIdx + 1 : 0;
         next = [...next.slice(0, at), oylikNav, ...next.slice(at)];
+      }
+      if ((role === 'farmasevt' || role === 'mudir' || role === 'stajyor') && !next.some((i) => i.path === '/tushuntirish-xatim')) {
+        const oylikIdx = next.findIndex((i) => i.path === '/oylik');
+        const at = oylikIdx >= 0 ? oylikIdx + 1 : next.length;
+        next = [...next.slice(0, at), txMyNav, ...next.slice(at)];
       }
       if (canViewReviziya(role) && !next.some((i) => i.path === '/reviziya')) {
         const orgIdx = next.findIndex((i) => i.path === '/tashkiliy-tuzilma');
@@ -1201,6 +1209,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Nomzodlar', path: '/candidates', icon: Users },
     { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
+      txNav,
       davomatFaceNav,
       smenaNav,
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
@@ -1216,6 +1225,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     javobHolatNav,
     orgNav,
     oylikNav,
+    txNav,
     hisobNav,
     reviziyaNav,
     { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
@@ -1254,6 +1264,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       oylikNav,
+      txNav,
       hisobNav,
       itNav,
       reviziyaNav,
@@ -1299,6 +1310,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       oylikNav,
+      txNav,
       hisobNav,
       itNav,
       reviziyaNav,
@@ -1353,6 +1365,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       hisobNav,
+      txNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatAnalyticsNav,
     davomatXatoliklarNav,

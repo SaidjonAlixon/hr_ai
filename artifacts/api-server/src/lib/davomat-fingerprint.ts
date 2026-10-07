@@ -19,8 +19,10 @@ export const FINGER_DEVICE_COOKIE = "fp_bind";
 const FINGER_DEVICE_COOKIE_MAX_AGE = 400 * 24 * 60 * 60 * 1000;
 const REGISTER_TTL_MS = 3 * 60 * 1000;
 const PUNCH_TTL_MS = 2 * 60 * 1000;
+/** Ro‘yxatdan o‘tish barmoq bilan tasdiqlangan — shu zahoti 1 marta Keldim/Ketdim uchun */
+const ENROLL_PASS_TTL_MS = 2 * 60 * 1000;
 
-type ChallengeKind = "fp_register" | "fp_punch";
+type ChallengeKind = "fp_register" | "fp_punch" | "fp_enroll_pass";
 type Fail = { ok: false; status: number; body: { error: string; code: string } };
 
 function fail(status: number, code: string, error: string): Fail {

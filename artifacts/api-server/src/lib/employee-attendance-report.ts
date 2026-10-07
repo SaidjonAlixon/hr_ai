@@ -14,7 +14,8 @@ import {
 import { addDaysYmd, type ShiftKey } from "./attendance-engine";
 import { hmToMinutes, workScheduleForStaff, type WorkSchedule } from "./shift-hours";
 import { getEffectiveShiftDefs } from "./shift-schedule";
-import { isScheduledRestDay, isWeekendYmd } from "./ofis-weekend";
+import { isScheduledRestDay, isWeekendYmd, type ScheduleStaff } from "./ofis-weekend";
+import { loadWorkCalendar } from "./work-calendar";
 import {
   loadScheduleOverrides,
   pickScheduleOverride,
@@ -449,12 +450,7 @@ function classify(
   ymd: string,
   today: string,
   schedule: WorkSchedule,
-  staff: {
-    userRole?: string | null;
-    orgRole?: string | null;
-    position?: string | null;
-    shiftType?: string | null;
-  } | null,
+  staff: ScheduleStaff | null,
 ): DayStatus {
   const st = String(rec?.status || "").toLowerCase();
   if (st === "leave") return "leave";
@@ -464,6 +460,8 @@ function classify(
   if (hasIn) {
     const checkInHm = hm(rec?.checkInAt);
     if (!checkInHm) return "present";
+    // Dam kuni kelgan — qo‘shimcha ish, kechikish hisoblanmaydi
+    if (staff && isReportRestDay(ymd, staff)) return "present";
     return cameStatus(checkInHm, schedule);
   }
   if (ymd > today) return "planned";
@@ -471,16 +469,8 @@ function classify(
   return "absent";
 }
 
-/** Ofis, xavfsizlik grafigi va admin (shanba–yakshanba). Dorixona smenasiga tegmaydi. */
-function isReportRestDay(
-  ymd: string,
-  staff: {
-    userRole?: string | null;
-    orgRole?: string | null;
-    position?: string | null;
-    shiftType?: string | null;
-  },
-): boolean {
+/** Smena kalendari, xavfsizlik grafigi, almashuv va admin (shanba–yakshanba) */
+function isReportRestDay(ymd: string, staff: ScheduleStaff): boolean {
   if (isScheduledRestDay(ymd, staff)) return true;
   const role = String(staff.userRole || "").trim().toLowerCase();
   const position = String(staff.position || "").trim();
@@ -897,8 +887,10 @@ export async function buildEmployeeAttendanceReport(input: {
         )
     : [];
   const planByDate = new Map(dayPlans.map((row) => [row.workDate, row.shiftKeys || []]));
+  await loadWorkCalendar();
   const staffShift = emp
     ? {
+        employeeId: emp.id,
         userRole: emp.userRole,
         orgRole: emp.orgRole,
         shiftType: emp.shiftType,
@@ -1125,6 +1117,7 @@ export async function buildStaffAttendanceDays(input: {
     );
   const shiftDefs = await getEffectiveShiftDefs();
   const overrides = await loadScheduleOverrides(ids, input.from, input.to);
+  await loadWorkCalendar();
   const today = todayTashkentYmd();
   const byEmpDate = new Map<string, (typeof records)[number]>();
   for (const rec of records) {
@@ -1140,6 +1133,7 @@ export async function buildStaffAttendanceDays(input: {
   }
   return emps.map((emp) => {
     const staffShift = {
+      employeeId: emp.id,
       userRole: emp.userRole,
       orgRole: emp.orgRole,
       shiftType: emp.shiftType,

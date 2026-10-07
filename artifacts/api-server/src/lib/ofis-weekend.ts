@@ -1,9 +1,9 @@
 /**
- * Ofis xodimlari: shanba–yakshanba dam kuni.
- * Dorixona / smena xodimlariga tegmaydi.
+ * Dam kunlari: ofis va dorixona smenalari — smena kalendari (work-calendar), qoida bo‘lmasa ofis shanba–yakshanba.
  * Xavfsizlik (SB) — o‘z jadvali (security-shifts).
  */
 import { isSecurityRestDay, securityShiftFor, SECURITY_USER_ROLES } from "./security-shifts";
+import { payrollCalendarScope, scopeDayStatus, swapOn } from "./work-calendar";
 
 const SHIFT_PHARMACY_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor"]);
 const SHIFT_PHARMACY_ORG_ROLES = new Set([
@@ -84,17 +84,61 @@ export function isOfisRestDay(
   return isOfisStaffEmp(emp) && isWeekendYmd(ymd);
 }
 
-/** Jadval bo‘yicha dam kuni: Xavfsizlik — o‘z grafigi, qolganlar — ofis shanba/yakshanba */
-export function isScheduledRestDay(
-  ymd: string,
-  emp: {
-    userRole?: string | null;
-    orgRole?: string | null;
-    position?: string | null;
-    shiftType?: string | null;
-  },
-): boolean {
+const SHIFT_ROLE_SET = new Set(["mudir", "farmasevt", "stajyor", "stajor"]);
+const SHIFT_ORG_SET = new Set(["manager", "pharmacist", "intern"]);
+
+function isShiftPharmacyEmp(emp: { userRole?: string | null; orgRole?: string | null }): boolean {
+  return SHIFT_ROLE_SET.has(String(emp.userRole || "").toLowerCase()) || SHIFT_ORG_SET.has(String(emp.orgRole || "").toLowerCase());
+}
+
+export type ScheduleStaff = {
+  employeeId?: number | null;
+  userRole?: string | null;
+  orgRole?: string | null;
+  position?: string | null;
+  shiftType?: string | null;
+  shiftLabel?: string | null;
+};
+
+export type RestInfo = {
+  rest: boolean;
+  reason: string | null;
+  /** Almashuv: dam oluvchi yoki o‘rniga chiquvchi */
+  swap?: { kind: "rest" | "work"; with: string; id: number } | null;
+};
+
+/**
+ * Jadval bo‘yicha dam kuni. Tartib: xavfsizlik grafigi → almashuv → smena kalendari
+ * (haftalik qoida + sana o‘zgartirishi) → eski tartib (ofis shanba–yakshanba).
+ * Davomat hisobotlari chaqirishdan oldin loadWorkCalendar() ni kutadi.
+ */
+export function scheduledRestInfo(ymd: string, emp: ScheduleStaff): RestInfo {
   const sb = securityShiftFor(emp);
-  if (sb) return isSecurityRestDay(ymd, sb.pattern);
-  return isOfisRestDay(ymd, emp);
+  if (sb) {
+    const rest = isSecurityRestDay(ymd, sb.pattern);
+    return { rest, reason: rest ? "Xavfsizlik grafigi bo‘yicha dam" : null };
+  }
+  const swap = swapOn(emp.employeeId, ymd);
+  if (swap) {
+    if (swap.kind === "rest") {
+      return {
+        rest: true,
+        reason: `Almashuv — o‘rniga ${swap.swap.replacementName} chiqadi`,
+        swap: { kind: "rest", with: swap.swap.replacementName, id: swap.swap.id },
+      };
+    }
+    return { rest: false, reason: null, swap: { kind: "work", with: swap.swap.employeeName, id: swap.swap.id } };
+  }
+  const office = isOfisStaffEmp(emp);
+  if (office || isShiftPharmacyEmp(emp)) {
+    const scope = office ? "ofis" : payrollCalendarScope(emp);
+    const status = scopeDayStatus(scope, ymd);
+    if (status) return { rest: !status.work, reason: status.work ? null : status.reason };
+  }
+  const rest = isOfisRestDay(ymd, emp);
+  return { rest, reason: rest ? "Dam kuni (shanba–yakshanba)" : null };
+}
+
+export function isScheduledRestDay(ymd: string, emp: ScheduleStaff): boolean {
+  return scheduledRestInfo(ymd, emp).rest;
 }

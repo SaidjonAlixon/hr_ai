@@ -13,9 +13,10 @@ import {
   workScheduleFromOverride,
 } from "./employee-schedule-override";
 import { isScheduledRestDay, isWeekendYmd } from "./ofis-weekend";
+import { loadWorkCalendar } from "./work-calendar";
 import { formatPersonName } from "./person-name";
 import { getEffectiveShiftDefs } from "./shift-schedule";
-import { isPharmacyShiftStaff, workScheduleForStaff, type WorkSchedule } from "./shift-hours";
+import { ORTA_SHIFT_LABEL, isOrtaShift, isPharmacyShiftStaff, workScheduleForStaff, type WorkSchedule } from "./shift-hours";
 import type { ReportCoordinatorSection, ReportPerson, ReportShiftBlock } from "./davomat-shift-report-pdf";
 
 export type BuiltSection = ReportCoordinatorSection & {
@@ -24,7 +25,7 @@ export type BuiltSection = ReportCoordinatorSection & {
   telegramId: string | null;
 };
 
-export type ShiftBucket = "one" | "two" | "12" | "23" | "three" | "office";
+export type ShiftBucket = "one" | "two" | "12" | "23" | "three" | "orta" | "office";
 
 const MONTHS = [
   "yanvar",
@@ -41,7 +42,7 @@ const MONTHS = [
   "dekabr",
 ];
 
-const BUCKET_ORDER: ShiftBucket[] = ["one", "two", "12", "23", "three", "office"];
+const BUCKET_ORDER: ShiftBucket[] = ["one", "orta", "two", "12", "23", "three", "office"];
 
 export function dateLabelUz(ymd: string): string {
   const [y, m, d] = ymd.split("-").map(Number);
@@ -110,6 +111,7 @@ export function shiftBucketOf(
   shiftLabel: string | null | undefined,
 ): ShiftBucket {
   if (!isPharmacyShiftStaff(userRole, orgRole)) return "office";
+  if (isOrtaShift(shiftType, shiftLabel)) return "orta";
   const keys = pharmacyKeys(shiftType, shiftLabel);
   const set = new Set(keys);
   if (set.has("two") && set.has("three")) return "23";
@@ -124,6 +126,7 @@ function bucketTitle(bucket: ShiftBucket, hours: string): { title: string; hours
   if (bucket === "23") return { title: "2+3", hours };
   if (bucket === "two") return { title: "2-smena", hours };
   if (bucket === "three") return { title: "3-smena", hours };
+  if (bucket === "orta") return { title: ORTA_SHIFT_LABEL, hours };
   if (bucket === "office") return { title: "Ofis", hours };
   return { title: "1-smena", hours };
 }
@@ -284,6 +287,7 @@ export async function buildCoordinatorShiftReport(opts: {
   const from = monthStartYmd(opts.ymd);
   const defs = await getEffectiveShiftDefs();
   const overrides = await loadScheduleOverrides(ids, from, opts.ymd);
+  await loadWorkCalendar();
   const plans = await db
     .select({
       employeeId: employeeDayShiftPlansTable.employeeId,
@@ -361,10 +365,12 @@ export async function buildCoordinatorShiftReport(opts: {
       const shiftLabel = planType ? null : emp.shiftLabel;
       if (
         isScheduledRestDay(ymd, {
+          employeeId: emp.id,
           userRole: emp.userRole,
           orgRole: emp.orgRole,
           position: emp.position,
-          shiftType,
+          shiftType: emp.shiftType,
+          shiftLabel: emp.shiftLabel,
         })
       ) {
         return null;
@@ -397,7 +403,7 @@ export async function buildCoordinatorShiftReport(opts: {
     const bucket = todayOv
       ? todayOv.shiftKey === "office"
         ? "office"
-        : shiftBucketOf(emp.userRole, emp.orgRole, todayOv.shiftKey, null)
+        : shiftBucketOf(emp.userRole, emp.orgRole, todayOv.shiftKey, todayOv.note?.startsWith(ORTA_SHIFT_LABEL) ? ORTA_SHIFT_LABEL : null)
       : shiftBucketOf(
           emp.userRole,
           emp.orgRole,
@@ -434,6 +440,7 @@ export async function buildCoordinatorShiftReport(opts: {
       continue;
     }
     if (!rec?.checkInAt) {
+      if (opts.ymd === tashkentNow().ymd && Date.now() < atTashkent(opts.ymd, todaySched.start).getTime()) continue;
       built.push({ ...base, list: "absent", statusLabel: "Kelmagan", checkIn: "—", checkOut: "—" });
       continue;
     }

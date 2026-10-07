@@ -2,16 +2,31 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db, employeesTable, payrollMonthsTable, usersTable } from "@workspace/db";
 import { buildStaffAttendanceDays } from "./employee-attendance-report";
 import { displayBranchName } from "./geo-location";
+import { FINAL_STRIKE, cancelledLetterKeys } from "./explanation-letter";
 
 /** Jarima shu kundan boshlanadi. Undan oldingi kechikish va kelmaslik hisobga kirmaydi. */
 export const JARIMA_START = "2026-10-01";
 
 export const JARIMA_RULE = [
-  "1-marta — 1 kunlik ish haqining 30%",
+  "1-marta — ogohlantirish va tushuntirish xati",
   "2-marta — 1 kunlik ish haqining 30%",
-  "3-marta — 1 kunlik ish haqining 100%",
-  "4-marta va undan keyin — har safar 1 oylik ish haqining 50%",
+  "3-marta — 1 kunlik ish haqining 30%",
+  "4-marta — 1 kunlik ish haqining 100%",
+  "5-marta — 1 oylik ish haqining 50% va o‘sha kuni platforma bloki",
+  "6-marta — 1 oylik ish haqining 50%, oxirgi ogohlantirish va ishdan bo‘shatishga rozilik xati",
+  "Undan keyin yana takrorlansa — mehnat shartnomasini bekor qilish (ishdan bo‘shatish) uchun asos",
 ] as const;
+
+export { FINAL_STRIKE };
+
+/** n-buzilish uchun chora — barcha matnlar shu yerdan olinadi */
+export function strikePenalty(n: number): string {
+  if (n <= 1) return "ogohlantirish (tushuntirish xati)";
+  if (n <= 3) return "1 kunlik ish haqining 30% jarima";
+  if (n === 4) return "1 kunlik ish haqining 100% jarima";
+  if (n < FINAL_STRIKE) return "1 oylik ish haqining 50% jarima";
+  return "1 oylik ish haqining 50% jarima va oxirgi ogohlantirish";
+}
 
 const PHARMACY_ROLES = new Set(["mudir", "farmasevt", "stajyor", "stajor"]);
 
@@ -29,6 +44,11 @@ export type JarimaEvent = {
   kind: "late" | "absent";
   n: number;
   amount: number;
+  checkIn?: string | null;
+  planStart?: string | null;
+  planEnd?: string | null;
+  lateMinutes?: number | null;
+  branch?: string | null;
 };
 
 function shiftTitle(shiftType?: string | null, shiftLabel?: string | null): string {
@@ -103,9 +123,9 @@ export function jarimaAmount(monthly: number, monthDays: number, strikes: number
   if (salary <= 0 || strikes <= 0) return 0;
   const daily = salary / Math.max(1, monthDays);
   let total = 0;
-  for (let n = 1; n <= strikes; n += 1) {
-    if (n === 1 || n === 2) total += Math.round(daily * 0.3);
-    else if (n === 3) total += Math.round(daily);
+  for (let n = 2; n <= strikes; n += 1) {
+    if (n <= 3) total += Math.round(daily * 0.3);
+    else if (n === 4) total += Math.round(daily);
     else total += Math.round(salary * 0.5);
   }
   return total;
@@ -120,10 +140,12 @@ function reasonLine(late: number, absent: number): string {
 }
 
 function warningLine(strikes: number): string {
-  if (strikes <= 1) return "Ogohlantirish: keyingi safar yana 1 kunlik ish haqingizning 30% jarima.";
-  if (strikes === 2) return "Ogohlantirish: 3-martada 1 kunlik ish haqingizning 100% jarima.";
-  if (strikes === 3) return "Ogohlantirish: 4-martada 1 oylik ish haqingizning 50% jarima.";
-  return "Ogohlantirish: har keyingi safar 1 oylik ish haqingizning 50% jarima.";
+  if (strikes <= 1) return "Ogohlantirish: keyingi safar 1 kunlik ish haqingizning 30% jarima.";
+  if (strikes === 2) return "Ogohlantirish: 3-martada yana 1 kunlik ish haqingizning 30% jarima.";
+  if (strikes === 3) return "Ogohlantirish: 4-martada 1 kunlik ish haqingizning 100% jarima.";
+  if (strikes === 4) return "Ogohlantirish: 5-martada 1 oylik ish haqingizning 50% jarima va platforma bloki.";
+  if (strikes === 5) return "Ogohlantirish: 6-martada yana 50% jarima, oxirgi ogohlantirish va ishdan bo‘shatishga rozilik xati.";
+  return "Oxirgi ogohlantirish berilgan: yana takrorlansa — ishdan bo‘shatish uchun asos.";
 }
 
 function autoNote(late: number, absent: number, strikes: number): string | null {
@@ -206,6 +228,7 @@ export async function applyAttendanceJarima(
     to,
   });
   const daysByEmp = new Map(packs.map((pack) => [pack.employeeId, pack.days]));
+  const cancelled = await cancelledLetterKeys(from, to).catch(() => new Set<string>());
   const today = todayTashkent();
   const monthDays = daysInMonth(month);
   const out: JarimaPerson[] = [];
@@ -222,6 +245,7 @@ export async function applyAttendanceJarima(
         if (day.status === "prehire" || day.status === "outside") return false;
         if (day.status === "rest" || day.status === "leave" || day.status === "planned") return false;
         if (isWorkDayFor && !isWorkDayFor(person, day.date)) return false;
+        if (cancelled.has(`${userId}|${day.date}|${day.status}`)) return false;
         if (day.status === "late") return true;
         return day.status === "absent" && day.date < today;
       })
@@ -234,6 +258,11 @@ export async function applyAttendanceJarima(
         kind: day.status === "late" ? "late" : "absent",
         n,
         amount: jarimaAmount(salary, monthDays, n) - jarimaAmount(salary, monthDays, n - 1),
+        checkIn: day.checkIn ?? null,
+        planStart: day.planStart ?? null,
+        planEnd: day.planEnd ?? null,
+        lateMinutes: day.lateMinutes ?? null,
+        branch: day.branch ?? null,
       });
     }
     const late = events.filter((event) => event.kind === "late").length;

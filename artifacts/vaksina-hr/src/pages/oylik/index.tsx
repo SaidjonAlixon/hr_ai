@@ -3,7 +3,6 @@ import {
   Building2,
   CalendarDays,
   CheckCircle2,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -17,7 +16,6 @@ import {
   Wallet,
   XCircle,
   AlertCircle,
-  PencilLine,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -33,7 +31,12 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { MySlip, PayTable, WeekBoard } from "./pay-table";
 import { FiksaDialog } from "./fiksa-dialog";
 import { DisciplinePanel } from "./discipline-panel";
+import { LettersAdminPanel, MyLettersCard } from "./explanation-letters";
+import { canManageLetters } from "@/lib/explanation-letters-api";
+import { ShiftScheduleDialog } from "./shift-schedule";
+import { PeriodPicker, ScheduleHint, ScheduleStrip, ShiftCards } from "./selection-panels";
 import { canSeeDiscipline } from "@/lib/discipline-api";
+import { canViewWorkSchedule, useWorkCalendar } from "@/lib/work-calendar-api";
 import {
   canApprovePayroll,
   canEditKpiSettings,
@@ -53,12 +56,11 @@ import {
 } from "@/lib/oylik-api";
 import {
   clampToMonth,
-  datesFromTo,
+  daysInMonth,
   formatDayUz,
   monthEnd,
   projectPayroll,
   todayYmd,
-  weekdayShort,
   weeksOfMonth,
   type PayGrain,
 } from "@/lib/oylik-period";
@@ -90,27 +92,6 @@ function StepTitle({ n, title, hint, right }: { n: number; title: string; hint?:
       </div>
       {right}
     </div>
-  );
-}
-
-function ShiftChip({ on, label, count, onClick }: { on: boolean; label: string; count: number; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={!on && count === 0}
-      className={cn(
-        "inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40",
-        on
-          ? "border-[#0b3a5c] bg-[#0b3a5c] text-white shadow-sm"
-          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100",
-      )}
-    >
-      {label}
-      <span className={cn("min-w-[1.5rem] rounded-full px-1.5 text-center text-[11px] font-bold tabular-nums", on ? "bg-white/20" : "bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300")}>
-        {count}
-      </span>
-    </button>
   );
 }
 
@@ -211,10 +192,15 @@ function payrollShift(row: PayrollRow): { key: string; label: string } {
   const compact = rawLabel.toLowerCase().replace(/\s+/g, "");
   const t = String(row.shiftType || "").trim().toLowerCase();
   const named = (key: string, label: string) => ({ key, label });
-  if (compact.includes("1+2") || compact.includes("1-2") || t === "one_two" || t === "12") return named("12", "1+2");
-  if (compact.includes("2+3") || compact.includes("2-3") || t === "two_three" || t === "23") return named("23", "2+3");
-  if (t === "three" || t === "3" || compact.includes("3-smena") || compact === "3smena") return named("3", "3-smena");
-  if (t === "two" || t === "2" || compact.includes("2-smena") || compact === "2smena") return named("2", "2-smena");
+  const apos = compact.replace(/[‘’ʻʼ`]/g, "'");
+  const has1 = compact.includes("1-smena");
+  const has2 = compact.includes("2-smena");
+  const has3 = compact.includes("3-smena");
+  if (t === "orta" || t === "middle" || /(^|[^a-z])o'?rta/.test(apos)) return named("orta", "O‘rta smena");
+  if (compact.includes("1+2") || compact.includes("1-2") || t === "one+two" || t === "one_two" || t === "12" || (has1 && has2)) return named("12", "1+2");
+  if (compact.includes("2+3") || compact.includes("2-3") || t === "two+three" || t === "two_three" || t === "23" || (has2 && has3)) return named("23", "2+3");
+  if (t === "three" || t === "3" || has3 || compact === "3smena") return named("3", "3-smena");
+  if (t === "two" || t === "2" || has2 || compact === "2smena") return named("2", "2-smena");
   if (rowWorkplace(row) === "ofis") {
     if (rawLabel && !compact.includes("ofis") && t !== "one" && t !== "1" && t !== "office" && t !== "") {
       return named(compact || "other", rawLabel);
@@ -236,6 +222,7 @@ function lavozimOf(row: PayrollRow): { key: string; label: string } {
 }
 
 function rowScope(row: PayrollRow): string {
+  if (row.calendarScope === "dorixona:other" && payrollShift(row).key === "orta") return "dorixona:orta";
   if (row.calendarScope) return row.calendarScope;
   const hay = `${row.roleLabel} ${row.position || ""}`.toLowerCase();
   if (/xavfsiz/.test(hay)) return "xavfsizlik";
@@ -249,13 +236,15 @@ const DORIXONA_SHIFT_CHIPS = [
   { key: "3", label: "3-smena" },
   { key: "12", label: "1+2" },
   { key: "23", label: "2+3" },
+  { key: "orta", label: "O‘rta smena" },
 ];
 
 function calendarTitle(scope: string): string {
   if (scope === "ofis") return "Ofis ish kunlari";
   if (scope === "xavfsizlik") return "Xavfsizlik ish kunlari";
   const shift = scope.replace(/^dorixona:/, "");
-  const label = DORIXONA_SHIFT_CHIPS.find((s) => s.key === shift)?.label || shift;
+  const label = DORIXONA_SHIFT_CHIPS.find((s) => s.key === shift)?.label
+    || (shift === "office" ? "Dorixona (ofis vaqti)" : shift === "other" ? "Boshqa smena" : shift);
   return `${label} ish kunlari`;
 }
 
@@ -302,51 +291,39 @@ function WorkCalendar({
       </div>
       <div className="mx-auto max-w-xl">
         <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-muted-foreground">
-          {labels.map((l) => (
-            <div key={l}>{l}</div>
-          ))}
-        </div>
-        <div className="mt-1 grid grid-cols-7 gap-1">
-          {cells.map((c, i) => {
-            if (!c.d || !c.iso) return <div key={`e-${i}`} />;
-            const work = set.has(c.iso);
-            const cls = cn(
+        {labels.map((l) => (
+          <div key={l}>{l}</div>
+        ))}
+      </div>
+      <div className="mt-1 grid grid-cols-7 gap-1">
+        {cells.map((c, i) => {
+          if (!c.d || !c.iso) return <div key={`e-${i}`} />;
+          const work = set.has(c.iso);
+          const cls = cn(
               "flex h-8 items-center justify-center rounded-lg text-[12px] font-semibold tabular-nums transition",
               work ? "bg-emerald-500 text-white dark:bg-emerald-600" : "bg-slate-200/70 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
               c.iso === today && "ring-2 ring-[#0b3a5c] ring-offset-1",
               canEdit && "cursor-pointer hover:opacity-80",
               pending && "opacity-60",
-            );
-            if (!canEdit) {
-              return (
-                <div key={c.iso} className={cls} title={work ? t("ui.workDay") : t("ui.dayOff")}>
-                  {c.d}
-                </div>
-              );
-            }
+          );
+          if (!canEdit) {
             return (
-              <button key={c.iso} type="button" disabled={pending} className={cls} onClick={() => onToggle(c.iso!, !work)}>
+              <div key={c.iso} className={cls} title={work ? t("ui.workDay") : t("ui.dayOff")}>
                 {c.d}
-              </button>
+              </div>
             );
-          })}
+          }
+          return (
+              <button key={c.iso} type="button" disabled={pending} className={cls} onClick={() => onToggle(c.iso!, !work)}>
+              {c.d}
+            </button>
+          );
+        })}
         </div>
       </div>
     </div>
   );
 }
-
-const GRAIN_OPTIONS: Array<{ key: PayGrain; label: string; title: string; hint: string; editable: boolean }> = [
-  { key: "kun", label: "Kun", title: "Bitta kun", hint: "Xodimlarning shu kungi summasi va jarimasi. Shu yerda o‘zgartirasiz va tasdiqlaysiz.", editable: true },
-  { key: "hafta", label: "Hafta", title: "7 kun bitta jadvalda", hint: "Hafta davomida kim qaysi kuni jarima olganini ko‘rasiz.", editable: false },
-  { key: "oy", label: "Oy", title: "Butun oy", hint: "Oyning har bir kuni bitta jadvalda — umumiy manzara.", editable: false },
-];
-
-const GRAIN_EXPLAIN: Record<PayGrain, string> = {
-  kun: "Pastdagi jadvalda summa yoki jarimani o‘zgartirsangiz darhol saqlanadi. Tekshirib bo‘lgach «Tasdiqlash» tugmasini bosing — shundan keyin xodim o‘z oyligini ko‘radi.",
-  hafta: "Har katakda: kunlik summa, qo‘lda qoladigan pul va jarima. Biror kunni bossangiz, o‘sha kunni tahrirlash va tasdiqlashga o‘tasiz.",
-  oy: "Oyning hamma kuni bitta jadvalda. Biror kunni bossangiz, o‘sha kunni tahrirlash va tasdiqlashga o‘tasiz.",
-};
 
 export default function OylikPage() {
   const { user } = useAuth();
@@ -374,6 +351,12 @@ export default function OylikPage() {
   const [selected, setSelected] = useState<number[]>([]);
   const [fiksaOpen, setFiksaOpen] = useState(false);
   const [calOpen, setCalOpen] = useState(false);
+  const [schedOpen, setSchedOpen] = useState(
+    () => typeof window !== "undefined" && new URLSearchParams(window.location.search).has("jadval"),
+  );
+  const [schedTab, setSchedTab] = useState<"smena" | "almashuv">("smena");
+  const canSchedule = canViewWorkSchedule(user?.role);
+  const schedule = useWorkCalendar(month, manage && canSchedule);
   const anchor = clampToMonth(month, focusDate);
   const weeks = useMemo(() => weeksOfMonth(month), [month]);
   const activeWeek = weeks.find((week) => anchor >= week.from && anchor <= week.to) ?? weeks[0];
@@ -410,8 +393,8 @@ export default function OylikPage() {
     const countOf = (match: (scope: string) => boolean) => inPlace.filter((r) => match(rowScope(r))).length;
     if (place === "ofis") {
       return [
-        { key: "office", label: "Asosiy ofis", count: countOf((s) => s === "ofis") },
-        { key: "xavfsizlik", label: "Xavfsizlik", count: countOf((s) => s === "xavfsizlik") },
+        { key: "office", label: "Asosiy ofis", count: countOf((s) => s === "ofis"), scope: "ofis" },
+        { key: "xavfsizlik", label: "Xavfsizlik", count: countOf((s) => s === "xavfsizlik"), scope: "xavfsizlik" },
       ];
     }
     if (place === "dorixona") {
@@ -426,11 +409,13 @@ export default function OylikPage() {
         ...DORIXONA_SHIFT_CHIPS.map((s) => ({
           ...s,
           count: countOf((scope) => scope === `dorixona:${s.key}`),
+          scope: `dorixona:${s.key}`,
         })),
         ...[...extras.entries()].map(([key, label]) => ({
           key,
           label,
           count: countOf((scope) => scope === `dorixona:${key}`),
+          scope: `dorixona:${key}`,
         })),
       ];
     }
@@ -555,7 +540,14 @@ export default function OylikPage() {
     : place === "ofis"
       ? shift === "xavfsizlik" ? "xavfsizlik" : "ofis"
       : `dorixona:${shift}`;
-  const workDays = activeScope ? list.data?.calendars?.[activeScope] ?? [] : [];
+  const scheduleOf = (scope: string) => schedule.data?.scopes.find((item) => item.scope === scope);
+  const activeSchedule = activeScope ? scheduleOf(activeScope) : undefined;
+  const workDays = !activeScope
+    ? []
+    : activeSchedule?.month.workDays
+      ?? list.data?.calendars?.[activeScope]
+      ?? (activeScope === "dorixona:orta" ? list.data?.calendars?.["dorixona:other"] : undefined)
+      ?? [];
   const extraFiltersOn = !!(statusFilter || fiksaFilter || jarimaFilter || lavozimFilter);
 
   const resetFilters = () => {
@@ -598,7 +590,7 @@ export default function OylikPage() {
     setExporting(true);
     try {
       await downloadOylikViewExcel({
-        month,
+      month,
         filterLine,
         rows: filteredRows,
         grain,
@@ -652,9 +644,20 @@ export default function OylikPage() {
                 ? "Bo‘limni tanlang, davrni belgilang, tekshirib tasdiqlang — tasdiqlangach xodim o‘z oyligini ko‘radi."
                 : "Tasdiqlangan oylik va jarimangiz shu yerda ko‘rinadi."}
             </p>
-          </div>
+        </div>
           <div className="flex flex-wrap items-center gap-2">
             <MonthNav month={month} onChange={(m) => { setMonth(m); setSelected([]); }} />
+            {canSchedule ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-10 gap-1.5 rounded-xl bg-white/10 text-white ring-1 ring-white/20 hover:bg-white/20 hover:text-white"
+                onClick={() => { setSchedTab("smena"); setSchedOpen(true); }}
+              >
+                <CalendarDays className="h-4 w-4" />
+                Ish jadvali
+              </Button>
+            ) : null}
             {manage ? (
               <Button
                 type="button"
@@ -667,14 +670,18 @@ export default function OylikPage() {
                 Excel
               </Button>
             ) : null}
-          </div>
         </div>
-      </div>
+        </div>
+        </div>
 
       <div className="dept-page-inner !mx-0 w-full !max-w-none space-y-3 !px-2 sm:!px-3 md:!px-4">
         {canSeeDiscipline(user?.role) ? <DisciplinePanel month={month} /> : null}
+        {canManageLetters(user?.role) ? <LettersAdminPanel month={month} /> : null}
         {!manage ? (
-          <MySlip month={month} />
+          <>
+            <MyLettersCard />
+            <MySlip month={month} />
+          </>
         ) : (
           <>
             <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900">
@@ -688,7 +695,7 @@ export default function OylikPage() {
                 ).map((opt) => {
                   const on = place === opt.key;
                   const Icon = opt.icon;
-                  return (
+              return (
                     <button
                       key={opt.key}
                       type="button"
@@ -743,14 +750,18 @@ export default function OylikPage() {
                       ) : null
                     }
                   />
-                  <div className="flex flex-wrap gap-1.5">
-                    <ShiftChip on={!shift} label={place === "ofis" ? "Hammasi" : "Barcha smenalar"} count={inPlace.length} onClick={() => { setShift(""); setCalOpen(false); }} />
-                    {shiftOptions.map((opt) => (
-                      <ShiftChip key={opt.key} on={shift === opt.key} label={opt.label} count={opt.count} onClick={() => setShift(shift === opt.key ? "" : opt.key)} />
-                    ))}
-                  </div>
+                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{place === "ofis" ? "Bo‘lim" : "Smena"}</p>
+                  <ShiftCards
+                    allLabel={place === "ofis" ? "Hammasi" : "Barcha smenalar"}
+                    total={inPlace.length}
+                    options={shiftOptions}
+                    value={shift}
+                    onChange={(key) => { setShift(key); if (!key) setCalOpen(false); }}
+                    scheduleOf={scheduleOf}
+                  />
 
-                  <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
+                  <p className="mb-1.5 mt-4 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Filtr</p>
+                  <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
                     <FilterSelect
                       label="Lavozim"
                       value={lavozimFilter}
@@ -790,28 +801,23 @@ export default function OylikPage() {
                         { value: "written", label: "Kiritilgan", count: fiksaCounts.written },
                         { value: "empty", label: "Kiritilmagan", count: fiksaCounts.empty },
                       ]}
-                    />
-                  </div>
+                              />
+                            </div>
 
-                  <div className="mt-3 border-t border-slate-100 pt-3 dark:border-white/10">
-                    {activeScope ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => setCalOpen((v) => !v)}
-                          className="flex w-full items-center gap-2 text-left text-sm font-semibold text-[#0f2744] dark:text-white"
-                        >
-                          <CalendarDays className="h-4 w-4 text-emerald-600" />
-                          {calendarTitle(activeScope)}
-                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200">
-                            {workDays.length} kun
-                          </span>
-                          <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                            {calOpen ? "Yashirish" : canEdit ? "Ko‘rish va o‘zgartirish" : "Ko‘rish"}
-                            <ChevronDown className={cn("h-4 w-4 transition-transform", calOpen && "rotate-180")} />
-                          </span>
-                        </button>
-                        {calOpen ? (
+                  {activeScope ? (
+                    <ScheduleStrip
+                      title={calendarTitle(activeScope).replace(/ish kunlari$/, "ish jadvali")}
+                      scope={activeScope}
+                      schedule={activeSchedule}
+                      workCount={workDays.length}
+                      totalDays={daysInMonth(month)}
+                      calOpen={calOpen}
+                      onToggleCal={() => setCalOpen((v) => !v)}
+                      canSchedule={canSchedule}
+                      onOpenSchedule={() => { setSchedTab("smena"); setSchedOpen(true); }}
+                      onOpenSwaps={() => { setSchedTab("almashuv"); setSchedOpen(true); }}
+                    >
+                      {calOpen ? (
                           <WorkCalendar
                             month={month}
                             workDays={workDays}
@@ -827,14 +833,11 @@ export default function OylikPage() {
                               );
                             }}
                           />
-                        ) : null}
-                      </>
-                    ) : (
-                      <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <CalendarDays className="h-4 w-4" /> Ish kunlari kalendarini ko‘rish uchun smenani tanlang — har smenaning kalendari alohida.
-                      </p>
-                    )}
-                  </div>
+                      ) : null}
+                    </ScheduleStrip>
+                  ) : (
+                    <ScheduleHint />
+                  )}
                 </section>
 
                 <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900">
@@ -844,131 +847,19 @@ export default function OylikPage() {
                     hint="Qaysi kunning, haftaning yoki butun oyning oylik va jarimasini ko‘rmoqchisiz?"
                   />
 
-                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Ko‘rinish</p>
-                  <div className="grid gap-2 sm:grid-cols-3">
-                    {GRAIN_OPTIONS.map((opt) => {
-                      const on = grain === opt.key;
-                      return (
-                        <button
-                          key={opt.key}
-                          type="button"
-                          onClick={() => setGrain(opt.key)}
-                          className={cn(
-                            "rounded-xl border-2 p-3 text-left transition",
-                            on
-                              ? "border-[#0b3a5c] bg-[#0b3a5c] text-white shadow-md"
-                              : "border-slate-200 bg-white hover:border-[#0b3a5c]/40 dark:border-white/10 dark:bg-slate-950",
-                          )}
-                        >
-                          <span className="flex items-center justify-between gap-2">
-                            <span className="text-base font-bold">{opt.label}</span>
-                            <span
-                              className={cn(
-                                "rounded-full px-2 py-0.5 text-[10px] font-bold",
-                                opt.editable
-                                  ? on ? "bg-emerald-400/25 text-emerald-50" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200"
-                                  : on ? "bg-white/15 text-white/85" : "bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300",
-                              )}
-                            >
-                              {opt.editable ? "Tahrirlash va tasdiqlash" : "Faqat ko‘rish"}
-                            </span>
-                          </span>
-                          <span className={cn("mt-1 block text-[13px] font-semibold", on ? "text-white" : "text-[#0f2744] dark:text-white")}>{opt.title}</span>
-                          <span className={cn("mt-0.5 block text-[11px] leading-snug", on ? "text-white/75" : "text-muted-foreground")}>{opt.hint}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {grain !== "oy" ? (
-                    <>
-                      <p className="mb-1.5 mt-4 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Haftani tanlang</p>
-                      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-5">
-                        {weeks.map((week, index) => {
-                          const on = activeWeek?.from === week.from;
-                          return (
-                            <button
-                              key={week.from}
-                              type="button"
-                              onClick={() => setFocusDate(anchor >= week.from && anchor <= week.to ? anchor : week.from)}
-                              className={cn(
-                                "rounded-xl border px-3 py-2 text-left transition",
-                                on
-                                  ? "border-[#0b3a5c] bg-[#0b3a5c]/[0.06] ring-1 ring-[#0b3a5c] dark:bg-white/5"
-                                  : "border-slate-200 hover:border-slate-300 dark:border-white/10",
-                              )}
-                            >
-                              <span className={cn("block text-[11px] font-bold", on ? "text-[#0b3a5c] dark:text-sky-200" : "text-slate-400")}>{index + 1}-hafta</span>
-                              <span className="block text-sm font-semibold text-[#0f2744] dark:text-white">{week.label}</span>
-                              <span className="block text-[11px] text-muted-foreground">{week.days} kun</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </>
-                  ) : null}
-
-                  {grain === "kun" && activeWeek ? (
-                    <>
-                      <div className="mb-1.5 mt-4 flex items-center justify-between gap-2">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Kunni tanlang</p>
-                        {todayYmd().startsWith(month) && anchor !== todayYmd() ? (
-                          <button type="button" onClick={() => setFocusDate(todayYmd())} className="text-xs font-semibold text-[#0b3a5c] hover:underline dark:text-sky-200">
-                            Bugunga o‘tish
-                          </button>
-                        ) : null}
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {datesFromTo(activeWeek.from, activeWeek.to).map((date) => {
-                          const on = date === anchor;
-                          const today = date === todayYmd();
-                          const dayOff = !!activeScope && !workDays.includes(date);
-                          return (
-                            <button
-                              key={date}
-                              type="button"
-                              onClick={() => setFocusDate(date)}
-                              className={cn(
-                                "flex h-16 w-16 flex-col items-center justify-center rounded-xl border transition",
-                                on
-                                  ? "border-[#0b3a5c] bg-[#0b3a5c] text-white shadow-md"
-                                  : "border-slate-200 bg-white text-slate-800 hover:border-[#0b3a5c]/40 dark:border-white/10 dark:bg-slate-950 dark:text-slate-100",
-                                dayOff && !on && "border-dashed bg-slate-50 text-slate-400 dark:bg-slate-900",
-                              )}
-                            >
-                              <span className={cn("text-[10px] font-semibold uppercase", on ? "text-white/70" : "text-slate-400")}>{weekdayShort(date)}</span>
-                              <span className="text-lg font-bold leading-none tabular-nums">{Number(date.slice(8, 10))}</span>
-                              <span className={cn("mt-0.5 text-[9px] font-bold uppercase", on ? "text-white/80" : today ? "text-emerald-600" : "text-slate-400")}>
-                                {today ? "bugun" : dayOff ? "dam" : "\u00a0"}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </>
-                  ) : null}
-
-                  <div className="mt-4 flex items-start gap-3 rounded-xl bg-[#0b3a5c]/[0.05] px-3.5 py-3 ring-1 ring-[#0b3a5c]/15 dark:bg-white/5 dark:ring-white/10">
-                    <CalendarDays className="mt-0.5 h-5 w-5 shrink-0 text-[#0b3a5c] dark:text-sky-200" />
-                    <div className="min-w-0">
-                      <p className="text-sm text-[#0f2744] dark:text-white">
-                        Tanlangan davr: <span className="font-bold">{periodLabel}</span>
-                        {grain === "kun" && activeWeek ? <span className="text-muted-foreground"> · {weeks.indexOf(activeWeek) + 1}-hafta</span> : null}
-                      </p>
-                      <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{GRAIN_EXPLAIN[grain]}</p>
-                    </div>
-                  </div>
-
-                  {canEdit ? (
-                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed border-slate-300 px-3.5 py-2.5 dark:border-white/15">
-                      <p className="text-xs text-muted-foreground">
-                        <span className="font-semibold text-[#0f2744] dark:text-white">Fiksa</span> — xodimning 1 oylik maoshi. Kunlik summa shundan avtomatik hisoblanadi.
-                      </p>
-                      <Button type="button" variant="outline" className="h-8 gap-1.5 rounded-lg" onClick={() => setFiksaOpen(true)}>
-                        <PencilLine className="h-4 w-4" /> Fiksa kiritish
-                      </Button>
-                    </div>
-                  ) : null}
+                  <PeriodPicker
+                    month={month}
+                    grain={grain}
+                    onGrain={setGrain}
+                    weeks={weeks}
+                    activeWeek={activeWeek}
+                    anchor={anchor}
+                    onPick={setFocusDate}
+                    isRest={activeScope ? (date) => !workDays.includes(date) : null}
+                    periodLabel={periodLabel}
+                    canEditFiksa={canEdit}
+                    onFiksa={() => setFiksaOpen(true)}
+                  />
                 </section>
 
                 <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
@@ -1003,27 +894,27 @@ export default function OylikPage() {
                         </p>
                       </div>
                       <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
-                        <Button
-                          type="button"
+                <Button
+                  type="button"
                           className="h-auto flex-col gap-0 rounded-xl bg-[#0b3a5c] px-4 py-2 text-white hover:bg-[#0b3a5c]/90 sm:flex-row sm:gap-1.5"
                           disabled={approveDay.isPending || !actionIds.length}
                           onClick={approveAll}
                           title="Tasdiqlangach xodim shu kunni ko‘radi"
                         >
                           <Lock className="h-4 w-4" /> Tasdiqlash
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
+                </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
                           className="h-auto flex-col gap-0 rounded-xl border-rose-300 bg-white px-4 py-2 text-rose-700 hover:bg-rose-50 sm:flex-row sm:gap-1.5"
                           disabled={ret.isPending || !actionIds.length}
                           onClick={cancelAll}
                           title="Shu kun jarimasi 0 bo‘ladi"
                         >
                           <XCircle className="h-4 w-4" /> Jarimani bekor qilish
-                        </Button>
-                        <Button
-                          type="button"
+                  </Button>
+                <Button
+                  type="button"
                           variant="outline"
                           className="h-auto flex-col gap-0 rounded-xl bg-white px-4 py-2 sm:flex-row sm:gap-1.5"
                           disabled={refreshDay.isPending || !actionIds.length}
@@ -1034,10 +925,10 @@ export default function OylikPage() {
                           Qayta hisoblash
                           {dirtyIds.length ? (
                             <span className="rounded-full bg-amber-100 px-1.5 text-[11px] font-bold text-amber-800">{dirtyIds.length}</span>
-                          ) : null}
+                ) : null}
                         </Button>
-                      </div>
-                    </div>
+              </div>
+          </div>
                   ) : (
                     <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-dashed border-slate-300 bg-white px-3 py-2.5 text-xs text-muted-foreground dark:border-white/15 dark:bg-slate-900">
                       <span>Bu ko‘rinish faqat o‘qish uchun. Summani o‘zgartirish va tasdiqlash — «Kun» rejimida. Jadvaldagi kunni bossangiz o‘sha kun ochiladi.</span>
@@ -1051,7 +942,7 @@ export default function OylikPage() {
                 {grain === "kun" ? (
                   <PayTable
                     rows={filteredRows}
-                    month={month}
+                  month={month}
                     canEdit={canEdit}
                     canApprove={canApprove}
                     moneyLabel={moneyLabel}
@@ -1081,8 +972,8 @@ export default function OylikPage() {
                   />
                 ) : (
                   <WeekBoard
-                    rows={filteredRows}
-                    month={month}
+                rows={filteredRows}
+                month={month}
                     from={grain === "hafta" && activeWeek ? activeWeek.from : `${month}-01`}
                     to={grain === "hafta" && activeWeek ? activeWeek.to : monthEnd(month)}
                     scope={grain === "hafta" ? "hafta" : "oy"}
@@ -1103,6 +994,15 @@ export default function OylikPage() {
           rows={filteredRows}
           onSaved={(saved) => toast({ title: "Fiksa saqlandi", description: `${saved} xodim. Kunlik summalar shu oylikdan hisoblanadi.` })}
         />
+        {canSchedule ? (
+          <ShiftScheduleDialog
+            open={schedOpen}
+            onOpenChange={setSchedOpen}
+            month={month}
+            initialScope={activeScope && activeScope !== "xavfsizlik" ? activeScope : undefined}
+            initialTab={schedTab}
+          />
+        ) : null}
       </div>
     </div>
   );

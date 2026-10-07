@@ -7,7 +7,25 @@ import { createPortal } from "react-dom";
 import { Loader2, QrCode, SwitchCamera, X } from "lucide-react";
 import jsQR from "jsqr";
 import { cn } from "@/lib/utils";
-import { openCameraFast, warmCamera, type CameraFacing } from "@/lib/camera-fast";
+import { cameraErrorCode, openCameraFast, warmCamera, type CameraFacing } from "@/lib/camera-fast";
+
+function cameraErrorText(err: unknown): string {
+  switch (cameraErrorCode(err)) {
+    case "camera_denied":
+      return "Kameraga ruxsat berilmagan. Brauzer sozlamalarida shu saytga kamera ruxsatini bering.";
+    case "camera_busy":
+      return "Kamera boshqa ilovada band. Boshqa ilovalarni yopib, qayta bosing.";
+    case "camera_not_found":
+      return "Kamera topilmadi.";
+    case "camera_timeout":
+      return "Kamera javob bermadi. Qayta bosing.";
+    case "secure_context":
+    case "camera_unsupported":
+      return "Bu brauzer kamerani qo‘llamaydi — Chrome yoki Safari’da oching.";
+    default:
+      return "Kamera ochilmadi. Qayta bosing.";
+  }
+}
 
 type Props = {
   open: boolean;
@@ -42,6 +60,7 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
   const [opening, setOpening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   /** Default: orqa kamera */
   const [facing, setFacing] = useState<CameraFacing>("environment");
   const facingRef = useRef<CameraFacing>("environment");
@@ -66,6 +85,7 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
       setReady(false);
       setBusy(false);
       setOpening(false);
+      setError(null);
       setFacing("environment");
       facingRef.current = "environment";
       handling.current = false;
@@ -95,6 +115,7 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
       setOpening(true);
       handling.current = false;
       if (cancelled) return;
+      setError(null);
 
       let stream =
         facingRef.current === "environment" && streamProp && streamProp.active ? streamProp : null;
@@ -106,10 +127,11 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
             return;
           }
           ownedStreamRef.current = stream;
-        } catch {
+        } catch (e) {
           if (!cancelled) {
             setReady(false);
             setOpening(false);
+            setError(cameraErrorText(e));
           }
           return;
         }
@@ -143,9 +165,15 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
       try {
         await onDetectedRef.current(value);
         onOpenChange(false);
-      } catch {
-        handling.current = false;
+      } catch (e) {
         setBusy(false);
+        setError((e as Error)?.message || "QR qabul qilinmadi — qayta urinib ko‘ring");
+        // Xuddi shu QR qayta-qayta o‘qilib xato chaqnab turmasin
+        window.setTimeout(() => {
+          if (cancelled) return;
+          handling.current = false;
+          setError(null);
+        }, 3000);
       }
     };
 
@@ -190,8 +218,10 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
 
   const onTapCamera = async () => {
     setOpening(true);
+    setError(null);
     try {
       ownedStreamRef.current?.getTracks().forEach((t) => t.stop());
+      ownedStreamRef.current = null;
       const stream = await openCameraFast(facingRef.current);
       ownedStreamRef.current = stream;
       const video = videoRef.current;
@@ -202,8 +232,9 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
         await video.play().catch(() => undefined);
       }
       setReady(true);
-    } catch {
+    } catch (e) {
       setReady(false);
+      setError(cameraErrorText(e));
     } finally {
       setOpening(false);
     }
@@ -308,10 +339,21 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
               <p className="max-w-[16rem] text-center text-base font-semibold text-white">
                 Kamerani yoqish uchun bosing
               </p>
+              {error ? (
+                <p className="max-w-[18rem] rounded-xl bg-rose-500/20 px-3 py-2 text-center text-sm font-medium leading-snug text-rose-100 ring-1 ring-rose-400/40">
+                  {error}
+                </p>
+              ) : null}
             </>
           )}
         </button>
       )}
+
+      {ready && error && !busy ? (
+        <div className="pointer-events-none absolute inset-x-4 top-[38%] z-40 mx-auto max-w-sm -translate-y-1/2 rounded-2xl bg-rose-600/90 px-4 py-3 text-center text-sm font-semibold leading-snug text-white shadow-xl ring-1 ring-white/20">
+          {error}
+        </div>
+      ) : null}
 
       {ready && !busy ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black/85 via-black/50 to-transparent pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-16">

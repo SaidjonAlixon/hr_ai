@@ -1,7 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db, employeeScheduleOverridesTable } from "@workspace/db";
 import type { ShiftKey } from "./attendance-engine";
-import { hmToMinutes, type StaffHours, type WorkSchedule } from "./shift-hours";
+import { ORTA_SHIFT_LABEL, hmToMinutes, type StaffHours, type WorkSchedule } from "./shift-hours";
 import { warnHmBefore } from "./shift-schedule";
 
 export const SCHEDULE_SHIFT_KEYS = ["office", "one", "two", "three"] as const;
@@ -32,6 +32,12 @@ export function isScheduleShiftKey(value: string): value is ScheduleShiftKey {
 
 export function scheduleShiftLabel(key: ScheduleShiftKey): string {
   return SHIFT_LABEL[key];
+}
+
+/** O‘rta smena xodimiga qo‘yilgan shaxsiy vaqt engine uchun "one", izohi «O‘rta smena» bilan boshlanadi */
+export function overrideShiftLabel(rule: Pick<ScheduleOverride, "shiftKey" | "note">): string {
+  if (rule.note && rule.note.startsWith(ORTA_SHIFT_LABEL)) return ORTA_SHIFT_LABEL;
+  return scheduleShiftLabel(rule.shiftKey);
 }
 
 export function scheduleOvernight(startHm: string, endHm: string): boolean {

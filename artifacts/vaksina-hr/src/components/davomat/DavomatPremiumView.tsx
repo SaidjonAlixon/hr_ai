@@ -66,8 +66,9 @@ type Props = {
   onPickMethod: (m: PremiumMethod) => void;
   canOpenFace: boolean;
   canOpenQr: boolean;
-  faceDenied?: boolean;
-  qrDenied?: boolean;
+  /** Admin o‘chirgan usul kartasi umuman chizilmaydi */
+  showFace: boolean;
+  showQr: boolean;
   /** Faqat admin yoqqan xodimda true — aks holda karta umuman chizilmaydi */
   showFinger?: boolean;
   canOpenFinger?: boolean;
@@ -114,6 +115,12 @@ export function DavomatPremiumView(p: Props) {
   const inDone = Boolean(p.hasIn || p.done);
   /** Faqat kun butunlay yopilganda «Ketdi» — 2-filial Keldim kutayotganda ochiq */
   const outDone = Boolean(p.done);
+  const methodNames = [
+    p.showFace ? "Face ID" : null,
+    p.showQr ? "QR" : null,
+    p.showFinger ? "barmoq izi" : null,
+  ].filter((n): n is string => Boolean(n));
+  const methodCount = methodNames.length;
   /** Joriy soat 19:00+ → kechasi.png (clockLabel Toshkent) */
   const nightHero = (() => {
     const h = Number(String(p.clockLabel).split(":")[0]);
@@ -295,9 +302,11 @@ export function DavomatPremiumView(p: Props) {
               <div className="min-w-0">
                 <h2 className="text-base font-semibold text-white">Davomat usulini tanlang</h2>
                 <p className="mt-0.5 text-xs text-white/50">
-                  {p.showFinger
-                    ? "Istaganingizni tanlang — Face ID, QR yoki barmoq izi"
-                    : "Istaganingizni tanlang — Face ID yoki QR"}
+                  {methodCount === 0
+                    ? "Siz uchun davomat usullari yopilgan"
+                    : methodCount === 1
+                      ? `Davomat usuli — ${methodNames[0]}`
+                      : `Istaganingizni tanlang — ${methodNames.slice(0, -1).join(", ")} yoki ${methodNames[methodNames.length - 1]}`}
                 </p>
               </div>
               {p.onDismissMethods ? (
@@ -311,24 +320,36 @@ export function DavomatPremiumView(p: Props) {
                 </button>
               ) : null}
             </div>
-            {p.outsideZone ? (
+            {p.outsideZone && methodCount > 0 ? (
               <p className="mt-2 text-center text-xs font-semibold leading-snug text-rose-400">
-                {p.outsideWarn || "Hududdan tashqaridasiz — Face ID / QR ochilmaydi"}
+                {p.outsideWarn || "Hududdan tashqaridasiz — davomat ochilmaydi"}
               </p>
             ) : null}
-            <div className={cn("mt-3 grid gap-2.5", p.showFinger ? "grid-cols-3 gap-2" : "grid-cols-2")}>
+            {methodCount === 0 ? (
+              <div className="mt-3 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-3 py-3 text-center text-xs font-semibold leading-snug text-rose-200">
+                Hozircha siz uchun davomat usuli ochilmagan. Rahbaringizga murojaat qiling.
+              </div>
+            ) : null}
+            {methodCount > 0 ? (
+            <div
+              className={cn(
+                "mt-3 grid gap-2.5",
+                methodCount === 3 ? "grid-cols-3 gap-2" : methodCount === 2 ? "grid-cols-2" : "grid-cols-1",
+              )}
+            >
+              {p.showFace ? (
               <button
                 type="button"
                 id="dv-coach-face"
-                disabled={p.outsideZone || p.busy || (!p.faceDenied && !p.canOpenFace)}
+                disabled={p.outsideZone || p.busy || !p.canOpenFace}
                 onClick={() => p.onPickMethod("FACE_ID")}
                 className={cn(
                   "dv-method-card relative px-3 py-2.5 text-left",
-                  p.selectedMethod === "FACE_ID" && !p.outsideZone && !p.faceDenied && "dv-method-card-on",
-                  (p.outsideZone || p.faceDenied || !p.canOpenFace) && "dv-method-card-locked",
+                  p.selectedMethod === "FACE_ID" && !p.outsideZone && "dv-method-card-on",
+                  (p.outsideZone || !p.canOpenFace) && "dv-method-card-locked",
                 )}
               >
-                {p.selectedMethod === "FACE_ID" && !p.outsideZone && !p.faceDenied ? (
+                {p.selectedMethod === "FACE_ID" && !p.outsideZone ? (
                   <span className="absolute right-2 top-2 text-sky-300">
                     <CheckCircle2 className="h-4 w-4" />
                   </span>
@@ -340,30 +361,30 @@ export function DavomatPremiumView(p: Props) {
                 <p
                   className={cn(
                     "mt-0.5 text-[10px] leading-snug",
-                    p.outsideZone || p.faceDenied ? "font-semibold text-rose-400" : "text-white/50",
+                    p.outsideZone ? "font-semibold text-rose-400" : "text-white/50",
                   )}
                 >
-                  {p.faceDenied
-                    ? "Aynan sizga ruxsat yo‘q"
-                    : p.outsideZone
+                  {p.outsideZone
                     ? "Hududga kiring"
                     : p.faceRegistered === false
                       ? "Avval yuzni ro‘yxatdan o‘tkazing"
                       : "Rasmga olish orqali tasdiqlash"}
                 </p>
               </button>
+              ) : null}
+              {p.showQr ? (
               <button
                 type="button"
                 id="dv-coach-qr"
-                disabled={p.outsideZone || p.busy || (!p.qrDenied && !p.canOpenQr)}
+                disabled={p.outsideZone || p.busy || !p.canOpenQr}
                 onClick={() => p.onPickMethod("QR")}
                 className={cn(
                   "dv-method-card relative px-3 py-2.5 text-left",
-                  p.selectedMethod === "QR" && !p.outsideZone && !p.qrDenied && "dv-method-card-on",
-                  (p.outsideZone || p.qrDenied || !p.canOpenQr) && "dv-method-card-locked",
+                  p.selectedMethod === "QR" && !p.outsideZone && "dv-method-card-on",
+                  (p.outsideZone || !p.canOpenQr) && "dv-method-card-locked",
                 )}
               >
-                {p.selectedMethod === "QR" && !p.outsideZone && !p.qrDenied ? (
+                {p.selectedMethod === "QR" && !p.outsideZone ? (
                   <span className="absolute right-2 top-2 text-sky-300">
                     <CheckCircle2 className="h-4 w-4" />
                   </span>
@@ -375,12 +396,13 @@ export function DavomatPremiumView(p: Props) {
                 <p
                   className={cn(
                     "mt-0.5 text-[10px] leading-snug",
-                    p.outsideZone || p.qrDenied ? "font-semibold text-rose-400" : "text-white/50",
+                    p.outsideZone ? "font-semibold text-rose-400" : "text-white/50",
                   )}
                 >
-                  {p.qrDenied ? "Aynan sizga ruxsat yo‘q" : p.outsideZone ? "Hududga kiring" : "QR kodni skaner qiling"}
+                  {p.outsideZone ? "Hududga kiring" : "QR kodni skaner qiling"}
                 </p>
               </button>
+              ) : null}
               {p.showFinger ? (
                 <button
                   type="button"
@@ -413,6 +435,7 @@ export function DavomatPremiumView(p: Props) {
                 </button>
               ) : null}
             </div>
+            ) : null}
           </section>
         ) : null}
 

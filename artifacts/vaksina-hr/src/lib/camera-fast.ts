@@ -146,12 +146,21 @@ async function ensurePermissionOnce(): Promise<void> {
 
 function preferredConstraints(facing: CameraFacing, deviceId?: string): MediaStreamConstraints[] {
   const list: MediaStreamConstraints[] = [
+    // exact — telefonda aynan old/orqa kamera; kompyuter webkamerasida tez rad etiladi va keyingisiga o‘tadi
+    {
+      audio: false,
+      video: {
+        facingMode: { exact: facing },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+    },
     {
       audio: false,
       video: {
         facingMode: { ideal: facing },
-        width: { ideal: facing === "user" ? 1280 : 1280 },
-        height: { ideal: facing === "user" ? 720 : 720 },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
       },
     },
     { audio: false, video: { facingMode: { ideal: facing } } },
@@ -206,27 +215,65 @@ export async function openScanCamera(): Promise<MediaStream> {
   return openCameraFast("environment");
 }
 
-export async function openCameraFast(facing: CameraFacing): Promise<MediaStream> {
+function isCameraBusy(e: unknown): boolean {
+  return (
+    e instanceof DOMException &&
+    (e.name === "NotReadableError" || e.name === "TrackStartError" || e.name === "AbortError")
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+/** Bir vaqtda faqat bitta kamera so‘rovi — parallel getUserMedia telefonda «kamera band» yoki qora ekran beradi */
+let openChain: Promise<unknown> = Promise.resolve();
+
+export function openCameraFast(facing: CameraFacing): Promise<MediaStream> {
+  const run = openChain.then(
+    () => openCameraOnce(facing),
+    () => openCameraOnce(facing),
+  );
+  openChain = run.catch(() => undefined);
+  return run;
+}
+
+async function openCameraOnce(facing: CameraFacing): Promise<MediaStream> {
   if (!window.isSecureContext) throw new Error("secure_context");
   if (!navigator.mediaDevices?.getUserMedia) throw new Error("camera_unsupported");
+  if (permissionInflight) await permissionInflight.catch(() => undefined);
 
   const stored = loadDeviceCache()[facing] || cache[facing]?.deviceId;
   let lastErr: unknown;
   let denied = false;
+  let busyRetried = false;
 
   let attempt = 0;
   for (const constraints of preferredConstraints(facing, stored)) {
+    const usesStored = Boolean(stored && JSON.stringify(constraints.video).includes(stored));
     try {
-      // 1-urinishda ruxsat oynasi chiqishi mumkin — foydalanuvchiga vaqt beramiz
-      const stream = await tryGet(constraints, attempt++ === 0 ? 20000 : 8000);
+      // Ruxsat oynasi chiqishi mumkin — foydalanuvchiga vaqt beramiz
+      const firstTime = attempt++ === 0 || !wasCameraGrantedBefore();
+      let stream: MediaStream;
+      try {
+        stream = await tryGet(constraints, firstTime ? 20000 : 8000);
+      } catch (e) {
+        // Oldingi oqim hali bo‘shamagan — biroz kutib aynan shu so‘rovni qaytaramiz
+        if (!isCameraBusy(e) || busyRetried) throw e;
+        busyRetried = true;
+        await sleep(600);
+        stream = await tryGet(constraints, 8000);
+      }
       await resetDigitalZoom(stream);
       const got = reportedFacing(stream);
-      // Faqat aniq noto‘g‘ri kamerani rad etamiz; facing noma’lum bo‘lsa qabul
+      // Faqat aniq noto‘g‘ri kamerani rad etamiz; facing noma’lum bo‘lsa qabul (kompyuter webkamerasi)
       if (got && got !== facing) {
         stream.getTracks().forEach((t) => t.stop());
+        if (usesStored) clearDeviceId(facing);
         continue;
       }
-      remember(facing, stream, constraints);
+      if (got === facing) remember(facing, stream, constraints);
+      else markGranted();
       return stream;
     } catch (e) {
       lastErr = e;
@@ -235,13 +282,7 @@ export async function openCameraFast(facing: CameraFacing): Promise<MediaStream>
         break;
       }
       // Eski deviceId ishlamasa — cache tozalab davom etamiz
-      const usedExactDevice =
-        stored &&
-        JSON.stringify(constraints).includes(stored) &&
-        (constraints.video as MediaTrackConstraints | undefined)?.deviceId;
-      if (usedExactDevice) {
-        clearDeviceId(facing);
-      }
+      if (usesStored) clearDeviceId(facing);
     }
   }
 

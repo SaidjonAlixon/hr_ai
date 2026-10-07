@@ -10,6 +10,7 @@ import { Layout } from './components/layout/Layout';
 import { RealtimeSync } from './lib/realtime-sync';
 import { DeviceSecurityListener } from './components/DeviceSecurityListener';
 import { DisciplineLockOverlay } from './components/DisciplineLockOverlay';
+import { ExplanationLetterPrompt } from './components/explanation-letter/ExplanationLetterPrompt';
 
 // Login asosiy paketda qoladi. Qolgan sahifalar kirish/yangilashda birga tahlil qilinmasin.
 import Login from './pages/login';
@@ -56,9 +57,10 @@ const PreboardingPage = lazy(() => import('./pages/preboarding/index'));
 const AdminDarsliklarPage = lazy(() => import('./pages/admin/darsliklar'));
 const AdminAtestatsiyaPage = lazy(() => import('./pages/admin/atestatsiya'));
 const AdminFacesPage = lazy(() => import('./pages/admin/faces'));
-const AdminSmenaSozlamalarPage = lazy(() => import('./pages/admin/smena-sozlamalar'));
 const AdminDavomatQrPage = lazy(() => import('./pages/admin/davomat-qr'));
 const AdminTestPage = lazy(() => import('./pages/admin/test'));
+const AdminTushuntirishXatlariPage = lazy(() => import('./pages/admin/tushuntirish-xatlari'));
+const TushuntirishXatimPage = lazy(() => import('./pages/tushuntirish-xatim'));
 const AdminQurilmalarPage = lazy(() => import('./pages/admin/qurilmalar'));
 const AdminKochmaDavomatPage = lazy(() => import('./pages/admin/kochma-davomat'));
 const AdminKochmaXaritaPage = lazy(() => import('./pages/admin/kochma-xarita'));
@@ -84,6 +86,7 @@ const NotificationsPage = lazy(() => import('./pages/notifications/index'));
 const TgEntryPage = lazy(() => import('./pages/tg-entry'));
 const JavobOlishPage = lazy(() => import('./pages/javob-olish/index'));
 const JavobOlishHolatPage = lazy(() => import('./pages/javob-olish/holat'));
+const TxVerifyPage = lazy(() => import('./pages/tx-verify'));
 
 function PageFallback() {
   return (
@@ -156,6 +159,11 @@ function Router() {
       <Route path="/tg">
         <Suspense fallback={<PageFallback />}>
           <TgEntryPage />
+        </Suspense>
+      </Route>
+      <Route path="/tx/:token">
+        <Suspense fallback={<PageFallback />}>
+          <TxVerifyPage />
         </Suspense>
       </Route>
       <Route path="/davomat-face">
@@ -275,9 +283,13 @@ function Router() {
       <ProtectedRoute path="/admin/darsliklar" component={AdminDarsliklarPage} />
       <ProtectedRoute path="/admin/atestatsiya" component={AdminAtestatsiyaPage} />
       <ProtectedRoute path="/admin/faces" component={AdminFacesPage} />
-      <ProtectedRoute path="/admin/smena-sozlamalar" component={AdminSmenaSozlamalarPage} />
+      <Route path="/admin/smena-sozlamalar">
+        <Redirect to="/oylik?jadval=1" />
+      </Route>
       <ProtectedRoute path="/admin/davomat-qr" component={AdminDavomatQrPage} />
       <ProtectedRoute path="/admin/test" component={AdminTestPage} />
+      <ProtectedRoute path="/admin/tushuntirish-xatlari" component={AdminTushuntirishXatlariPage} />
+      <ProtectedRoute path="/tushuntirish-xatim" component={TushuntirishXatimPage} />
       <ProtectedRoute path="/admin/qurilmalar" component={AdminQurilmalarPage} />
       <ProtectedRoute path="/admin/kochma-davomat" component={AdminKochmaDavomatPage} />
       <ProtectedRoute path="/admin/kochma-xarita" component={AdminKochmaXaritaPage} />
@@ -300,6 +312,7 @@ function App() {
             <TooltipProvider>
               <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, '') || ''}>
                 <Router />
+                <ExplanationLetterPrompt />
               </WouterRouter>
               <Toaster />
             </TooltipProvider>

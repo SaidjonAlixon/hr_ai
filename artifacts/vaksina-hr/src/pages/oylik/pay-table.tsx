@@ -67,10 +67,12 @@ export function DavomatJarimaCard({ month, onOpen }: { month: string; onOpen?: (
 }
 
 const JARIMA_RULE_CARDS = [
-  { n: "1", title: "1-marta", body: "1 kunlik ish haqining 30%" },
-  { n: "2", title: "2-marta", body: "Yana 1 kunlikning 30%" },
-  { n: "3", title: "3-marta", body: "1 kunlik ish haqining 100%" },
-  { n: "4+", title: "4-marta va keyin", body: "Har safar 1 oylikning 50%" },
+  { n: "1", title: "1-marta", body: "Ogohlantirish va tushuntirish xati" },
+  { n: "2", title: "2-marta", body: "1 kunlik ish haqining 30%" },
+  { n: "3", title: "3-marta", body: "Yana 1 kunlikning 30%" },
+  { n: "4", title: "4-marta", body: "1 kunlik ish haqining 100%" },
+  { n: "5", title: "5-marta", body: "1 oylikning 50% va o‘sha kuni platforma bloki" },
+  { n: "6", title: "6-marta — oxirgi", body: "Yana oylikning 50%, oxirgi xat va ishdan bo‘shatishga rozilik" },
 ];
 
 type JarimaKindFilter = "all" | "absent" | "late";
@@ -115,7 +117,7 @@ export function DavomatJarimaPanel({ month }: { month: string }) {
             <p className="mt-1.5 text-xs text-white/60">{summary.isLoading ? "Hisoblanmoqda" : `${shown.length} xodim · ${filterLabel}`}</p>
           </div>
         </div>
-        <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
           {JARIMA_RULE_CARDS.map((rule) => (
             <div key={rule.n} className="rounded-2xl bg-white/10 px-3.5 py-3 ring-1 ring-white/10">
               <div className="flex items-center gap-2">
@@ -364,9 +366,10 @@ function strikeLabel(n: number) {
 }
 
 function strikeNote(n: number) {
-  if (n <= 1) return "Bu oyda birinchi marta. 1 kunlik ish haqining 30% jarima.";
-  if (n === 2) return "Bu oyda ikkinchi marta. Yana 1 kunlik ish haqining 30% jarima.";
-  if (n === 3) return "Bu oyda uchinchi marta. 1 kunlik ish haqining 100% jarima.";
+  if (n <= 1) return "Bu oyda birinchi marta. Ogohlantirish — tushuntirish xati yoziladi.";
+  if (n === 2) return "Bu oyda ikkinchi marta. 1 kunlik ish haqining 30% jarima.";
+  if (n === 3) return "Bu oyda uchinchi marta. Yana 1 kunlik ish haqining 30% jarima.";
+  if (n === 4) return "Bu oyda to‘rtinchi marta. 1 kunlik ish haqining 100% jarima.";
   return `Bu oyda ${n}-marta. 1 oylik ish haqining 50% jarima.`;
 }
 

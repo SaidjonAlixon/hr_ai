@@ -3,12 +3,18 @@
  * Ofis / 1-smena / 2-smena — Excel eksportida ham shu qoida.
  */
 import { isSecurityStaff } from "./security-shifts";
+import { parseShiftKeys } from "./attendance-engine";
+import { isOrtaShift } from "./shift-hours";
 
 export type DavomatStaffFilter =
   | "all"
   | "pharmacy"
   | "shift_one"
   | "shift_two"
+  | "shift_three"
+  | "shift_12"
+  | "shift_23"
+  | "shift_orta"
   | "office"
   | "office_core"
   | "warehouse"
@@ -142,16 +148,37 @@ function isNonOfficeStaff(emp: {
   return positionHasWord(emp.position, NON_OFFICE_POSITION_WORDS);
 }
 
+export type PharmacyShiftBucket = "shift_one" | "shift_two" | "shift_three" | "shift_12" | "shift_23" | "shift_orta";
+
+/** UI dagi bilan bir xil: O‘rta, 2+3, 1+2, 3, 2, qolgani 1-smena — hech kim chetda qolmaydi */
+export function pharmacyShiftBucket(emp: {
+  shiftType?: string | null;
+  shiftLabel?: string | null;
+  workStart?: string;
+  workEnd?: string;
+}): PharmacyShiftBucket {
+  if (isOrtaShift(emp.shiftType, emp.shiftLabel)) return "shift_orta";
+  const keys = new Set(parseShiftKeys(emp.shiftType, emp.shiftLabel).filter((k) => k !== "office"));
+  const label = String(emp.shiftLabel || "").toLowerCase().replace(/\s+/g, "");
+  if (label.includes("2+3") || label.includes("2-3")) return "shift_23";
+  if (label.includes("1+2") || label.includes("1-2")) return "shift_12";
+  if (keys.has("two") && keys.has("three")) return "shift_23";
+  if (keys.has("one") && keys.has("two")) return "shift_12";
+  if (keys.size === 1 && keys.has("three")) return "shift_three";
+  if (keys.size === 1 && keys.has("two")) return "shift_two";
+  if (keys.size === 1 && keys.has("one")) return "shift_one";
+  if (normalizeShiftType(emp.shiftType, emp.shiftLabel) === "two") return "shift_two";
+  if ((emp.workStart === "17:00" || emp.workStart === "18:00") && emp.workEnd === "23:45") return "shift_two";
+  return "shift_one";
+}
+
 function isShiftTwo(emp: {
   shiftType?: string | null;
   shiftLabel?: string | null;
   workStart?: string;
   workEnd?: string;
 }): boolean {
-  if (normalizeShiftType(emp.shiftType, emp.shiftLabel) === "two") return true;
-  return (
-    (emp.workStart === "17:00" || emp.workStart === "18:00") && emp.workEnd === "23:45"
-  );
+  return pharmacyShiftBucket(emp) === "shift_two";
 }
 
 export function parseDavomatStaffFilter(raw?: string | null): DavomatStaffFilter {
@@ -160,6 +187,10 @@ export function parseDavomatStaffFilter(raw?: string | null): DavomatStaffFilter
     v === "pharmacy" ||
     v === "shift_one" ||
     v === "shift_two" ||
+    v === "shift_three" ||
+    v === "shift_12" ||
+    v === "shift_23" ||
+    v === "shift_orta" ||
     v === "office" ||
     v === "office_core" ||
     v === "warehouse" ||
@@ -216,8 +247,7 @@ export function matchesDavomatStaffFilter(
 
   if (filter === "pharmacy") return shiftPharmacy;
   if (filter === "shift_two") return shiftPharmacy && shiftTwo;
-  if (filter === "shift_one") return shiftPharmacy && !shiftTwo;
-  return false;
+  return shiftPharmacy && pharmacyShiftBucket(emp) === filter;
 }
 
 export function staffFilterLabelUz(filter: DavomatStaffFilter): string {
@@ -228,6 +258,14 @@ export function staffFilterLabelUz(filter: DavomatStaffFilter): string {
       return "Dorixona · 1-smena";
     case "shift_two":
       return "Dorixona · 2-smena";
+    case "shift_three":
+      return "Dorixona · 3-smena";
+    case "shift_12":
+      return "Dorixona · 1+2 smena";
+    case "shift_23":
+      return "Dorixona · 2+3 smena";
+    case "shift_orta":
+      return "Dorixona · O‘rta smena";
     case "warehouse":
       return "Omborxona";
     case "security":

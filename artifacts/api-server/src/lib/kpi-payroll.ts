@@ -5,7 +5,6 @@ import {
   attendanceRecordsTable,
   branchAuditsTable,
   employeesTable,
-  workCalendarDaysTable,
   kpiSettingsTable,
   payrollDaysTable,
   payrollMonthsTable,
@@ -13,7 +12,18 @@ import {
   usersTable,
 } from "@workspace/db";
 import { displayBranchName } from "./geo-location";
-import { isPharmacyStaffRow, loadStaffFromUsers } from "./staff-directory";
+import { loadStaffFromUsers } from "./staff-directory";
+import {
+  calendarStorageKey,
+  calendarWorkStatus,
+  isPayrollCalendarScope,
+  loadWorkCalendar,
+  parseCalendarStorageKey,
+  payrollCalendarScope,
+  scopeCalendar,
+  swapOn,
+  type ShiftSwap,
+} from "./work-calendar";
 import { scriptIncludes } from "./script-search";
 import { applyAttendanceJarima, JARIMA_RULE, JARIMA_START, salaryShareOnDates } from "./attendance-jarima";
 
@@ -218,8 +228,7 @@ export function eachDate(from: string, to: string): string[] {
 }
 
 export function isWorkDay(iso: string, overrides?: Map<string, boolean>): boolean {
-  if (overrides?.has(iso)) return overrides.get(iso)!;
-  return defaultIsWorkDay(iso);
+  return calendarWorkStatus(overrides, iso) ?? defaultIsWorkDay(iso);
 }
 
 /** Default: yakshanba dam. Override kalendar orqali. */
@@ -233,84 +242,16 @@ export function expectedWorkdays(from: string, to: string, month: string, overri
   return workdaysBetween(from, closeTo, overrides);
 }
 
-/** Ofis — oddiy ofis xodimlari bitta kalendar. Xavfsizlik alohida. Dorixona har smena alohida. */
-export function isPayrollCalendarScope(scope: string) {
-  return scope === "ofis" || scope === "xavfsizlik" || /^dorixona:[a-z0-9]{1,16}$/.test(scope);
-}
+export { calendarStorageKey, isPayrollCalendarScope, parseCalendarStorageKey, payrollCalendarScope };
 
-export function calendarStorageKey(scope: string, iso: string) {
-  if (scope === "ofis") return iso;
-  return `${scope}|${iso}`;
-}
-
-export function parseCalendarStorageKey(raw: string): { scope: string; iso: string } | null {
-  const scoped = /^([a-z0-9:_-]{1,40})\|(\d{4}-\d{2}-\d{2})$/.exec(raw);
-  if (scoped && isPayrollCalendarScope(scoped[1]!)) return { scope: scoped[1]!, iso: scoped[2]! };
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return { scope: "ofis", iso: raw };
-  return null;
-}
-
-function normPayroll(s: unknown) {
-  return String(s ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[ʻʼ'`´]/g, "'");
-}
-
-function payrollShiftKey(shiftType?: string | null, shiftLabel?: string | null) {
-  const compact = normPayroll(shiftLabel).replace(/\s+/g, "");
-  const t = normPayroll(shiftType);
-  if (compact.includes("1+2") || compact.includes("1-2") || t === "one_two" || t === "12") return "12";
-  if (compact.includes("2+3") || compact.includes("2-3") || t === "two_three" || t === "23") return "23";
-  if (t === "three" || t === "3" || compact.includes("3-smena") || compact === "3smena") return "3";
-  if (t === "two" || t === "2" || compact.includes("2-smena") || compact === "2smena") return "2";
-  if (t === "office" || compact.includes("ofis")) return "office";
-  if (t === "one" || t === "1" || compact.includes("1-smena") || compact === "1smena" || !t) return "1";
-  return "other";
-}
-
-export function payrollCalendarScope(input: {
-  userRole?: string | null;
-  orgRole?: string | null;
-  position?: string | null;
-  location?: string | null;
-  shiftType?: string | null;
-  shiftLabel?: string | null;
-}) {
-  const role = normPayroll(input.userRole);
-  const org = normPayroll(input.orgRole);
-  const pos = normPayroll(input.position);
-  if (role === "sb" || role === "sb_boshliq" || /xavfsiz/.test(role) || /xavfsiz/.test(pos)) {
-    return "xavfsizlik";
-  }
-  if (isPharmacyStaffRow({ userRole: role, orgRole: org, position: pos })) {
-    return `dorixona:${payrollShiftKey(input.shiftType, input.shiftLabel)}`;
-  }
-  return "ofis";
-}
-
+/** Haftalik qoida + sana o‘zgartirishlari, smena bo‘yicha */
 export async function loadScopedCalendars(): Promise<Map<string, Map<string, boolean>>> {
-  const out = new Map<string, Map<string, boolean>>();
-  try {
-    const rows = await db
-      .select({ day: workCalendarDaysTable.day, isWork: workCalendarDaysTable.isWork })
-      .from(workCalendarDaysTable);
-    for (const r of rows) {
-      const parsed = parseCalendarStorageKey(r.day);
-      if (!parsed) continue;
-      const bucket = out.get(parsed.scope) ?? new Map<string, boolean>();
-      bucket.set(parsed.iso, Boolean(r.isWork));
-      out.set(parsed.scope, bucket);
-    }
-  } catch (err) {
-    console.error("loadScopedCalendars", err);
-  }
-  return out;
+  const snap = await loadWorkCalendar();
+  return snap.calendars;
 }
 
 export async function loadWorkDayOverrides(scope = "ofis"): Promise<Map<string, boolean>> {
-  const all = await loadScopedCalendars();
-  return all.get(scope) ?? new Map();
+  return scopeCalendar(await loadScopedCalendars(), scope);
 }
 
 function round1(n: number) {
@@ -515,7 +456,7 @@ export async function computePayroll(userId: number, monthKey: string): Promise<
     shiftType: emp?.shiftType,
     shiftLabel: emp?.shiftLabel,
   });
-  const expected = expectedWorkdays(from, to, month, scopedCalendars.get(calendarScope) ?? new Map());
+  const expected = expectedWorkdays(from, to, month, scopeCalendar(scopedCalendars, calendarScope));
   const recorded = new Set(attDays.map((d) => d.date));
   const complete = expected.length > 0 && expected.every((d) => recorded.has(d));
   const closedDays = expected.filter((d) => recorded.has(d)).length;
@@ -735,6 +676,7 @@ export type PayrollListRow = {
   closedWorkDays: number;
   tasksAvailable: boolean;
   checklistAvailable: boolean;
+  swapDays?: SwapDay[];
 };
 
 function kpiFromParts(
@@ -824,7 +766,7 @@ export async function computePayrollList(
   const expectedFor = (scope: string) => {
     const cached = expectedByScope.get(scope);
     if (cached) return cached;
-    const days = expectedWorkdays(from, to, month, scopedCalendars.get(scope) ?? new Map());
+    const days = expectedWorkdays(from, to, month, scopeCalendar(scopedCalendars, scope));
     expectedByScope.set(scope, days);
     return days;
   };
@@ -1065,8 +1007,9 @@ export async function computePayrollList(
   for (const item of items) scopeKeys.add(item.calendarScope);
   const calendars: Record<string, string[]> = {};
   for (const scope of scopeKeys) {
-    calendars[scope] = workdaysBetween(from, to, scopedCalendars.get(scope) ?? new Map());
+    calendars[scope] = workdaysBetween(from, to, scopeCalendar(scopedCalendars, scope));
   }
+  attachSwapDays(items, month, (await loadWorkCalendar()).swaps);
   return { month, monthLabel, workDays: calendars.ofis ?? [], calendars, items };
 }
 
@@ -1317,6 +1260,7 @@ export async function loadPayrollYear(userId: number, year: string) {
 
 function jarimaWorkDay(calendars: Map<string, Map<string, boolean>>) {
   return (person: {
+    employeeId?: number | null;
     role: string | null;
     orgRole: string | null;
     position: string | null;
@@ -1324,6 +1268,8 @@ function jarimaWorkDay(calendars: Map<string, Map<string, boolean>>) {
     shiftType: string | null;
     shiftLabel: string | null;
   }, date: string) => {
+    const swap = swapOn(person.employeeId, date);
+    if (swap) return swap.kind === "work";
     const scope = payrollCalendarScope({
       userRole: person.role,
       orgRole: person.orgRole,
@@ -1332,8 +1278,39 @@ function jarimaWorkDay(calendars: Map<string, Map<string, boolean>>) {
       shiftType: person.shiftType,
       shiftLabel: person.shiftLabel,
     });
-    return isWorkDay(date, calendars.get(scope) ?? new Map());
+    return isWorkDay(date, scopeCalendar(calendars, scope));
   };
+}
+
+export type SwapDay = { date: string; delta: number; note: string; swapId: number; pending: boolean };
+
+/**
+ * Almashuv kunining puli: «chiqqan odamga» — dam olganning shu kungi ulushi undan olinib, o‘rniga chiqqanga qo‘shiladi.
+ * «O‘ziga» — hech kimning summasi o‘zgarmaydi. Qaror bo‘lmaguncha summa o‘zgarmaydi.
+ */
+function attachSwapDays(items: PayrollListRow[], month: string, swaps: ShiftSwap[]) {
+  const byEmp = new Map(items.map((item) => [item.employeeId, item]));
+  for (const swap of swaps) {
+    if (!swap.workDate.startsWith(`${month}-`)) continue;
+    const resting = byEmp.get(swap.employeeId);
+    const replacing = byEmp.get(swap.replacementEmployeeId);
+    const share = resting ? salaryShareOnDates(resting.salary || resting.fixedSalary, month, [swap.workDate]) : 0;
+    const toReplacement = swap.payTo === "replacement";
+    const pending = swap.payTo == null;
+    const tail = pending ? "qaror kutilmoqda" : toReplacement ? "kun haqi o‘rniga chiqqanga" : "kun haqi o‘ziga";
+    if (resting) {
+      resting.swapDays = [
+        ...(resting.swapDays ?? []),
+        { date: swap.workDate, delta: toReplacement ? -share : 0, note: `Almashuv: ${swap.replacementName} chiqdi · ${tail}`, swapId: swap.id, pending },
+      ];
+    }
+    if (replacing) {
+      replacing.swapDays = [
+        ...(replacing.swapDays ?? []),
+        { date: swap.workDate, delta: toReplacement ? share : 0, note: `Almashuv: ${swap.employeeName} o‘rniga · ${tail}`, swapId: swap.id, pending },
+      ];
+    }
+  }
 }
 
 /** Oylik sahifasidagi bilan bir xil ish kunlari qoidasi bo‘yicha oy jarimalari */

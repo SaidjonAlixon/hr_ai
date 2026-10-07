@@ -41,6 +41,7 @@ import smenaRouter from "./smena";
 import attendanceSettingsRouter from "./attendance-settings";
 import holatRouter from "./holat";
 import oylikRouter from "./oylik";
+import workCalendarRouter from "./work-calendar";
 import hisobkitobRouter from "./hisobkitob";
 import telegramRouter from "./telegram";
 import reviziyaRouter from "./reviziya";
@@ -62,11 +63,13 @@ import telegramFilialRouter from "./telegram-filial";
 import vaksinamedRouter from "./vaksinamed";
 import publicFilialMapRouter from "./public-filial-map";
 import disciplineRouter from "./discipline";
+import explanationLettersRouter from "./explanation-letters";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(disciplineRouter);
+router.use(explanationLettersRouter);
 router.use(publicFilialMapRouter);
 router.use(uploadsRouter);
 router.use(pharmacyNetworkRouter);

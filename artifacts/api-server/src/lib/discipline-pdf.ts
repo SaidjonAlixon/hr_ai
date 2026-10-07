@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PDFDocument, rgb, type PDFFont, type PDFPage, type RGB } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import type { DisciplinePerson, DisciplineReport } from "./discipline";
+import type { DisciplinePerson, DisciplineReport, TodayLock } from "./discipline";
 
 const PAGE_W = 595.28;
 const PAGE_H = 841.89;
@@ -37,8 +37,8 @@ const LEVELS: Array<{
   },
   {
     key: "4",
-    title: "4 marta — 1 oylik ish haqining 50% jarima",
-    note: "Keyingi (5-) safar — ishdan bo‘shatish masalasi ko‘riladi va tizim bloklanadi.",
+    title: "4 marta — 1 kunlik ish haqining 100% jarima",
+    note: "Keyingi (5-) safar — 1 oylik ish haqining 50% jarima, ishdan bo‘shatish masalasi va tizim bloklanadi.",
     match: (p) => p.strikes === 4,
     bg: rgb(1, 0.929, 0.835),
     fg: rgb(0.65, 0.27, 0.02),
@@ -46,14 +46,14 @@ const LEVELS: Array<{
   {
     key: "3",
     title: "3 marta — xavf zonasi",
-    note: "3-marta 1 kunlik ish haqining 100%. Keyingi safar — 1 oylik ish haqining 50%.",
+    note: "3-marta 1 kunlik ish haqining 30%. Keyingi safar — 1 kunlik ish haqining 100%.",
     match: (p) => p.strikes === 3,
     bg: rgb(1, 0.973, 0.882),
     fg: rgb(0.57, 0.38, 0.03),
   },
 ];
 
-async function readFont(file: string): Promise<Buffer> {
+export async function readFont(file: string): Promise<Buffer> {
   const candidates = [
     path.join(path.dirname(fileURLToPath(import.meta.url)), "fonts", file),
     path.join(process.cwd(), "dist", "fonts", file),
@@ -102,18 +102,20 @@ function stamp(d: Date): string {
 }
 
 function rule(n: number): string {
-  if (n <= 2) return "Kunlikning 30%";
-  if (n === 3) return "Kunlikning 100%";
-  if (n === 4) return "Oylikning 50%";
-  return "Oylik 50% · bo‘shatish";
+  if (n <= 1) return "Ogohlantirish";
+  if (n <= 3) return "Kunlikning 30%";
+  if (n === 4) return "Kunlikning 100%";
+  if (n === 5) return "Oylik 50% · blok";
+  return "Oylik 50% · oxirgi ogohl.";
 }
 
 /** Xodim yana kech qolsa / kelmasa nima bo‘lishi */
 export function disciplineNextStep(strikes: number): string {
-  if (strikes <= 2) return `yana ${3 - strikes} marta — 1 kunlik ish haqining 100% jarima`;
-  if (strikes === 3) return "yana 1 marta — 1 oylik ish haqining 50% jarima";
-  if (strikes === 4) return "yana 1 marta — ishdan bo‘shatish masalasi, o‘sha kuni tizim bloklanadi";
-  return "ishdan bo‘shatish masalasi ko‘rib chiqiladi; har yangi holatda tizim bloklanadi";
+  if (strikes <= 2) return "yana 1 marta — 1 kunlik ish haqining 30% jarima";
+  if (strikes === 3) return "yana 1 marta — 1 kunlik ish haqining 100% jarima";
+  if (strikes === 4) return "yana 1 marta — 1 oylik ish haqining 50% jarima, o‘sha kuni tizim bloklanadi";
+  if (strikes === 5) return "yana 1 marta — 50% jarima, oxirgi ogohlantirish va ishdan bo‘shatishga rozilik xati";
+  return "oxirgi ogohlantirish berilgan — yana takrorlansa ishdan bo‘shatish uchun asos";
 }
 
 function fit(text: string, font: PDFFont, size: number, max: number): string {
@@ -364,9 +366,130 @@ function drawCoordinatorSummary(d: Draw, people: DisciplinePerson[]) {
   d.y -= 14;
 }
 
+function hm(value: string | Date | null): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("ru-RU", { timeZone: "Asia/Tashkent", hour: "2-digit", minute: "2-digit" }).format(d);
+}
+
+const LOCK_COLS = [
+  { label: "№", w: 24 },
+  { label: "F.I.Sh.", w: 140 },
+  { label: "Lavozim · filial", w: 130 },
+  { label: "Sabab", w: 125 },
+  { label: "", w: 120 },
+];
+
+const BLOCKED_TONE = { bg: rgb(0.996, 0.886, 0.898), fg: rgb(0.62, 0.05, 0.16) };
+const ALLOWED_TONE = { bg: rgb(0.863, 0.969, 0.906), fg: rgb(0.02, 0.45, 0.25) };
+
+function drawLockTable(
+  d: Draw,
+  title: string,
+  note: string,
+  lastLabel: string,
+  list: TodayLock[],
+  tone: { bg: RGB; fg: RGB },
+  last: (l: TodayLock) => string,
+) {
+  const width = PAGE_W - M * 2;
+  ensure(d, 60 + Math.min(list.length, 3) * 14);
+  const h = 34;
+  d.page.drawRectangle({ x: M, y: d.y - h, width, height: h, color: tone.bg });
+  d.page.drawRectangle({ x: M, y: d.y - h, width: 3, height: h, color: tone.fg });
+  d.page.drawText(title, { x: M + 10, y: d.y - 14, size: 11, font: d.bold, color: tone.fg });
+  const cnt = `${list.length} xodim`;
+  d.page.drawText(cnt, { x: M + width - 8 - d.bold.widthOfTextAtSize(cnt, 10), y: d.y - 14, size: 10, font: d.bold, color: tone.fg });
+  d.page.drawText(fit(note, d.font, 8, width - 20), { x: M + 10, y: d.y - 27, size: 8, font: d.font, color: tone.fg });
+  d.y -= h;
+
+  if (!list.length) {
+    d.page.drawText("Hozircha yo‘q.", { x: M + 10, y: d.y - 14, size: 9, font: d.font, color: MUTED });
+    d.y -= 26;
+    return;
+  }
+
+  const cols = LOCK_COLS.map((c, i) => (i === LOCK_COLS.length - 1 ? { ...c, label: lastLabel } : c));
+  const drawHead = () => {
+    const y = d.y - 14;
+    d.page.drawRectangle({ x: M, y, width, height: 14, color: NAVY });
+    let x = M;
+    for (const c of cols) {
+      d.page.drawText(c.label, { x: x + 4, y: y + 4, size: 7.5, font: d.bold, color: PAPER });
+      x += c.w;
+    }
+    d.y = y;
+  };
+  drawHead();
+  list.forEach((l, i) => {
+    if (d.y - 14 < BOTTOM) {
+      newPage(d);
+      drawHead();
+    }
+    const y = d.y - 14;
+    if (i % 2 === 1) d.page.drawRectangle({ x: M, y, width, height: 14, color: ZEBRA });
+    const cells = [
+      String(i + 1),
+      l.fullName,
+      [l.position, l.branch].filter(Boolean).join(" · ") || "—",
+      `${l.strikeN}-marta · ${l.kind === "late" ? "kech keldi" : "kelmadi"} ${dmy(String(l.eventDate)).slice(0, 5)}`,
+      last(l),
+    ];
+    let x = M;
+    cells.forEach((value, ci) => {
+      const col = cols[ci]!;
+      const strong = ci === 1 || ci === 4;
+      d.page.drawText(fit(value, strong ? d.bold : d.font, 8, col.w - 8), {
+        x: x + 4,
+        y: y + 4,
+        size: 8,
+        font: strong ? d.bold : d.font,
+        color: ci === 4 ? tone.fg : INK,
+      });
+      x += col.w;
+    });
+    d.page.drawLine({ start: { x: M, y }, end: { x: M + width, y }, thickness: 0.4, color: LINE });
+    d.y = y;
+  });
+  d.y -= 14;
+}
+
+function drawTodayLocks(d: Draw, locks: TodayLock[], today: string) {
+  const blocked = locks.filter((l) => !l.clearedAt);
+  const allowed = locks
+    .filter((l) => l.clearedAt)
+    .sort((a, b) => new Date(b.clearedAt!).getTime() - new Date(a.clearedAt!).getTime());
+
+  ensure(d, 80);
+  d.page.drawText(`BUGUNGI PLATFORMA HOLATI — ${dmy(today)}`, { x: M, y: d.y - 10, size: 8, font: d.bold, color: NAVY });
+  d.y -= 18;
+  drawLockTable(
+    d,
+    "Bloklanganlar",
+    "Bugun platformaga kira olmaydi — rahbar ruxsat bermaguncha.",
+    "Bloklangan vaqt",
+    blocked,
+    BLOCKED_TONE,
+    (l) => hm(l.createdAt),
+  );
+  drawLockTable(
+    d,
+    "Ruxsat berilganlar",
+    "Blok olib tashlangan — bugun platformadan foydalanmoqda.",
+    "Ruxsat berdi",
+    allowed,
+    ALLOWED_TONE,
+    (l) => [l.clearedByName || "admin", hm(l.clearedAt)].filter(Boolean).join(" · "),
+  );
+}
+
 export type DisciplinePdfOptions = {
   /** Berilsa — faqat shu koordinator xodimlari uchun hisobot */
   coordinatorName?: string;
+  /** Berilsa — bugungi bloklar «Bloklanganlar» va «Ruxsat berilganlar» bo‘yicha alohida chiqariladi */
+  todayLocks?: TodayLock[];
+  today?: string;
 };
 
 export async function renderDisciplinePdf(report: DisciplineReport, opts: DisciplinePdfOptions = {}): Promise<Buffer> {
@@ -424,7 +547,7 @@ export async function renderDisciplinePdf(report: DisciplineReport, opts: Discip
   }
 
   const ruleText =
-    "Qoida: 1-marta va 2-marta — 1 kunlik ish haqining 30%; 3-marta — 1 kunlik ish haqining 100%; 4-marta — 1 oylik ish haqining 50%; 5-marta va undan keyin — har safar 1 oylikning 50%, ishdan bo‘shatish masalasi ko‘riladi va xodim o‘sha kuni tizimga kira olmaydi. Kech kelish va kelmaslik bir xil hisoblanadi.";
+    "Qoida: 1-marta — ogohlantirish va tushuntirish xati; 2-marta va 3-marta — 1 kunlik ish haqining 30%; 4-marta — 1 kunlik ish haqining 100%; 5-marta va undan keyin — har safar 1 oylikning 50%, ishdan bo‘shatish masalasi ko‘riladi va xodim o‘sha kuni tizimga kira olmaydi. Har bir holat bo‘yicha tushuntirish xati imzolanmaguncha keyingi davomat belgilanmaydi. Kech kelish va kelmaslik bir xil hisoblanadi.";
   const ruleLines = wrap(ruleText, font, 8.5, width - 16);
   const boxH = 18 + ruleLines.length * 11;
   d.page.drawRectangle({ x: M, y: d.y - boxH, width, height: boxH, color: rgb(1, 0.973, 0.882) });
@@ -450,6 +573,8 @@ export async function renderDisciplinePdf(report: DisciplineReport, opts: Discip
     d.page.drawText(fit(c.value, bold, size, cw - 16), { x: x + 8, y: d.y - 32, size, font: bold, color: c.fg });
   });
   d.y -= 54;
+
+  if (opts.todayLocks && opts.today) drawTodayLocks(d, opts.todayLocks, opts.today);
 
   if (!report.people.length) {
     d.page.drawText("Shu oyda 3 va undan ko‘p marta jarima olgan xodim yo‘q.", { x: M, y: d.y - 14, size: 11, font, color: MUTED });

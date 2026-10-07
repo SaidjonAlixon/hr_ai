@@ -2,6 +2,9 @@
 
 import { compressFaceSnapshotAsync } from "./face-id";
 
+/** «Keldim» imzolanmagan tushuntirish xati sababli rad etilganda — `detail: { letterId }` */
+export const EXPLANATION_REQUIRED_EVENT = "vaksina-explanation-required";
+
 export type DavomatDayMetrics = {
   date: string;
   status: string;
@@ -178,6 +181,11 @@ async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
+    if ((body as { code?: string }).code === "explanation_required") {
+      window.dispatchEvent(
+        new CustomEvent(EXPLANATION_REQUIRED_EVENT, { detail: { letterId: (body as { letterId?: number }).letterId } }),
+      );
+    }
     throw new DavomatApiError(body as {
       error?: string;
       code?: string;
@@ -438,6 +446,9 @@ export type WorkplaceInfo = {
   gpsError?: string | null;
   shiftWindowOpen?: boolean;
   workDate: string;
+  /** Jadval bo‘yicha bugun dam — davomat qilsa qo‘shimcha ish, jarimasiz */
+  restDay?: { reason: string } | null;
+  swapToday?: { kind: "rest" | "work"; with: string; id: number } | null;
   site?: {
     label: string;
     latitude: number;
@@ -680,7 +691,12 @@ function fingerprintClientError(err: unknown, phase: "register" | "punch"): Davo
   });
 }
 
-export async function enrollFingerprint(): Promise<FingerprintStatus> {
+export type FingerprintEnrollResult = Extract<FingerprintStatus, { enabled: true }> & {
+  /** Ro‘yxatdan o‘tishdagi barmoq tasdig‘i — shu zahoti bir marta Keldim/Ketdim */
+  enrollPass?: string;
+};
+
+export async function enrollFingerprint(): Promise<FingerprintEnrollResult> {
   const { startRegistration } = await import("@simplewebauthn/browser");
   try {
     const optionsJSON = await apiJson<Parameters<typeof startRegistration>[0]["optionsJSON"]>(
@@ -688,10 +704,19 @@ export async function enrollFingerprint(): Promise<FingerprintStatus> {
       { method: "POST", body: "{}" },
     );
     const credential = await startRegistration({ optionsJSON });
-    return await apiJson<FingerprintStatus>("/davomat/fingerprint/register/verify", {
+    const out = await apiJson<Partial<FingerprintEnrollResult>>("/davomat/fingerprint/register/verify", {
       method: "POST",
       body: JSON.stringify({ credential }),
     });
+    return {
+      enabled: true,
+      enrolled: true,
+      thisDevice: true,
+      deviceLabel: out.deviceLabel ?? null,
+      enrolledAt: out.enrolledAt ?? null,
+      lastUsedAt: out.lastUsedAt ?? null,
+      enrollPass: typeof out.enrollPass === "string" ? out.enrollPass : undefined,
+    };
   } catch (err) {
     throw fingerprintClientError(err, "register");
   }

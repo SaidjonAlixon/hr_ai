@@ -12,7 +12,7 @@ import {
   type ShiftDefinition,
   type ShiftScheduleOverrides,
 } from "./attendance-engine";
-import { warnHmBefore } from "./shift-schedule";
+import { ortaShiftHours, warnHmBefore } from "./shift-schedule";
 import {
   isSecurityShiftType,
   securityPatternLabel,
@@ -255,6 +255,39 @@ export function shiftWindow(
   };
 }
 
+export const ORTA_SHIFT_LABEL = "O‘rta smena";
+
+export function isOrtaShift(shiftType?: string | null, shiftLabel?: string | null): boolean {
+  const t = String(shiftType ?? "").trim().toLowerCase();
+  const compact = String(shiftLabel ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[ʻʼ‘’'`´]/g, "'")
+    .replace(/\s+/g, "");
+  return t === "orta" || t === "middle" || /(^|[^a-z])o'?rta/.test(compact);
+}
+
+/** O‘rta smena: admin alohida vaqt qo‘ymagan bo‘lsa — 1-smena vaqti */
+function ortaWorkSchedule(defs: Record<ShiftKey, ShiftDefinition>): WorkSchedule {
+  const base = defs.one || DEFAULT_SHIFT_DEFS.one;
+  const custom = ortaShiftHours();
+  const start = custom?.start || base.startHm;
+  const end = custom?.end || base.endHm;
+  const overnight = hmToMinutes(end) <= hmToMinutes(start);
+  const range = overnight ? `${start}–${end} (keyingi kun)` : `${start}–${end}`;
+  return {
+    key: "one",
+    keys: ["one"],
+    label: ORTA_SHIFT_LABEL,
+    start,
+    end,
+    graceMinutes: base.graceMinutes,
+    overnight,
+    warnHm: warnHmBefore(start, base.graceMinutes),
+    warnText: `${ORTA_SHIFT_LABEL}: ${range}. ${base.graceMinutes} daqiqadan so‘ng kechikish hisoblanadi.`,
+  };
+}
+
 export function workScheduleForStaff(
   userRole?: string | null,
   orgRole?: string | null,
@@ -268,6 +301,7 @@ export function workScheduleForStaff(
   if (sb) return sb;
 
   if (isPharmacyShiftStaff(userRole, orgRole)) {
+    if (isOrtaShift(shiftType, shiftLabel)) return ortaWorkSchedule(defs);
     return shiftWindow(shiftType, shiftLabel, defs);
   }
   return toWorkSchedule(defs.office);

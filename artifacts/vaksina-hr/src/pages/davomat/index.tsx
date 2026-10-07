@@ -149,8 +149,9 @@ import {
   matchesWarehouseShift,
   warehouseShiftOptions,
   matchesPharmacyShift,
+  pharmacyBucketLabel,
   pharmacyShiftBucket,
-  PHARMACY_SHIFT_OPTIONS,
+  pharmacyShiftOptions,
   type PharmacyShiftFilter,
 } from "../../lib/davomat-staff-filter";
 
@@ -878,20 +879,27 @@ export default function DavomatPage() {
   }, [report, viewFilter, officeInner, warehouseShift, pharmacyShift, pharmacyCoordinator, pharmacyBranch, pharmacyBranchById, farOfficeIds]);
 
   const pharmacyShiftCounts = useMemo(() => {
-    const counts = { all: 0, shift_one: 0, shift_two: 0, shift_12: 0, shift_23: 0 };
+    const counts: Record<PharmacyShiftFilter, number> = {
+      all: 0,
+      shift_one: 0,
+      shift_orta: 0,
+      shift_two: 0,
+      shift_three: 0,
+      shift_12: 0,
+      shift_23: 0,
+    };
     if (viewFilter !== "pharmacy" || !report) return counts;
     for (const emp of report.employees) {
       if (!matchesStaffFilter(emp, "pharmacy")) continue;
       if (pharmacyCoordinator !== "all" && String(emp.coordinatorId ?? "none") !== pharmacyCoordinator) continue;
       if (pharmacyBranch !== "all" && (pharmacyBranchById.get(emp.id)?.key ?? "none") !== pharmacyBranch) continue;
       counts.all += 1;
-      if (matchesPharmacyShift(emp, "shift_two")) counts.shift_two += 1;
-      else if (matchesPharmacyShift(emp, "shift_12")) counts.shift_12 += 1;
-      else if (matchesPharmacyShift(emp, "shift_23")) counts.shift_23 += 1;
-      else if (matchesPharmacyShift(emp, "shift_one")) counts.shift_one += 1;
+      counts[pharmacyShiftBucket(emp)] += 1;
     }
     return counts;
   }, [report, viewFilter, pharmacyCoordinator, pharmacyBranch, pharmacyBranchById]);
+
+  const pharmacyShiftChoices = useMemo(() => pharmacyShiftOptions(report?.employees ?? []), [report]);
 
   const pharmacyBranches = useMemo(() => {
     const map = new Map<string, { key: string; label: string; count: number }>();
@@ -945,7 +953,7 @@ export default function DavomatPage() {
   }, [report, viewFilter]);
 
   const selectedPharmacyShift =
-    viewFilter === "pharmacy" ? PHARMACY_SHIFT_OPTIONS.find((o) => o.key === pharmacyShift) ?? null : null;
+    viewFilter === "pharmacy" ? pharmacyShiftChoices.find((o) => o.key === pharmacyShift) ?? null : null;
   const selectedPharmacyBranch =
     viewFilter === "pharmacy" && pharmacyBranch !== "all"
       ? pharmacyBranches.find((b) => b.key === pharmacyBranch) ?? null
@@ -2189,8 +2197,12 @@ export default function DavomatPage() {
                 <SelectItem value="all">
                   Barcha smenalar ({pharmacyShiftCounts.all})
                 </SelectItem>
-                {PHARMACY_SHIFT_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.key} value={opt.key}>
+                {pharmacyShiftChoices.map((opt) => (
+                  <SelectItem
+                    key={opt.key}
+                    value={opt.key}
+                    disabled={pharmacyShiftCounts[opt.key] === 0 && pharmacyShift !== opt.key}
+                  >
                     {opt.label} · {opt.hours} ({pharmacyShiftCounts[opt.key]})
                   </SelectItem>
                 ))}
@@ -2883,16 +2895,7 @@ export default function DavomatPage() {
                                                 : null;
                                 const kind = classifyDavomatStaff(emp);
                                 const bucket = pharmacyShiftBucket(emp);
-                                const assigned =
-                                  bucket === "shift_12"
-                                    ? "1+2"
-                                    : bucket === "shift_23"
-                                      ? "2+3"
-                                      : bucket === "shift_three"
-                                        ? "3-smena"
-                                        : bucket === "shift_two"
-                                          ? "2-smena"
-                                          : "1-smena";
+                                const assigned = pharmacyBucketLabel(bucket);
                                 const base =
                                   day!.planCustom && shiftName
                                     ? `${shiftName} · ${h.start}–${h.end}`

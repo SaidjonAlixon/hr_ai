@@ -184,7 +184,19 @@ export function isNonOfficeStaff(emp: {
   return positionHasWord(emp.position, NON_OFFICE_POSITION_WORDS);
 }
 
-type PharmacyShiftBucket = "shift_one" | "shift_two" | "shift_12" | "shift_23" | "shift_three";
+export type PharmacyShiftBucket = "shift_one" | "shift_orta" | "shift_two" | "shift_three" | "shift_12" | "shift_23";
+
+/** Mudir belgilagan «O‘rta smena» (shiftType custom + nom) yoki shiftType orta/middle */
+export function isOrtaShift(shiftType?: string | null, shiftLabel?: string | null): boolean {
+  const t = String(shiftType || "").trim().toLowerCase();
+  if (t === "orta" || t === "middle") return true;
+  const label = String(shiftLabel || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[ʻʼ‘’'`´]/g, "'")
+    .replace(/\s+/g, "");
+  return /(^|[^a-z])o'?rta/.test(label);
+}
 
 function pharmacyKeySet(shiftType?: string | null, shiftLabel?: string | null): Set<"one" | "two" | "three"> {
   const keys = new Set<"one" | "two" | "three">();
@@ -379,21 +391,65 @@ export function matchesStaffFilter(
   return false;
 }
 
-/** Dorixona ichidagi smena. 1+2 va 2+3 alohida — to‘liq oyna bo‘yicha. */
-export type PharmacyShiftFilter = "all" | "shift_one" | "shift_two" | "shift_12" | "shift_23";
+export function pharmacyBucketLabel(bucket: PharmacyShiftBucket): string {
+  switch (bucket) {
+    case "shift_orta":
+      return "O‘rta smena";
+    case "shift_two":
+      return "2-smena";
+    case "shift_three":
+      return "3-smena";
+    case "shift_12":
+      return "1+2";
+    case "shift_23":
+      return "2+3";
+    default:
+      return "1-smena";
+  }
+}
 
-export const PHARMACY_SHIFT_OPTIONS: Array<{
-  key: Exclude<PharmacyShiftFilter, "all">;
+/** Dorixona ichidagi smena. 1+2 va 2+3 alohida — to‘liq oyna bo‘yicha. */
+export type PharmacyShiftFilter = "all" | PharmacyShiftBucket;
+
+export type PharmacyShiftOption = {
+  key: PharmacyShiftBucket;
   label: string;
   hours: string;
   start: string;
   end: string;
-}> = [
+};
+
+/** Standart vaqtlar — haqiqiy vaqt hisobotdagi xodimlardan olinadi (pharmacyShiftOptions) */
+export const PHARMACY_SHIFT_OPTIONS: PharmacyShiftOption[] = [
   { key: "shift_one", label: "1-smena", hours: "08:00 – 17:00", start: "08:00", end: "17:00" },
+  { key: "shift_orta", label: "O‘rta smena", hours: "08:00 – 17:00", start: "08:00", end: "17:00" },
   { key: "shift_two", label: "2-smena", hours: "17:00 – 23:45", start: "17:00", end: "23:45" },
+  { key: "shift_three", label: "3-smena", hours: "23:00 – 07:00", start: "23:00", end: "07:00" },
   { key: "shift_12", label: "1+2", hours: "08:00 – 23:45", start: "08:00", end: "23:45" },
   { key: "shift_23", label: "2+3", hours: "17:00 – 07:00", start: "17:00", end: "07:00" },
 ];
+
+/** Har smena uchun eng ko‘p uchragan kelish–ketish vaqti (admin o‘zgartirgan vaqt shu yerda ko‘rinadi) */
+export function pharmacyShiftOptions(employees: DavomatEmployee[]): PharmacyShiftOption[] {
+  const tally = new Map<PharmacyShiftBucket, Map<string, number>>();
+  for (const emp of employees) {
+    if (!emp.workStart || !emp.workEnd) continue;
+    if (!isShiftPharmacyStaff(emp) || isSecurityStaff(emp) || isWarehouseStaff(emp)) continue;
+    const bucket = pharmacyShiftBucket(emp);
+    const key = `${emp.workStart}|${emp.workEnd}`;
+    const map = tally.get(bucket) ?? new Map<string, number>();
+    map.set(key, (map.get(key) ?? 0) + 1);
+    tally.set(bucket, map);
+  }
+  return PHARMACY_SHIFT_OPTIONS.map((opt) => {
+    const map = tally.get(opt.key);
+    if (!map?.size) return opt;
+    const [best] = [...map.entries()].sort((a, b) => b[1] - a[1]);
+    const [start, end] = best![0].split("|");
+    const extra = map.size > 1 ? " · har xil" : "";
+    return { ...opt, start: start!, end: end!, hours: `${start} – ${end}${extra}` };
+  });
+}
 
 export function matchesPharmacyShift(emp: DavomatEmployee, shift: PharmacyShiftFilter): boolean {
   if (shift === "all") return true;

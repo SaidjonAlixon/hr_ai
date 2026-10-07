@@ -7,13 +7,13 @@ import {
   DavomatApiError,
   enrollFingerprint,
   fingerprintSupported,
-  type FingerprintStatus,
+  type FingerprintEnrollResult,
 } from "@/lib/davomat-api";
 
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onEnrolled: (status: FingerprintStatus) => void;
+  onEnrolled: (status: FingerprintEnrollResult) => void;
   isTgMiniApp?: boolean;
 };
 
@@ -65,7 +65,8 @@ export function FingerprintEnrollDialog({ open, onOpenChange, onEnrolled, isTgMi
           </div>
           <DialogTitle className="text-center">Barmoq izini ro‘yxatdan o‘tkazish</DialogTitle>
           <DialogDescription className="text-center">
-            Bir marta ro‘yxatdan o‘tkazasiz — keyin Keldim va Ketdimni barmoq izi bilan tasdiqlaysiz.
+            Bir marta ro‘yxatdan o‘tkazasiz — shu tasdiq bilan darhol Keldim/Ketdim qilasiz, keyingi safar esa barmoq
+            izi bilan tasdiqlaysiz.
           </DialogDescription>
         </DialogHeader>
 

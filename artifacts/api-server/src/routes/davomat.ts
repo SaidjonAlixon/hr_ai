@@ -76,12 +76,14 @@ import {
   staffFilterLabelUz,
   warehouseShiftKeyOf,
 } from "../lib/davomat-staff-filter";
-import { isScheduledRestDay, isWeekendYmd } from "../lib/ofis-weekend";
+import { scheduledRestInfo, isWeekendYmd } from "../lib/ofis-weekend";
+import { loadWorkCalendar } from "../lib/work-calendar";
 import {
   loadScheduleOverrides,
   pickScheduleOverride,
   resolveScheduleOverride,
   scheduleShiftLabel,
+  overrideShiftLabel,
   staffHoursFromOverride,
   workScheduleFromOverride,
   isScheduleShiftKey,
@@ -119,6 +121,7 @@ import {
   zoneViewForUser,
   sweepZonePresenceSoon,
 } from "../lib/zone-presence";
+import { explanationPunchBlock } from "../lib/explanation-letter";
 import {
   isTestOfficeCoordinatorName,
   resolveTestOfficeVisitBranch,
@@ -167,7 +170,7 @@ import {
   CHECKOUT_DEADLINE_SHIFT_TWO_HM,
   CHECKOUT_DEADLINE_SHIFT_THREE_HM,
 } from "../lib/shift-hours";
-import { getEffectiveShiftDefs } from "../lib/shift-schedule";
+import { cachedPaySettings, getEffectiveShiftDefs } from "../lib/shift-schedule";
 import { resolveAttendanceWorkDate } from "../lib/attendance-workdate";
 import { isPharmacyStaffRow, loadStaffFromUsers } from "../lib/staff-directory";
 import { formatPersonName } from "../lib/person-name";
@@ -377,6 +380,7 @@ function computeMetrics(
     workDate,
     shiftKeys: keys,
     segments: [{ shiftKey: primaryKey, checkInAt: checkInAt ?? null, checkOutAt: checkOutAt ?? null }],
+    settings: cachedPaySettings(),
   });
 
   // Legacy path: OT / erta ketish — to‘liq combo oynasi (1+2 → 08:00…23:45)
@@ -1339,14 +1343,18 @@ function buildReport(
         const phase = employmentPhase(date, e.hiredAt, e.dismissedAt);
         const ov = pickScheduleOverride(rules, date);
         const hours = ov ? staffHoursFromOverride(ov, baseHours.graceMinutes) : baseHours;
-        const restDay = ov
-          ? ov.shiftKey === "office" && isWeekendYmd(date)
-          : isScheduledRestDay(date, {
+        const restInfo = ov
+          ? { rest: ov.shiftKey === "office" && isWeekendYmd(date), reason: "Dam kuni" }
+          : scheduledRestInfo(date, {
+              employeeId: e.id,
               userRole: e.userRole,
               orgRole: e.orgRole,
               position: e.position,
               shiftType: e.shiftType,
+              shiftLabel: e.shiftLabel,
             });
+        const restDay = restInfo.rest;
+        const restNote = restInfo.reason || "Dam kuni";
         const planKeys = (hours.shiftKeys || []).filter(
           (k): k is "one" | "two" | "three" => k === "one" || k === "two" || k === "three",
         );
@@ -1413,7 +1421,7 @@ function buildReport(
         }
         if (!rec || (!rec.checkInAt && (rec.status === "absent" || !rec.status))) {
           if (restDay) {
-            return { ...emptyDayMetrics(date, "rest"), ...plan, ...excuse };
+            return { ...emptyDayMetrics(date, "rest", { notes: restNote }), ...plan, ...excuse };
           }
           if (ex?.fullDay) {
             return {
@@ -1441,7 +1449,7 @@ function buildReport(
           return {
             ...emptyDayMetrics(date, "rest", {
               source: rec.source,
-              notes: rec.notes || "Dam kuni",
+              notes: rec.notes || restNote,
               recordId: rec.id,
             }),
             ...plan,
@@ -1449,7 +1457,11 @@ function buildReport(
           };
         }
         const raw = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status, hours);
-        const m = applyJavobExemptionToMetrics(raw, ex, hours?.graceMinutes ?? 15);
+        const exempted = applyJavobExemptionToMetrics(raw, ex, hours?.graceMinutes ?? 15);
+        const m =
+          restDay && rec.checkInAt && exempted.status === "late"
+            ? { ...exempted, status: "present", lateArrivalMin: 0, lateArrivalLabel: "" }
+            : exempted;
         return {
           date,
           ...m,
@@ -1457,8 +1469,8 @@ function buildReport(
           notes:
             restDay && rec.checkInAt
               ? rec.notes
-                ? `${rec.notes} · Qo'shimcha ish (ixtiyoriy)`
-                : "Qo'shimcha ish (ixtiyoriy, dam kuni)"
+                ? `${rec.notes} · Qo'shimcha ish (dam kuni, jarimasiz)`
+                : "Qo'shimcha ish (dam kuni, jarimasiz)"
               : ex
                 ? rec.notes
                   ? `${rec.notes} · Javob olish (jarimasiz)`
@@ -1678,6 +1690,7 @@ async function buildReportWithJavob(
     from,
     to,
   );
+  await loadWorkCalendar();
   const report = buildReport(employees, records, from, to, defs, exemptions, scheduleOverrides);
   const markerIds = new Set<number>();
   for (const emp of report.employees) {
@@ -1775,6 +1788,7 @@ router.get("/davomat/analytics", requireAuth, async (req: AuthRequest, res): Pro
       userRole: e.userRole ?? null,
       orgRole: e.orgRole ?? null,
       shiftType: e.shiftType ?? null,
+      shiftLabel: e.shiftLabel ?? null,
     }));
 
     const body = buildDavomatAnalytics(report, meta, segment, prevReport);
@@ -3826,6 +3840,10 @@ async function applyFacePunch(opts: {
   if (zoneBlock) {
     return { ok: false, status: 403, body: zoneBlock };
   }
+  if (action === "in") {
+    const letterBlock = await explanationPunchBlock(emp.userId);
+    if (letterBlock) return { ok: false, status: 409, body: letterBlock };
+  }
   const coordinatorBranch =
     userRole === "koordinator" && resolvedBranchId != null && Number(resolvedBranchId) > 0;
   const coordinatorOffice = userRole === "koordinator" && !coordinatorBranch;
@@ -4798,8 +4816,24 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
         : null;
 
     const scheduleOverride = await resolveScheduleOverride(emp.id, workDate);
+    await loadWorkCalendar();
+    const [empPosition] = await db
+      .select({ position: employeesTable.position })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, emp.id))
+      .limit(1);
+    const restInfo = scheduledRestInfo(workDate, {
+      employeeId: emp.id,
+      userRole: user.role,
+      orgRole: emp.orgRole,
+      position: empPosition?.position ?? null,
+      shiftType: emp.shiftType,
+      shiftLabel: emp.shiftLabel,
+    });
 
     res.json({
+      restDay: restInfo.rest && !scheduleOverride ? { reason: restInfo.reason || "Dam kuni" } : null,
+      swapToday: restInfo.swap ?? null,
       allowedMeters: point.radiusMeters != null ? point.radiusMeters : geofenceMetersForKind(point.kind),
       mobileAnywhere,
       fieldBranchPunch: fieldBranchPunch || undefined,
@@ -4878,7 +4912,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
           type: scheduleOverride?.shiftKey || deadlineShiftType || wFull.key,
           keys: scheduleOverride ? [scheduleOverride.shiftKey] : dayShiftKeys?.length ? dayShiftKeys : wFull.keys || [wFull.key],
           label: scheduleOverride
-            ? `${scheduleShiftLabel(scheduleOverride.shiftKey)} · ${wFull.start}–${wFull.end}`
+            ? `${overrideShiftLabel(scheduleOverride)} · ${wFull.start}–${wFull.end}`
             : daySlots.length
               ? daySlots.map((s) => `${formatShiftKeyUz(s.shiftKey)}→${s.branchLabel || s.branchId}`).join(" · ")
               : wFull.label,
@@ -5587,7 +5621,7 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       });
       return;
     }
-    const staleGps = stalePunchGps(req.body?.gpsCapturedAt);
+    const staleGps = stalePunchGps(req.body?.gpsCapturedAt, req.body?.accuracy);
     if (staleGps) {
       res.status(403).json(staleGps);
       return;
@@ -5695,7 +5729,13 @@ router.post("/davomat/fingerprint/register/verify", requireAuth, async (req: Aut
       [{ targetUserId: req.userId!, action: "finger_enroll", before: { enrolled: false }, after: { enrolled: true, device: out.deviceLabel } }],
       { actorUserId: req.userId, ipAddress: clientIp(req) },
     );
-    res.json({ ok: true, ...(await fingerprintStatusFor(req, req.userId!)), thisDevice: true });
+    res.json({
+      ok: true,
+      enabled: true,
+      ...(await fingerprintStatusFor(req, req.userId!)),
+      thisDevice: true,
+      enrollPass: out.enrollPass,
+    });
   } catch (err) {
     console.error("POST /davomat/fingerprint/register/verify", err);
     res.status(503).json({ error: "Barmoq izi saqlanmadi" });
@@ -5731,7 +5771,7 @@ router.post("/davomat/fingerprint/punch", requireAuth, async (req: AuthRequest, 
       res.status(400).json({ error: "GPS majburiy — lokatsiyaga ruxsat bering", code: "gps_required" });
       return;
     }
-    const staleGps = stalePunchGps(req.body?.gpsCapturedAt);
+    const staleGps = stalePunchGps(req.body?.gpsCapturedAt, req.body?.accuracy);
     if (staleGps) {
       res.status(403).json(staleGps);
       return;
@@ -6775,8 +6815,17 @@ function isAdminQrAnywhere(role: string | null | undefined) {
 
 /** Keldim/Ketdimdagi GPS skanerdagi eski nuqta bo‘lmasin. */
 const PUNCH_GPS_MAX_AGE_MS = 45_000;
+/** Minora/Wi‑Fi bo‘yicha taxminiy nuqta — markazi hududga tushsa ham qabul qilinmaydi */
+const PUNCH_GPS_MAX_ACCURACY_M = 250;
 
-function stalePunchGps(capturedAtRaw: unknown): { error: string; code: string } | null {
+function stalePunchGps(capturedAtRaw: unknown, accuracyRaw?: unknown): { error: string; code: string } | null {
+  const accuracy = Number(accuracyRaw);
+  if (Number.isFinite(accuracy) && accuracy > PUNCH_GPS_MAX_ACCURACY_M) {
+    return {
+      error: `Joylashuv aniq emas (±${Math.round(accuracy)} m). Ochiq joyga yaqinlashib, GPS aniqlashini kuting va qayta bosing.`,
+      code: "gps_inaccurate",
+    };
+  }
   const capturedAt = Number(capturedAtRaw);
   if (!Number.isFinite(capturedAt)) {
     return {
@@ -7338,7 +7387,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       return;
     }
     if (!adminAnywhere) {
-      const staleGps = stalePunchGps(req.body?.gpsCapturedAt);
+      const staleGps = stalePunchGps(req.body?.gpsCapturedAt, req.body?.accuracy);
       if (staleGps) {
         res.status(403).json(staleGps);
         return;
@@ -8287,7 +8336,7 @@ router.get("/davomat/access-audit", requireAuth, async (req: AuthRequest, res): 
 
 router.post("/davomat/zone-presence/confirm", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
-    const staleGps = stalePunchGps(req.body?.gpsCapturedAt);
+    const staleGps = stalePunchGps(req.body?.gpsCapturedAt, req.body?.accuracy);
     if (staleGps) {
       res.status(400).json(staleGps);
       return;

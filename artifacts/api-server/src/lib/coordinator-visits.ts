@@ -262,6 +262,28 @@ export function isVisitPresenceBlocked(v: CoordVisitRow, now = Date.now()): bool
   return now - base >= COORD_PRESENCE_INTERVAL_MS + COORD_PRESENCE_GRACE_MS;
 }
 
+/** 30 daq + 10 daq kutish tugaydigan lahza — shu paytgacha tasdiqlanmasa blok */
+export function visitPresenceDeadlineMs(v: {
+  lastPresenceAt?: Date | string | null;
+  checkInAt?: Date | string | null;
+}): number | null {
+  const base = visitPresenceBaseMs(v);
+  return base == null ? null : base + COORD_PRESENCE_INTERVAL_MS + COORD_PRESENCE_GRACE_MS;
+}
+
+/**
+ * Qolish vaqti to‘xtaydigan lahza: blok tushgan va admin ruxsat bermagan bo‘lsa.
+ * Ruxsat berilganda presenceFrozenAt tozalanadi — vaqt to‘liq hisoblanadi.
+ */
+export function visitFreezeAt(v: CoordVisitRow, now = Date.now()): Date | null {
+  if (isCoordinatorOfficeVisit(v)) return null;
+  if (v.presenceFrozenAt) return new Date(v.presenceFrozenAt);
+  if (!isVisitPresenceBlocked(v, now)) return null;
+  const deadline = visitPresenceDeadlineMs(v);
+  if (deadline != null && deadline <= now) return new Date(deadline);
+  return v.presenceBlockedAt ? new Date(v.presenceBlockedAt) : new Date(now);
+}
+
 export function formatDurationMinutes(mins: number | null): string {
   if (mins == null || !Number.isFinite(mins) || mins < 0) return "—";
   const h = Math.floor(mins / 60);
@@ -271,13 +293,17 @@ export function formatDurationMinutes(mins: number | null): string {
   return `${h} soat ${m} daq`;
 }
 
-export function visitDurationMinutes(v: {
-  checkInAt: Date | string | null;
-  checkOutAt: Date | string | null;
-}): number | null {
+export function visitDurationMinutes(
+  v: {
+    checkInAt: Date | string | null;
+    checkOutAt: Date | string | null;
+  },
+  frozenAt?: Date | null,
+): number | null {
   if (!v.checkInAt) return null;
   const start = new Date(v.checkInAt).getTime();
-  const end = v.checkOutAt ? new Date(v.checkOutAt).getTime() : Date.now();
+  const rawEnd = v.checkOutAt ? new Date(v.checkOutAt).getTime() : Date.now();
+  const end = frozenAt ? Math.max(start, Math.min(rawEnd, frozenAt.getTime())) : rawEnd;
   if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
   return Math.round((end - start) / 60_000);
 }
@@ -412,6 +438,7 @@ export async function syncCoordinatorVisitOnPunch(opts: {
         checkOutLatitude: opts.latitude ?? null,
         checkOutLongitude: opts.longitude ?? null,
         checkoutNote: note,
+        presenceFrozenAt: visitFreezeAt(open, now.getTime()),
         status: "closed",
         updatedAt: now,
       })
@@ -530,6 +557,7 @@ export async function finishCoordinatorVisitWithNote(opts: {
       lastPresenceAt: now,
       presenceBlockedAt: null,
       presenceUnlockRequestAt: null,
+      presenceFrozenAt: visitFreezeAt(open, now.getTime()),
       status: "closed",
       updatedAt: now,
     })
@@ -625,6 +653,7 @@ export async function adminForceCloseCoordinatorVisit(opts: {
       presenceUnlockRequestAt: null,
       presenceUnlockedAt: now,
       presenceUnlockedById: opts.adminUserId,
+      presenceFrozenAt: visitFreezeAt(visit, now.getTime()),
       status: "closed",
       updatedAt: now,
     })
@@ -756,6 +785,7 @@ export async function requestPresenceUnlock(opts: {
     .update(coordinatorBranchVisitsTable)
     .set({
       presenceBlockedAt: open.presenceBlockedAt || now,
+      presenceFrozenAt: visitFreezeAt(open, now.getTime()),
       presenceUnlockRequestAt: now,
       presenceUnlockedAt: null,
       presenceUnlockedById: null,
@@ -815,6 +845,7 @@ export async function approvePresenceUnlock(opts: {
       presenceUnlockRequestAt: null,
       presenceUnlockedAt: now,
       presenceUnlockedById: opts.adminUserId,
+      presenceFrozenAt: null,
       lastPresenceAt: now,
       updatedAt: now,
     })
@@ -852,6 +883,7 @@ export async function markPresenceBlockedIfNeeded(
     .update(coordinatorBranchVisitsTable)
     .set({
       presenceBlockedAt: now,
+      presenceFrozenAt: visitFreezeAt(visit, now.getTime()),
       updatedAt: now,
     })
     .where(eq(coordinatorBranchVisitsTable.id, visit.id))
@@ -1028,6 +1060,7 @@ export async function autoCloseStaleCoordinatorVisits(now = new Date()): Promise
         checkoutNote: note,
         presenceBlockedAt: null,
         presenceUnlockRequestAt: null,
+        presenceFrozenAt: visitFreezeAt(v, now.getTime()),
         updatedAt: now,
       })
       .where(eq(coordinatorBranchVisitsTable.id, v.id));
@@ -1062,20 +1095,19 @@ function visitPhase(v: CoordVisitRow, flags: { blocked: boolean; overdue: boolea
 }
 
 export function serializeVisit(v: CoordVisitRow) {
-  const durationMin = visitDurationMinutes(v);
+  const frozenAt = visitFreezeAt(v);
+  const durationMin = visitDurationMinutes(v, frozenAt);
   const checklistLagMin =
     v.checklistAt && v.checkInAt
       ? Math.round((new Date(v.checklistAt).getTime() - new Date(v.checkInAt).getTime()) / 60_000)
       : null;
+  const stayEndMs = Math.min(
+    v.checkOutAt ? new Date(v.checkOutAt).getTime() : Date.now(),
+    frozenAt ? frozenAt.getTime() : Infinity,
+  );
   const afterChecklistMin =
     v.checklistAt
-      ? Math.max(
-          0,
-          Math.round(
-            ((v.checkOutAt ? new Date(v.checkOutAt).getTime() : Date.now()) - new Date(v.checklistAt).getTime()) /
-              60_000,
-          ),
-        )
+      ? Math.max(0, Math.round((stayEndMs - new Date(v.checklistAt).getTime()) / 60_000))
       : null;
   const lastPresenceMs = visitPresenceBaseMs(v);
   const presenceDueAt =
@@ -1127,6 +1159,8 @@ export function serializeVisit(v: CoordVisitRow) {
     status: v.status,
     durationMinutes: durationMin,
     durationLabel: formatDurationMinutes(durationMin),
+    stayFrozen: frozenAt != null,
+    stayFrozenAt: frozenAt ? frozenAt.toISOString() : null,
     checklistAfterCheckInMinutes: checklistLagMin,
     checklistAfterCheckInLabel: formatDurationMinutes(checklistLagMin),
     checklistToCheckoutMinutes: afterChecklistMin,

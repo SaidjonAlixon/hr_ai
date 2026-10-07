@@ -38,7 +38,6 @@ const NAMED_HEAD_CREATABLE: Record<string, readonly string[]> = {
   hr_menejer: ["hr", "recruiter", "trainer"],
   distrib_rahbar: ["distrib", "distrib_hr"],
   distrib_hr: ["distrib"],
-  tamojni_rahbar: ["tamojni"],
   moliya_rahbar: ["moliya_xodim", "kassir"],
   taminot_rahbar: ["taminot"],
   rivojlantirish_rahbar: ["rivojlantirish"],
@@ -110,8 +109,11 @@ export function isDeptHeadRole(role?: string | null): boolean {
   return !!role && (DEPT_HEAD_ROLES as readonly string[]).includes(role);
 }
 
+/** Bo‘lim boshlig‘i, lekin xodim qo‘sha/o‘chira olmaydi — xodimlarni HR boshqaradi */
+const NO_STAFF_MANAGE_HEAD_ROLES = new Set<string>(["tamojni_rahbar"]);
+
 export function canAddDeptStaff(role?: string | null): boolean {
-  return isDeptHeadRole(role);
+  return isDeptHeadRole(role) && !NO_STAFF_MANAGE_HEAD_ROLES.has(String(role));
 }
 
 function creatableRolesForDepartmentName(deptName: string): string[] {
@@ -185,9 +187,11 @@ export async function resolveDeptHeadContext(userId: number, role: string): Prom
   }
 
   const named = NAMED_HEAD_CREATABLE[role];
-  const creatableRoles = named?.length
-    ? [...named]
-    : creatableRolesForDepartmentName(departmentName);
+  const creatableRoles = !canAddDeptStaff(role)
+    ? []
+    : named?.length
+      ? [...named]
+      : creatableRolesForDepartmentName(departmentName);
 
   // Excel/eksport uchun bo‘lim kerak; creatable bo‘sh bo‘lsa ham kontekst qaytadi
   return { departmentId, departmentName, creatableRoles };

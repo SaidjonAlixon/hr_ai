@@ -351,6 +351,9 @@ export type CoordinatorVisitSession = {
   status: string;
   durationMinutes: number | null;
   durationLabel: string;
+  /** Hudud bloki sabab qolish vaqti to‘xtatilgan */
+  stayFrozen?: boolean;
+  stayFrozenAt?: string | null;
   checklistAfterCheckInMinutes: number | null;
   checklistAfterCheckInLabel: string;
   checklistToCheckoutMinutes?: number | null;
@@ -378,6 +381,7 @@ export type VisitMonitorSummary = {
   noChecklist?: number;
   blockedCount?: number;
   unlockPendingCount?: number;
+  frozenCount?: number;
   avgStayMinutes: number | null;
   avgStayLabel: string;
   avgChecklistLagMinutes?: number | null;

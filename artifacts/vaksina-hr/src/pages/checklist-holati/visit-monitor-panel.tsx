@@ -4,6 +4,7 @@ import {
   ClipboardCheck,
   Clock3,
   Hand,
+  Lock,
   LogIn,
   LogOut,
   MapPin,
@@ -64,6 +65,29 @@ const QUICK: Array<{ key: QuickFilter; label: string; match: (p: VisitPhase) => 
   { key: "no_checklist", label: "Cheklistsiz", match: (p) => p === "closed_no_checklist" || p === "auto_closed" },
   { key: "closed", label: "Yakunlangan", match: (p) => p === "closed_ok" },
   { key: "office", label: "Asosiy ofis", match: (p) => p === "office_open" || p === "office_closed" },
+];
+
+const HOW_IT_WORKS: Array<{ title: string; text: string; tone: string }> = [
+  {
+    title: "Keldim",
+    text: "Filialda Face ID bilan «Keldim» qiladi — shu daqiqadan vaqt hisoblana boshlaydi.",
+    tone: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300",
+  },
+  {
+    title: "Har 30 daqiqada hudud tasdig‘i",
+    text: "Filialda ekanini tasdiqlab turadi. Tasdiqlasa vaqt davom etadi.",
+    tone: "bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300",
+  },
+  {
+    title: "Tasdiqlamasa — 10 daqiqa kutiladi",
+    text: "10 daqiqa ham o‘tsa blok tushadi: cheklist yopiladi va vaqt shu lahzada to‘xtaydi.",
+    tone: "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300",
+  },
+  {
+    title: "Ruxsat yoki Ketdim",
+    text: "Ruxsat bersangiz vaqt to‘xtamagandek to‘liq hisoblanib davom etadi. Bermasangiz to‘xtagan joyida qoladi.",
+    tone: "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300",
+  },
 ];
 
 function ymd(d: Date) {
@@ -278,30 +302,55 @@ export function VisitMonitorPanel({ enabled }: { enabled: boolean }) {
   return (
     <div className="space-y-4">
       {/* Sarlavha */}
-      <div className="flex flex-col gap-3 rounded-2xl border bg-card p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white">
-            <Timer className="h-5 w-5" />
-          </span>
-          <div className="min-w-0">
-            <h2 className="text-base font-bold text-foreground">Vaqt nazorati</h2>
-            <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-              Har bir tashrif: <b>Keldim</b> → <b>Cheklist</b> → <b>Ketdim</b>. Filialda va asosiy ofisda qancha
-              vaqt o‘tgani alohida. Ma’lumot 1-oktyabrdan boshlab, har daqiqada yangilanadi.
-            </p>
+      <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+        <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white">
+              <Timer className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-base font-bold text-foreground">Vaqt nazorati</h2>
+              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                Koordinator filialga qachon keldi, cheklistni qachon to‘ldirdi, qachon ketdi va filialda qancha vaqt
+                bo‘ldi — hammasi shu yerda. Ma’lumot 1-oktyabrdan boshlab, har daqiqada yangilanadi.
+              </p>
+            </div>
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0 gap-1.5"
+            disabled={isFetching}
+            onClick={() => void refetch()}
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} />
+            Yangilash
+          </Button>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="shrink-0 gap-1.5"
-          disabled={isFetching}
-          onClick={() => void refetch()}
-        >
-          <RefreshCw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} />
-          Yangilash
-        </Button>
+        <div className="border-t bg-muted/30 px-4 py-3">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Qanday ishlaydi
+          </p>
+          <ol className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            {HOW_IT_WORKS.map((s, i) => (
+              <li key={s.title} className="flex items-start gap-2.5 rounded-xl border bg-card px-3 py-2.5">
+                <span
+                  className={cn(
+                    "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold",
+                    s.tone,
+                  )}
+                >
+                  {i + 1}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-foreground">{s.title}</p>
+                  <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{s.text}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
       </div>
 
       {/* Ko‘rsatkichlar */}
@@ -310,7 +359,12 @@ export function VisitMonitorPanel({ enabled }: { enabled: boolean }) {
           Filial tashriflari
         </p>
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-          <Kpi icon={Store} label="Jami tashrif" value={String(summary?.total ?? 0)} />
+          <Kpi
+            icon={Store}
+            label="Jami tashrif"
+            value={String(summary?.total ?? 0)}
+            hint={summary?.frozenCount ? `${summary.frozenCount} tasida vaqt blok sabab to‘xtatilgan` : undefined}
+          />
           <Kpi
             icon={MapPin}
             label="Hozir filialda"
@@ -382,9 +436,11 @@ export function VisitMonitorPanel({ enabled }: { enabled: boolean }) {
                 <Hand className="h-4 w-4" />
                 Ruxsat kutayotganlar — {needAction.length} ta
               </p>
-              <p className="mt-0.5 text-[11px] text-amber-900/80 dark:text-amber-200/80">
-                Koordinator 30 daqiqada hududni tasdiqlashi kerak. 10 daqiqa kechiksa cheklist bloklanadi —
-                ruxsat bersangiz darhol davom etadi.
+              <p className="mt-0.5 text-[11px] leading-relaxed text-amber-900/80 dark:text-amber-200/80">
+                Bu koordinatorlar hududni vaqtida tasdiqlamadi — cheklisti yopilgan va filialdagi vaqti to‘xtatilgan.
+                <br />
+                <b>Ruxsat berish</b> — vaqt to‘xtamagandek to‘liq hisoblanadi va davom etadi.{" "}
+                <b>Ketdim</b> — tashrif yopiladi, vaqt to‘xtagan joyida qoladi.
               </p>
             </div>
             {needAction.length > 1 ? (
@@ -411,8 +467,17 @@ export function VisitMonitorPanel({ enabled }: { enabled: boolean }) {
                     <PhaseBadge phase={phaseOf(v)} />
                   </p>
                   <p className="mt-0.5 text-[11px] text-muted-foreground">
-                    Keldim {fmtHm(v.checkInAt)} · filialda {v.durationLabel}
-                    {v.presenceBlockedAt ? ` · blok ${fmtHm(v.presenceBlockedAt)}` : ""}
+                    Keldim {fmtHm(v.checkInAt)}
+                    {v.stayFrozenAt ? (
+                      <>
+                        {" · "}
+                        <span className="font-semibold text-rose-700 dark:text-rose-300">
+                          vaqt {fmtHm(v.stayFrozenAt)} da to‘xtadi ({v.durationLabel})
+                        </span>
+                      </>
+                    ) : (
+                      ` · filialda ${v.durationLabel}`
+                    )}
                     {v.presenceUnlockRequestAt ? ` · so‘rov ${fmtHm(v.presenceUnlockRequestAt)}` : ""}
                     {v.checklistAt ? " · cheklist bor" : " · cheklist yo‘q"}
                   </p>
@@ -576,7 +641,7 @@ export function VisitMonitorPanel({ enabled }: { enabled: boolean }) {
           <span>Keldim</span>
           <span>Cheklist</span>
           <span>Ketdim</span>
-          <span>Qolish vaqti</span>
+          <span>Filialda vaqt</span>
           <span>Holat</span>
         </div>
         {isLoading ? (
@@ -643,6 +708,75 @@ function TimeCell({
         <p className="text-xs font-medium text-muted-foreground">{empty}</p>
       )}
       {sub ? <p className="text-[10px] leading-tight text-muted-foreground">{sub}</p> : null}
+    </div>
+  );
+}
+
+function StayCell({ v, office }: { v: CoordinatorVisitSession; office: boolean }) {
+  const frozen = !office && !!v.stayFrozen;
+  const running = v.stillOpen && !frozen;
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">
+        {office ? "Ofisda vaqt" : "Filialda vaqt"}
+      </p>
+      <p
+        className={cn(
+          "flex flex-wrap items-center gap-x-1.5 text-sm font-bold tabular-nums",
+          frozen ? "text-rose-700 dark:text-rose-300" : "text-foreground",
+        )}
+      >
+        {frozen ? <Lock className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5 text-muted-foreground" />}
+        {v.durationLabel}
+        {frozen ? (
+          <span className="rounded-full bg-rose-100 px-1.5 py-px text-[10px] font-semibold text-rose-700 dark:bg-rose-950/60 dark:text-rose-300">
+            to‘xtatilgan
+          </span>
+        ) : running ? (
+          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+            davom etmoqda
+          </span>
+        ) : null}
+      </p>
+      {!office ? (
+        <>
+          <div className="mt-1">
+            <StaySplitBar v={v} />
+          </div>
+          {v.checklistAt ? (
+            <p className="mt-0.5 text-[10px] leading-tight text-muted-foreground">
+              Cheklistgacha{" "}
+              <span className="font-semibold text-sky-700 dark:text-sky-300">
+                {minutesLabel(v.checklistAfterCheckInMinutes)}
+              </span>{" "}
+              · keyin{" "}
+              <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                {minutesLabel(v.checklistToCheckoutMinutes)}
+              </span>
+            </p>
+          ) : null}
+          {frozen ? (
+            <p className="mt-0.5 text-[10px] leading-tight text-rose-700 dark:text-rose-300">
+              {fmtHm(v.stayFrozenAt)} da to‘xtadi
+              {v.stillOpen ? " · ruxsat berilsa davom etadi" : " · hudud tasdiqlanmagan"}
+            </p>
+          ) : running && v.presenceOverdue && v.presenceGraceEndsAt ? (
+            <p className="mt-0.5 text-[10px] font-medium leading-tight text-orange-700 dark:text-orange-300">
+              {fmtHm(v.presenceGraceEndsAt)} gacha tasdiqlamasa vaqt to‘xtaydi
+            </p>
+          ) : running && v.presenceDueAt ? (
+            <p className="mt-0.5 text-[10px] leading-tight text-muted-foreground">
+              Keyingi hudud tasdig‘i: {fmtHm(v.presenceDueAt)}
+            </p>
+          ) : null}
+          {!frozen && v.presenceUnlockedAt ? (
+            <p className="mt-0.5 text-[10px] leading-tight text-emerald-700 dark:text-emerald-400">
+              {fmtHm(v.presenceUnlockedAt)} da ruxsat berilgan — vaqt to‘liq hisoblangan
+            </p>
+          ) : null}
+        </>
+      ) : null}
     </div>
   );
 }
@@ -719,31 +853,7 @@ function VisitRow({
           tone="text-rose-700 dark:text-rose-400"
           empty={v.stillOpen ? "Hali ketmagan" : "—"}
         />
-        <div className="min-w-0">
-          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Qolish vaqti</p>
-          <p className="flex items-center gap-1 text-sm font-bold tabular-nums text-foreground">
-            <Clock3 className="h-3.5 w-3.5 text-muted-foreground" />
-            {v.durationLabel}
-            {v.stillOpen ? <span className="text-[10px] font-medium text-amber-600">· davom etmoqda</span> : null}
-          </p>
-          {!office ? (
-            <>
-              <div className="mt-1">
-                <StaySplitBar v={v} />
-              </div>
-              {v.checklistAt ? (
-                <p className="mt-0.5 text-[10px] leading-tight text-muted-foreground">
-                  <span className="text-sky-700 dark:text-sky-300">{minutesLabel(v.checklistAfterCheckInMinutes)}</span>{" "}
-                  cheklistgacha ·{" "}
-                  <span className="text-emerald-700 dark:text-emerald-400">
-                    {minutesLabel(v.checklistToCheckoutMinutes)}
-                  </span>{" "}
-                  keyin
-                </p>
-              ) : null}
-            </>
-          ) : null}
-        </div>
+        <StayCell v={v} office={office} />
         <div className="col-span-2 flex flex-wrap items-center gap-1.5 lg:col-span-1">
           <PhaseBadge phase={phase} />
           {canApprove && onApprove ? (

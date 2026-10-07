@@ -27,7 +27,7 @@ export type PhaseMeta = {
 export const PHASE_META: Record<VisitPhase, PhaseMeta> = {
   unlock_requested: {
     label: "Ruxsat so‘radi",
-    hint: "Hududni vaqtida tasdiqlamadi — adminga so‘rov yubordi",
+    hint: "Hududni vaqtida tasdiqlamadi — vaqti to‘xtatildi, adminga ruxsat so‘rovi yubordi. Ruxsat berilsa vaqt davom etadi",
     icon: Hand,
     badge: "bg-amber-500 text-white",
     dot: "bg-amber-500",
@@ -35,7 +35,7 @@ export const PHASE_META: Record<VisitPhase, PhaseMeta> = {
   },
   blocked: {
     label: "Bloklangan",
-    hint: "10 daqiqa ichida hududni tasdiqlamadi — cheklist yopiq",
+    hint: "Qo‘shimcha 10 daqiqada ham hududni tasdiqlamadi — vaqti to‘xtatildi, cheklist yopiq. Ruxsat berilsa vaqt davom etadi",
     icon: Lock,
     badge: "bg-rose-600 text-white",
     dot: "bg-rose-600",
@@ -43,7 +43,7 @@ export const PHASE_META: Record<VisitPhase, PhaseMeta> = {
   },
   presence_due: {
     label: "Tasdiq kutilmoqda",
-    hint: "30 daqiqa o‘tdi — 10 daqiqa ichida hududni tasdiqlashi kerak",
+    hint: "30 daqiqa o‘tdi — 10 daqiqa ichida hududni tasdiqlamasa vaqti to‘xtaydi va cheklist yopiladi",
     icon: Clock3,
     badge: "bg-orange-100 text-orange-900 ring-1 ring-inset ring-orange-300",
     dot: "bg-orange-500",
@@ -169,7 +169,10 @@ export function StaySplitBar({ v }: { v: CoordinatorVisitSession }) {
     return (
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
         <div
-          className={cn("h-full rounded-full", v.stillOpen ? "bg-amber-400" : "bg-slate-300")}
+          className={cn(
+            "h-full rounded-full",
+            v.stayFrozen ? "bg-rose-400" : v.stillOpen ? "bg-amber-400" : "bg-slate-300",
+          )}
           style={{ width: total ? "100%" : "0%" }}
         />
       </div>

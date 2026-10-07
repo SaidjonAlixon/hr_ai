@@ -30,6 +30,7 @@ export const WORKFLOW_STATUSES = [
   "ASSIGNED",
   "ACCEPTED",
   "IN_PROGRESS",
+  "REVIEW",
   "COMPLETED",
   "CANCELLED",
 ] as const;
@@ -40,6 +41,7 @@ export const WORKFLOW_STATUS_LABEL: Record<WorkflowStatus, string> = {
   ASSIGNED: "Biriktirilgan",
   ACCEPTED: "Qabul qilingan",
   IN_PROGRESS: "Jarayonda",
+  REVIEW: "Tasdiqlash kutilmoqda",
   COMPLETED: "Yakunlangan",
   CANCELLED: "Bekor qilingan",
 };
@@ -120,7 +122,7 @@ export function computeCycleStatus(opts: {
   const today = opts.today || tashkentYmd();
   const wf = opts.workflowStatus;
 
-  if (wf === "IN_PROGRESS" || wf === "ACCEPTED" || wf === "ASSIGNED") return "REVIZIYA_JARAYONIDA";
+  if (wf === "IN_PROGRESS" || wf === "ACCEPTED" || wf === "ASSIGNED" || wf === "REVIEW") return "REVIZIYA_JARAYONIDA";
   if (wf === "REQUESTED") return "TEZ_ORADA";
   if (wf === "COMPLETED") return "REVIZIYA_YAKUNLANGAN";
 

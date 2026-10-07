@@ -1,18 +1,26 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
+  Ban,
   CalendarDays,
+  CheckCircle2,
   ClipboardCheck,
   Clock3,
   FileText,
+  Hourglass,
   Info,
   Loader2,
+  RotateCcw,
+  Save,
   Search,
+  Send,
   Store,
   Upload,
   UserRound,
   Phone,
   Wallet,
   X,
+  XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +34,7 @@ import { cn } from "@/lib/utils";
 import { fileToAttachment } from "@/lib/vazifalar-api";
 import { fetchBranchStaff, fetchNextActNumber, fetchVisitByAct } from "@/lib/reviziya-api";
 import { useToast } from "@/hooks/use-toast";
+import { BranchCombobox } from "./branch-combobox";
 
 export type ConductValues = {
   branchId: string;
@@ -46,9 +55,39 @@ export type ConductValues = {
   extraResponsibles: { name: string; phone: string }[];
   pickedStaff: { id: string; name: string; phone: string; role: string }[];
   pulledId: number | null;
+  pulledStatus: string | null;
+  pulledMeta: VisitMeta | null;
   collectStatus: "unset" | "none" | "partial" | "full";
   shortageFound: "unset" | "no" | "yes";
 };
+
+export type VisitMeta = {
+  assignedEmployeeId: number | null;
+  assignedEmployeeName: string | null;
+  createdByName: string | null;
+  submittedByName: string | null;
+  submittedAt: string | null;
+  reviewedByName: string | null;
+  reviewDecision: string | null;
+  rejectReason: string | null;
+  rejectCount: number;
+};
+
+export function visitMetaOf(v: any): VisitMeta {
+  return {
+    assignedEmployeeId: v.assignedEmployeeId != null ? Number(v.assignedEmployeeId) : null,
+    assignedEmployeeName: v.assignedEmployeeName ?? null,
+    createdByName: v.createdByName ?? null,
+    submittedByName: v.submittedByName ?? null,
+    submittedAt: v.submittedAt ?? null,
+    reviewedByName: v.reviewedByName ?? null,
+    reviewDecision: v.reviewDecision ?? null,
+    rejectReason: v.rejectReason ?? null,
+    rejectCount: Number(v.rejectCount || 0),
+  };
+}
+
+const ACTIVE_WORK = ["ASSIGNED", "ACCEPTED", "IN_PROGRESS"];
 
 type SectionId = "asosiy" | "tekshiruv" | "kamomad" | "hujjat" | "qoshimcha" | "masul";
 
@@ -222,9 +261,14 @@ export function ConductDialog({
   revizors,
   saving,
   onSave,
-  saveLabel = "Saqlash",
+  onHandOff,
   onFinish,
   finishing = false,
+  currentUserId,
+  canReview,
+  onApprove,
+  onReject,
+  reviewBusy = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -233,13 +277,26 @@ export function ConductDialog({
   branches: { id: number; branchName: string; responsibleName: string }[];
   revizors: { id: number; fullName: string }[];
   saving: boolean;
+  /** Qoralama saqlash (o‘zi to‘ldirayotganda) */
   onSave: () => void;
-  saveLabel?: string;
-  onFinish?: () => void;
+  /** Boshqa xodimga ruxsat berish — qolganini o‘sha xodim to‘ldiradi */
+  onHandOff: () => void;
+  /** Reviziya tayyor / tasdiqlashga yuborish */
+  onFinish: () => void;
   finishing?: boolean;
+  currentUserId: number | null;
+  /** Bo‘lim boshlig‘i: tasdiqlash / rad etish huquqi */
+  canReview: boolean;
+  onApprove: () => void;
+  onReject: (reason: string, action: "redo" | "cancel") => void;
+  reviewBusy?: boolean;
 }) {
   const { toast } = useToast();
   const [section, setSection] = useState<SectionId>("asosiy");
+  const [showMissing, setShowMissing] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectAction, setRejectAction] = useState<"redo" | "cancel">("redo");
   const [pullQuery, setPullQuery] = useState("");
   const [pulling, setPulling] = useState(false);
   const [uploading, setUploading] = useState<"act" | "receipt" | null>(null);
@@ -250,6 +307,10 @@ export function ConductDialog({
   const [extraName, setExtraName] = useState("");
   const [extraPhone, setExtraPhone] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setShowMissing(false);
+  }, [form.pulledId, open]);
 
   useEffect(() => {
     if (!open || form.pulledId) return;
@@ -332,6 +393,10 @@ export function ConductDialog({
   const months = form.shortageFound !== "yes" ? 6 : shortage >= 2_000_000 ? 3 : shortage > 0 ? 4 : 6;
   const nextDate = form.revisionDate ? addMonths(form.revisionDate, months) : "";
   const branchRow = branches.find((b) => String(b.id) === String(form.branchId));
+  const branchOptions = useMemo(
+    () => branches.map((b) => ({ id: String(b.id), label: b.branchName })),
+    [branches],
+  );
   const shownStaff =
     staff.length > 0
       ? staff
@@ -346,6 +411,60 @@ export function ConductDialog({
             },
           ]
         : [];
+
+  const isNew = !form.pulledId;
+  const status = form.pulledStatus;
+  const meta = form.pulledMeta;
+  const selfId = currentUserId != null ? String(currentUserId) : "";
+  const otherRevizors = revizors.filter((r) => String(r.id) !== selfId);
+  const handOff = isNew && !!form.assignedEmployeeId && form.assignedEmployeeId !== selfId;
+  const handOffName = handOff ? otherRevizors.find((r) => String(r.id) === form.assignedEmployeeId)?.fullName || "" : "";
+  const working = !isNew && ACTIVE_WORK.includes(String(status));
+  const inReview = status === "REVIEW";
+  const locked = inReview || status === "CANCELLED";
+  const assignedToOther =
+    !isNew && meta?.assignedEmployeeId != null && currentUserId != null && meta.assignedEmployeeId !== currentUserId;
+  const visibleSections = handOff ? SECTIONS.filter((s) => s.id === "asosiy" || s.id === "tekshiruv") : SECTIONS;
+
+  const hasResponsible =
+    form.pickedStaff.length > 0 || !!form.responsibleName.trim() || form.extraResponsibles.some((p) => p.name.trim());
+  const missing: { section: SectionId; label: string }[] = [];
+  if (!form.branchId) missing.push({ section: "asosiy", label: "Filial" });
+  if (!form.revisionDate) missing.push({ section: "asosiy", label: "Sana" });
+  if (!form.scheduledStartTime || !form.scheduledEndTime) missing.push({ section: "tekshiruv", label: "Boshlanish va tugash vaqti" });
+  if (form.shortageFound === "unset") missing.push({ section: "kamomad", label: "Kamomad topildimi?" });
+  if (form.shortageFound === "yes" && shortage <= 0) missing.push({ section: "kamomad", label: "Kamomad summasi" });
+  if (form.shortageFound === "yes" && form.collectStatus === "partial" && collectedRaw <= 0)
+    missing.push({ section: "kamomad", label: "Undirilgan summa" });
+  if (!form.actUrl) missing.push({ section: "hujjat", label: "Tekshiruv akti (fayl)" });
+  if (collected > 0 && !form.receiptUrl) missing.push({ section: "hujjat", label: "Undirish kvitansiyasi (fayl)" });
+  if (!hasResponsible) missing.push({ section: "masul", label: "Mas’ul shaxs" });
+  const missingSections = new Set(showMissing ? missing.map((m) => m.section) : []);
+
+  const tryFinish = () => {
+    if (missing.length) {
+      setShowMissing(true);
+      jump(missing[0].section);
+      toast({
+        title: "Hamma joy to‘ldirilmagan",
+        description: missing.map((m) => m.label).join(", "),
+        variant: "destructive",
+      });
+      return;
+    }
+    onFinish();
+  };
+
+  const tryHandOff = () => {
+    if (!form.branchId || !form.revisionDate) {
+      toast({ title: "Filial va sanani tanlang", variant: "destructive" });
+      return;
+    }
+    onHandOff();
+  };
+
+  const finishLabel = canReview ? "Reviziya tayyor" : "Tasdiqlashga yuborish";
+  const sectionRing = (id: SectionId) => (missingSections.has(id) ? "ring-2 ring-rose-300 border-rose-200" : "");
 
   const setShortageFound = (next: ConductValues["shortageFound"]) => {
     setForm((f) => {
@@ -411,6 +530,8 @@ export function ConductDialog({
       setForm((f) => ({
         ...f,
         pulledId: Number(row.id) || null,
+        pulledStatus: row.workflowStatus != null ? String(row.workflowStatus) : null,
+        pulledMeta: visitMetaOf(row),
         branchId: row.branchId != null ? String(row.branchId) : f.branchId,
         revisionDate: String(row.revisionDate || f.revisionDate).slice(0, 10),
         scheduledStartTime: hm(row.scheduledStartTime) || f.scheduledStartTime,
@@ -469,16 +590,20 @@ export function ConductDialog({
             <ClipboardCheck className="h-5 w-5" />
           </span>
           <div className="min-w-0 flex-1">
-            <DialogTitle className="text-lg font-semibold tracking-tight">Reviziya qilish</DialogTitle>
+            <DialogTitle className="text-lg font-semibold tracking-tight">
+              {inReview && canReview ? "Reviziyani tekshirish" : "Reviziya qilish"}
+            </DialogTitle>
             <p className="text-xs text-slate-500">Akt raqami ochilishi bilan beriladi. Barcha ma’lumot shu raqamga bog‘lanadi.</p>
           </div>
+          {status ? <StatusPill status={status} /> : null}
         </div>
 
         <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)]">
           <aside className="hidden flex-col gap-1 border-r bg-emerald-50/40 p-3 md:flex dark:bg-emerald-500/5">
-            {SECTIONS.map((s) => {
+            {visibleSections.map((s) => {
               const Icon = s.icon;
               const on = section === s.id;
+              const bad = missingSections.has(s.id);
               return (
                 <button
                   key={s.id}
@@ -489,14 +614,21 @@ export function ConductDialog({
                     on ? "bg-white text-emerald-900 shadow-sm ring-1 ring-emerald-100 dark:bg-[#152238] dark:text-emerald-100" : "text-slate-600 hover:bg-white/70 dark:text-slate-300",
                   )}
                 >
-                  <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", on ? "text-emerald-600" : "text-slate-400")} />
+                  <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", bad ? "text-rose-500" : on ? "text-emerald-600" : "text-slate-400")} />
                   <span className="min-w-0">
                     <span className="block text-sm font-semibold leading-tight">{s.label}</span>
-                    <span className="block text-[11px] text-slate-400">{s.hint}</span>
+                    <span className={cn("block text-[11px]", bad ? "font-medium text-rose-600" : "text-slate-400")}>
+                      {bad ? "To‘ldirilmagan" : s.hint}
+                    </span>
                   </span>
                 </button>
               );
             })}
+            {handOff ? (
+              <div className="mt-2 rounded-2xl border border-dashed border-violet-200 bg-white/70 px-3 py-2.5 text-[11px] leading-snug text-violet-800 dark:bg-white/5 dark:text-violet-200">
+                Kamomad, hujjatlar, izoh va mas’ul shaxsni <b>{handOffName || "revizor"}</b> o‘zi to‘ldiradi.
+              </div>
+            ) : null}
             <p className="mt-auto px-2 pt-4 text-[11px] leading-snug text-slate-500">
               Ma’lumotlar saqlangach akt raqami orqali qayta tortiladi.
             </p>
@@ -504,7 +636,7 @@ export function ConductDialog({
 
           <div ref={scroller} className="min-h-0 overflow-y-auto bg-slate-50/60 px-4 py-4 sm:px-6 dark:bg-[#0b1220]">
             <div className="mb-3 flex gap-2 overflow-x-auto md:hidden">
-              {SECTIONS.map((s) => (
+              {visibleSections.map((s) => (
                 <button
                   key={s.id}
                   type="button"
@@ -519,26 +651,94 @@ export function ConductDialog({
               ))}
             </div>
 
-            <section id="rev-asosiy" className="mb-4 rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#101a2e]">
-              <SectionHead icon={Store} tone="text-emerald-600 bg-emerald-50" title="Asosiy ma’lumotlar" subtitle="Filial va akt raqami" />
+            <StateBanner
+              status={status}
+              meta={meta}
+              canReview={canReview}
+              assignedToOther={assignedToOther}
+            />
+
+            {showMissing && missing.length > 0 && !locked ? (
+              <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
+                <p className="flex items-center gap-2 font-semibold">
+                  <AlertTriangle className="h-4 w-4" /> Yuborishdan oldin to‘ldiring
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {missing.map((m) => (
+                    <button
+                      key={m.label}
+                      type="button"
+                      onClick={() => jump(m.section)}
+                      className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-rose-700 ring-1 ring-rose-200 hover:bg-rose-100 dark:bg-white/10 dark:text-rose-100"
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <fieldset disabled={locked} className={cn("min-w-0", locked && "pointer-events-none select-text opacity-95")}>
+            <section id="rev-asosiy" className={cn("mb-4 rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#101a2e]", sectionRing("asosiy"))}>
+              <SectionHead icon={Store} tone="text-emerald-600 bg-emerald-50" title="Asosiy ma’lumotlar" subtitle="Filial, revizor va akt raqami" />
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <Field label="Filial">
-                  <select className={fieldClass + " w-full px-3 text-sm"} value={form.branchId} onChange={(e) => onBranch(e.target.value)}>
-                    <option value="">Filialni tanlang</option>
-                    {branches.map((b) => (
-                      <option key={b.id} value={String(b.id)}>
-                        {b.branchName}
-                      </option>
-                    ))}
-                  </select>
+                  <BranchCombobox
+                    value={String(form.branchId || "")}
+                    onChange={onBranch}
+                    options={branchOptions}
+                  />
+                </Field>
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Revizor</span>
+                  {isNew ? (
+                    <div className="flex gap-2">
+                      <select
+                        className={cn(fieldClass, "min-w-0 flex-1 border px-3 text-sm", handOff && "border-violet-300 ring-1 ring-violet-200")}
+                        value={handOff ? form.assignedEmployeeId : ""}
+                        onChange={(e) => setForm((f) => ({ ...f, assignedEmployeeId: e.target.value }))}
+                      >
+                        <option value="">O‘zim (bo‘lim boshlig‘i)</option>
+                        {otherRevizors.map((r) => (
+                          <option key={r.id} value={String(r.id)}>
+                            {r.fullName}
+                          </option>
+                        ))}
+                      </select>
+                      {handOff ? (
+                        <Button
+                          type="button"
+                          className="h-11 shrink-0 gap-1.5 rounded-xl bg-violet-700 px-4 text-white hover:bg-violet-800"
+                          disabled={saving || !form.branchId}
+                          onClick={tryHandOff}
+                        >
+                          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                          Ruxsat berish
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <Input
+                      className={fieldClass}
+                      readOnly
+                      value={meta?.assignedEmployeeName || "—"}
+                    />
+                  )}
+                  {isNew ? (
+                    <p className="text-[11px] leading-snug text-slate-500">
+                      {handOff
+                        ? `Ruxsat bersangiz reviziya ${handOffName}ga o‘tadi. Qolgan joylarni u o‘zi to‘ldiradi va sizga tasdiqlash uchun yuboradi.`
+                        : "O‘zingiz o‘tkazsangiz hammasini shu yerda to‘ldirasiz."}
+                    </p>
+                  ) : null}
+                </div>
+                <Field label="Sana">
+                  <Input className={fieldClass} type="date" value={form.revisionDate} onChange={(e) => setForm((f) => ({ ...f, revisionDate: e.target.value }))} />
                 </Field>
                 <Field label="Akt raqami">
                   <Input className={fieldClass + " font-mono"} readOnly value={form.actNumber} />
                 </Field>
-                <Field label="Sana">
-                  <Input className={fieldClass} type="date" value={form.revisionDate} onChange={(e) => setForm((f) => ({ ...f, revisionDate: e.target.value }))} />
-                </Field>
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 sm:col-span-2">
                   <Label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Akt bo‘yicha tortish</Label>
                   <div className="flex gap-2">
                     <div className="relative min-w-0 flex-1">
@@ -558,7 +758,7 @@ export function ConductDialog({
               </div>
             </section>
 
-            <section id="rev-tekshiruv" className="mb-4 rounded-2xl border border-sky-100 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#101a2e]">
+            <section id="rev-tekshiruv" className={cn("mb-4 rounded-2xl border border-sky-100 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#101a2e]", sectionRing("tekshiruv"))}>
               <SectionHead icon={CalendarDays} tone="text-sky-600 bg-sky-50" title="Tekshiruv ma’lumotlari" subtitle="Boshlanish, tugash va keyingi muddat" />
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <Field label="Boshlanish">
@@ -597,32 +797,53 @@ export function ConductDialog({
                     }}
                   />
                 </Field>
-                <Field label="Revizor">
-                  <select
-                    className={fieldClass + " w-full px-3 text-sm"}
-                    value={form.assignedEmployeeId}
-                    onChange={(e) => setForm((f) => ({ ...f, assignedEmployeeId: e.target.value }))}
-                  >
-                    <option value="">O‘zim (bo‘lim boshlig‘i)</option>
-                    {revizors.map((r) => (
-                      <option key={r.id} value={String(r.id)}>
-                        {r.fullName}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
               </div>
               <div className="mt-3 flex gap-2 rounded-xl bg-sky-50 px-3 py-2.5 text-xs leading-relaxed text-sky-900 dark:bg-sky-500/10 dark:text-sky-100">
                 <Clock3 className="mt-0.5 h-4 w-4 shrink-0" />
                 <div>
                   <p className="font-semibold">Keyingi tekshiruv avtomatik hisoblanadi</p>
                   <p>2 000 000 so‘m va undan yuqori — 3 oy. Undan kam — 4 oy. Kamomad yo‘q — 6 oy.</p>
-                  {nextDate ? <p className="mt-1 font-medium">Keyingi sana: {nextDate} ({months} oy)</p> : null}
+                  {nextDate && !handOff ? <p className="mt-1 font-medium">Keyingi sana: {nextDate} ({months} oy)</p> : null}
                 </div>
               </div>
             </section>
 
-            <section id="rev-kamomad" className="mb-4 rounded-2xl border border-orange-100 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#101a2e]">
+            {handOff ? (
+              <section className="mb-2 rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-5 shadow-sm dark:border-violet-500/30 dark:from-violet-500/10 dark:to-transparent">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-600 text-white">
+                    <Send className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-violet-950 dark:text-violet-100">
+                      Qolgan joylarni {handOffName} to‘ldiradi
+                    </h3>
+                    <p className="mt-1 text-xs leading-relaxed text-violet-900/80 dark:text-violet-200/80">
+                      «Ruxsat berish»ni bossangiz reviziya shu xodimning vazifalariga tushadi va unga xabar boradi.
+                    </p>
+                  </div>
+                </div>
+                <ol className="mt-4 grid gap-2 sm:grid-cols-3">
+                  {[
+                    ["1", "Ruxsat berasiz", "Filial, sana va xodim — shu yetarli"],
+                    ["2", `${handOffName || "Xodim"} to‘ldiradi`, "Kamomad, akt, kvitansiya, mas’ul — majburiy"],
+                    ["3", "Siz tasdiqlaysiz", "Yoki sababini yozib rad etasiz"],
+                  ].map(([n, t, d]) => (
+                    <li key={n} className="rounded-xl bg-white/80 px-3 py-2.5 ring-1 ring-violet-100 dark:bg-white/5 dark:ring-white/10">
+                      <span className="flex items-center gap-2 text-xs font-semibold text-violet-900 dark:text-violet-100">
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-600 text-[10px] text-white">{n}</span>
+                        {t}
+                      </span>
+                      <span className="mt-1 block text-[11px] leading-snug text-slate-500">{d}</span>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            ) : null}
+
+            {!handOff ? (
+            <>
+            <section id="rev-kamomad" className={cn("mb-4 rounded-2xl border border-orange-100 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#101a2e]", sectionRing("kamomad"))}>
               <SectionHead icon={Wallet} tone="text-orange-600 bg-orange-50" title="Kamomad va undirish" subtitle="Avval kamomad topilganini belgilang" />
               <div className="mt-4 space-y-3">
                 <Field label="Kamomad topildimi?">
@@ -729,7 +950,7 @@ export function ConductDialog({
               </div>
             </section>
 
-            <section id="rev-hujjat" className="mb-4 rounded-2xl border border-violet-100 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#101a2e]">
+            <section id="rev-hujjat" className={cn("mb-4 rounded-2xl border border-violet-100 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#101a2e]", sectionRing("hujjat"))}>
               <SectionHead icon={FileText} tone="text-violet-600 bg-violet-50" title="Hujjatlar" subtitle="Akt va kvitansiya" />
               <div className="mt-4 space-y-3">
                 <DropSlot
@@ -761,7 +982,7 @@ export function ConductDialog({
               />
             </section>
 
-            <section id="rev-masul" className="mb-2 rounded-2xl border border-teal-100 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#101a2e]">
+            <section id="rev-masul" className={cn("mb-2 rounded-2xl border border-teal-100 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#101a2e]", sectionRing("masul"))}>
               <SectionHead icon={UserRound} tone="text-teal-600 bg-teal-50" title="Mas’ul shaxs" subtitle="Bir nechtasini tanlash mumkin. Standart — filial mudiri" />
               {!form.branchId ? (
                 <p className="mt-4 text-sm text-slate-500">Avval filialni tanlang.</p>
@@ -927,37 +1148,286 @@ export function ConductDialog({
                 </div>
               )}
             </section>
+            </>
+            ) : null}
+            </fieldset>
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t bg-white px-5 py-3 dark:bg-[#0d1728]">
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t bg-white px-5 py-3 dark:bg-[#0d1728]">
           <Button type="button" variant="outline" className="h-11 rounded-xl px-5" onClick={() => onOpenChange(false)}>
-            Bekor qilish
+            {isNew ? "Bekor qilish" : "Yopish"}
           </Button>
-          <Button
-            type="button"
-            className="h-11 gap-2 rounded-xl bg-emerald-600 px-5 text-white hover:bg-emerald-700"
-            disabled={!form.branchId || saving || finishing}
-            onClick={onSave}
-          >
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
-            {saveLabel}
-          </Button>
-          {onFinish ? (
+          {inReview && canReview ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 gap-2 rounded-xl border-rose-200 px-5 text-rose-700 hover:bg-rose-50"
+                disabled={reviewBusy}
+                onClick={() => {
+                  setRejectReason("");
+                  setRejectAction("redo");
+                  setRejectOpen(true);
+                }}
+              >
+                <XCircle className="h-4 w-4" /> Rad etish
+              </Button>
+              <Button
+                type="button"
+                className="h-11 gap-2 rounded-xl bg-emerald-600 px-5 text-white hover:bg-emerald-700"
+                disabled={reviewBusy}
+                onClick={onApprove}
+              >
+                {reviewBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Tasdiqlash
+              </Button>
+            </>
+          ) : null}
+          {handOff ? (
             <Button
               type="button"
               className="h-11 gap-2 rounded-xl bg-violet-700 px-5 text-white hover:bg-violet-800"
-              disabled={!form.branchId || saving || finishing}
-              onClick={onFinish}
+              disabled={!form.branchId || saving}
+              onClick={tryHandOff}
             >
-              {finishing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
-              Reviziya tayyor
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Ruxsat berish
+            </Button>
+          ) : null}
+          {!handOff && !locked ? (
+            <Button
+              type="button"
+              variant={isNew || working ? "outline" : "default"}
+              className={cn(
+                "h-11 gap-2 rounded-xl px-5",
+                !(isNew || working) && "bg-emerald-600 text-white hover:bg-emerald-700",
+              )}
+              disabled={!form.branchId || saving || finishing}
+              onClick={onSave}
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {isNew ? "Qoralama saqlash" : "Saqlash"}
+            </Button>
+          ) : null}
+          {!handOff && (isNew || working) ? (
+            <Button
+              type="button"
+              className="h-11 gap-2 rounded-xl bg-emerald-600 px-5 text-white hover:bg-emerald-700"
+              disabled={!form.branchId || saving || finishing}
+              onClick={tryFinish}
+            >
+              {finishing ? <Loader2 className="h-4 w-4 animate-spin" /> : canReview ? <ClipboardCheck className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+              {finishLabel}
             </Button>
           ) : null}
         </div>
+
+        <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
+          <DialogContent className="max-w-md rounded-3xl">
+            <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+              <XCircle className="h-5 w-5 text-rose-600" /> Reviziyani rad etish
+            </DialogTitle>
+            <p className="text-xs text-slate-500">
+              Sabab {meta?.assignedEmployeeName || "revizor"}ga xabar bo‘lib boradi va tarixda saqlanadi.
+            </p>
+            <label className="mt-2 block space-y-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Sabab (majburiy)</span>
+              <textarea
+                autoFocus
+                className="min-h-24 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:ring-2 focus:ring-rose-500/30 dark:border-white/10 dark:bg-[#0d1728]"
+                placeholder="Masalan: akt rasmi o‘qilmaydi, kamomad summasi aktga mos emas…"
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+              />
+            </label>
+            <div className="grid gap-2">
+              {(
+                [
+                  ["redo", RotateCcw, "Qayta reviziya qilsin", "Revizorga qaytadi — tuzatib qayta yuboradi"],
+                  ["cancel", Ban, "Butunlay bekor qilish", "Reviziya yopiladi, lekin o‘chmaydi — tarixda sababi bilan qoladi"],
+                ] as const
+              ).map(([id, Icon, title, hint]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setRejectAction(id)}
+                  className={cn(
+                    "flex items-start gap-3 rounded-2xl border px-3 py-3 text-left transition",
+                    rejectAction === id
+                      ? id === "cancel"
+                        ? "border-rose-400 bg-rose-50 ring-1 ring-rose-200 dark:bg-rose-500/10"
+                        : "border-amber-400 bg-amber-50 ring-1 ring-amber-200 dark:bg-amber-500/10"
+                      : "border-slate-200 hover:border-slate-300 dark:border-white/10",
+                  )}
+                >
+                  <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", id === "cancel" ? "text-rose-600" : "text-amber-600")} />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold">{title}</span>
+                    <span className="block text-xs text-slate-500">{hint}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-2 flex justify-end gap-2">
+              <Button type="button" variant="outline" className="rounded-xl" onClick={() => setRejectOpen(false)}>
+                Orqaga
+              </Button>
+              <Button
+                type="button"
+                className={cn(
+                  "gap-2 rounded-xl text-white",
+                  rejectAction === "cancel" ? "bg-rose-600 hover:bg-rose-700" : "bg-amber-600 hover:bg-amber-700",
+                )}
+                disabled={rejectReason.trim().length < 3 || reviewBusy}
+                onClick={() => {
+                  onReject(rejectReason.trim(), rejectAction);
+                  setRejectOpen(false);
+                }}
+              >
+                {reviewBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {rejectAction === "cancel" ? "Bekor qilish" : "Qayta qilishga qaytarish"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );
+}
+
+function StatusPill({ status }: { status: string }) {
+  const map: Record<string, [string, string]> = {
+    ASSIGNED: ["Biriktirilgan", "bg-violet-100 text-violet-800"],
+    ACCEPTED: ["Qabul qilingan", "bg-sky-100 text-sky-800"],
+    IN_PROGRESS: ["Jarayonda", "bg-indigo-100 text-indigo-800"],
+    REVIEW: ["Tasdiqlash kutilmoqda", "bg-amber-100 text-amber-900"],
+    COMPLETED: ["Tasdiqlangan", "bg-emerald-100 text-emerald-800"],
+    CANCELLED: ["Bekor qilingan", "bg-rose-100 text-rose-800"],
+    REQUESTED: ["Ariza", "bg-amber-100 text-amber-900"],
+  };
+  const [label, tone] = map[status] || [status, "bg-slate-100 text-slate-700"];
+  return <span className={cn("shrink-0 rounded-full px-3 py-1 text-xs font-semibold", tone)}>{label}</span>;
+}
+
+function fmtDateTime(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("uz-UZ", {
+    timeZone: "Asia/Tashkent",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function StateBanner({
+  status,
+  meta,
+  canReview,
+  assignedToOther,
+}: {
+  status: string | null;
+  meta: VisitMeta | null;
+  canReview: boolean;
+  assignedToOther: boolean;
+}) {
+  if (!status || !meta) return null;
+  const box = "mb-4 flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm";
+  const redo = meta.reviewDecision === "rejected_redo" && meta.rejectReason;
+
+  if (ACTIVE_WORK.includes(status)) {
+    return (
+      <>
+        {redo ? (
+          <div className={cn(box, "border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100")}>
+            <RotateCcw className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="min-w-0">
+              <p className="font-semibold">
+                Rad etildi{meta.reviewedByName ? ` — ${meta.reviewedByName}` : ""}. Tuzatib qayta yuboring
+              </p>
+              <p className="mt-0.5 whitespace-pre-wrap text-xs leading-relaxed">Sabab: {meta.rejectReason}</p>
+            </div>
+          </div>
+        ) : null}
+        {canReview && assignedToOther ? (
+          <div className={cn(box, "border-violet-200 bg-violet-50 text-violet-900 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-100")}>
+            <UserRound className="mt-0.5 h-4 w-4 shrink-0" />
+            <p className="text-xs leading-relaxed">
+              <b>{meta.assignedEmployeeName || "Revizor"}</b> to‘ldirmoqda. Tayyor bo‘lgach sizga tasdiqlash uchun keladi.
+            </p>
+          </div>
+        ) : !canReview ? (
+          <div className={cn(box, "border-violet-200 bg-violet-50 text-violet-900 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-100")}>
+            <Send className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="min-w-0 text-xs leading-relaxed">
+              <p className="text-sm font-semibold">
+                {meta.createdByName ? `${meta.createdByName} sizga topshirdi` : "Reviziya sizga topshirildi"}
+              </p>
+              <p className="mt-0.5">
+                Barcha joylarni to‘ldiring: kamomad, akt fayli, kerak bo‘lsa kvitansiya va mas’ul shaxs. Keyin «Tasdiqlashga yuborish»ni bosing — bo‘lim boshlig‘i tasdiqlaydi.
+              </p>
+            </div>
+          </div>
+        ) : null}
+      </>
+    );
+  }
+
+  if (status === "REVIEW") {
+    return (
+      <div className={cn(box, "border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100")}>
+        <Hourglass className="mt-0.5 h-4 w-4 shrink-0" />
+        <div className="min-w-0 text-xs leading-relaxed">
+          <p className="text-sm font-semibold">
+            {canReview
+              ? `${meta.submittedByName || meta.assignedEmployeeName || "Revizor"} tasdiqlashga yubordi${meta.submittedAt ? ` · ${fmtDateTime(meta.submittedAt)}` : ""}`
+              : "Tasdiqlashga yuborildi — bo‘lim boshlig‘i tekshiryapti"}
+          </p>
+          <p className="mt-0.5">
+            {canReview
+              ? "Hamma joyni ko‘rib chiqing. To‘g‘ri bo‘lsa «Tasdiqlash», xato bo‘lsa «Rad etish» — sababini yozasiz."
+              : "Qaror chiqquncha o‘zgartirib bo‘lmaydi. Rad etilsa sababi bilan sizga qaytadi."}
+          </p>
+          {meta.rejectCount > 0 && meta.rejectReason ? (
+            <p className="mt-1 font-medium">
+              Oldin {meta.rejectCount} marta rad etilgan. Oxirgi sabab: {meta.rejectReason}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "CANCELLED") {
+    return (
+      <div className={cn(box, "border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100")}>
+        <Ban className="mt-0.5 h-4 w-4 shrink-0" />
+        <div className="min-w-0 text-xs leading-relaxed">
+          <p className="text-sm font-semibold">
+            Bekor qilingan{meta.reviewedByName ? ` — ${meta.reviewedByName}` : ""}
+          </p>
+          <p className="mt-0.5">
+            {meta.rejectReason ? `Sabab: ${meta.rejectReason}. ` : ""}Ma’lumotlar o‘chirilmagan, tarixda saqlanadi.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "COMPLETED" && meta.reviewedByName) {
+    return (
+      <div className={cn(box, "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100")}>
+        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+        <p className="text-xs leading-relaxed">
+          Tasdiqlagan: <b>{meta.reviewedByName}</b>
+        </p>
+      </div>
+    );
+  }
+  return null;
 }
 
 function SectionHead({

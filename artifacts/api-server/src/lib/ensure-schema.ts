@@ -499,6 +499,7 @@ ALTER TABLE coordinator_branch_visits ADD COLUMN IF NOT EXISTS presence_blocked_
 ALTER TABLE coordinator_branch_visits ADD COLUMN IF NOT EXISTS presence_unlock_request_at TIMESTAMPTZ;
 ALTER TABLE coordinator_branch_visits ADD COLUMN IF NOT EXISTS presence_unlocked_at TIMESTAMPTZ;
 ALTER TABLE coordinator_branch_visits ADD COLUMN IF NOT EXISTS presence_unlocked_by_id INTEGER;
+ALTER TABLE coordinator_branch_visits ADD COLUMN IF NOT EXISTS presence_frozen_at TIMESTAMPTZ;
 
 -- Employees GPS (checklist geofence) + employment + org
 DO $$
@@ -1785,6 +1786,53 @@ CREATE INDEX IF NOT EXISTS revision_visits_scheduled_idx ON revision_visits (sch
 CREATE INDEX IF NOT EXISTS revision_visits_assigned_idx ON revision_visits (assigned_employee_id);
 CREATE INDEX IF NOT EXISTS revision_visits_revision_date_idx ON revision_visits (revision_date);
 CREATE INDEX IF NOT EXISTS revision_visits_created_idx ON revision_visits (created_at);
+ALTER TABLE revision_visits ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ;
+ALTER TABLE revision_visits ADD COLUMN IF NOT EXISTS submitted_by_id INTEGER;
+ALTER TABLE revision_visits ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
+ALTER TABLE revision_visits ADD COLUMN IF NOT EXISTS reviewed_by_id INTEGER;
+ALTER TABLE revision_visits ADD COLUMN IF NOT EXISTS review_decision TEXT;
+ALTER TABLE revision_visits ADD COLUMN IF NOT EXISTS reject_reason TEXT;
+ALTER TABLE revision_visits ADD COLUMN IF NOT EXISTS reject_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE revision_visits ADD COLUMN IF NOT EXISTS requested_by_id INTEGER;
+ALTER TABLE revision_visits ADD COLUMN IF NOT EXISTS requested_at TIMESTAMPTZ;
+ALTER TABLE revision_visits ADD COLUMN IF NOT EXISTS request_decided_by_id INTEGER;
+ALTER TABLE revision_visits ADD COLUMN IF NOT EXISTS request_decided_at TIMESTAMPTZ;
+ALTER TABLE revision_visits ADD COLUMN IF NOT EXISTS request_reject_reason TEXT;
+UPDATE revision_visits SET requested_by_id = created_by_id, requested_at = created_at
+  WHERE workflow_status = 'REQUESTED' AND requested_by_id IS NULL;
+CREATE INDEX IF NOT EXISTS revision_visits_requested_idx ON revision_visits (requested_by_id);
+CREATE TABLE IF NOT EXISTS revision_visit_payments (
+  id SERIAL PRIMARY KEY,
+  visit_id INTEGER NOT NULL,
+  branch_id INTEGER NOT NULL,
+  amount INTEGER NOT NULL,
+  paid_at TEXT NOT NULL,
+  method TEXT NOT NULL DEFAULT 'cash',
+  note TEXT,
+  receipt_url TEXT,
+  remaining_after INTEGER NOT NULL DEFAULT 0,
+  created_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  voided_at TIMESTAMPTZ,
+  voided_by_id INTEGER,
+  void_reason TEXT
+);
+CREATE INDEX IF NOT EXISTS revision_visit_payments_visit_idx ON revision_visit_payments (visit_id);
+CREATE INDEX IF NOT EXISTS revision_visit_payments_branch_idx ON revision_visit_payments (branch_id);
+CREATE TABLE IF NOT EXISTS staff_comments (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  employee_id INTEGER,
+  department_id INTEGER,
+  kind TEXT NOT NULL DEFAULT 'note',
+  related_date TEXT,
+  text TEXT NOT NULL,
+  author_id INTEGER,
+  author_name TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS staff_comments_user_idx ON staff_comments (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS staff_comments_dept_date_idx ON staff_comments (department_id, related_date);
 `;
 
 const WAREHOUSE_SHIFTS_SQL = `

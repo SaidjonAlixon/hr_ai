@@ -296,7 +296,7 @@ export function TamojniSkladPanel() {
             <Warehouse className="h-4 w-4 text-muted-foreground" />
             <h2 className="text-base font-semibold">Xodimlar · {staff.length}</h2>
           </div>
-          {canManage ? (
+          {canManage && creatable.length > 0 ? (
             <Button
               type="button"
               className="rounded-xl"
@@ -316,7 +316,7 @@ export function TamojniSkladPanel() {
           ) : null}
         </div>
         {staff.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Hali xodim yo‘q. Bo‘lim boshlig‘i yoki Distribyutsiya HR qo‘shadi.</p>
+          <p className="text-sm text-muted-foreground">Hali xodim yo‘q. Xodimlarni HR yoki Distribyutsiya rahbari qo‘shadi.</p>
         ) : (
           <>
             <div className="mb-3 flex flex-wrap gap-1.5">

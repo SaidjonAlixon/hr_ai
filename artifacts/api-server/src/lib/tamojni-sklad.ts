@@ -123,9 +123,9 @@ export function canManageTamojni(role?: string | null): boolean {
   );
 }
 
-/** Bo‘lim boshlig‘i faqat xodim qo‘shadi. HR va rahbar boshliqni ham qo‘shadi. */
+/** Bo‘lim boshlig‘i xodim qo‘sha olmaydi — smena va joyni boshqaradi. HR va rahbarlar xodim/boshliq qo‘shadi. */
 export function tamojniCreatableRoles(actorRole?: string | null): string[] {
-  if (actorRole === TAMOJNI_HEAD_ROLE) return [TAMOJNI_STAFF_ROLE];
+  if (actorRole === TAMOJNI_HEAD_ROLE) return [];
   if (canManageTamojni(actorRole)) return [TAMOJNI_STAFF_ROLE, TAMOJNI_HEAD_ROLE];
   return [];
 }

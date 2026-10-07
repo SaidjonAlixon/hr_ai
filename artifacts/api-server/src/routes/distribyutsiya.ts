@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import {
   db,
   usersTable,
@@ -8,7 +8,10 @@ import {
   departmentsTable,
   departmentSitesTable,
   employeeScheduleOverridesTable,
+  staffCommentsTable,
 } from "@workspace/db";
+import { archiveAndDeleteUser } from "../lib/dismiss-user";
+import { buildStaffAttendanceDays } from "../lib/employee-attendance-report";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { formatPersonName } from "../lib/person-name";
@@ -305,18 +308,49 @@ router.get("/distribyutsiya/staff", requireAuth, async (req: AuthRequest, res): 
         location: employeesTable.location,
         orgRole: employeesTable.orgRole,
         employeeDepartmentId: employeesTable.departmentId,
+        employmentStatus: employeesTable.employmentStatus,
       })
       .from(usersTable)
       .leftJoin(employeesTable, eq(employeesTable.userId, usersTable.id))
       .where(eq(usersTable.departmentId, departmentId))
       .orderBy(asc(usersTable.fullName));
 
+    const userIds = rows.map((r) => r.userId);
+    const commentStats = new Map<number, { count: number; lastText: string; lastAt: Date; lastAuthor: string | null }>();
+    if (userIds.length) {
+      const comments = await db
+        .select({
+          userId: staffCommentsTable.userId,
+          text: staffCommentsTable.text,
+          createdAt: staffCommentsTable.createdAt,
+          authorName: staffCommentsTable.authorName,
+        })
+        .from(staffCommentsTable)
+        .where(inArray(staffCommentsTable.userId, userIds))
+        .orderBy(desc(staffCommentsTable.createdAt));
+      for (const c of comments) {
+        const s = commentStats.get(c.userId);
+        if (s) s.count += 1;
+        else commentStats.set(c.userId, { count: 1, lastText: c.text, lastAt: c.createdAt, lastAuthor: c.authorName });
+      }
+    }
+
     res.json({
       departmentId,
       departmentName: DISTRIBYUTSIYA_DEPARTMENT_NAME,
       canChangeSite: canChangeDavomatSite(req.userRole),
+      canManageStaff: canManageDistrib(req.userRole),
+      myUserId: req.userId ?? null,
       staff: rows.map(({ location, orgRole, employeeDepartmentId, ...r }) => ({
         ...r,
+        commentCount: commentStats.get(r.userId)?.count ?? 0,
+        lastComment: commentStats.get(r.userId)
+          ? {
+              text: commentStats.get(r.userId)!.lastText,
+              createdAt: commentStats.get(r.userId)!.lastAt,
+              authorName: commentStats.get(r.userId)!.lastAuthor,
+            }
+          : null,
         davomatSite:
           resolveDistribDavomatSite({
             davomatSite: r.davomatSite,
@@ -579,6 +613,413 @@ router.post("/distribyutsiya/staff", requireAuth, async (req: AuthRequest, res):
   }
 });
 
+/** Distribyutsiya bo‘limidagi xodimni topadi; boshqa bo‘lim xodimi bo‘lsa — null */
+async function findDistribMember(userId: number) {
+  if (!Number.isFinite(userId) || userId <= 0) return null;
+  const departmentId = await ensureDistribyutsiyaSetup();
+  const [row] = await db
+    .select({
+      userId: usersTable.id,
+      fullName: usersTable.fullName,
+      role: usersTable.role,
+      departmentId: usersTable.departmentId,
+      employeeId: employeesTable.id,
+    })
+    .from(usersTable)
+    .leftJoin(employeesTable, eq(employeesTable.userId, usersTable.id))
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+  if (!row || row.departmentId !== departmentId) return null;
+  return { ...row, distribDepartmentId: departmentId };
+}
+
+/** Distribyutsiya HR rahbarni o‘zgartira/o‘chira olmaydi; hech kim o‘zini o‘chirmaydi */
+function staffActionDenied(req: AuthRequest, target: { userId: number; role: string }): string | null {
+  if (target.userId === req.userId) return "O‘zingizga bu amalni qila olmaysiz";
+  if (req.userRole === "distrib_hr" && target.role === "distrib_rahbar") {
+    return "Distribyutsiya rahbarini faqat Admin yoki direktor o‘zgartiradi";
+  }
+  return null;
+}
+
+async function actorName(userId?: number): Promise<string | null> {
+  if (!userId) return null;
+  const [u] = await db.select({ fullName: usersTable.fullName }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  return u?.fullName ?? null;
+}
+
+const DISTRIB_STATUS_LABEL: Record<string, string> = {
+  working: "Ishlayapti",
+  on_leave: "Ta’tilda",
+  dismissed: "Bo‘shatildi",
+};
+
+/** Holat: ishlayapti / ta’tilda / bo‘shatildi (bo‘shatilsa — Bo‘shatilganlar arxiviga, login bekor) */
+router.patch("/distribyutsiya/staff/:userId/status", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageDistrib(req.userRole)) {
+    res.status(403).json({ error: "Holatni Distribyutsiya HR yoki rahbari o‘zgartiradi" });
+    return;
+  }
+  const status = String(req.body?.status || "").trim();
+  if (!DISTRIB_STATUS_LABEL[status]) {
+    res.status(400).json({ error: "Holatni tanlang" });
+    return;
+  }
+  const reason = String(req.body?.reason || "").trim().slice(0, 500);
+  if (status === "dismissed" && reason.length < 3) {
+    res.status(400).json({ error: "Bo‘shatish sababini yozing" });
+    return;
+  }
+  try {
+    const target = await findDistribMember(Number(req.params.userId));
+    if (!target) {
+      res.status(404).json({ error: "Distribyutsiya xodimi topilmadi" });
+      return;
+    }
+    const denied = staffActionDenied(req, target);
+    if (denied) {
+      res.status(403).json({ error: denied });
+      return;
+    }
+
+    if (status === "dismissed") {
+      const ok = await archiveAndDeleteUser(target.userId, { actorId: req.userId ?? null, reason });
+      if (!ok) {
+        res.status(404).json({ error: "Topilmadi" });
+        return;
+      }
+      res.json({ ok: true, removed: true, message: `${target.fullName} bo‘shatildi va Bo‘shatilganlar arxiviga o‘tkazildi` });
+      return;
+    }
+
+    if (!target.employeeId) {
+      await ensureEmployeeForNewUser({
+        id: target.userId,
+        fullName: target.fullName,
+        role: target.role,
+        departmentId: target.distribDepartmentId,
+      });
+    }
+    await db
+      .update(employeesTable)
+      .set({ employmentStatus: status, updatedAt: new Date() })
+      .where(eq(employeesTable.userId, target.userId));
+    await db
+      .update(usersTable)
+      .set({ status: status === "on_leave" ? "on_leave" : "active" })
+      .where(eq(usersTable.id, target.userId));
+
+    const author = await actorName(req.userId);
+    await db.insert(staffCommentsTable).values({
+      userId: target.userId,
+      employeeId: target.employeeId ?? null,
+      departmentId: target.distribDepartmentId,
+      kind: "note",
+      relatedDate: ymdInTashkent(new Date()),
+      text: `Holat o‘zgardi: ${DISTRIB_STATUS_LABEL[status]}${reason ? `. ${reason}` : ""}`,
+      authorId: req.userId ?? null,
+      authorName: author,
+    });
+    await notifyUser({
+      userId: target.userId,
+      text: `Holatingiz o‘zgartirildi: ${DISTRIB_STATUS_LABEL[status]}${reason ? ` (${reason})` : ""}`,
+      type: "staff_status",
+      linkUrl: "/dashboard",
+    }).catch(() => undefined);
+
+    res.json({ ok: true, removed: false, status, message: `Holat: ${DISTRIB_STATUS_LABEL[status]}` });
+  } catch (err) {
+    console.error("PATCH /distribyutsiya/staff/:userId/status error:", err);
+    res.status(500).json({ error: "Holat saqlanmadi" });
+  }
+});
+
+/** Xodimni o‘chirish — login, sessiya, yuz/barmoq izi o‘chadi; yozuv Bo‘shatilganlar arxivida qoladi */
+router.delete("/distribyutsiya/staff/:userId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageDistrib(req.userRole)) {
+    res.status(403).json({ error: "Xodimni Distribyutsiya HR yoki rahbari o‘chiradi" });
+    return;
+  }
+  const reason = String((req.query as { reason?: string }).reason || req.body?.reason || "").trim().slice(0, 500);
+  if (reason.length < 3) {
+    res.status(400).json({ error: "O‘chirish sababini yozing" });
+    return;
+  }
+  try {
+    const target = await findDistribMember(Number(req.params.userId));
+    if (!target) {
+      res.status(404).json({ error: "Distribyutsiya xodimi topilmadi" });
+      return;
+    }
+    const denied = staffActionDenied(req, target);
+    if (denied) {
+      res.status(403).json({ error: denied });
+      return;
+    }
+    const ok = await archiveAndDeleteUser(target.userId, { actorId: req.userId ?? null, reason });
+    if (!ok) {
+      res.status(404).json({ error: "Topilmadi" });
+      return;
+    }
+    res.json({ ok: true, message: `${target.fullName} o‘chirildi` });
+  } catch (err) {
+    console.error("DELETE /distribyutsiya/staff/:userId error:", err);
+    res.status(500).json({ error: "O‘chirilmadi" });
+  }
+});
+
+const COMMENT_KINDS = new Set(["note", "late", "early", "warning", "praise"]);
+const COMMENT_KIND_LABEL: Record<string, string> = {
+  note: "Izoh",
+  late: "Kech kelish",
+  early: "Erta ketish",
+  warning: "Ogohlantirish",
+  praise: "Rag‘bat",
+};
+
+router.get("/distribyutsiya/staff/:userId/comments", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canViewDistrib(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
+  const userId = Number(req.params.userId);
+  if (!Number.isFinite(userId) || userId <= 0) {
+    res.status(400).json({ error: "Xodim noto‘g‘ri" });
+    return;
+  }
+  const items = await db
+    .select()
+    .from(staffCommentsTable)
+    .where(eq(staffCommentsTable.userId, userId))
+    .orderBy(desc(staffCommentsTable.createdAt))
+    .limit(200);
+  res.json({
+    items: items.map((c) => ({ ...c, canDelete: c.authorId === req.userId || hasFullPlatformAccess(req.userRole) })),
+  });
+});
+
+router.post("/distribyutsiya/staff/:userId/comments", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageDistrib(req.userRole)) {
+    res.status(403).json({ error: "Izohni Distribyutsiya HR yoki rahbari yozadi" });
+    return;
+  }
+  const text = String(req.body?.text || "").trim().slice(0, 2000);
+  if (text.length < 2) {
+    res.status(400).json({ error: "Izoh matnini yozing" });
+    return;
+  }
+  const kind = COMMENT_KINDS.has(String(req.body?.kind)) ? String(req.body.kind) : "note";
+  const relatedRaw = String(req.body?.relatedDate || "").slice(0, 10);
+  const relatedDate = /^\d{4}-\d{2}-\d{2}$/.test(relatedRaw) ? relatedRaw : ymdInTashkent(new Date());
+  try {
+    const target = await findDistribMember(Number(req.params.userId));
+    if (!target) {
+      res.status(404).json({ error: "Distribyutsiya xodimi topilmadi" });
+      return;
+    }
+    const author = await actorName(req.userId);
+    const [row] = await db
+      .insert(staffCommentsTable)
+      .values({
+        userId: target.userId,
+        employeeId: target.employeeId ?? null,
+        departmentId: target.distribDepartmentId,
+        kind,
+        relatedDate,
+        text,
+        authorId: req.userId ?? null,
+        authorName: author,
+      })
+      .returning();
+    if (req.body?.notify) {
+      await notifyUser({
+        userId: target.userId,
+        text: `HR izohi (${COMMENT_KIND_LABEL[kind]}, ${relatedDate.split("-").reverse().join(".")}): ${text}`,
+        type: "staff_comment",
+        linkUrl: "/dashboard",
+      }).catch(() => undefined);
+    }
+    res.status(201).json({ ok: true, comment: row });
+  } catch (err) {
+    console.error("POST /distribyutsiya/staff/:userId/comments error:", err);
+    res.status(500).json({ error: "Izoh saqlanmadi" });
+  }
+});
+
+router.delete("/distribyutsiya/comments/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageDistrib(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
+  const id = Number(req.params.id);
+  const [row] = await db.select().from(staffCommentsTable).where(eq(staffCommentsTable.id, id)).limit(1);
+  if (!row) {
+    res.status(404).json({ error: "Izoh topilmadi" });
+    return;
+  }
+  if (row.authorId !== req.userId && !hasFullPlatformAccess(req.userRole)) {
+    res.status(403).json({ error: "Faqat o‘z izohingizni o‘chirasiz" });
+    return;
+  }
+  await db.delete(staffCommentsTable).where(eq(staffCommentsTable.id, id));
+  res.json({ ok: true });
+});
+
+/** Kunlik kech kelish / erta ketish / kelmaganlar — Distribyutsiya HR uchun */
+router.get("/distribyutsiya/attendance", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canViewDistrib(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
+  const today = ymdInTashkent(new Date());
+  const nowHm = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Tashkent",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date());
+  const isYmd = (v: unknown) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  let from = isYmd(req.query.from) ? String(req.query.from) : today;
+  let to = isYmd(req.query.to) ? String(req.query.to) : from;
+  if (to > today) to = today;
+  if (from > to) from = to;
+  if ((Date.parse(to) - Date.parse(from)) / 86_400_000 > 31) {
+    res.status(400).json({ error: "Oraliq 31 kundan oshmasin" });
+    return;
+  }
+  try {
+    const departmentId = await ensureDistribyutsiyaSetup();
+    const staff = await db
+      .select({
+        userId: usersTable.id,
+        fullName: usersTable.fullName,
+        role: usersTable.role,
+        employeeId: employeesTable.id,
+        position: employeesTable.position,
+      })
+      .from(usersTable)
+      .innerJoin(employeesTable, eq(employeesTable.userId, usersTable.id))
+      .where(eq(usersTable.departmentId, departmentId));
+    const byEmp = new Map(staff.map((s) => [s.employeeId, s]));
+    const daysByEmp = await buildStaffAttendanceDays({ employeeIds: staff.map((s) => s.employeeId), from, to });
+
+    const comments = await db
+      .select()
+      .from(staffCommentsTable)
+      .where(
+        and(
+          eq(staffCommentsTable.departmentId, departmentId),
+          gte(staffCommentsTable.relatedDate, from),
+          lte(staffCommentsTable.relatedDate, to),
+        ),
+      )
+      .orderBy(asc(staffCommentsTable.createdAt));
+    const commentsByKey = new Map<string, typeof comments>();
+    for (const c of comments) {
+      const key = `${c.userId}|${c.relatedDate}`;
+      const list = commentsByKey.get(key) || [];
+      list.push(c);
+      commentsByKey.set(key, list);
+    }
+
+    type Incident = {
+      key: string;
+      date: string;
+      type: "late" | "early" | "absent" | "incomplete";
+      userId: number;
+      fullName: string;
+      position: string | null;
+      minutes: number;
+      checkIn: string | null;
+      checkOut: string | null;
+      planStart: string | null;
+      planEnd: string | null;
+      excused: boolean;
+      excuseNote: string | null;
+      comments: Array<{ id: number; kind: string; text: string; authorName: string | null; createdAt: Date }>;
+    };
+    const incidents: Incident[] = [];
+    const summary = new Map<number, { userId: number; fullName: string; position: string | null; late: number; lateMinutes: number; early: number; earlyMinutes: number; absent: number }>();
+
+    for (const { employeeId, days } of daysByEmp) {
+      const s = byEmp.get(employeeId);
+      if (!s) continue;
+      const sum = summary.get(s.userId) || {
+        userId: s.userId,
+        fullName: s.fullName,
+        position: s.position,
+        late: 0,
+        lateMinutes: 0,
+        early: 0,
+        earlyMinutes: 0,
+        absent: 0,
+      };
+      for (const d of days) {
+        const base = {
+          date: d.date,
+          userId: s.userId,
+          fullName: s.fullName,
+          position: s.position,
+          checkIn: d.checkIn,
+          checkOut: d.checkOut,
+          planStart: d.planStart ?? null,
+          planEnd: d.planEnd ?? null,
+          excused: Boolean(d.excused),
+          excuseNote: d.excuseNote ?? null,
+          comments: (commentsByKey.get(`${s.userId}|${d.date}`) || []).map((c) => ({
+            id: c.id,
+            kind: c.kind,
+            text: c.text,
+            authorName: c.authorName,
+            createdAt: c.createdAt,
+          })),
+        };
+        if (d.status === "late") {
+          sum.late += 1;
+          sum.lateMinutes += d.lateMinutes || 0;
+          incidents.push({ ...base, key: `${s.userId}|${d.date}|late`, type: "late", minutes: d.lateMinutes || 0 });
+        }
+        if ((d.earlyMinutes || 0) > 0) {
+          sum.early += 1;
+          sum.earlyMinutes += d.earlyMinutes || 0;
+          incidents.push({ ...base, key: `${s.userId}|${d.date}|early`, type: "early", minutes: d.earlyMinutes || 0 });
+        }
+        const notStartedYet = d.date === today && !!d.planStart && nowHm < d.planStart;
+        if (d.status === "absent" && !notStartedYet) {
+          sum.absent += 1;
+          incidents.push({ ...base, key: `${s.userId}|${d.date}|absent`, type: "absent", minutes: 0 });
+        }
+        if (d.status === "incomplete" && d.date < today) {
+          incidents.push({ ...base, key: `${s.userId}|${d.date}|incomplete`, type: "incomplete", minutes: 0 });
+        }
+      }
+      summary.set(s.userId, sum);
+    }
+
+    incidents.sort((a, b) => (a.date === b.date ? b.minutes - a.minutes : b.date.localeCompare(a.date)));
+    res.json({
+      from,
+      to,
+      today,
+      staffCount: staff.length,
+      canComment: canManageDistrib(req.userRole),
+      counts: {
+        late: incidents.filter((i) => i.type === "late").length,
+        early: incidents.filter((i) => i.type === "early").length,
+        absent: incidents.filter((i) => i.type === "absent").length,
+        incomplete: incidents.filter((i) => i.type === "incomplete").length,
+      },
+      incidents,
+      summary: [...summary.values()]
+        .filter((s) => s.late || s.early || s.absent)
+        .sort((a, b) => b.late + b.early - (a.late + a.early) || b.lateMinutes - a.lateMinutes),
+    });
+  } catch (err) {
+    console.error("GET /distribyutsiya/attendance error:", err);
+    res.status(500).json({ error: "Davomat yuklanmadi" });
+  }
+});
+
 const TAMOJNI_SHIFT_PRESETS: Record<string, { startHm: string; endHm: string; label: string }> = {
   office: { startHm: "09:00", endHm: "18:00", label: "Kunduzgi (09:00-18:00)" },
   one: { startHm: "08:00", endHm: "17:00", label: "1-smena" },
@@ -747,8 +1188,8 @@ router.put("/distribyutsiya/tamojni/site", requireAuth, async (req: AuthRequest,
 });
 
 router.post("/distribyutsiya/tamojni/staff", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canManageTamojni(req.userRole)) {
-    res.status(403).json({ error: "Ruxsat yo‘q" });
+  if (!canManageTamojni(req.userRole) || tamojniCreatableRoles(req.userRole).length === 0) {
+    res.status(403).json({ error: "Xodimni HR yoki Distribyutsiya rahbari qo‘shadi" });
     return;
   }
   const firstName = String(req.body?.firstName || "").trim();

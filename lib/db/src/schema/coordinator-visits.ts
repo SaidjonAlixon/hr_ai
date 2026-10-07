@@ -37,6 +37,8 @@ export const coordinatorBranchVisitsTable = pgTable(
     presenceUnlockRequestAt: timestamp("presence_unlock_request_at", { withTimezone: true }),
     presenceUnlockedAt: timestamp("presence_unlocked_at", { withTimezone: true }),
     presenceUnlockedById: integer("presence_unlocked_by_id"),
+    /** Blok tushgan lahza — qolish vaqti shu yerda to‘xtaydi; admin ruxsat bersa tozalanadi */
+    presenceFrozenAt: timestamp("presence_frozen_at", { withTimezone: true }),
     /** open | closed */
     status: text("status").notNull().default("open"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

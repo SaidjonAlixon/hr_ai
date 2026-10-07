@@ -4,13 +4,14 @@ import {
   db,
   employeesTable,
   revisionAuditLogTable,
+  revisionVisitPaymentsTable,
   revisionVisitsTable,
   usersTable,
 } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { notifyUser } from "../lib/notify";
-import { notifyReviziyaStakeholders } from "../lib/reviziya-notify";
+import { notifyReviziyaStakeholders, resolveBranchStakeholderUserIds } from "../lib/reviziya-notify";
 import { generateUniqueActNumber, resolveActNumber } from "../lib/reviziya-act-number";
 import { isDirectorRole } from "../lib/roles";
 import { displayBranchName, parseGpsText } from "../lib/geo-location";
@@ -193,11 +194,44 @@ async function loadActiveManagers() {
 
 type VisitRow = typeof revisionVisitsTable.$inferSelect;
 
+const ACTIVE_STATUSES = ["ASSIGNED", "ACCEPTED", "IN_PROGRESS", "REVIEW"];
+const IN_WORK_STATUSES = ["ACCEPTED", "IN_PROGRESS", "REVIEW"];
+
+/** Revizor natijasini tasdiqlash / rad etish — faqat bo‘lim boshlig‘i va rahbariyat */
+function canReviewReviziya(role?: string | null): boolean {
+  return canAssignReviziya(role);
+}
+
+/** Vazifa kartochkalari uchun: kim topshirdi, kim yubordi, kim qaror qildi */
+async function withVisitPeople<T extends VisitRow>(rows: T[]) {
+  const ids = [
+    ...new Set(
+      rows
+        .flatMap((v) => [v.createdById, v.submittedById, v.reviewedById])
+        .filter((id): id is number => id != null),
+    ),
+  ];
+  const names = new Map<number, string>();
+  if (ids.length) {
+    const users = await db
+      .select({ id: usersTable.id, fullName: usersTable.fullName })
+      .from(usersTable)
+      .where(inArray(usersTable.id, ids));
+    for (const u of users) names.set(u.id, u.fullName);
+  }
+  const nameOf = (id: number | null) => (id != null ? names.get(id) ?? null : null);
+  return (v: T) => ({
+    createdByName: nameOf(v.createdById),
+    submittedByName: nameOf(v.submittedById),
+    reviewedByName: nameOf(v.reviewedById),
+  });
+}
+
 function enrichVisit(v: VisitRow, today = tashkentYmd()) {
   const next = effectiveNextRevisionDate(v.nextRevisionDate, v.nextRevisionDateOverride);
   const hasCompleted = v.workflowStatus === "COMPLETED";
   const cycleStatus: CycleStatus =
-    v.workflowStatus === "IN_PROGRESS" || v.workflowStatus === "ACCEPTED"
+    v.workflowStatus === "IN_PROGRESS" || v.workflowStatus === "ACCEPTED" || v.workflowStatus === "REVIEW"
       ? "REVIZIYA_JARAYONIDA"
       : v.workflowStatus === "COMPLETED"
         ? computeCycleStatus({
@@ -270,7 +304,8 @@ router.get("/reviziya/visits/by-act", requireAuth, async (req: AuthRequest, res)
     res.status(403).json({ error: "Bu reviziyaga ruxsat yo‘q" });
     return;
   }
-  res.json(enrichVisit(row));
+  const people = await withVisitPeople([row]);
+  res.json({ ...enrichVisit(row), ...people(row) });
 });
 
 router.get("/reviziya/visits/revizors", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -378,6 +413,9 @@ router.get("/reviziya/visits/dashboard", requireAuth, async (req: AuthRequest, r
     workflowStatus: string | null;
     lastVisitDuration: string | null;
     cycleMonths: number | null;
+    responsibleNames: string | null;
+    lastActNumber: string | null;
+    activeRevisionDate: string | null;
   };
 
   const rows: BranchRow[] = [];
@@ -385,7 +423,7 @@ router.get("/reviziya/visits/dashboard", requireAuth, async (req: AuthRequest, r
     const list = byBranch.get(m.id) || [];
     const completed = list.filter((v) => v.workflowStatus === "COMPLETED");
     const latestCompleted = completed[0] || null;
-    const active = list.find((v) => ["ASSIGNED", "ACCEPTED", "IN_PROGRESS"].includes(v.workflowStatus)) || null;
+    const active = list.find((v) => ACTIVE_STATUSES.includes(v.workflowStatus)) || null;
     const source = latestCompleted;
     const next = source
       ? effectiveNextRevisionDate(source.nextRevisionDate, source.nextRevisionDateOverride)
@@ -398,7 +436,7 @@ router.get("/reviziya/visits/dashboard", requireAuth, async (req: AuthRequest, r
       cycleMonths,
       workflowStatus: null,
     });
-    if (active?.workflowStatus === "IN_PROGRESS" || active?.workflowStatus === "ACCEPTED") {
+    if (active && IN_WORK_STATUSES.includes(active.workflowStatus)) {
       cycleStatus = "REVIZIYA_JARAYONIDA";
     }
 
@@ -425,6 +463,14 @@ router.get("/reviziya/visits/dashboard", requireAuth, async (req: AuthRequest, r
       workflowStatus: active?.workflowStatus ?? (latestCompleted ? "COMPLETED" : null),
       lastVisitDuration: latestCompleted ? formatDuration(latestCompleted.durationMinutes) : null,
       cycleMonths,
+      responsibleNames:
+        String(latestCompleted?.responsibleName || "")
+          .split(";")
+          .map((s) => s.split(" · ")[0].trim())
+          .filter(Boolean)
+          .join(", ") || null,
+      lastActNumber: latestCompleted?.actNumber ?? null,
+      activeRevisionDate: active?.revisionDate ?? active?.scheduledDate ?? null,
     });
   }
 
@@ -435,6 +481,7 @@ router.get("/reviziya/visits/dashboard", requireAuth, async (req: AuthRequest, r
         r.branchName.toLowerCase().includes(q) ||
         r.mudirName.toLowerCase().includes(q) ||
         (r.assignedRevizorName || "").toLowerCase().includes(q) ||
+        (r.responsibleNames || "").toLowerCase().includes(q) ||
         r.region.toLowerCase().includes(q),
     );
   }
@@ -541,39 +588,27 @@ router.get("/reviziya/visits/my-tasks", requireAuth, async (req: AuthRequest, re
   const whereParts: any[] = [];
 
   if (canViewAllReviziyaBranches(role) || canApproveReviziyaRequest(role)) {
-    whereParts.push(
-      inArray(revisionVisitsTable.workflowStatus, [
-        "REQUESTED",
-        "ASSIGNED",
-        "ACCEPTED",
-        "IN_PROGRESS",
-      ]),
-    );
+    whereParts.push(inArray(revisionVisitsTable.workflowStatus, ["REQUESTED", ...ACTIVE_STATUSES]));
   } else if (role === "revizor") {
     whereParts.push(
-      inArray(revisionVisitsTable.workflowStatus, ["ASSIGNED", "ACCEPTED", "IN_PROGRESS"]),
+      inArray(revisionVisitsTable.workflowStatus, ACTIVE_STATUSES),
       eq(revisionVisitsTable.assignedEmployeeId, userId),
     );
   } else if (role === "mudir" || role === "koordinator") {
     const scope = await resolveScope(req);
     if (scope.mode === "branches") {
       if (!scope.branchIds.length) {
-        res.json({ today: [], upcoming: [], overdue: [], pending: [], todayYmd: today });
+        res.json({ today: [], upcoming: [], overdue: [], pending: [], review: [], todayYmd: today });
         return;
       }
       whereParts.push(
-        inArray(revisionVisitsTable.workflowStatus, [
-          "REQUESTED",
-          "ASSIGNED",
-          "ACCEPTED",
-          "IN_PROGRESS",
-        ]),
+        inArray(revisionVisitsTable.workflowStatus, ["REQUESTED", ...ACTIVE_STATUSES]),
         inArray(revisionVisitsTable.branchId, scope.branchIds),
       );
     }
   } else {
     whereParts.push(
-      inArray(revisionVisitsTable.workflowStatus, ["ASSIGNED", "ACCEPTED", "IN_PROGRESS"]),
+      inArray(revisionVisitsTable.workflowStatus, ACTIVE_STATUSES),
       eq(revisionVisitsTable.assignedEmployeeId, userId),
     );
   }
@@ -585,10 +620,14 @@ router.get("/reviziya/visits/my-tasks", requireAuth, async (req: AuthRequest, re
     .orderBy(asc(revisionVisitsTable.revisionDate), asc(revisionVisitsTable.scheduledStartTime))
     .limit(200);
 
-  const pending = rows
-    .filter((v) => v.workflowStatus === "REQUESTED")
-    .map((v) => enrichVisit(v, today));
-  const active = rows.filter((v) => v.workflowStatus !== "REQUESTED");
+  const people = await withVisitPeople(rows);
+  const card = (v: VisitRow) => ({ ...enrichVisit(v, today), ...people(v) });
+  const pending = rows.filter((v) => v.workflowStatus === "REQUESTED").map(card);
+  const review = rows
+    .filter((v) => v.workflowStatus === "REVIEW")
+    .sort((a, b) => (a.submittedAt?.getTime() ?? 0) - (b.submittedAt?.getTime() ?? 0))
+    .map(card);
+  const active = rows.filter((v) => v.workflowStatus !== "REQUESTED" && v.workflowStatus !== "REVIEW");
   const byPlan = (a: (typeof active)[number], b: (typeof active)[number]) => {
     const da = a.revisionDate || a.scheduledDate || "";
     const db = b.revisionDate || b.scheduledDate || "";
@@ -612,10 +651,81 @@ router.get("/reviziya/visits/my-tasks", requireAuth, async (req: AuthRequest, re
   res.json({
     todayYmd: today,
     pending,
-    overdue: overdue.map((v) => enrichVisit(v, today)),
-    today: todayList.map((v) => enrichVisit(v, today)),
-    upcoming: upcoming.map((v) => enrichVisit(v, today)),
+    review,
+    overdue: overdue.map(card),
+    today: todayList.map(card),
+    upcoming: upcoming.map(card),
   });
+});
+
+/** Koordinator arizalari: kutilmoqda / tasdiqlangan / rad etilgan */
+router.get("/reviziya/visits/requests", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (denyView(req, res)) return;
+  const role = req.userRole;
+  const userId = req.userId!;
+  const isHead = canApproveReviziyaRequest(role) || canViewAllReviziyaBranches(role);
+
+  const whereParts: any[] = [
+    or(
+      sql`${revisionVisitsTable.requestedById} is not null`,
+      eq(revisionVisitsTable.workflowStatus, "REQUESTED"),
+    ),
+  ];
+  if (!isHead) {
+    const scope = await resolveScope(req);
+    if (scope.mode === "branches") {
+      whereParts.push(
+        scope.branchIds.length
+          ? or(eq(revisionVisitsTable.requestedById, userId), inArray(revisionVisitsTable.branchId, scope.branchIds))
+          : eq(revisionVisitsTable.requestedById, userId),
+      );
+    } else if (scope.mode === "assigned") {
+      whereParts.push(eq(revisionVisitsTable.requestedById, userId));
+    }
+  }
+
+  const rows = await db
+    .select()
+    .from(revisionVisitsTable)
+    .where(and(...whereParts))
+    .orderBy(desc(revisionVisitsTable.createdAt))
+    .limit(300);
+
+  const ids = [
+    ...new Set(
+      rows
+        .flatMap((v) => [v.requestedById ?? v.createdById, v.requestDecidedById])
+        .filter((id): id is number => id != null),
+    ),
+  ];
+  const names = new Map<number, string>();
+  if (ids.length) {
+    const users = await db
+      .select({ id: usersTable.id, fullName: usersTable.fullName })
+      .from(usersTable)
+      .where(inArray(usersTable.id, ids));
+    for (const u of users) names.set(u.id, u.fullName);
+  }
+
+  const today = tashkentYmd();
+  const stateOf = (v: VisitRow): "pending" | "approved" | "rejected" =>
+    v.workflowStatus === "REQUESTED" ? "pending" : v.requestRejectReason ? "rejected" : "approved";
+  const items = rows.map((v) => {
+    const requesterId = v.requestedById ?? v.createdById;
+    return {
+      ...enrichVisit(v, today),
+      requestState: stateOf(v),
+      requestedByName: requesterId != null ? names.get(requesterId) ?? null : null,
+      requestedAt: (v.requestedAt ?? v.createdAt)?.toISOString?.() ?? null,
+      requestDecidedByName: v.requestDecidedById != null ? names.get(v.requestDecidedById) ?? null : null,
+    };
+  });
+  const counts = {
+    pending: items.filter((i) => i.requestState === "pending").length,
+    approved: items.filter((i) => i.requestState === "approved").length,
+    rejected: items.filter((i) => i.requestState === "rejected").length,
+  };
+  res.json({ items, counts, canDecide: canApproveReviziyaRequest(role), canCreate: role === "koordinator" });
 });
 
 router.get("/reviziya/visits", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -706,7 +816,7 @@ router.get("/reviziya/visits/branch/:branchId", requireAuth, async (req: AuthReq
   const today = tashkentYmd();
   const completed = history.filter((v) => v.workflowStatus === "COMPLETED");
   const latest = completed[0] || null;
-  const active = history.find((v) => ["ASSIGNED", "ACCEPTED", "IN_PROGRESS"].includes(v.workflowStatus)) || null;
+  const active = history.find((v) => ACTIVE_STATUSES.includes(v.workflowStatus)) || null;
   const next = latest ? effectiveNextRevisionDate(latest.nextRevisionDate, latest.nextRevisionDateOverride) : null;
   let cycleStatus = computeCycleStatus({
     hasCompletedRevision: !!latest,
@@ -714,11 +824,12 @@ router.get("/reviziya/visits/branch/:branchId", requireAuth, async (req: AuthReq
     today,
     cycleMonths: latest?.cycleMonths,
   });
-  if (active && (active.workflowStatus === "IN_PROGRESS" || active.workflowStatus === "ACCEPTED")) {
+  if (active && IN_WORK_STATUSES.includes(active.workflowStatus)) {
     cycleStatus = "REVIZIYA_JARAYONIDA";
   }
 
   let region = "—";
+  let coordinatorPhone: string | null = null;
   if (manager.reportsToId) {
     const [c] = await db
       .select({
@@ -731,21 +842,128 @@ router.get("/reviziya/visits/branch/:branchId", requireAuth, async (req: AuthReq
     const userNameById = new Map<number, string>();
     if (c?.userId != null) {
       const [u] = await db
-        .select({ id: usersTable.id, fullName: usersTable.fullName })
+        .select({ id: usersTable.id, fullName: usersTable.fullName, phone: usersTable.phone })
         .from(usersTable)
         .where(eq(usersTable.id, c.userId))
         .limit(1);
-      if (u) userNameById.set(u.id, u.fullName);
+      if (u) {
+        userNameById.set(u.id, u.fullName);
+        coordinatorPhone = u.phone || null;
+      }
     }
     region = resolveCoordinatorDisplayName(c, userNameById);
   }
+
+  const staff = await db
+    .select({
+      id: employeesTable.id,
+      fullName: employeesTable.fullName,
+      position: employeesTable.position,
+      userId: employeesTable.userId,
+      hiredAt: employeesTable.hiredAt,
+    })
+    .from(employeesTable)
+    .where(and(eq(employeesTable.reportsToId, manager.id), eq(employeesTable.employmentStatus, "working")))
+    .orderBy(asc(employeesTable.fullName));
+
+  const paymentRows = history.length
+    ? await db
+        .select()
+        .from(revisionVisitPaymentsTable)
+        .where(inArray(revisionVisitPaymentsTable.visitId, history.map((v) => v.id)))
+        .orderBy(asc(revisionVisitPaymentsTable.paidAt), asc(revisionVisitPaymentsTable.id))
+    : [];
+
+  const peopleIds = [
+    ...new Set(
+      [
+        manager.userId,
+        ...staff.map((s) => s.userId),
+        ...history.flatMap((v) => [v.createdById, v.completedById, v.reviewedById]),
+        ...paymentRows.flatMap((p) => [p.createdById, p.voidedById]),
+      ].filter((id): id is number => id != null),
+    ),
+  ];
+  const people = new Map<number, { fullName: string; phone: string | null }>();
+  if (peopleIds.length) {
+    const rows = await db
+      .select({ id: usersTable.id, fullName: usersTable.fullName, phone: usersTable.phone })
+      .from(usersTable)
+      .where(inArray(usersTable.id, peopleIds));
+    for (const r of rows) people.set(r.id, { fullName: r.fullName, phone: r.phone });
+  }
+
+  const parseResponsibles = (raw: string | null) =>
+    String(raw || "")
+      .split(";")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((item) => {
+        const [name, phone] = item.split(" · ");
+        return { name: (name || "").trim(), phone: (phone || "").trim() || null };
+      });
+
+  const nameOf = (id: number | null) => (id != null ? people.get(id)?.fullName ?? null : null);
+
+  /** Reviziya paytida undirilgan + keyingi to‘lovlar; har to‘lovdan keyingi qoldiq hozirgi holatdan hisoblanadi */
+  const paymentsOf = (v: VisitRow) => {
+    const list = paymentRows.filter((p) => p.visitId === v.id);
+    const activeSum = list.filter((p) => !p.voidedAt).reduce((s, p) => s + p.amount, 0);
+    const initialCollected = Math.max(0, (v.collectedAmount || 0) - activeSum);
+    let running = initialCollected;
+    const payments = list.map((p) => {
+      if (!p.voidedAt) running += p.amount;
+      return {
+        id: p.id,
+        amount: p.amount,
+        paidAt: p.paidAt,
+        method: p.method,
+        note: p.note,
+        receiptUrl: p.receiptUrl,
+        remainingAfter: p.voidedAt ? null : computeRemainingAmount(v.shortageAmount, running),
+        createdAt: p.createdAt,
+        createdByName: nameOf(p.createdById),
+        voidedAt: p.voidedAt,
+        voidedByName: nameOf(p.voidedById),
+        voidReason: p.voidReason,
+      };
+    });
+    return { initialCollected, payments };
+  };
+
+  const withPeople = (v: VisitRow) => ({
+    ...enrichVisit(v, today),
+    createdByName: nameOf(v.createdById),
+    completedByName: nameOf(v.completedById),
+    reviewedByName: nameOf(v.reviewedById),
+    responsibles: parseResponsibles(v.responsibleName),
+    ...paymentsOf(v),
+  });
+
+  const totals = {
+    completedCount: completed.length,
+    totalShortage: completed.reduce((s, v) => s + (v.shortageAmount || 0), 0),
+    totalCollected: completed.reduce((s, v) => s + (v.collectedAmount || 0), 0),
+    totalRemaining: completed.reduce((s, v) => s + (v.remainingAmount || 0), 0),
+    totalExcess: completed.reduce((s, v) => s + (v.excessAmount || 0), 0),
+  };
 
   res.json({
     branch: {
       branchId: manager.id,
       branchName: branchLabel(manager.fullName, manager.location),
       mudirName: manager.fullName,
+      mudirPhone: manager.userId != null ? people.get(manager.userId)?.phone ?? null : null,
       region,
+      coordinatorPhone,
+      cycleMonths: latest?.cycleMonths ?? null,
+      staff: staff.map((s) => ({
+        id: s.id,
+        fullName: s.fullName,
+        position: s.position,
+        phone: s.userId != null ? people.get(s.userId)?.phone ?? null : null,
+        hiredAt: s.hiredAt,
+      })),
       cycleStatus,
       cycleStatusLabel: CYCLE_STATUS_LABEL[cycleStatus],
       lastRevisionDate: latest?.revisionDate || null,
@@ -757,9 +975,11 @@ router.get("/reviziya/visits/branch/:branchId", requireAuth, async (req: AuthReq
       excessAmount: latest?.excessAmount ?? 0,
       delayDays: next && daysBetweenYmd(today, next) < 0 ? Math.abs(daysBetweenYmd(today, next)) : 0,
     },
-    active: active ? enrichVisit(active, today) : null,
-    latest: latest ? enrichVisit(latest, today) : null,
-    history: history.map((v) => enrichVisit(v, today)),
+    totals,
+    canRecordPayment: canReviewReviziya(req.userRole),
+    active: active ? withPeople(active) : null,
+    latest: latest ? withPeople(latest) : null,
+    history: history.map(withPeople),
   });
 });
 
@@ -831,6 +1051,10 @@ router.post("/reviziya/visits", requireAuth, async (req: AuthRequest, res): Prom
       : tashkentYmd();
 
   const notes = req.body?.notes ? String(req.body.notes).slice(0, 2000) : null;
+  if (isCoordinatorRequest && String(notes || "").trim().length < 3) {
+    res.status(400).json({ error: "Ariza sababini yozing — nima uchun reviziya kerak" });
+    return;
+  }
   const actNumber = await resolveActNumber(req.body?.actNumber);
   const shortage = moneyInt(req.body?.shortageAmount);
   const excess = moneyInt(req.body?.excessAmount);
@@ -855,7 +1079,8 @@ router.post("/reviziya/visits", requireAuth, async (req: AuthRequest, res): Prom
         .from(usersTable)
         .where(eq(usersTable.id, aid))
         .limit(1);
-      if (!u || (u.role !== "revizor" && u.role !== "reviziya_rahbar")) {
+      const isSelfHead = aid === req.userId && canAssignReviziya(req.userRole);
+      if (!u || (!isSelfHead && u.role !== "revizor" && u.role !== "reviziya_rahbar")) {
         res.status(400).json({ error: "Faqat revizor rolli xodim biriktiriladi" });
         return;
       }
@@ -910,6 +1135,8 @@ router.post("/reviziya/visits", requireAuth, async (req: AuthRequest, res): Prom
       completedById: null,
       durationMinutes: null,
       createdById: req.userId!,
+      requestedById: isCoordinatorRequest ? req.userId! : null,
+      requestedAt: isCoordinatorRequest ? new Date() : null,
       updatedById: req.userId!,
     })
     .returning();
@@ -924,10 +1151,21 @@ router.post("/reviziya/visits", requireAuth, async (req: AuthRequest, res): Prom
     newValue: { workflowStatus, notes },
   });
 
+  const handedOver = !isCoordinatorRequest && assignedId != null && assignedId !== req.userId;
+  if (handedOver) {
+    const byName = (await resolveUserName(req.userId)) || "Bo‘lim boshlig‘i";
+    await notifyUser({
+      userId: assignedId!,
+      text: `${byName} sizga reviziya topshirdi: ${created.branchName} — ${revisionDate}. Kirib barcha joylarni to‘ldiring, tayyor bo‘lgach tasdiqlashga yuboring.`,
+      type: "reviziya_assigned",
+      linkUrl: "/reviziya",
+    });
+  }
+
   await notifyReviziyaStakeholders({
     branchId: created.branchId,
     branchName: created.branchName,
-    assignedRevizorId: assignedId,
+    assignedRevizorId: handedOver ? null : assignedId,
     includeReviziyaRahbar: true,
     text: isCoordinatorRequest
       ? `${created.branchName}: yangi reviziya arizasi (koordinator). Qabul qilib kun belgilang.`
@@ -963,27 +1201,27 @@ router.post("/reviziya/visits/:id/approve-request", requireAuth, async (req: Aut
     return;
   }
 
-  const assignedId = req.body?.assignedEmployeeId
-    ? parseInt(String(req.body.assignedEmployeeId), 10)
-    : null;
-  let assignedName: string | null = null;
-  if (assignedId && Number.isFinite(assignedId)) {
-    const [u] = await db
-      .select({ fullName: usersTable.fullName, role: usersTable.role })
-      .from(usersTable)
-      .where(eq(usersTable.id, assignedId))
-      .limit(1);
-    if (!u || (u.role !== "revizor" && u.role !== "reviziya_rahbar")) {
-      res.status(400).json({ error: "Faqat revizor biriktiriladi" });
-      return;
-    }
-    assignedName = u.fullName;
+  const assignedId = parseInt(String(req.body?.assignedEmployeeId || ""), 10);
+  if (!Number.isFinite(assignedId)) {
+    res.status(400).json({ error: "Reviziyani kim o‘tkazishini tanlang" });
+    return;
   }
+  const [assignee] = await db
+    .select({ fullName: usersTable.fullName, role: usersTable.role })
+    .from(usersTable)
+    .where(eq(usersTable.id, assignedId))
+    .limit(1);
+  const isSelfHead = assignedId === req.userId && canAssignReviziya(req.userRole);
+  if (!assignee || (!isSelfHead && assignee.role !== "revizor" && assignee.role !== "reviziya_rahbar")) {
+    res.status(400).json({ error: "Faqat revizor biriktiriladi" });
+    return;
+  }
+  const assignedName = assignee.fullName;
 
-  const start = req.body?.scheduledStartTime
-    ? String(req.body.scheduledStartTime).slice(0, 8)
-    : null;
-  const end = req.body?.scheduledEndTime ? String(req.body.scheduledEndTime).slice(0, 8) : null;
+  const start = hmOrNull(req.body?.scheduledStartTime);
+  const end = hmOrNull(req.body?.scheduledEndTime);
+  const comment = req.body?.comment ? String(req.body.comment).trim().slice(0, 1000) : "";
+  const now = new Date();
 
   const [updated] = await db
     .update(revisionVisitsTable)
@@ -992,12 +1230,13 @@ router.post("/reviziya/visits/:id/approve-request", requireAuth, async (req: Aut
       scheduledDate: revisionDate,
       scheduledStartTime: start,
       scheduledEndTime: end,
-      assignedEmployeeId: assignedId && Number.isFinite(assignedId) ? assignedId : null,
+      assignedEmployeeId: assignedId,
       assignedEmployeeName: assignedName,
       workflowStatus: "ASSIGNED",
-      notes: req.body?.notes
-        ? String(req.body.notes).slice(0, 2000)
-        : row.notes,
+      requestedById: row.requestedById ?? row.createdById,
+      requestedAt: row.requestedAt ?? row.createdAt,
+      requestDecidedById: req.userId!,
+      requestDecidedAt: now,
       updatedById: req.userId!,
     })
     .where(eq(revisionVisitsTable.id, id))
@@ -1009,32 +1248,101 @@ router.post("/reviziya/visits/:id/approve-request", requireAuth, async (req: Aut
     userName: null,
     role: req.userRole,
     action: "revision_request_approved",
-    detail: `${revisionDate}${assignedName ? ` · ${assignedName}` : ""}`,
+    detail: `${revisionDate} · ${assignedName}${comment ? ` · ${comment}` : ""}`,
     oldValue: { workflowStatus: "REQUESTED" },
-    newValue: {
-      workflowStatus: "ASSIGNED",
-      revisionDate,
-      assignedEmployeeId: assignedId,
-    },
+    newValue: { workflowStatus: "ASSIGNED", revisionDate, assignedEmployeeId: assignedId },
   });
 
-  if (assignedId) {
+  const byName = (await resolveUserName(req.userId)) || "Bo‘lim boshlig‘i";
+  const when = `${revisionDate}${start ? `, ${start}${end ? `–${end}` : ""}` : ""}`;
+  const requesterId = updated.requestedById;
+
+  if (requesterId && requesterId !== req.userId) {
+    await notifyUser({
+      userId: requesterId,
+      text: `Arizangiz tasdiqlandi: ${updated.branchName}. Reviziya ${when} da, o‘tkazadi: ${assignedName}.${comment ? ` Izoh: ${comment}` : ""}`,
+      type: "reviziya_request_approved",
+      linkUrl: "/reviziya",
+    });
+  }
+  if (assignedId !== req.userId) {
     await notifyUser({
       userId: assignedId,
-      text: `Reviziya biriktirildi: ${updated.branchName} — ${revisionDate}`,
+      text: `${byName} sizga reviziya topshirdi (koordinator arizasi): ${updated.branchName} — ${when}. Kirib barcha joylarni to‘ldiring, tayyor bo‘lgach tasdiqlashga yuboring.`,
       type: "reviziya_assigned",
       linkUrl: "/reviziya",
     });
   }
+  const others = await resolveBranchStakeholderUserIds({ branchId: updated.branchId });
+  for (const userId of others) {
+    if (userId === requesterId || userId === assignedId || userId === req.userId) continue;
+    await notifyUser({
+      userId,
+      text: `${updated.branchName}: reviziya belgilandi — ${when}`,
+      type: "reviziya_approved",
+      linkUrl: "/reviziya",
+    });
+  }
 
-  await notifyReviziyaStakeholders({
-    branchId: updated.branchId,
-    branchName: updated.branchName,
-    assignedRevizorId: assignedId,
-    text: `${updated.branchName}: reviziya arizasi qabul qilindi. Kun: ${revisionDate}`,
-    type: "reviziya_approved",
-    linkUrl: "/reviziya",
+  res.json(enrichVisit(updated));
+});
+
+/** Koordinator arizasini rad etish — sabab majburiy, o‘chmaydi */
+router.post("/reviziya/visits/:id/reject-request", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (denyView(req, res)) return;
+  if (!canApproveReviziyaRequest(req.userRole)) {
+    res.status(403).json({ error: "Arizani faqat bo‘lim boshlig‘i rad etadi" });
+    return;
+  }
+  const id = parseId(req.params.id);
+  const [row] = await db.select().from(revisionVisitsTable).where(eq(revisionVisitsTable.id, id)).limit(1);
+  if (!row) {
+    res.status(404).json({ error: "Ariza topilmadi" });
+    return;
+  }
+  if (row.workflowStatus !== "REQUESTED") {
+    res.status(400).json({ error: "Faqat kutayotgan ariza rad etiladi" });
+    return;
+  }
+  const reason = String(req.body?.reason || "").trim().slice(0, 1000);
+  if (reason.length < 3) {
+    res.status(400).json({ error: "Rad etish sababini yozing" });
+    return;
+  }
+  const [updated] = await db
+    .update(revisionVisitsTable)
+    .set({
+      workflowStatus: "CANCELLED",
+      requestedById: row.requestedById ?? row.createdById,
+      requestedAt: row.requestedAt ?? row.createdAt,
+      requestDecidedById: req.userId!,
+      requestDecidedAt: new Date(),
+      requestRejectReason: reason,
+      updatedById: req.userId!,
+    })
+    .where(eq(revisionVisitsTable.id, id))
+    .returning();
+
+  await auditVisit({
+    visitId: id,
+    userId: req.userId,
+    userName: null,
+    role: req.userRole,
+    action: "revision_request_rejected",
+    reason,
+    oldValue: { workflowStatus: "REQUESTED" },
+    newValue: { workflowStatus: "CANCELLED" },
   });
+
+  const requesterId = updated.requestedById;
+  if (requesterId && requesterId !== req.userId) {
+    await notifyUser({
+      userId: requesterId,
+      text: `Arizangiz rad etildi: ${updated.branchName}. Sabab: ${reason}`,
+      type: "reviziya_request_rejected",
+      linkUrl: "/reviziya",
+    });
+  }
 
   res.json(enrichVisit(updated));
 });
@@ -1053,6 +1361,19 @@ router.patch("/reviziya/visits/:id", requireAuth, async (req: AuthRequest, res):
   }
   if (row.workflowStatus === "CANCELLED") {
     res.status(400).json({ error: "Bekor qilingan reviziya o‘zgartirilmaydi" });
+    return;
+  }
+  if (
+    !canReviewReviziya(req.userRole) &&
+    !canViewAllReviziyaBranches(req.userRole) &&
+    (row.workflowStatus === "REVIEW" || row.workflowStatus === "COMPLETED")
+  ) {
+    res.status(400).json({
+      error:
+        row.workflowStatus === "REVIEW"
+          ? "Reviziya bo‘lim boshlig‘ida tekshiruvda — qaror chiqquncha o‘zgartirib bo‘lmaydi"
+          : "Tasdiqlangan reviziyani faqat bo‘lim boshlig‘i o‘zgartiradi",
+    });
     return;
   }
 
@@ -1355,12 +1676,36 @@ router.post("/reviziya/visits/:id/complete", requireAuth, async (req: AuthReques
       ? await resolveActNumber(String(req.body.actNumber))
       : row.actNumber || (await generateUniqueActNumber());
 
+  const actUrl = req.body?.actUrl !== undefined ? String(req.body.actUrl || "") || null : row.actUrl;
+  const responsibleName =
+    req.body?.responsibleName !== undefined
+      ? String(req.body.responsibleName || "").slice(0, 1000) || null
+      : row.responsibleName;
+
+  // Bo‘lim boshlig‘i o‘zi yakunlasa — darhol tasdiqlangan; revizor yuborsa — boshliq qaroriga
+  const needsReview = !canReviewReviziya(req.userRole);
+  if (needsReview) {
+    const missing: string[] = [];
+    if (!actUrl) missing.push("tekshiruv akti fayli");
+    if (!responsibleName) missing.push("mas’ul shaxs");
+    if (collected > 0 && !(req.body?.receiptUrl || row.receiptUrl)) missing.push("undirish kvitansiyasi");
+    if (missing.length) {
+      res.status(400).json({ error: `To‘ldirilmagan: ${missing.join(", ")}` });
+      return;
+    }
+  }
+
   const [updated] = await db
     .update(revisionVisitsTable)
     .set({
-      workflowStatus: "COMPLETED",
+      workflowStatus: needsReview ? "REVIEW" : "COMPLETED",
       completedAt: serverNow,
       completedById: req.userId!,
+      submittedAt: serverNow,
+      submittedById: req.userId!,
+      reviewDecision: needsReview ? null : "approved",
+      reviewedAt: needsReview ? null : serverNow,
+      reviewedById: needsReview ? null : req.userId!,
       startedAt: row.startedAt || serverNow,
       durationMinutes,
       shortageAmount: shortage,
@@ -1371,11 +1716,10 @@ router.post("/reviziya/visits/:id/complete", requireAuth, async (req: AuthReques
       nextRevisionDate,
       cycleMonths,
       actNumber,
-      actUrl: req.body?.actUrl !== undefined ? String(req.body.actUrl || "") || null : row.actUrl,
+      actUrl,
       receiptUrl: req.body?.receiptUrl !== undefined ? String(req.body.receiptUrl || "") || null : row.receiptUrl,
       notes: req.body?.notes !== undefined ? String(req.body.notes) : row.notes,
-      responsibleName:
-        req.body?.responsibleName !== undefined ? String(req.body.responsibleName || "").slice(0, 1000) || null : row.responsibleName,
+      responsibleName,
       scheduledStartTime:
         req.body?.scheduledStartTime !== undefined ? hmOrNull(req.body.scheduledStartTime) : row.scheduledStartTime,
       scheduledEndTime:
@@ -1391,8 +1735,9 @@ router.post("/reviziya/visits/:id/complete", requireAuth, async (req: AuthReques
     userId: req.userId,
     userName: null,
     role: req.userRole,
-    action: "revision_completed",
+    action: needsReview ? "revision_submitted" : "revision_completed",
     newValue: {
+      workflowStatus: updated.workflowStatus,
       completedAt: serverNow.toISOString(),
       durationMinutes,
       shortageAmount: shortage,
@@ -1403,17 +1748,331 @@ router.post("/reviziya/visits/:id/complete", requireAuth, async (req: AuthReques
     },
   });
 
+  if (needsReview) {
+    const byName = (await resolveUserName(req.userId)) || "Revizor";
+    const heads = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(and(eq(usersTable.status, "active"), eq(usersTable.role, "reviziya_rahbar")));
+    const to = new Set<number>([...heads.map((h) => h.id), ...(row.createdById != null ? [row.createdById] : [])]);
+    to.delete(req.userId!);
+    for (const userId of to) {
+      await notifyUser({
+        userId,
+        text: `${byName} reviziyani tugatdi: ${row.branchName}. Kamomad ${shortage.toLocaleString("uz-UZ")} so‘m. Tekshirib tasdiqlang yoki rad eting.`,
+        type: "reviziya_review",
+        linkUrl: "/reviziya",
+      });
+    }
+  } else {
+    await notifyReviziyaStakeholders({
+      branchId: row.branchId,
+      branchName: row.branchName,
+      assignedRevizorId: row.assignedEmployeeId,
+      includeReviziyaRahbar: true,
+      text: `${row.branchName}: reviziya yakunlandi. Kamomad ${shortage.toLocaleString("uz-UZ")}, qolgan ${remaining.toLocaleString("uz-UZ")} so‘m`,
+      type: "reviziya_completed",
+      linkUrl: "/reviziya",
+    });
+  }
+
+  res.json(enrichVisit(updated));
+});
+
+/** Bo‘lim boshlig‘i revizor natijasini tasdiqlaydi */
+router.post("/reviziya/visits/:id/review-approve", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (denyView(req, res)) return;
+  if (!canReviewReviziya(req.userRole)) {
+    res.status(403).json({ error: "Tasdiqlash faqat bo‘lim boshlig‘ida" });
+    return;
+  }
+  const id = parseId(req.params.id);
+  const [row] = await db.select().from(revisionVisitsTable).where(eq(revisionVisitsTable.id, id)).limit(1);
+  if (!row) {
+    res.status(404).json({ error: "Reviziya topilmadi" });
+    return;
+  }
+  if (row.workflowStatus !== "REVIEW") {
+    res.status(400).json({ error: "Faqat tasdiqlash kutayotgan reviziya tasdiqlanadi" });
+    return;
+  }
+  const now = new Date();
+  const [updated] = await db
+    .update(revisionVisitsTable)
+    .set({
+      workflowStatus: "COMPLETED",
+      reviewDecision: "approved",
+      reviewedAt: now,
+      reviewedById: req.userId!,
+      updatedById: req.userId!,
+    })
+    .where(eq(revisionVisitsTable.id, id))
+    .returning();
+
+  await auditVisit({
+    visitId: id,
+    userId: req.userId,
+    userName: null,
+    role: req.userRole,
+    action: "revision_approved",
+    oldValue: { workflowStatus: "REVIEW" },
+    newValue: { workflowStatus: "COMPLETED" },
+  });
+
+  if (row.assignedEmployeeId) {
+    await notifyUser({
+      userId: row.assignedEmployeeId,
+      text: `Reviziyangiz tasdiqlandi: ${row.branchName}`,
+      type: "reviziya_approved",
+      linkUrl: "/reviziya",
+    });
+  }
   await notifyReviziyaStakeholders({
     branchId: row.branchId,
     branchName: row.branchName,
-    assignedRevizorId: row.assignedEmployeeId,
-    includeReviziyaRahbar: true,
-    text: `${row.branchName}: reviziya yakunlandi. Kamomad ${shortage.toLocaleString("uz-UZ")}, qolgan ${remaining.toLocaleString("uz-UZ")} so‘m`,
+    text: `${row.branchName}: reviziya yakunlandi. Kamomad ${row.shortageAmount.toLocaleString("uz-UZ")}, qolgan ${row.remainingAmount.toLocaleString("uz-UZ")} so‘m`,
     type: "reviziya_completed",
     linkUrl: "/reviziya",
   });
 
   res.json(enrichVisit(updated));
+});
+
+/** Rad etish: sabab majburiy; qayta reviziya (revizorga qaytadi) yoki butunlay bekor (o‘chmaydi) */
+router.post("/reviziya/visits/:id/review-reject", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (denyView(req, res)) return;
+  if (!canReviewReviziya(req.userRole)) {
+    res.status(403).json({ error: "Rad etish faqat bo‘lim boshlig‘ida" });
+    return;
+  }
+  const id = parseId(req.params.id);
+  const [row] = await db.select().from(revisionVisitsTable).where(eq(revisionVisitsTable.id, id)).limit(1);
+  if (!row) {
+    res.status(404).json({ error: "Reviziya topilmadi" });
+    return;
+  }
+  if (row.workflowStatus !== "REVIEW") {
+    res.status(400).json({ error: "Faqat tasdiqlash kutayotgan reviziya rad etiladi" });
+    return;
+  }
+  const reason = String(req.body?.reason || "").trim().slice(0, 2000);
+  if (reason.length < 3) {
+    res.status(400).json({ error: "Rad etish sababini yozing" });
+    return;
+  }
+  const action = req.body?.action === "cancel" ? "cancel" : "redo";
+  const now = new Date();
+  const [updated] = await db
+    .update(revisionVisitsTable)
+    .set({
+      workflowStatus: action === "cancel" ? "CANCELLED" : "IN_PROGRESS",
+      reviewDecision: action === "cancel" ? "rejected_cancel" : "rejected_redo",
+      rejectReason: reason,
+      rejectCount: (row.rejectCount || 0) + 1,
+      reviewedAt: now,
+      reviewedById: req.userId!,
+      completedAt: null,
+      completedById: null,
+      updatedById: req.userId!,
+    })
+    .where(eq(revisionVisitsTable.id, id))
+    .returning();
+
+  await auditVisit({
+    visitId: id,
+    userId: req.userId,
+    userName: null,
+    role: req.userRole,
+    action: action === "cancel" ? "revision_rejected_cancel" : "revision_rejected_redo",
+    reason,
+    oldValue: { workflowStatus: "REVIEW" },
+    newValue: { workflowStatus: updated.workflowStatus },
+  });
+
+  if (row.assignedEmployeeId) {
+    await notifyUser({
+      userId: row.assignedEmployeeId,
+      text:
+        action === "cancel"
+          ? `Reviziya rad etildi va bekor qilindi: ${row.branchName}. Sabab: ${reason}`
+          : `Reviziya rad etildi — qayta qiling: ${row.branchName}. Sabab: ${reason}`,
+      type: "reviziya_rejected",
+      linkUrl: "/reviziya",
+    });
+  }
+
+  res.json(enrichVisit(updated));
+});
+
+const PAYMENT_METHODS = ["cash", "card", "transfer", "salary", "other"] as const;
+const PAYMENT_METHOD_LABEL: Record<string, string> = {
+  cash: "naqd",
+  card: "karta",
+  transfer: "o‘tkazma",
+  salary: "oylikdan ushlab qolindi",
+  other: "boshqa",
+};
+const fmtSom = (n: number) => `${n.toLocaleString("uz-UZ")} so‘m`;
+
+/** Bo‘lim boshlig‘i: reviziyadan keyin undirilgan summa / qarz to‘lovini kiritadi */
+router.post("/reviziya/visits/:id/payments", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (denyView(req, res)) return;
+  if (!canReviewReviziya(req.userRole)) {
+    res.status(403).json({ error: "To‘lovni faqat bo‘lim boshlig‘i kiritadi" });
+    return;
+  }
+  const id = parseId(req.params.id);
+  const [row] = await db.select().from(revisionVisitsTable).where(eq(revisionVisitsTable.id, id)).limit(1);
+  if (!row) {
+    res.status(404).json({ error: "Reviziya topilmadi" });
+    return;
+  }
+  if (row.workflowStatus !== "COMPLETED") {
+    res.status(400).json({ error: "To‘lov faqat yakunlangan reviziyaga kiritiladi" });
+    return;
+  }
+  const remaining = computeRemainingAmount(row.shortageAmount, row.collectedAmount);
+  if (remaining <= 0) {
+    res.status(400).json({ error: "Bu reviziya bo‘yicha qarz to‘liq undirilgan" });
+    return;
+  }
+  const amount = moneyInt(req.body?.amount);
+  if (amount <= 0) {
+    res.status(400).json({ error: "To‘lov summasini kiriting" });
+    return;
+  }
+  if (amount > remaining) {
+    res.status(400).json({ error: `Summa qolgan qarzdan oshmasin (${fmtSom(remaining)})` });
+    return;
+  }
+  const today = tashkentYmd();
+  const paidAt = String(req.body?.paidAt || today).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(paidAt) || paidAt > today) {
+    res.status(400).json({ error: "To‘lov sanasi noto‘g‘ri (kelajak sana bo‘lmaydi)" });
+    return;
+  }
+  if (row.revisionDate && paidAt < row.revisionDate) {
+    res.status(400).json({ error: "To‘lov sanasi reviziya kunidan oldin bo‘lmaydi" });
+    return;
+  }
+  const method = PAYMENT_METHODS.includes(req.body?.method) ? String(req.body.method) : "cash";
+  const note = String(req.body?.note || "").trim().slice(0, 1000) || null;
+  const receiptUrl = String(req.body?.receiptUrl || "").trim().slice(0, 2000) || null;
+  const collected = row.collectedAmount + amount;
+  const remainingAfter = computeRemainingAmount(row.shortageAmount, collected);
+
+  const { payment, updated } = await db.transaction(async (tx) => {
+    const [payment] = await tx
+      .insert(revisionVisitPaymentsTable)
+      .values({
+        visitId: id,
+        branchId: row.branchId,
+        amount,
+        paidAt,
+        method,
+        note,
+        receiptUrl,
+        remainingAfter,
+        createdById: req.userId!,
+      })
+      .returning();
+    const [updated] = await tx
+      .update(revisionVisitsTable)
+      .set({ collectedAmount: collected, remainingAmount: remainingAfter, updatedById: req.userId! })
+      .where(eq(revisionVisitsTable.id, id))
+      .returning();
+    return { payment, updated };
+  });
+
+  await auditVisit({
+    visitId: id,
+    userId: req.userId,
+    role: req.userRole,
+    action: "payment_added",
+    detail: `${fmtSom(amount)} (${PAYMENT_METHOD_LABEL[method]}), ${paidAt}`,
+    reason: note || undefined,
+    oldValue: { collectedAmount: row.collectedAmount, remainingAmount: remaining },
+    newValue: { collectedAmount: collected, remainingAmount: remainingAfter, paymentId: payment.id },
+  });
+
+  const text =
+    remainingAfter > 0
+      ? `${row.branchName}: kamomad bo‘yicha ${fmtSom(amount)} undirildi. Qolgan qarz: ${fmtSom(remainingAfter)}`
+      : `${row.branchName}: kamomad to‘liq undirildi (oxirgi to‘lov ${fmtSom(amount)})`;
+  await notifyReviziyaStakeholders({
+    branchId: row.branchId,
+    branchName: row.branchName,
+    text,
+    type: "reviziya_payment",
+    linkUrl: "/reviziya",
+  });
+
+  res.status(201).json({ payment, visit: enrichVisit(updated) });
+});
+
+/** Xato kiritilgan to‘lovni bekor qilish — o‘chmaydi, sabab bilan tarixda qoladi */
+router.post("/reviziya/visits/payments/:pid/void", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (denyView(req, res)) return;
+  if (!canReviewReviziya(req.userRole)) {
+    res.status(403).json({ error: "To‘lovni faqat bo‘lim boshlig‘i bekor qiladi" });
+    return;
+  }
+  const pid = parseId(req.params.pid);
+  const reason = String(req.body?.reason || "").trim().slice(0, 1000);
+  if (reason.length < 3) {
+    res.status(400).json({ error: "Bekor qilish sababini yozing" });
+    return;
+  }
+  const [payment] = await db
+    .select()
+    .from(revisionVisitPaymentsTable)
+    .where(eq(revisionVisitPaymentsTable.id, pid))
+    .limit(1);
+  if (!payment) {
+    res.status(404).json({ error: "To‘lov topilmadi" });
+    return;
+  }
+  if (payment.voidedAt) {
+    res.status(400).json({ error: "Bu to‘lov allaqachon bekor qilingan" });
+    return;
+  }
+  const [row] = await db
+    .select()
+    .from(revisionVisitsTable)
+    .where(eq(revisionVisitsTable.id, payment.visitId))
+    .limit(1);
+  if (!row) {
+    res.status(404).json({ error: "Reviziya topilmadi" });
+    return;
+  }
+  const collected = Math.max(0, row.collectedAmount - payment.amount);
+  const remainingAfter = computeRemainingAmount(row.shortageAmount, collected);
+
+  const updated = await db.transaction(async (tx) => {
+    await tx
+      .update(revisionVisitPaymentsTable)
+      .set({ voidedAt: new Date(), voidedById: req.userId!, voidReason: reason })
+      .where(eq(revisionVisitPaymentsTable.id, pid));
+    const [updated] = await tx
+      .update(revisionVisitsTable)
+      .set({ collectedAmount: collected, remainingAmount: remainingAfter, updatedById: req.userId! })
+      .where(eq(revisionVisitsTable.id, row.id))
+      .returning();
+    return updated;
+  });
+
+  await auditVisit({
+    visitId: row.id,
+    userId: req.userId,
+    role: req.userRole,
+    action: "payment_voided",
+    detail: `${fmtSom(payment.amount)}, ${payment.paidAt}`,
+    reason,
+    oldValue: { collectedAmount: row.collectedAmount, remainingAmount: row.remainingAmount },
+    newValue: { collectedAmount: collected, remainingAmount: remainingAfter, paymentId: pid },
+  });
+
+  res.json({ visit: enrichVisit(updated) });
 });
 
 router.post("/reviziya/visits/:id/cancel", requireAuth, async (req: AuthRequest, res): Promise<void> => {

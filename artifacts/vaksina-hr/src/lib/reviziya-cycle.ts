@@ -25,6 +25,7 @@ export const WORKFLOW_STATUS_LABEL: Record<string, string> = {
   ASSIGNED: "Biriktirilgan",
   ACCEPTED: "Qabul qilingan",
   IN_PROGRESS: "Jarayonda",
+  REVIEW: "Tasdiqlash kutilmoqda",
   COMPLETED: "Yakunlangan",
   CANCELLED: "Bekor qilingan",
 };

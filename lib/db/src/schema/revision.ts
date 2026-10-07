@@ -133,8 +133,24 @@ export const revisionVisitsTable = pgTable("revision_visits", {
   /** users.id — biriktirilgan revizor */
   assignedEmployeeId: integer("assigned_employee_id"),
   assignedEmployeeName: text("assigned_employee_name"),
-  /** ASSIGNED | ACCEPTED | IN_PROGRESS | COMPLETED | CANCELLED */
+  /** REQUESTED | ASSIGNED | ACCEPTED | IN_PROGRESS | REVIEW | COMPLETED | CANCELLED */
   workflowStatus: text("workflow_status").notNull().default("ASSIGNED"),
+  /** Revizor «tasdiqlashga yubordi» */
+  submittedAt: timestamp("submitted_at", { withTimezone: true }),
+  submittedById: integer("submitted_by_id"),
+  /** Bo‘lim boshlig‘i qarori */
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewedById: integer("reviewed_by_id"),
+  /** approved | rejected_redo | rejected_cancel */
+  reviewDecision: text("review_decision"),
+  rejectReason: text("reject_reason"),
+  rejectCount: integer("reject_count").notNull().default(0),
+  /** Koordinator arizasi */
+  requestedById: integer("requested_by_id"),
+  requestedAt: timestamp("requested_at", { withTimezone: true }),
+  requestDecidedById: integer("request_decided_by_id"),
+  requestDecidedAt: timestamp("request_decided_at", { withTimezone: true }),
+  requestRejectReason: text("request_reject_reason"),
   /** normal | high | urgent */
   priority: text("priority").notNull().default("normal"),
   /** so‘m, butun son */
@@ -158,4 +174,28 @@ export const revisionVisitsTable = pgTable("revision_visits", {
   updatedById: integer("updated_by_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+/**
+ * Reviziyadan keyingi undirish / qarz to‘lovlari.
+ * revision_visits.collected_amount = reviziya paytida undirilgan + faol to‘lovlar yig‘indisi.
+ */
+export const revisionVisitPaymentsTable = pgTable("revision_visit_payments", {
+  id: serial("id").primaryKey(),
+  visitId: integer("visit_id").notNull(),
+  branchId: integer("branch_id").notNull(),
+  /** so‘m, butun son */
+  amount: integer("amount").notNull(),
+  /** To‘lov qilingan sana YYYY-MM-DD */
+  paidAt: text("paid_at").notNull(),
+  /** cash | card | transfer | salary | other */
+  method: text("method").notNull().default("cash"),
+  note: text("note"),
+  receiptUrl: text("receipt_url"),
+  remainingAfter: integer("remaining_after").notNull().default(0),
+  createdById: integer("created_by_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  voidedAt: timestamp("voided_at", { withTimezone: true }),
+  voidedById: integer("voided_by_id"),
+  voidReason: text("void_reason"),
 });

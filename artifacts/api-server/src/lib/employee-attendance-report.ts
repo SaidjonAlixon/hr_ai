@@ -55,6 +55,13 @@ export type EmployeeDay = {
   branch: string | null;
   excused?: boolean;
   excuseNote?: string | null;
+  /** Reja bo‘yicha kelish/ketish (smena yoki ofis grafigi) */
+  planStart?: string;
+  planEnd?: string;
+  /** Kelish vaqtidan necha daqiqa kech kelgan (faqat «late» kunlarda) */
+  lateMinutes?: number;
+  /** Ketish vaqtidan necha daqiqa oldin ketgan */
+  earlyMinutes?: number;
 };
 
 export type EmployeeTaskItem = {
@@ -387,6 +394,30 @@ const ATTEMPT_STATUS: Record<string, string> = {
 };
 
 /** Kelish smena boshlanishi + ruxsat daqiqasidan keyin bo‘lsa kechikkan. */
+function lateMinutesOf(checkInHm: string | null, schedule: WorkSchedule): number {
+  if (!checkInHm) return 0;
+  let arrived = hmToMinutes(checkInHm);
+  const start = hmToMinutes(schedule.start);
+  if (!Number.isFinite(arrived) || !Number.isFinite(start)) return 0;
+  if (schedule.overnight && arrived < start) arrived += 24 * 60;
+  return Math.max(0, arrived - start);
+}
+
+function earlyMinutesOf(checkInHm: string | null, checkOutHm: string | null, schedule: WorkSchedule): number {
+  if (!checkInHm || !checkOutHm || schedule.warehouse || schedule.security) return 0;
+  const start = hmToMinutes(schedule.start);
+  let end = hmToMinutes(schedule.end);
+  let left = hmToMinutes(checkOutHm);
+  const arrived = hmToMinutes(checkInHm);
+  if (![start, end, left, arrived].every(Number.isFinite)) return 0;
+  if (schedule.overnight || end <= start) {
+    end += 24 * 60;
+    if (left < arrived) left += 24 * 60;
+  }
+  const diff = end - left;
+  return diff > 0 && diff < 16 * 60 ? diff : 0;
+}
+
 function cameStatus(checkInHm: string, schedule: WorkSchedule): "present" | "late" {
   const grace = schedule.graceMinutes > 0 ? schedule.graceMinutes : 15;
   let arrived = hmToMinutes(checkInHm);
@@ -1144,17 +1175,23 @@ export async function buildStaffAttendanceDays(input: {
         ov ? (ov.shiftKey === "office" ? { userRole: "hr_menejer", orgRole: null, position: null, shiftType: null } : null) : staffShift,
       );
       const excused = Boolean(rec?.excused);
+      const checkIn = hm(rec?.checkInAt);
+      const checkOut = hm(rec?.checkOutAt);
       days.push({
         date: ymd,
         weekday: weekdayOf(ymd),
         status,
         statusLabel: excused ? "Sababli" : STATUS_LABEL[status],
-        checkIn: hm(rec?.checkInAt),
-        checkOut: hm(rec?.checkOutAt),
+        checkIn,
+        checkOut,
         hours: hoursBetween(rec?.checkInAt, rec?.checkOutAt),
         branch: rec?.branch ? cleanBranch(String(rec.branch)) : null,
         excused,
         excuseNote: excused ? rec?.excuseNote || null : null,
+        planStart: schedule.start,
+        planEnd: schedule.end,
+        lateMinutes: status === "late" ? lateMinutesOf(checkIn, schedule) : 0,
+        earlyMinutes: earlyMinutesOf(checkIn, checkOut, schedule),
       });
     }
     return { employeeId: emp.id, days };

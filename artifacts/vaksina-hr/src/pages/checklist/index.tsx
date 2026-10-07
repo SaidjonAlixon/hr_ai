@@ -803,9 +803,8 @@ export default function ChecklistPage() {
       await qc.invalidateQueries({ queryKey: ["branch-audits", "my-visit"] });
       void refetchMyVisit();
       const elapsed =
-        Number.isFinite(started)
-          ? Math.round((Date.now() - started) / 60_000)
-          : null;
+        result.visit?.durationMinutes ??
+        (Number.isFinite(started) ? Math.round((Date.now() - started) / 60_000) : null);
       const elapsedLabel =
         elapsed == null
           ? null
@@ -1883,6 +1882,7 @@ export default function ChecklistPage() {
         }
         checkInAt={openVisit?.checkInAt}
         checklistAt={openVisit?.checklistAt}
+        frozenAt={openVisit?.stayFrozenAt}
         submitting={finishing}
         withinGeofence={withinGeofence}
         geofenceMeters={AUDIT_GEOFENCE_METERS}

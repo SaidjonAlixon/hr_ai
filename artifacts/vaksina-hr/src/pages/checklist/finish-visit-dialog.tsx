@@ -22,6 +22,8 @@ type Props = {
   branchLabel: string;
   checkInAt?: string | null;
   checklistAt?: string | null;
+  /** Hudud bloki sabab vaqt shu lahzada to‘xtagan */
+  frozenAt?: string | null;
   submitting?: boolean;
   withinGeofence?: boolean;
   geofenceMeters?: number;
@@ -53,6 +55,7 @@ export function FinishVisitDialog({
   branchLabel,
   checkInAt,
   checklistAt,
+  frozenAt,
   submitting,
   withinGeofence = true,
   geofenceMeters = 70,
@@ -75,13 +78,15 @@ export function FinishVisitDialog({
 
   const checkInMs = checkInAt ? new Date(checkInAt).getTime() : NaN;
   const checklistMs = checklistAt ? new Date(checklistAt).getTime() : NaN;
-  const elapsedMs = Number.isFinite(checkInMs) ? Math.max(0, nowTick - checkInMs) : 0;
+  const frozenMs = frozenAt ? new Date(frozenAt).getTime() : NaN;
+  const endMs = Number.isFinite(frozenMs) ? Math.min(nowTick, frozenMs) : nowTick;
+  const elapsedMs = Number.isFinite(checkInMs) ? Math.max(0, endMs - checkInMs) : 0;
   const checklistLagMs =
     Number.isFinite(checkInMs) && Number.isFinite(checklistMs)
       ? Math.max(0, checklistMs - checkInMs)
       : null;
   const afterChecklistMs =
-    Number.isFinite(checklistMs) ? Math.max(0, nowTick - checklistMs) : null;
+    Number.isFinite(checklistMs) ? Math.max(0, endMs - checklistMs) : null;
 
   const checkInLabel = formatHm(checkInAt);
   const checklistLabel = formatHm(checklistAt);

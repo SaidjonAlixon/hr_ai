@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import {
+  AlarmClock,
   Briefcase,
   CheckCircle2,
   FileSpreadsheet,
@@ -49,8 +50,10 @@ import {
 } from "@/lib/distribyutsiya-api";
 import { TamojniSkladPanel } from "./TamojniSkladPanel";
 import { DavomatSitePicker } from "./DavomatSitePicker";
+import { AttendanceIncidentsPanel } from "./AttendanceIncidentsPanel";
+import { CommentsButton, RemoveStaffButton, StatusSelect } from "./StaffActions";
 
-type Tab = "hr" | "lavozimlar" | "tamojni";
+type Tab = "hr" | "davomat" | "lavozimlar" | "tamojni";
 
 export default function DistribyutsiyaPage() {
   const { user } = useAuth();
@@ -84,6 +87,12 @@ export default function DistribyutsiyaPage() {
   const [newTitle, setNewTitle] = useState("");
   const [editId, setEditId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState("");
+
+  const staffManage = Boolean(staffQ.data?.canManageStaff);
+  const canActOn = (row: { userId: number; role: string }) =>
+    staffManage &&
+    row.userId !== (staffQ.data?.myUserId ?? user?.id) &&
+    !(String(user?.role) === "distrib_hr" && row.role === "distrib_rahbar");
 
   const activeTitles = useMemo(
     () => (titlesQ.data?.titles || meta.data?.titles || []).filter((t) => t.active),
@@ -231,6 +240,19 @@ export default function DistribyutsiyaPage() {
         {tamojniOnly ? null : (
           <button
             type="button"
+            onClick={() => setTab("davomat")}
+            className={cn(
+              "flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
+              activeTab === "davomat" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted",
+            )}
+          >
+            <AlarmClock className="h-4 w-4" />
+            Kechikish / erta ketish
+          </button>
+        )}
+        {tamojniOnly ? null : (
+          <button
+            type="button"
             onClick={() => setTab("lavozimlar")}
             className={cn(
               "flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
@@ -259,6 +281,7 @@ export default function DistribyutsiyaPage() {
       </div>
 
       {activeTab === "tamojni" ? <TamojniSkladPanel /> : null}
+      {activeTab === "davomat" ? <AttendanceIncidentsPanel /> : null}
 
       {activeTab === "hr" ? (
         <section className="rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-5">
@@ -285,7 +308,7 @@ export default function DistribyutsiyaPage() {
             </p>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-border">
-              <table className="w-full min-w-[860px] text-left text-sm">
+              <table className="w-full min-w-[1040px] text-left text-sm">
                 <thead className="bg-muted/50 text-[11px] uppercase tracking-wide text-muted-foreground">
                   <tr>
                     <th className="px-3 py-2.5 font-semibold">#</th>
@@ -295,6 +318,8 @@ export default function DistribyutsiyaPage() {
                     <th className="px-3 py-2.5 font-semibold">Login</th>
                     <th className="px-3 py-2.5 font-semibold">Davomat joyi</th>
                     <th className="px-3 py-2.5 font-semibold">Holat</th>
+                    <th className="px-3 py-2.5 font-semibold">Izohlar</th>
+                    {staffManage ? <th className="px-3 py-2.5 font-semibold" /> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -314,17 +339,14 @@ export default function DistribyutsiyaPage() {
                         />
                       </td>
                       <td className="px-3 py-2.5">
-                        <span
-                          className={cn(
-                            "rounded-full px-2 py-0.5 text-[11px] font-semibold",
-                            row.status === "active"
-                              ? "bg-emerald-500/15 text-emerald-700"
-                              : "bg-muted text-muted-foreground",
-                          )}
-                        >
-                          {row.status === "active" ? "Faol" : row.status || "—"}
-                        </span>
+                        <StatusSelect row={row} canEdit={canActOn(row)} />
                       </td>
+                      <td className="px-3 py-2.5">
+                        <CommentsButton row={row} canWrite={staffManage} />
+                      </td>
+                      {staffManage ? (
+                        <td className="px-2 py-2.5 text-right">{canActOn(row) ? <RemoveStaffButton row={row} /> : null}</td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>

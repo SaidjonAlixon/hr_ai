@@ -458,8 +458,11 @@ export function usesDavomatDashboardHome(role?: string | null): boolean {
   return canViewFullDavomatDashboard(role) || isDeptHeadRole(role);
 }
 
+/** Bo‘lim boshlig‘i, lekin xodim qo‘sha/o‘chira olmaydi — xodimlarni HR boshqaradi */
+const NO_STAFF_MANAGE_HEAD_ROLES = new Set<string>(["tamojni_rahbar"]);
+
 export function canAddDeptStaff(role?: string | null): boolean {
-  return isDeptHeadRole(role);
+  return isDeptHeadRole(role) && !NO_STAFF_MANAGE_HEAD_ROLES.has(String(role));
 }
 
 /** Cheklist holati (dashboard, tashriflar, qamrov): admin, direktor, HR, rekruter, auditor */

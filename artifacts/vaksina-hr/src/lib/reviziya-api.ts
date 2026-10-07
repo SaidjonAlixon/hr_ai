@@ -173,9 +173,15 @@ export type VisitDashBranch = {
   shortageAmount: number;
   collectedAmount: number;
   remainingAmount: number;
+  excessAmount?: number;
   assignedRevizorName: string | null;
   activeVisitId: number | null;
   workflowStatus: string | null;
+  lastVisitDuration?: string | null;
+  cycleMonths?: number | null;
+  responsibleNames?: string | null;
+  lastActNumber?: string | null;
+  activeRevisionDate?: string | null;
 };
 
 export type VisitDashResponse = {
@@ -230,6 +236,40 @@ export function useReviziyaMyTasks() {
   return useQuery({
     queryKey: ["reviziya", "visits", "my-tasks"],
     queryFn: () => json<any>("/api/reviziya/visits/my-tasks"),
+  });
+}
+
+export type RequestState = "pending" | "approved" | "rejected";
+
+export type ReviziyaRequest = {
+  id: number;
+  branchId: number;
+  branchName: string;
+  revisionDate: string | null;
+  scheduledStartTime: string | null;
+  scheduledEndTime: string | null;
+  assignedEmployeeId: number | null;
+  assignedEmployeeName: string | null;
+  workflowStatus: string;
+  notes: string | null;
+  requestState: RequestState;
+  requestedByName: string | null;
+  requestedAt: string | null;
+  requestDecidedByName: string | null;
+  requestDecidedAt: string | null;
+  requestRejectReason: string | null;
+};
+
+export function useReviziyaRequests() {
+  return useQuery({
+    queryKey: ["reviziya", "visits", "requests"],
+    queryFn: () =>
+      json<{
+        items: ReviziyaRequest[];
+        counts: Record<RequestState, number>;
+        canDecide: boolean;
+        canCreate: boolean;
+      }>("/api/reviziya/visits/requests"),
   });
 }
 
@@ -290,6 +330,14 @@ export function useReviziyaVisitMutations() {
         }),
       onSuccess: invalidate,
     }),
+    rejectRequest: useMutation({
+      mutationFn: ({ id, reason }: { id: number; reason: string }) =>
+        json(`/api/reviziya/visits/${id}/reject-request`, {
+          method: "POST",
+          body: JSON.stringify({ reason }),
+        }),
+      onSuccess: invalidate,
+    }),
     accept: useMutation({
       mutationFn: (id: number) => json(`/api/reviziya/visits/${id}/accept`, { method: "POST", body: "{}" }),
       onSuccess: invalidate,
@@ -308,5 +356,66 @@ export function useReviziyaVisitMutations() {
         json(`/api/reviziya/visits/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
       onSuccess: invalidate,
     }),
+    reviewApprove: useMutation({
+      mutationFn: (id: number) => json(`/api/reviziya/visits/${id}/review-approve`, { method: "POST", body: "{}" }),
+      onSuccess: invalidate,
+    }),
+    reviewReject: useMutation({
+      mutationFn: ({ id, reason, action }: { id: number; reason: string; action: "redo" | "cancel" }) =>
+        json(`/api/reviziya/visits/${id}/review-reject`, {
+          method: "POST",
+          body: JSON.stringify({ reason, action }),
+        }),
+      onSuccess: invalidate,
+    }),
+    addPayment: useMutation({
+      mutationFn: ({ id, ...body }: { id: number } & AddPaymentBody) =>
+        json<{ visit: { remainingAmount: number } }>(`/api/reviziya/visits/${id}/payments`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        }),
+      onSuccess: invalidate,
+    }),
+    voidPayment: useMutation({
+      mutationFn: ({ paymentId, reason }: { paymentId: number; reason: string }) =>
+        json(`/api/reviziya/visits/payments/${paymentId}/void`, {
+          method: "POST",
+          body: JSON.stringify({ reason }),
+        }),
+      onSuccess: invalidate,
+    }),
   };
 }
+
+export type PaymentMethod = "cash" | "card" | "transfer" | "salary" | "other";
+
+export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
+  cash: "Naqd",
+  card: "Karta",
+  transfer: "O‘tkazma",
+  salary: "Oylikdan ushlab qolindi",
+  other: "Boshqa",
+};
+
+export type AddPaymentBody = {
+  amount: number;
+  paidAt: string;
+  method: PaymentMethod;
+  note?: string | null;
+  receiptUrl?: string | null;
+};
+
+export type VisitPayment = {
+  id: number;
+  amount: number;
+  paidAt: string;
+  method: PaymentMethod;
+  note: string | null;
+  receiptUrl: string | null;
+  remainingAfter: number | null;
+  createdAt: string;
+  createdByName: string | null;
+  voidedAt: string | null;
+  voidedByName: string | null;
+  voidReason: string | null;
+};

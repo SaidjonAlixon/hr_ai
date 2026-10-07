@@ -14,6 +14,7 @@ import { renderDisciplinePdf } from "./discipline-pdf";
 import { logLetterError, syncExplanationLetters } from "./explanation-letter";
 import { FINAL_STRIKE, JARIMA_RULE, strikePenalty } from "./attendance-jarima";
 import { activeLockFor, invalidateLockCache, LOCK_MESSAGE, todayTashkent, type DisciplineLock } from "./discipline-lock";
+import { isJarimaEnabled } from "./jarima-switch";
 
 export { activeLockFor, LOCK_MESSAGE, todayTashkent };
 export const ESCALATE_FROM = 3;
@@ -486,7 +487,7 @@ export function runDisciplineDigest(): Promise<void> {
 
 async function digestOnce(): Promise<void> {
   const slot = digestSlot();
-  if (!slot) return;
+  if (!slot || !(await isJarimaEnabled())) return;
   const { rowCount } = await pool.query(`INSERT INTO discipline_digests (slot) VALUES ($1) ON CONFLICT (slot) DO NOTHING`, [slot.id]);
   if (!rowCount) return;
   try {

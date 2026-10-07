@@ -1,4 +1,5 @@
 import { pool } from "@workspace/db";
+import { isJarimaEnabled } from "./jarima-switch";
 
 export const DISCIPLINE_ROLES = new Set(["mudir", "farmasevt", "stajyor", "stajor"]);
 export const LOCK_MESSAGE = "Intizom qoidalari buzilgani sababli bugun platformadan foydalana olmaysiz. Admin yoki HR bilan bog‘laning.";
@@ -25,6 +26,7 @@ export function invalidateLockCache(userId?: number) {
 }
 
 export async function activeLockFor(userId: number): Promise<DisciplineLock | null> {
+  if (!(await isJarimaEnabled())) return null;
   const hit = lockCache.get(userId);
   if (hit && Date.now() - hit.at < LOCK_CACHE_MS) return hit.lock;
   let r: Record<string, any> | undefined;

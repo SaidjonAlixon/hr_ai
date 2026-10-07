@@ -8,6 +8,7 @@ import { pool } from "@workspace/db";
 import { logger } from "./logger";
 import { notifyUser } from "./notify";
 import type { JarimaPerson } from "./attendance-jarima";
+import { isJarimaEnabled } from "./jarima-switch";
 
 /** Oxirgi ogohlantirish (ishdan bo‘shatishga rozilik) xati shu martadan */
 export const FINAL_STRIKE = 6;
@@ -394,7 +395,7 @@ export async function pendingLetterFor(userId: number): Promise<ExplanationLette
 }
 
 export async function explanationPunchBlock(userId: number | null | undefined): Promise<Record<string, unknown> | null> {
-  if (!userId) return null;
+  if (!userId || !(await isJarimaEnabled())) return null;
   const l = await pendingLetterFor(userId).catch((err) => {
     logLetterError(err, "punch-gate");
     return null;

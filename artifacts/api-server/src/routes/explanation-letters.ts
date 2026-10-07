@@ -37,6 +37,7 @@ import {
 } from "../lib/explanation-letter";
 import { renderExplanationLetterPdf } from "../lib/explanation-letter-pdf";
 import { runDisciplineScan, todayTashkent } from "../lib/discipline";
+import { isJarimaEnabled } from "../lib/jarima-switch";
 
 const router: IRouter = Router();
 
@@ -154,9 +155,11 @@ router.put("/explanation-letters/settings", requireAuth, async (req: AuthRequest
 router.get("/explanation-letters/my", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
     const items = await myLetters(req.userId!);
+    const enabled = await isJarimaEnabled();
     res.json({
       items: await payloads(items, req),
-      pending: items.filter((l) => l.status !== "signed" && l.reviewStatus !== "cancelled").length,
+      enabled,
+      pending: enabled ? items.filter((l) => l.status !== "signed" && l.reviewStatus !== "cancelled").length : 0,
     });
   } catch (err) {
     logLetterError(err, "my");

@@ -201,7 +201,8 @@ export function useMyLetters(enabled = true) {
     queryKey: ["explanation-letters", "my"],
     enabled,
     refetchInterval: 120_000,
-    queryFn: () => getJson<{ items: ExplanationLetter[]; pending: number }>("/api/explanation-letters/my", "Tushuntirish xatlari yuklanmadi"),
+    queryFn: () =>
+      getJson<{ items: ExplanationLetter[]; pending: number; enabled?: boolean }>("/api/explanation-letters/my", "Tushuntirish xatlari yuklanmadi"),
   });
 }
 

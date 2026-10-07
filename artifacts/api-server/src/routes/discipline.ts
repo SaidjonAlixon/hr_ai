@@ -14,6 +14,9 @@ import {
   todayTashkent,
 } from "../lib/discipline";
 import { renderDisciplinePdf } from "../lib/discipline-pdf";
+import { invalidateLockCache } from "../lib/discipline-lock";
+import { getJarimaSwitch, setJarimaEnabled } from "../lib/jarima-switch";
+import { pool } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -99,13 +102,33 @@ router.get("/discipline/summary", requireAuth, async (req: AuthRequest, res): Pr
   const month = /^\d{4}-\d{2}$/.test(String(req.query.month || "")) ? String(req.query.month) : todayTashkent().slice(0, 7);
   const report = await buildDisciplineReport(month);
   const level = (min: number, max = Infinity) => report.people.filter((p) => p.strikes >= min && p.strikes <= max).length;
+  const sw = await getJarimaSwitch();
   res.json({
     month,
+    jarima: { enabled: sw.enabled, updatedByName: sw.updatedByName, updatedAt: sw.updatedAt },
     level3: level(3, 3),
     level4: level(4, 4),
     level5: level(5),
     locks: month === todayTashkent().slice(0, 7) ? await listTodayLocks() : [],
   });
+});
+
+router.put("/discipline/jarima", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (denyUnlessManager(req, res)) return;
+  if (typeof req.body?.enabled !== "boolean") {
+    res.status(400).json({ error: "Holat noto‘g‘ri" });
+    return;
+  }
+  try {
+    const { rows } = await pool.query(`SELECT full_name FROM users WHERE id = $1`, [req.userId]);
+    const sw = await setJarimaEnabled(req.body.enabled, String(rows[0]?.full_name || "Admin"));
+    invalidateLockCache();
+    void runDisciplineScan();
+    res.json({ enabled: sw.enabled, updatedByName: sw.updatedByName, updatedAt: sw.updatedAt });
+  } catch (err) {
+    console.error("PUT /discipline/jarima", err);
+    res.status(503).json({ error: "Saqlanmadi" });
+  }
 });
 
 export default router;

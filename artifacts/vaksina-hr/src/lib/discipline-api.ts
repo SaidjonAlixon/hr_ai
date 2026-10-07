@@ -15,8 +15,15 @@ export type DisciplineLockRow = {
   clearedByName: string | null;
 };
 
+export type JarimaSwitchState = {
+  enabled: boolean;
+  updatedByName: string | null;
+  updatedAt: string | null;
+};
+
 export type DisciplineSummary = {
   month: string;
+  jarima?: JarimaSwitchState;
   level3: number;
   level4: number;
   level5: number;
@@ -89,6 +96,28 @@ export function useDisciplineLockDetails(id: number | null) {
       const res = await fetch(`/api/discipline/locks/${id}/details`, { credentials: "include" });
       if (!res.ok) throw await readError(res, "Asoslar olinmadi");
       return res.json();
+    },
+  });
+}
+
+/** Jarima tizimini hammaga yoqish / o‘chirish */
+export function useSetJarimaEnabled() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (enabled: boolean): Promise<JarimaSwitchState> => {
+      const res = await fetch("/api/discipline/jarima", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      if (!res.ok) throw await readError(res, "Saqlanmadi");
+      return res.json();
+    },
+    onSuccess: () => {
+      for (const key of ["discipline-summary", "explanation-letters", "oylik", "payroll-days"]) {
+        void qc.invalidateQueries({ queryKey: [key] });
+      }
     },
   });
 }

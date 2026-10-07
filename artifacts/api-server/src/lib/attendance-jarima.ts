@@ -3,6 +3,7 @@ import { db, employeesTable, payrollMonthsTable, usersTable } from "@workspace/d
 import { buildStaffAttendanceDays } from "./employee-attendance-report";
 import { displayBranchName } from "./geo-location";
 import { FINAL_STRIKE, cancelledLetterKeys } from "./explanation-letter";
+import { getJarimaSwitch, isJarimaOffDay } from "./jarima-switch";
 
 /** Jarima shu kundan boshlanadi. Undan oldingi kechikish va kelmaslik hisobga kirmaydi. */
 export const JARIMA_START = "2026-10-01";
@@ -229,6 +230,7 @@ export async function applyAttendanceJarima(
   });
   const daysByEmp = new Map(packs.map((pack) => [pack.employeeId, pack.days]));
   const cancelled = await cancelledLetterKeys(from, to).catch(() => new Set<string>());
+  const sw = await getJarimaSwitch();
   const today = todayTashkent();
   const monthDays = daysInMonth(month);
   const out: JarimaPerson[] = [];
@@ -240,6 +242,7 @@ export async function applyAttendanceJarima(
     const days = daysByEmp.get(person.employeeId) ?? [];
     const counted = days
       .filter((day) => {
+        if (!sw.enabled || isJarimaOffDay(sw, day.date)) return false;
         if (day.date < JARIMA_START) return false;
         if (day.excused) return false;
         if (day.status === "prehire" || day.status === "outside") return false;
@@ -323,5 +326,5 @@ export async function applyAttendanceJarima(
     });
   }
 
-  return { month, active: true, people: out };
+  return { month, active: sw.enabled, people: out };
 }

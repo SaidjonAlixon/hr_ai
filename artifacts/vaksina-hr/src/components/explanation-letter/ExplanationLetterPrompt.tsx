@@ -56,6 +56,7 @@ export function ExplanationLetterPrompt() {
   }, [watched, refetch]);
 
   const next = useMemo(() => {
+    if (my.data?.enabled === false) return null;
     const open = (my.data?.items ?? []).filter((l) => l.status !== "signed" && l.reviewStatus !== "cancelled");
     return open.length ? open[open.length - 1]! : null;
   }, [my.data]);

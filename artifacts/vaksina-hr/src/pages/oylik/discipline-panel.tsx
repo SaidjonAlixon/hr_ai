@@ -14,6 +14,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -22,6 +23,7 @@ import {
   useClearDisciplineLock,
   useDisciplineLockDetails,
   useDisciplineSummary,
+  useSetJarimaEnabled,
   type DisciplineLockRow,
 } from "@/lib/discipline-api";
 
@@ -57,6 +59,7 @@ export function DisciplinePanel({ month }: { month: string }) {
   const { toast } = useToast();
   const summary = useDisciplineSummary(month, true);
   const clear = useClearDisciplineLock();
+  const setJarima = useSetJarimaEnabled();
   const [downloading, setDownloading] = useState(false);
   const [tab, setTab] = useState<Tab>("blocked");
   const [query, setQuery] = useState("");
@@ -102,6 +105,24 @@ export function DisciplinePanel({ month }: { month: string }) {
   };
 
   const noLocks = !activeLocks.length && !clearedLocks.length;
+  const jarimaOn = data?.jarima?.enabled ?? true;
+
+  const toggleJarima = (next: boolean) => {
+    const ask = next
+      ? "Jarima tizimi yoqilsinmi? Bugundan boshlab kechikish va kelmasliklar uchun jarima, tushuntirish xati va blok hammaga ishlaydi."
+      : "Jarima tizimi o‘chirilsinmi? Hech kimga jarima yozilmaydi, tushuntirish xati so‘ralmaydi va hech kim bloklanmaydi. Davomat odatdagidek ishlayveradi.";
+    if (!window.confirm(ask)) return;
+    setJarima.mutate(next, {
+      onSuccess: (s) =>
+        toast({
+          title: s.enabled ? "Jarima yoqildi" : "Jarima o‘chirildi",
+          description: s.enabled
+            ? "Jarima, tushuntirish xati va bloklar hammaga ishlaydi."
+            : "Jarima, tushuntirish xati va bloklar hech kimda ishlamaydi.",
+        }),
+      onError: (e) => toast({ title: "Xato", description: (e as Error).message, variant: "destructive" }),
+    });
+  };
 
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
@@ -117,20 +138,50 @@ export function DisciplinePanel({ month }: { month: string }) {
             </p>
           </div>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 rounded-lg border-red-200 text-red-700 hover:bg-red-50 dark:border-red-500/30 dark:text-red-300 dark:hover:bg-red-500/10"
-          disabled={downloading}
-          onClick={() => void pdf()}
-        >
-          {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
-          Intizom PDF
-        </Button>
+        <div className="flex items-center gap-2">
+          <label
+            className={cn(
+              "inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2.5 text-xs font-bold ring-1 transition",
+              jarimaOn
+                ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-200 dark:ring-emerald-500/30"
+                : "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-white/5 dark:text-slate-300 dark:ring-white/10",
+            )}
+          >
+            {setJarima.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            Jarima {jarimaOn ? "yoqiq" : "o‘chiq"}
+            <Switch
+              checked={jarimaOn}
+              disabled={summary.isLoading || setJarima.isPending}
+              onCheckedChange={toggleJarima}
+              className="data-[state=checked]:bg-emerald-600"
+              aria-label="Jarima tizimini yoqish yoki o‘chirish"
+            />
+          </label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 rounded-lg border-red-200 text-red-700 hover:bg-red-50 dark:border-red-500/30 dark:text-red-300 dark:hover:bg-red-500/10"
+            disabled={downloading}
+            onClick={() => void pdf()}
+          >
+            {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
+            Intizom PDF
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-3 p-4">
+        {!jarimaOn ? (
+          <div className="flex items-start gap-2 rounded-xl bg-slate-100 px-3 py-2.5 text-xs leading-relaxed text-slate-700 dark:bg-white/5 dark:text-slate-200">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+            <span>
+              <b>Jarima tizimi o‘chiq.</b> Hech kimga jarima yozilmaydi, tushuntirish xati so‘ralmaydi va hech kim bloklanmaydi —
+              kech kelsa ham, kelmasa ham davomat odatdagidek ishlaydi.
+              {data?.jarima?.updatedByName ? ` O‘chirgan: ${data.jarima.updatedByName}.` : ""}
+            </span>
+          </div>
+        ) : null}
         <div className="grid grid-cols-3 gap-2">
           {LEVELS.map((lv) => (
             <div key={lv.key} className={cn("flex items-center justify-between gap-2 rounded-xl px-3 py-2 ring-1", lv.tone)}>

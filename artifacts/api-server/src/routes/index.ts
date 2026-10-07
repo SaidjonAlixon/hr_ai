@@ -99,6 +99,7 @@ router.use(attendanceSettingsRouter);
 router.use(javobOlishRouter);
 router.use(holatRouter);
 router.use(oylikRouter);
+router.use(workCalendarRouter);
 router.use(hisobkitobRouter);
 router.use(telegramRouter);
 router.use(reviziyaRouter);

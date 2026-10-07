@@ -61,6 +61,8 @@ export type BranchAuditInput = {
   categories: AuditCategory[];
   checkLatitude?: number;
   checkLongitude?: number;
+  /** Birinchi javob belgilangan vaqt (ISO) — cheklist davomiyligi uchun */
+  startedAt?: string;
 };
 
 export const AUDIT_GEOFENCE_METERS = 70;
@@ -332,6 +334,10 @@ export type CoordinatorVisitSession = {
   checkOutAt: string | null;
   checklistAuditId: number | null;
   checklistAt: string | null;
+  /** Birinchi javob belgilangan vaqt — yangi cheklistlarda bor */
+  checklistStartedAt?: string | null;
+  checklistFillMinutes?: number | null;
+  checklistFillLabel?: string;
   checkoutNote?: string | null;
   lastPresenceAt?: string | null;
   lastPresenceReminderAt?: string | null;
@@ -386,6 +392,8 @@ export type VisitMonitorSummary = {
   avgStayLabel: string;
   avgChecklistLagMinutes?: number | null;
   avgChecklistLagLabel?: string;
+  avgChecklistFillMinutes?: number | null;
+  avgChecklistFillLabel?: string;
   avgAfterChecklistMinutes?: number | null;
   avgAfterChecklistLabel?: string;
   officeCount?: number;

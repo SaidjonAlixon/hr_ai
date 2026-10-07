@@ -128,6 +128,7 @@ import {
 } from "@/lib/vazifalar-api";
 
 import { isDirectorRole, normalizeUserRole, userRoleLabel } from "@/lib/roles";
+import { VerifiedName } from "@/components/VerifiedBadge";
 import { useI18n } from "@/i18n/I18nProvider";
 import { TaskFormDialog } from "@/components/vazifalar/TaskFormDialog";
 import { AcceptWindowCountdown } from "@/components/vazifalar/AcceptWindowCountdown";
@@ -723,6 +724,8 @@ export default function VazifalarPage() {
         label: deptName ? `${x.fullName} · ${roleMeta} · ${deptName}` : `${x.fullName} · ${roleMeta}`,
         kind: "user" as const,
         id: x.id as number,
+        role: x.role ? String(x.role) : undefined,
+        userId: x.id as number,
         meta: roleMeta,
         departmentId: x.departmentId != null ? Number(x.departmentId) : null,
         departmentName: deptName || null,
@@ -756,6 +759,8 @@ export default function VazifalarPage() {
           label: `${x.fullName}${metaParts.length ? ` · ${metaParts.join(" · ")}` : ""}`,
       kind: "employee" as const,
       id: x.id as number,
+          role: x.userRole ? String(x.userRole) : undefined,
+          userId: x.userId != null ? Number(x.userId) : undefined,
           meta: metaParts.join(" · "),
           departmentId: x.departmentId != null ? Number(x.departmentId) : null,
           departmentName: deptName || null,
@@ -2329,9 +2334,12 @@ export default function VazifalarPage() {
                                   {initialsFromName(o.name) || "?"}
                                 </span>
                                 <span className="min-w-0 flex-1">
-                                  <span className="block truncate text-sm font-medium leading-tight">
-                                    {o.name}
-                                  </span>
+                                  <VerifiedName
+                                    name={o.name}
+                                    role={o.role}
+                                    userId={o.userId}
+                                    className="flex text-sm font-medium leading-tight"
+                                  />
                                   <span className="block truncate text-[11px] text-muted-foreground">
                                     {o.meta}
                                     {o.workplace === "dorixona" ? " · Dorixona" : " · Ofis"}

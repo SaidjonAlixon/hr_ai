@@ -80,6 +80,7 @@ import { OperatorHeadsetIcon } from '@/components/OperatorHeadsetIcon';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
+import { VerifiedBadge, VerifiedName } from "@/components/VerifiedBadge";
 import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canViewDavomatXatoliklar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome, isSbRole, canManageSmenaFilial } from "@/lib/roles";
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
@@ -2295,7 +2296,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 )}
               </div>
               <div className="min-w-0 flex-1">
-                <span className="app-sidebar-profile-name">{profileDisplayName(user.fullName)}</span>
+                <span className="flex min-w-0 items-center gap-1">
+                  <span className="app-sidebar-profile-name">{profileDisplayName(user.fullName)}</span>
+                  <VerifiedBadge role={user.role} userId={user.id} name={user.fullName} size="sm" />
+                </span>
                 <span className="mt-px flex min-w-0 items-center gap-1.5">
                   {userRoleLabel(user.role) ? (
                     <span className="truncate text-[10px] font-medium text-slate-600 dark:text-white/50">{userRoleLabel(user.role)}</span>
@@ -2363,7 +2367,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 )}
               </div>
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold">{user.fullName}</p>
+                <VerifiedName
+                  name={user.fullName}
+                  role={user.role}
+                  userId={user.id}
+                  size="md"
+                  className="flex text-sm font-semibold"
+                />
                 <p className="truncate text-xs text-muted-foreground">{user.login}</p>
               </div>
             </div>
@@ -2516,7 +2526,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 location.startsWith('/admin/kochma-xarita') ||
                 location.startsWith('/checklist-holati')
                 ? 'h-full max-w-none'
-                : location === '/pharmacy-network'
+                : location === '/pharmacy-network' || location.startsWith('/davomat/bloklash')
                   ? 'max-w-none'
                   : 'max-w-7xl',
             )}

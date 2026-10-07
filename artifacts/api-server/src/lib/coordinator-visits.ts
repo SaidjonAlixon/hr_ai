@@ -909,15 +909,24 @@ export async function attachChecklistToOpenVisit(opts: {
   coordinatorUserId: number;
   branchId: number;
   auditId: number;
+  /** Mijoz yuborgan cheklist boshlanish vaqti (birinchi javob) */
+  startedAt?: Date | null;
 }): Promise<CoordVisitRow | null> {
   const open = await getOpenCoordinatorVisit(opts.coordinatorUserId);
   if (!open || open.branchId !== opts.branchId) return null;
   const now = new Date();
+  const checkInMs = new Date(open.checkInAt).getTime();
+  const startMs = opts.startedAt?.getTime();
+  const startedAt =
+    startMs != null && Number.isFinite(startMs) && startMs <= now.getTime()
+      ? new Date(Math.max(startMs, checkInMs))
+      : null;
   const [updated] = await db
     .update(coordinatorBranchVisitsTable)
     .set({
       checklistAuditId: opts.auditId,
       checklistAt: now,
+      checklistStartedAt: startedAt,
       updatedAt: now,
     })
     .where(eq(coordinatorBranchVisitsTable.id, open.id))
@@ -1105,6 +1114,10 @@ export function serializeVisit(v: CoordVisitRow) {
     v.checkOutAt ? new Date(v.checkOutAt).getTime() : Date.now(),
     frozenAt ? frozenAt.getTime() : Infinity,
   );
+  const checklistFillMin =
+    v.checklistAt && v.checklistStartedAt
+      ? Math.max(0, Math.round((new Date(v.checklistAt).getTime() - new Date(v.checklistStartedAt).getTime()) / 60_000))
+      : null;
   const afterChecklistMin =
     v.checklistAt
       ? Math.max(0, Math.round((stayEndMs - new Date(v.checklistAt).getTime()) / 60_000))
@@ -1138,6 +1151,9 @@ export function serializeVisit(v: CoordVisitRow) {
     checkOutAt: v.checkOutAt,
     checklistAuditId: v.checklistAuditId,
     checklistAt: v.checklistAt,
+    checklistStartedAt: v.checklistStartedAt ?? null,
+    checklistFillMinutes: checklistFillMin,
+    checklistFillLabel: formatDurationMinutes(checklistFillMin),
     checkoutNote: v.checkoutNote ?? null,
     lastPresenceAt: v.lastPresenceAt ?? null,
     lastPresenceReminderAt: v.lastPresenceReminderAt ?? null,

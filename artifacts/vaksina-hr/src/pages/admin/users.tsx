@@ -8,6 +8,7 @@ import {
   type User,
 } from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
+import { VerifiedName } from '@/components/VerifiedBadge';
 import { Plus, Search, Copy, Check, ChevronDown, Eye, EyeOff, Trash2, UserPlus, UserX, FileSpreadsheet, Loader2, Pencil, KeyRound } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -834,7 +835,7 @@ export default function AdminUsersPage() {
                   sorted.map((u) => (
                     <tr key={u.id} className="hover:bg-muted/20">
                       <td className="px-4 py-3">
-                        <div className="font-medium">{u.fullName}</div>
+                        <VerifiedName name={u.fullName} role={u.role} userId={u.id} className="flex font-medium" />
                         {u.phone && <div className="text-xs text-muted-foreground">{u.phone}</div>}
                       </td>
                       <td className="px-4 py-3">

@@ -458,6 +458,26 @@ export function usesDavomatDashboardHome(role?: string | null): boolean {
   return canViewFullDavomatDashboard(role) || isDeptHeadRole(role);
 }
 
+/**
+ * Tasdiqlangan belgi (galochka): asoschi, direktor va yordamchisi, HR direktor/menejer,
+ * bo‘lim boshliqlari. Distribyutsiya HR — boshliq emas.
+ * master — «PRO xodim»: rol bo‘yicha emas, faqat admin beradi.
+ */
+export type VerifiedTier = "founder" | "director" | "hr" | "lead" | "master";
+
+const VERIFIED_EXCLUDED = new Set<string>(["distrib_hr"]);
+const VERIFIED_HR = new Set<string>(["hr_direktor", "hr_menejer", "hr_kadr_rahbar"]);
+
+export function verifiedTier(role?: string | null): VerifiedTier | null {
+  const r = normalizeUserRole(role);
+  if (!r) return null;
+  if (r === "asoschi") return "founder";
+  if (r === "director" || r === "direktor_yordamchisi") return "director";
+  if (VERIFIED_HR.has(r)) return "hr";
+  if (isDeptHeadRole(r) && !VERIFIED_EXCLUDED.has(r)) return "lead";
+  return null;
+}
+
 /** Bo‘lim boshlig‘i, lekin xodim qo‘sha/o‘chira olmaydi — xodimlarni HR boshqaradi */
 const NO_STAFF_MANAGE_HEAD_ROLES = new Set<string>(["tamojni_rahbar"]);
 

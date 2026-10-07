@@ -23,6 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { isOptionalUzPhoneValid, normalizeUzPhone, UZ_PHONE_HINT } from "@/lib/phone";
 import { canManageTamojni, isHrRole, userRoleLabel } from "@/lib/roles";
+import { VerifiedName } from "@/components/VerifiedBadge";
 import { gpsInputError, parseGpsText } from "@/lib/pharmacy-staff-api";
 import { useTamojniDesk, useTamojniMutations, type TamojniStaffRow } from "@/lib/distribyutsiya-api";
 import { DavomatSitePicker } from "./DavomatSitePicker";
@@ -484,7 +485,7 @@ function StaffShiftRow({
     <div className="rounded-xl border border-border p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <p className="font-medium">{row.fullName}</p>
+          <VerifiedName name={row.fullName} role={row.role} userId={row.userId} className="flex font-medium" />
           <p className="text-xs text-muted-foreground">
             {row.position || "—"} · {userRoleLabel(row.role)} · {row.login}
           </p>

@@ -71,6 +71,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/I18nProvider";
 import { isSbRole, userRoleLabel } from "@/lib/roles";
+import { VerifiedBadge, VerifiedName } from "@/components/VerifiedBadge";
 import { SB_TASK_TEMPLATES } from "@/lib/sb";
 import {
   fileToAttachment,
@@ -177,6 +178,9 @@ export type AssigneeOption = {
   label: string;
   kind: "user" | "employee";
   id: number;
+  role?: string;
+  /** users.id — unvon belgisi uchun */
+  userId?: number;
   meta: string;
   workplace?: "ofis" | "dorixona";
 };
@@ -2795,9 +2799,12 @@ export function TaskFormDialog({
                               {selectedAssignee.name.slice(0, 1).toUpperCase()}
                             </span>
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-semibold text-[#0a2540] dark:text-slate-50">
-                                {selectedAssignee.name}
-                              </span>
+                              <VerifiedName
+                                name={selectedAssignee.name}
+                                role={selectedAssignee.role}
+                                userId={selectedAssignee.userId}
+                                className="flex text-sm font-semibold text-[#0a2540] dark:text-slate-50"
+                              />
                               {selectedAssignee.meta ? (
                                 <span className="block truncate text-[11px] text-slate-500">
                                   {selectedAssignee.meta}
@@ -2837,7 +2844,7 @@ export function TaskFormDialog({
                                 )}
                               />
                               <span className="min-w-0 flex-1 truncate">
-                                <span className="block truncate font-medium">{o.name}</span>
+                                <VerifiedName name={o.name} role={o.role} userId={o.userId} className="flex font-medium" />
                                 {o.meta ? (
                                   <span className="block truncate text-[11px] text-muted-foreground">
                                     {o.meta}
@@ -2979,7 +2986,7 @@ export function TaskFormDialog({
                                     {on ? <Check className="h-3 w-3" /> : null}
                                   </span>
                                   <span className="min-w-0 flex-1 truncate">
-                                    <span className="block truncate font-medium">{o.name}</span>
+                                    <VerifiedName name={o.name} role={o.role} userId={o.userId} className="flex font-medium" />
                                     {o.meta ? (
                                       <span className="block truncate text-[11px] text-muted-foreground">
                                         {o.meta}
@@ -3011,6 +3018,7 @@ export function TaskFormDialog({
                           className="inline-flex max-w-full items-center gap-1 rounded-full border border-teal-300 bg-teal-50 px-2 py-1 text-[11px] font-semibold text-teal-900 dark:border-teal-700 dark:bg-teal-950/40 dark:text-teal-100"
                         >
                           <span className="truncate">{o.name}</span>
+                          <VerifiedBadge role={o.role} userId={o.userId} size="xs" interactive={false} />
                           <X className="h-3 w-3 shrink-0 opacity-70" />
                         </button>
                       ))}

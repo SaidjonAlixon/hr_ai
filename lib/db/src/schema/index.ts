@@ -32,6 +32,7 @@ export * from "./revision";
 export * from "./ops-tickets";
 export * from "./department-job-titles";
 export * from "./staff-comments";
+export * from "./user-titles";
 export * from "./javob-olish";
 export * from "./push";
 export * from "./device-security";

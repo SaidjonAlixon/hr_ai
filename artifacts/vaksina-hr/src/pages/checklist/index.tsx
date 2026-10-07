@@ -342,6 +342,7 @@ export default function ChecklistPage() {
   const [presenceBusy, setPresenceBusy] = useState(false);
   const [unlockBusy, setUnlockBusy] = useState(false);
   const checklistFormRef = useRef<HTMLDivElement>(null);
+  const checklistStartedAtRef = useRef<string | null>(null);
 
   const [managerId, setManagerId] = useState<string>("");
   const [finishOpen, setFinishOpen] = useState(false);
@@ -708,6 +709,7 @@ export default function ChecklistPage() {
   const live = useMemo(() => scoreFromCategories(categories), [categories]);
 
   function setAnswer(catId: string, itemId: string, answer: AuditAnswer) {
+    if (!checklistStartedAtRef.current) checklistStartedAtRef.current = new Date().toISOString();
     setCategories((prev) =>
       prev.map((cat) =>
         cat.id !== catId
@@ -745,11 +747,13 @@ export default function ChecklistPage() {
   }
 
   function clearAnswers() {
+    checklistStartedAtRef.current = null;
     setCategories(createEmptyAuditTemplate());
     setGeneralNote("");
   }
 
   function resetForm() {
+    checklistStartedAtRef.current = null;
     setManagerId("");
     setVisitDate(todayIso());
     setGeneralNote("");
@@ -963,6 +967,7 @@ export default function ChecklistPage() {
         ...(saveGps
           ? { checkLatitude: saveGps.lat, checkLongitude: saveGps.lng }
           : {}),
+        ...(checklistStartedAtRef.current ? { startedAt: checklistStartedAtRef.current } : {}),
       });
 
       // Koordinator: tashrif ochiq qoladi — faqat javoblarni tozalaymiz, Ketdim ochiladi

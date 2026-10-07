@@ -17,6 +17,7 @@ import employeesRouter from "./employees";
 import notificationsRouter from "./notifications";
 import dashboardRouter from "./dashboard";
 import tasksRouter from "./tasks";
+import userTitlesRouter from "./user-titles";
 import staffingRouter from "./staffing";
 import staffNeedsRouter from "./staff-needs";
 import jobsRouter from "./jobs";
@@ -126,5 +127,6 @@ router.use(employeesRouter);
 router.use(notificationsRouter);
 router.use(dashboardRouter);
 router.use(tasksRouter);
+router.use(userTitlesRouter);
 
 export default router;

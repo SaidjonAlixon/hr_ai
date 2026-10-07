@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import {
+  Award,
   Building2,
   Check,
   ChevronLeft,
@@ -26,13 +27,14 @@ import {
   X,
 } from "lucide-react";
 import BloklashTarix from "@/components/davomat/BloklashTarix";
+import UnvonPanel from "@/components/davomat/UnvonPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { hasFullPlatformAccess, userRoleLabel } from "@/lib/roles";
+import { hasFullPlatformAccess, normalizeUserRole, userRoleLabel } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { displayBranchName } from "@/lib/pharmacy-staff-api";
 import {
@@ -143,7 +145,8 @@ export default function DavomatBloklashPage() {
   const [zoneMethod, setZoneMethod] = useState<"FACE_ID" | "QR">("FACE_ID");
   const [zoneBusy, setZoneBusy] = useState(false);
   const [canAudit, setCanAudit] = useState(false);
-  const [tab, setTab] = useState<"xodimlar" | "tarix">("xodimlar");
+  const [tab, setTab] = useState<"xodimlar" | "unvonlar" | "tarix">("xodimlar");
+  const isAdmin = normalizeUserRole(user?.role) === "admin";
 
   useEffect(() => {
     if (!allowed || user?.role !== "admin") return;
@@ -401,7 +404,7 @@ export default function DavomatBloklashPage() {
   ];
 
   return (
-    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-5 pb-24">
+    <div className="mx-auto flex w-full max-w-[2200px] flex-col gap-5 pb-24">
       <section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[#081f36] via-[#0d3456] to-[#0a5560] px-5 py-6 text-white shadow-[0_20px_60px_-25px_rgba(8,31,54,0.65)] sm:px-8 sm:py-8">
         <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-teal-400/20 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-32 left-1/3 h-72 w-72 rounded-full bg-sky-400/10 blur-3xl" />
@@ -419,14 +422,21 @@ export default function DavomatBloklashPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {canAudit ? (
+            {canAudit || isAdmin ? (
               <div className="inline-flex rounded-2xl bg-white/10 p-1 ring-1 ring-white/15 backdrop-blur">
                 <HeroTab active={tab === "xodimlar"} onClick={() => setTab("xodimlar")}>
                   <Users className="h-4 w-4" /> Xodimlar
                 </HeroTab>
-                <HeroTab active={tab === "tarix"} onClick={() => setTab("tarix")}>
-                  <History className="h-4 w-4" /> Tarix
-                </HeroTab>
+                {isAdmin ? (
+                  <HeroTab active={tab === "unvonlar"} onClick={() => setTab("unvonlar")}>
+                    <Award className="h-4 w-4" /> Unvon berish
+                  </HeroTab>
+                ) : null}
+                {canAudit ? (
+                  <HeroTab active={tab === "tarix"} onClick={() => setTab("tarix")}>
+                    <History className="h-4 w-4" /> Tarix
+                  </HeroTab>
+                ) : null}
               </div>
             ) : null}
             {tab === "xodimlar" ? (
@@ -443,7 +453,7 @@ export default function DavomatBloklashPage() {
           </div>
         </div>
 
-        <div className="relative mt-7 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <div className={cn("relative mt-7 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6", tab === "unvonlar" && "hidden")}>
           <HeroStat icon={<Users className="h-4 w-4" />} label="Jami xodim" value={totals.all} />
           <HeroStat icon={<Building2 className="h-4 w-4" />} label="Ofis" value={totals.ofis} />
           <HeroStat icon={<Store className="h-4 w-4" />} label="Dorixona" value={totals.dorixona} />
@@ -453,7 +463,9 @@ export default function DavomatBloklashPage() {
         </div>
       </section>
 
-      {tab === "tarix" && canAudit ? (
+      {tab === "unvonlar" && isAdmin ? (
+        <UnvonPanel />
+      ) : tab === "tarix" && canAudit ? (
         <div className="rounded-[24px] border border-slate-200/80 bg-white p-4 shadow-sm sm:p-6">
           <BloklashTarix />
         </div>
@@ -572,7 +584,7 @@ export default function DavomatBloklashPage() {
             </div>
 
             {loading ? (
-              <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+              <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr))]">
                 {Array.from({ length: 6 }, (_, i) => (
                   <div key={i} className="h-[300px] animate-pulse rounded-[24px] border border-slate-200 bg-white p-5">
                     <div className="flex items-center gap-3">
@@ -602,7 +614,7 @@ export default function DavomatBloklashPage() {
                 ) : null}
               </div>
             ) : (
-              <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+              <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr))]">
                 {view.map((row) => (
                   <EmployeeCard
                     key={row.userId}

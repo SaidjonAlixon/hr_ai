@@ -46,6 +46,7 @@ export type DavomatEmployee = {
   location: string | null;
   orgRole: string | null;
   userRole?: string | null;
+  userId?: number | null;
   shiftType?: string | null;
   shiftLabel?: string | null;
   /** Omborxona xodimi (ofis/apteka guruhlariga kirmaydi) */

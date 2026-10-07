@@ -10,6 +10,7 @@ import React, {
 } from "react";
 import { useGetDepartments } from "@workspace/api-client-react";
 import { useLocation, useSearch } from "wouter";
+import { VerifiedName } from "@/components/VerifiedBadge";
 import {
   Building2,
   CalendarDays,
@@ -3982,8 +3983,8 @@ function PeriodAttendanceGrid({
                         )}
                         style={{ width: NAME_W, minWidth: NAME_W, left: NUM_W }}
                       >
-                        <div className="truncate font-medium text-foreground" title={emp.fullName}>
-                          {emp.fullName}
+                        <div className="flex font-medium text-foreground" title={emp.fullName}>
+                          <VerifiedName name={emp.fullName} role={emp.userRole || emp.position} userId={emp.userId} size="xs" />
                         </div>
                         <div className="truncate text-[10px] text-muted-foreground">
                           {emp.position ? `${userRoleLabel(emp.position)} · ` : ""}

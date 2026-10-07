@@ -414,6 +414,33 @@
   @apply block truncate text-[12px] font-semibold leading-tight text-slate-900;
 }
 
+/* Tasdiqlangan belgi — har soniyada chapga/o‘ngga tebranadi */
+@keyframes verified-badge-sway {
+  0%,
+  100% {
+    transform: rotate(-16deg) scale(1);
+  }
+  50% {
+    transform: rotate(16deg) scale(1.06);
+  }
+}
+
+.verified-badge-sway {
+  transform-origin: 50% 50%;
+  animation: verified-badge-sway 2s ease-in-out infinite;
+  overflow: visible;
+}
+
+.verified-badge:hover .verified-badge-sway {
+  animation-duration: 0.8s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .verified-badge-sway {
+    animation: none;
+  }
+}
+
 .dark .app-sidebar-profile-name {
   @apply text-white;
 }

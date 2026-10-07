@@ -8,6 +8,7 @@ import {
   type Employee,
 } from "@workspace/api-client-react";
 import { FileDown, FileSpreadsheet, Loader2, Search, Users } from "lucide-react";
+import { VerifiedName } from "@/components/VerifiedBadge";
 import { scriptIncludes } from "../../lib/script-search";
 import { isDorixonaStaffLike } from "../../lib/staff-workplace";
 import { isVacancyPlaceholder } from "../../lib/vacancy-slot";
@@ -92,6 +93,7 @@ type StaffRow = Employee & {
   phone?: string | null;
   login?: string | null;
   userRole?: string | null;
+  userId?: number | null;
   employmentStatus?: string | null;
 };
 
@@ -927,7 +929,12 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                           <StaffAvatar employee={e} />
                         </td>
                         <td className="px-3 py-2.5 font-medium text-foreground">
-                          <div>{formatPersonName(e.fullName)}</div>
+                          <VerifiedName
+                            name={formatPersonName(e.fullName)}
+                            role={staffContact(e).userRole}
+                            userId={staffContact(e).userId}
+                            className="flex"
+                          />
                           {staffContact(e).phone ? (
                             <div className="text-xs font-normal text-muted-foreground">{staffContact(e).phone}</div>
                           ) : null}
@@ -959,7 +966,12 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="text-[11px] text-muted-foreground">#{i + 1}</p>
-                          <p className="truncate font-semibold text-foreground">{formatPersonName(e.fullName)}</p>
+                          <VerifiedName
+                            name={formatPersonName(e.fullName)}
+                            role={staffContact(e).userRole}
+                            userId={staffContact(e).userId}
+                            className="flex font-semibold text-foreground"
+                          />
                           {staffContact(e).phone ? (
                             <p className="text-xs text-muted-foreground">{staffContact(e).phone}</p>
                           ) : null}

@@ -40,6 +40,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { isOptionalUzPhoneValid, normalizeUzPhone, UZ_PHONE_HINT } from "@/lib/phone";
 import { canManageDistribyutsiya, canViewDistribyutsiya, hasFullPlatformAccess, userRoleLabel } from "@/lib/roles";
+import { VerifiedName } from "@/components/VerifiedBadge";
 import { StaffLoginCredsPanel } from "@/components/dept/StaffLoginCredsPanel";
 import {
   downloadDistribStaffExcel,
@@ -326,7 +327,9 @@ export default function DistribyutsiyaPage() {
                   {staffQ.data.staff.map((row, i) => (
                     <tr key={row.userId} className="border-t border-border/70">
                       <td className="px-3 py-2.5 tabular-nums text-muted-foreground">{i + 1}</td>
-                      <td className="px-3 py-2.5 font-medium">{row.fullName}</td>
+                      <td className="px-3 py-2.5 font-medium">
+                        <VerifiedName name={row.fullName} role={row.role} userId={row.userId} className="flex" />
+                      </td>
                       <td className="px-3 py-2.5">{row.position || "—"}</td>
                       <td className="px-3 py-2.5 text-muted-foreground">{userRoleLabel(row.role)}</td>
                       <td className="px-3 py-2.5 font-mono text-xs">{row.login}</td>

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { VerifiedBadge, VerifiedName } from "@/components/VerifiedBadge";
 import { useGetEmployees, useGetUsers, type Employee, type User } from "@workspace/api-client-react";
 import { displayBranchName } from "@/lib/pharmacy-staff-api";
 import { isVacancyPlaceholder } from "@/lib/vacancy-slot";
@@ -41,6 +42,12 @@ type OrgNode = {
   id: string;
   label: string;
   hint?: string;
+  /** label shaxs ismi bo‘lsa — uning roli (tasdiqlangan belgi uchun) */
+  role?: string;
+  userId?: number;
+  /** hint shaxs ismi bo‘lsa (Ta’sischi / Direktor kartasi) */
+  hintRole?: string;
+  hintUserId?: number;
   tone: ToneKey;
   icon: React.ComponentType<{ className?: string }>;
   children?: OrgNode[];
@@ -284,6 +291,8 @@ function officePeopleForDept(
       return {
         id: `emp-${e.id}`,
         label: e.fullName,
+        role: u?.role,
+        userId: u?.id,
         hint: (u?.role && DEPT_ROLE_HINT[u.role]) || e.position || "Bo‘lim xodimi",
         tone,
         icon,
@@ -316,6 +325,8 @@ function extraUsersForDept(
     .map((u) => ({
       id: `user-${u.id}`,
       label: u.fullName,
+      role: u.role,
+      userId: u.id,
       hint: DEPT_ROLE_HINT[u.role] || "Bo‘lim xodimi",
       tone,
       icon,
@@ -517,6 +528,8 @@ function makeManagerBranchLive(
   return {
     id: `hr-menejer-${n}`,
     label: managerUser?.fullName || "HR Menejer",
+    role: managerUser ? "hr_menejer" : undefined,
+    userId: managerUser?.id,
     hint: `${n}-yo‘nalish`,
     tone: "manager",
     icon: Briefcase,
@@ -629,6 +642,8 @@ function buildHrTree(employees: Employee[], users: User[]): OrgNode {
   return {
     id: "hr-direktor",
     label: direktor?.fullName || "HR Direktor",
+    role: direktor ? "hr_direktor" : undefined,
+    userId: direktor?.id,
     hint: "Strategiya",
     tone: "director",
     icon: Crown,
@@ -638,6 +653,8 @@ function buildHrTree(employees: Employee[], users: User[]): OrgNode {
             {
               id: "hr-kadr-rahbar",
               label: kadrRahbar.fullName,
+              role: "hr_kadr_rahbar",
+              userId: kadrRahbar.id,
               hint: "HR kadr b/m",
               tone: "director" as const,
               icon: Briefcase,
@@ -673,6 +690,8 @@ function makeOrgTree(hr: OrgNode, employees: Employee[], users: User[]): OrgNode
     id: "tasischi",
     label: "Ta’sischi",
     hint: asoschi?.fullName || "Muassis",
+    hintRole: asoschi ? "asoschi" : undefined,
+    hintUserId: asoschi?.id,
     tone: "founder",
     icon: Landmark,
     children: [
@@ -680,6 +699,8 @@ function makeOrgTree(hr: OrgNode, employees: Employee[], users: User[]): OrgNode
         id: "direktor",
         label: "Direktor",
         hint: direktorUser?.fullName || "Umumiy rahbar",
+        hintRole: direktorUser ? "director" : undefined,
+        hintUserId: direktorUser?.id,
         tone: "director",
         icon: Building2,
         children: DEPT_META.map((d) => {
@@ -867,7 +888,10 @@ function NodeCard({
             <span className="min-w-0">
               <span className="block text-[15px] font-semibold leading-tight tracking-tight">{node.label}</span>
               {node.hint ? (
-                <span className="mt-0.5 block text-[11px] text-white/75">{node.hint}</span>
+                <span className="mt-0.5 flex items-center gap-1 text-[11px] text-white/85">
+                  <span className="truncate">{node.hint}</span>
+                  <VerifiedBadge role={node.hintRole} userId={node.hintUserId} name={node.hint} size="sm" />
+                </span>
               ) : null}
             </span>
           </div>
@@ -905,8 +929,9 @@ function NodeCard({
               <Icon className="h-4 w-4" />
             </span>
             <span className="min-w-0">
-              <span className="block text-[13px] font-semibold leading-tight tracking-tight text-foreground">
-                {node.label}
+              <span className="flex items-center gap-1 text-[13px] font-semibold leading-tight tracking-tight text-foreground">
+                <span>{node.label}</span>
+                <VerifiedBadge role={node.role} userId={node.userId} name={node.label} size="sm" />
               </span>
               {node.hint ? (
                 <span className="mt-0.5 block text-[11px] leading-tight text-muted-foreground">{node.hint}</span>
@@ -1122,7 +1147,13 @@ function TeamCard({
         <Icon className="h-5 w-5" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[14px] font-semibold leading-tight text-foreground">{node.label}</span>
+        <VerifiedName
+          name={node.label}
+          role={node.role}
+          userId={node.userId}
+          size="md"
+          className="flex text-[14px] font-semibold leading-tight text-foreground"
+        />
         {node.hint ? (
           <span className="mt-0.5 block truncate text-[12px] text-muted-foreground">{node.hint}</span>
         ) : null}

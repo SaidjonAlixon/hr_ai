@@ -500,6 +500,7 @@ ALTER TABLE coordinator_branch_visits ADD COLUMN IF NOT EXISTS presence_unlock_r
 ALTER TABLE coordinator_branch_visits ADD COLUMN IF NOT EXISTS presence_unlocked_at TIMESTAMPTZ;
 ALTER TABLE coordinator_branch_visits ADD COLUMN IF NOT EXISTS presence_unlocked_by_id INTEGER;
 ALTER TABLE coordinator_branch_visits ADD COLUMN IF NOT EXISTS presence_frozen_at TIMESTAMPTZ;
+ALTER TABLE coordinator_branch_visits ADD COLUMN IF NOT EXISTS checklist_started_at TIMESTAMPTZ;
 
 -- Employees GPS (checklist geofence) + employment + org
 DO $$
@@ -1833,6 +1834,30 @@ CREATE TABLE IF NOT EXISTS staff_comments (
 );
 CREATE INDEX IF NOT EXISTS staff_comments_user_idx ON staff_comments (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS staff_comments_dept_date_idx ON staff_comments (department_id, related_date);
+CREATE TABLE IF NOT EXISTS user_titles (
+  user_id INTEGER PRIMARY KEY,
+  title TEXT,
+  note TEXT,
+  pro_hidden BOOLEAN NOT NULL DEFAULT FALSE,
+  pro_note TEXT,
+  assigned_by_id INTEGER,
+  assigned_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS user_title_history (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  action TEXT NOT NULL,
+  title TEXT,
+  prev_title TEXT,
+  note TEXT,
+  actor_id INTEGER,
+  actor_name TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS user_title_history_created_idx ON user_title_history (created_at DESC);
+CREATE INDEX IF NOT EXISTS user_title_history_user_idx ON user_title_history (user_id, created_at DESC);
+ALTER TABLE user_titles ADD COLUMN IF NOT EXISTS pro_tier TEXT;
 `;
 
 const WAREHOUSE_SHIFTS_SQL = `

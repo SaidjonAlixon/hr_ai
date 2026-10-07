@@ -1519,6 +1519,7 @@ function buildReport(
         location: e.location,
         orgRole: e.orgRole,
         userRole: e.userRole,
+        userId: e.userId ?? null,
         phone: e.phone ?? null,
         shiftType: clientShiftType(e.shiftType, e.shiftLabel),
         shiftLabel: e.shiftLabel,

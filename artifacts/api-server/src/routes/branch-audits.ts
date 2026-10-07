@@ -1682,6 +1682,7 @@ router.get("/branch-audits/visit-monitor", requireAuth, async (req: AuthRequest,
     const withChecklist = branchItems.filter((i) => i.checklistAt).length;
     const avgStay = avg(branchItems.filter((i) => !i.stillOpen).map((i) => i.durationMinutes));
     const avgChecklistLag = avg(branchItems.map((i) => i.checklistAfterCheckInMinutes));
+    const avgChecklistFill = avg(branchItems.map((i) => i.checklistFillMinutes));
     const avgAfterChecklist = avg(
       branchItems.filter((i) => !i.stillOpen).map((i) => i.checklistToCheckoutMinutes),
     );
@@ -1703,6 +1704,8 @@ router.get("/branch-audits/visit-monitor", requireAuth, async (req: AuthRequest,
         avgStayLabel: formatDurationMinutes(avgStay),
         avgChecklistLagMinutes: avgChecklistLag,
         avgChecklistLagLabel: formatDurationMinutes(avgChecklistLag),
+        avgChecklistFillMinutes: avgChecklistFill,
+        avgChecklistFillLabel: formatDurationMinutes(avgChecklistFill),
         avgAfterChecklistMinutes: avgAfterChecklist,
         avgAfterChecklistLabel: formatDurationMinutes(avgAfterChecklist),
         officeCount: officeItems.length,
@@ -1932,10 +1935,12 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
 
     if (req.userRole === "koordinator" && req.userId && created) {
       try {
+        const startedRaw = req.body?.startedAt ? new Date(String(req.body.startedAt)) : null;
         await attachChecklistToOpenVisit({
           coordinatorUserId: req.userId,
           branchId: managerEmployeeId,
           auditId: created.id,
+          startedAt: startedRaw && Number.isFinite(startedRaw.getTime()) ? startedRaw : null,
         });
       } catch (e) {
         console.error("attach checklist to visit error:", e);

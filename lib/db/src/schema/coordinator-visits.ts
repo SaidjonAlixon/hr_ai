@@ -25,6 +25,8 @@ export const coordinatorBranchVisitsTable = pgTable(
     /** branch_audits.id — shu tashrifda saqlangan cheklist */
     checklistAuditId: integer("checklist_audit_id"),
     checklistAt: timestamp("checklist_at", { withTimezone: true }),
+    /** Cheklistga birinchi javob belgilangan lahza (davomiylik = checklistAt − shu) */
+    checklistStartedAt: timestamp("checklist_started_at", { withTimezone: true }),
     /** Ketdim — «bugun bu yerda nima qildingiz?» */
     checkoutNote: text("checkout_note"),
     /** Oxirgi marta yashil zonada o‘zini tasdiqlagan vaqt */

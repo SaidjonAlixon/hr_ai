@@ -71,6 +71,7 @@ import {
   X,
 } from "lucide-react";
 import { useI18n } from "@/i18n/I18nProvider";
+import { VerifiedBadge, VerifiedName } from "@/components/VerifiedBadge";
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Admin",
@@ -889,6 +890,7 @@ export default function ChatPage() {
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className="font-medium truncate">{c.title}</span>
+                      {!isGroup ? <VerifiedBadge role={c.peer?.role} userId={c.peer?.id} name={c.title} size="sm" /> : null}
                       <TypeBadge type={c.type} />
                     </div>
                     <span className="text-[11px] text-[#6c7a89] shrink-0">
@@ -956,6 +958,9 @@ export default function ChatPage() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <p className="font-medium truncate leading-tight">{activeChat.title}</p>
+                  {activeChat.type !== "group" ? (
+                    <VerifiedBadge role={activeChat.peer?.role} userId={activeChat.peer?.id} name={activeChat.title} size="md" />
+                  ) : null}
                   <TypeBadge type={activeChat.type} />
                 </div>
                 <button
@@ -1050,10 +1055,16 @@ export default function ChatPage() {
                     >
                       {showName && !deleted && (
                         <p
-                          className="text-[11px] font-semibold mb-0.5"
+                          className="text-[11px] font-semibold mb-0.5 flex items-center gap-1"
                           style={{ color: tintForId(m.senderId) }}
                         >
                           {m.senderName}
+                          <VerifiedBadge
+                            role={activeChat.members.find((x) => x.id === m.senderId)?.role}
+                            userId={m.senderId}
+                            name={m.senderName}
+                            size="xs"
+                          />
                         </p>
                       )}
                       {m.replyTo && !deleted && (
@@ -1534,7 +1545,7 @@ export default function ChatPage() {
                 >
                   <AvatarBubble name={u.fullName} size="sm" tint={tintForId(u.id)} />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{u.fullName}</p>
+                    <VerifiedName name={u.fullName} role={u.role} userId={u.id} className="flex text-sm font-medium" />
                     <p className="text-[11px] text-[#8b9aab]">
                       {ROLE_LABELS[u.role] || u.role}
                     </p>
@@ -1628,7 +1639,7 @@ export default function ChatPage() {
                 >
                   <AvatarBubble name={u.fullName} size="sm" tint={tintForId(u.id)} />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{u.fullName}</p>
+                    <VerifiedName name={u.fullName} role={u.role} userId={u.id} className="flex text-sm font-medium" />
                     <p className="text-[11px] text-[#8b9aab]">
                       {ROLE_LABELS[u.role] || u.role}
                     </p>
@@ -1678,10 +1689,12 @@ export default function ChatPage() {
               <div key={m.id} className="flex items-center gap-3 py-2.5">
                 <AvatarBubble name={m.fullName} size="sm" tint={tintForId(m.id)} />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium truncate">
-                    {m.fullName}
-                    {m.id === meId ? ` ${t("chat.you")}` : ""}
-                  </p>
+                  <VerifiedName
+                    name={`${m.fullName}${m.id === meId ? ` ${t("chat.you")}` : ""}`}
+                    role={m.role}
+                    userId={m.id}
+                    className="flex text-sm font-medium"
+                  />
                   <p className="text-[11px] text-[#8b9aab]">
                     {ROLE_LABELS[m.role] || m.role}
                   </p>

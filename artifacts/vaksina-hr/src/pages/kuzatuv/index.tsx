@@ -12,6 +12,7 @@ import {
   type KuzatuvPersonListItem,
 } from "@/lib/kuzatuv-api";
 import { cn } from "@/lib/utils";
+import { VerifiedName } from "@/components/VerifiedBadge";
 import { displayBranchName } from "@/lib/pharmacy-staff-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -437,7 +438,7 @@ function PersonDossier({
             </div>
             <div>
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-                {p.person.fullName}
+                <VerifiedName name={p.person.fullName} role={p.person.role} userId={p.person.id} size="xl" />
               </h1>
               <p className="text-sm text-muted-foreground">
                 {p.person.roleLabel || ROLE_LABELS[p.person.role] || p.person.role}
@@ -1258,7 +1259,7 @@ export default function KuzatuvPage() {
                     .toUpperCase()}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-semibold text-foreground">{p.fullName}</span>
+                  <VerifiedName name={p.fullName} role={p.role} userId={p.id} className="flex font-semibold text-foreground" />
                   <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-foreground">
                       {p.roleLabel}

@@ -47,7 +47,7 @@ export function ensureCallSchema(): Promise<void> {
        CREATE INDEX IF NOT EXISTS call_logs_caller_idx ON call_logs (caller_id, created_at DESC);
        CREATE INDEX IF NOT EXISTS call_logs_callee_idx ON call_logs (callee_id, created_at DESC);`,
     )
-    .then(() => undefined)
+    .then(() => rehydrateCalls().catch((err) => logger.warn({ err }, "calls rehydrate")))
     .catch((err) => {
       ready = null;
       throw err;
@@ -203,14 +203,87 @@ type Call = {
   calleeRole: string;
   video: boolean;
   status: CallStatus;
-  callerCid: string;
+  /** null — server qayta ishga tushgan, ishtirokchi hali qayta ulanmagan */
+  callerCid: string | null;
   calleeCid: string | null;
   createdAt: number;
   answeredAt: number | null;
   ringTimer: ReturnType<typeof setTimeout> | null;
+  rehydrated?: boolean;
 };
 
 const calls = new Map<string, Call>();
+
+/**
+ * Server qayta ishga tushsa (deploy, xotira limiti) xotiradagi qo‘ng‘iroqlar yo‘qolmasin:
+ * tugamagan qo‘ng‘iroqlar bazadan tiklanadi, mijozlar qayta ulanib o‘z joyini egallaydi.
+ */
+async function rehydrateCalls() {
+  await pool.query(
+    `UPDATE call_logs SET status = 'missed', ended_at = NOW(), end_reason = COALESCE(end_reason, 'restart')
+      WHERE status = 'ringing' AND ended_at IS NULL AND created_at < NOW() - INTERVAL '40 seconds'`,
+  );
+  await pool.query(
+    `UPDATE call_logs SET status = 'ended', ended_at = NOW(), end_reason = COALESCE(end_reason, 'restart')
+      WHERE status = 'answered' AND ended_at IS NULL AND answered_at < NOW() - INTERVAL '3 hours'`,
+  );
+  const { rows } = await pool.query(
+    `SELECT l.call_id, l.caller_id, l.callee_id, l.video, l.status, l.created_at, l.answered_at,
+            cu.full_name AS caller_name, cu.role AS caller_role, ce.full_name AS callee_name, ce.role AS callee_role
+       FROM call_logs l
+       JOIN users cu ON cu.id = l.caller_id
+       JOIN users ce ON ce.id = l.callee_id
+      WHERE l.ended_at IS NULL AND l.status IN ('ringing', 'answered')`,
+  );
+  let n = 0;
+  for (const r of rows) {
+    if (calls.has(r.call_id)) continue;
+    const createdAt = new Date(r.created_at).getTime();
+    const call: Call = {
+      id: r.call_id,
+      callerId: r.caller_id,
+      calleeId: r.callee_id,
+      callerName: r.caller_name,
+      calleeName: r.callee_name,
+      callerRole: r.caller_role,
+      calleeRole: r.callee_role,
+      video: Boolean(r.video),
+      status: r.status === "answered" ? "active" : "ringing",
+      callerCid: null,
+      calleeCid: null,
+      createdAt,
+      answeredAt: r.answered_at ? new Date(r.answered_at).getTime() : null,
+      ringTimer: null,
+      rehydrated: true,
+    };
+    if (call.status === "ringing") {
+      const left = Math.max(1000, RING_MS - (Date.now() - createdAt));
+      call.ringTimer = setTimeout(() => void endCall(call.id, null, "missed"), left);
+    }
+    calls.set(call.id, call);
+    n += 1;
+  }
+  if (n) {
+    logger.info({ n }, "calls rehydrated");
+    setTimeout(() => {
+      for (const c of calls.values()) {
+        if (c.rehydrated && !c.callerCid && !c.calleeCid) void endCall(c.id, null, "failed");
+      }
+    }, 60_000);
+  }
+}
+
+/** Qayta ulangan mijoz o‘z qo‘ng‘irog‘idagi joyini egallaydi */
+export async function rejoinCall(id: string, userId: number, cid: string): Promise<{ ok: boolean; call?: ReturnType<typeof publicCall> }> {
+  await ensureCallSchema().catch(() => undefined);
+  const call = calls.get(id);
+  if (!call || call.status === "ended") return { ok: false };
+  if (userId === call.callerId) call.callerCid = cid;
+  else if (userId === call.calleeId) {
+    if (call.status === "active") call.calleeCid = cid;
+  } else return { ok: false };
+  return { ok: true, call: publicCall(call) };
+}
 
 function publicCall(c: Call) {
   return {
@@ -322,7 +395,13 @@ export async function acceptCall(id: string, userId: number, cid: string): Promi
   const call = calls.get(id);
   if (!call || call.status === "ended") return { ok: false, error: "Qo‘ng‘iroq tugagan" };
   if (call.calleeId !== userId) return { ok: false, error: "Bu qo‘ng‘iroq sizga emas" };
-  if (call.status === "active") return { ok: false, error: "Boshqa qurilmada ko‘tarilgan" };
+  if (call.status === "active") {
+    if (call.calleeCid === cid || !call.calleeCid) {
+      call.calleeCid = cid;
+      return { ok: true };
+    }
+    return { ok: false, error: "Boshqa qurilmada ko‘tarilgan" };
+  }
   if (call.ringTimer) clearTimeout(call.ringTimer);
   call.ringTimer = null;
   call.status = "active";
@@ -366,8 +445,10 @@ export async function endCall(id: string, byUserId: number | null, reason: strin
 export function relaySignal(id: string, fromUserId: number, fromCid: string, data: unknown): { ok: boolean; error?: string } {
   const call = calls.get(id);
   if (!call || call.status === "ended") return { ok: false, error: "Qo‘ng‘iroq tugagan" };
+  if (fromUserId === call.callerId && !call.callerCid) call.callerCid = fromCid;
+  if (fromUserId === call.calleeId && !call.calleeCid && call.status === "active") call.calleeCid = fromCid;
   if (fromUserId === call.callerId && fromCid === call.callerCid) {
-    if (!call.calleeCid) return { ok: false, error: "Hali ko‘tarilmagan" };
+    if (call.status !== "active") return { ok: false, error: "Hali ko‘tarilmagan" };
     pushTo(call.calleeId, "signal", { id, data }, call.calleeCid);
     return { ok: true };
   }
@@ -377,6 +458,9 @@ export function relaySignal(id: string, fromUserId: number, fromCid: string, dat
   }
   return { ok: false, error: "Bu qo‘ng‘iroq ishtirokchisi emassiz" };
 }
+
+// Server ko‘tarilishi bilan tugamagan qo‘ng‘iroqlarni tiklash
+setTimeout(() => void ensureCallSchema().catch(() => undefined), 2000).unref?.();
 
 // ---------------------------------------------------------------- TURN
 

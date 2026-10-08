@@ -1,6 +1,7 @@
 import { Router, type IRouter, type Response } from "express";
 import { pool } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
+import { logger } from "../lib/logger";
 import {
   acceptCall,
   attachClient,
@@ -13,6 +14,7 @@ import {
   isOnline,
   loadCallUser,
   onlineUserIds,
+  rejoinCall,
   relaySignal,
   setCallPermission,
   startCall,
@@ -33,12 +35,14 @@ function denyUnlessAdmin(req: AuthRequest, res: Response): boolean {
   return true;
 }
 
-router.get("/calls/stream", requireAuth, (req: AuthRequest, res): void => {
+router.get("/calls/stream", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const cid = cidOf(req);
   if (!cid) {
     res.status(400).json({ error: "cid kerak" });
     return;
   }
+  await ensureCallSchema().catch(() => undefined);
+  if (req.socket.destroyed || res.writableEnded) return;
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
@@ -195,6 +199,20 @@ router.post("/calls/:id/accept", requireAuth, async (req: AuthRequest, res): Pro
   res.json({ ok: true, iceServers: iceServersFor(req.userId!) });
 });
 
+router.post("/calls/:id/rejoin", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const cid = cidOf(req);
+  if (!cid) {
+    res.status(400).json({ error: "cid kerak" });
+    return;
+  }
+  const out = await rejoinCall(String(req.params.id), req.userId!, cid);
+  if (!out.ok) {
+    res.status(404).json({ error: "Qo‘ng‘iroq tugagan" });
+    return;
+  }
+  res.json({ ok: true, call: out.call });
+});
+
 router.post("/calls/:id/end", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const id = String(req.params.id);
   const call = callFor(id);
@@ -220,6 +238,19 @@ router.post("/calls/:id/signal", requireAuth, (req: AuthRequest, res): void => {
     res.status(409).json({ error: out.error });
     return;
   }
+  res.json({ ok: true });
+});
+
+/** Mijozdagi WebRTC holati (getStats) — real qurilmalardagi video muammolarini aniqlash uchun loglarga yoziladi */
+router.post("/calls/:id/diag", requireAuth, (req: AuthRequest, res): void => {
+  const id = String(req.params.id).slice(0, 64);
+  const call = callFor(id);
+  if (call && call.callerId !== req.userId && call.calleeId !== req.userId) {
+    res.status(403).json({ error: "Bu qo‘ng‘iroq ishtirokchisi emassiz" });
+    return;
+  }
+  const raw = JSON.stringify(req.body ?? {});
+  logger.info({ callId: id, userId: req.userId, diag: raw.length > 4000 ? raw.slice(0, 4000) : raw }, "call diag");
   res.json({ ok: true });
 });
 

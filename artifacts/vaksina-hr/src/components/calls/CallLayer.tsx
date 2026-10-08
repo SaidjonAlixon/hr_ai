@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   ChevronDown,
@@ -20,6 +20,8 @@ import {
   ScreenShareOff,
   SendHorizontal,
   ShieldCheck,
+  SignalLow,
+  SignalMedium,
   SwitchCamera,
   Video,
   VideoOff,
@@ -99,6 +101,14 @@ function hasLiveVideo(stream: MediaStream | null) {
   return Boolean(stream?.getVideoTracks().some((t) => t.readyState === "live"));
 }
 
+/** Holat xabari (DataChannel) yetib kelmasa ham, kadrlar kelayotgan bo‘lsa video ko‘rsatiladi */
+function remoteVideoVisible(s: CallSnapshot) {
+  if (s.phase !== "active" || !hasLiveVideo(s.remoteStream)) return false;
+  return s.remote.cam || s.remote.share !== "none" || (s.rxVideo && !s.dcOpen);
+}
+
+type FrameVideo = HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number; cancelVideoFrameCallback?: (h: number) => void };
+
 function CallVideo({
   stream,
   muted = true,
@@ -106,6 +116,7 @@ function CallVideo({
   fit = "cover",
   className,
   videoRef,
+  expectFrames = false,
 }: {
   stream: MediaStream | null;
   muted?: boolean;
@@ -113,8 +124,12 @@ function CallVideo({
   fit?: "cover" | "contain";
   className?: string;
   videoRef?: (el: HTMLVideoElement | null) => void;
+  /** Kadrlar kelayotgani ma’lum (getStats) — element ko‘rsatmay qolsa qayta biriktiriladi */
+  expectFrames?: boolean;
 }) {
   const ref = useRef<HTMLVideoElement | null>(null);
+  const expectRef = useRef(expectFrames);
+  expectRef.current = expectFrames;
   const setRef = useCallback(
     (el: HTMLVideoElement | null) => {
       ref.current = el;
@@ -122,12 +137,71 @@ function CallVideo({
     },
     [videoRef],
   );
-  useEffect(() => {
-    const v = ref.current;
-    if (!v) return;
-    if (v.srcObject !== stream) v.srcObject = stream;
-    if (stream) void v.play().catch(() => undefined);
+  // Faqat video treklari: ovozli trek <video>da bo‘lsa iOS audio sessiyasi bilan to‘qnashadi
+  const videoOnly = useMemo(() => {
+    const tracks = stream?.getVideoTracks() ?? [];
+    return tracks.length ? new MediaStream(tracks) : null;
   }, [stream]);
+  useEffect(() => {
+    const v = ref.current as FrameVideo | null;
+    if (!v) return;
+    let lastAttach = 0;
+    const play = () => {
+      if (videoOnly) void v.play().catch(() => undefined);
+    };
+    const attach = (force: boolean) => {
+      if (force) {
+        if (Date.now() - lastAttach < 2500) return;
+        v.srcObject = null;
+      }
+      lastAttach = Date.now();
+      if (v.srcObject !== videoOnly) v.srcObject = videoOnly;
+      play();
+    };
+    attach(false);
+    if (!videoOnly) return;
+    const tracks = videoOnly.getVideoTracks();
+    // Safari: trek kadrsiz (muted) holatda ulangan bo‘lsa, kadrlar kelganda ham qora qolishi mumkin
+    const onUnmute = () => attach(true);
+    for (const t of tracks) t.addEventListener("unmute", onUnmute);
+    v.addEventListener("pause", play);
+    v.addEventListener("loadedmetadata", play);
+    v.addEventListener("stalled", play);
+
+    let lastFrame = Date.now();
+    let frameHandle = 0;
+    const onFrame = () => {
+      lastFrame = Date.now();
+      frameHandle = v.requestVideoFrameCallback?.(onFrame) ?? 0;
+    };
+    if (v.requestVideoFrameCallback) frameHandle = v.requestVideoFrameCallback(onFrame);
+    let lastTime = -1;
+    const watchdog = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      if (!tracks.some((t) => t.readyState === "live")) return;
+      if (v.paused) play();
+      if (!expectRef.current) {
+        lastFrame = Date.now();
+        return;
+      }
+      if (!v.requestVideoFrameCallback) {
+        if (v.currentTime !== lastTime) lastFrame = Date.now();
+        lastTime = v.currentTime;
+      }
+      if (Date.now() - lastFrame > 3000) {
+        lastFrame = Date.now();
+        attach(true);
+      }
+    }, 1000);
+    return () => {
+      clearInterval(watchdog);
+      if (frameHandle) v.cancelVideoFrameCallback?.(frameHandle);
+      for (const t of tracks) t.removeEventListener("unmute", onUnmute);
+      v.removeEventListener("pause", play);
+      v.removeEventListener("loadedmetadata", play);
+      v.removeEventListener("stalled", play);
+    };
+  }, [videoOnly]);
   return (
     <video
       ref={setRef}
@@ -143,12 +217,24 @@ function CallVideo({
 /** Ovoz alohida <audio> orqali — oyna kichraysa ham uzilmaydi */
 function RemoteAudio({ stream }: { stream: MediaStream | null }) {
   const ref = useRef<HTMLAudioElement>(null);
+  const audioOnly = useMemo(() => {
+    const tracks = stream?.getAudioTracks() ?? [];
+    return tracks.length ? new MediaStream(tracks) : null;
+  }, [stream]);
   useEffect(() => {
     const a = ref.current;
     if (!a) return;
-    if (a.srcObject !== stream) a.srcObject = stream;
-    if (stream) void a.play().catch(() => undefined);
-  }, [stream]);
+    if (a.srcObject !== audioOnly) a.srcObject = audioOnly;
+    if (!audioOnly) return;
+    const play = () => void a.play().catch(() => undefined);
+    play();
+    a.addEventListener("pause", play);
+    document.addEventListener("visibilitychange", play);
+    return () => {
+      a.removeEventListener("pause", play);
+      document.removeEventListener("visibilitychange", play);
+    };
+  }, [audioOnly]);
   return <audio ref={ref} autoPlay playsInline className="hidden" />;
 }
 
@@ -448,7 +534,8 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
   const [stage, setStage] = useState<HTMLDivElement | null>(null);
   const [chrome, setChrome] = useState(true);
   const remoteSharing = s.remote.share !== "none";
-  const showRemoteVideo = hasLiveVideo(s.remoteStream) && (s.remote.cam || remoteSharing) && s.phase === "active";
+  const showRemoteVideo = remoteVideoVisible(s);
+  const videoPending = showRemoteVideo && !s.rxVideo;
   const isAdmin = Boolean(s.me?.isAdmin);
   const live = s.phase === "active";
   const controller = s.controlSide === "controller";
@@ -477,6 +564,7 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
             fit={remoteSharing ? "contain" : "cover"}
             mirror={!remoteSharing && s.remote.facing === "user"}
             videoRef={setVideoEl}
+            expectFrames={s.rxVideo}
           />
         ) : (
           <>
@@ -506,6 +594,14 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
           </>
         )}
         {controller && showRemoteVideo && s.remote.share === "app" ? <ControlSurface video={videoEl} container={stage} /> : null}
+        {videoPending ? (
+          <div className="pointer-events-none absolute inset-x-0 bottom-[calc(max(1.25rem,env(safe-area-inset-bottom))+9.5rem)] z-[5] flex justify-center">
+            <span className="inline-flex items-center gap-2 rounded-full bg-black/60 px-3.5 py-1.5 text-xs text-white/90 backdrop-blur-md">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {remoteSharing ? "Ekran tasviri kutilmoqda…" : "Video ulanmoqda…"}
+            </span>
+          </div>
+        ) : null}
       </div>
 
       {/* yuqori panel */}
@@ -541,7 +637,17 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
             )}
           </div>
           <div className="flex h-10 w-10 items-center justify-center">
-            {s.conn === "reconnecting" ? <WifiOff className="h-5 w-5 animate-pulse text-amber-300" /> : null}
+            {s.conn === "reconnecting" ? (
+              <WifiOff className="h-5 w-5 animate-pulse text-amber-300" />
+            ) : live && s.quality === "poor" ? (
+              <span title="Internet aloqasi sust" className="flex">
+                <SignalLow className="h-5 w-5 text-red-400" />
+              </span>
+            ) : live && s.quality === "weak" ? (
+              <span title="Internet aloqasi o‘rtacha" className="flex">
+                <SignalMedium className="h-5 w-5 text-amber-300" />
+              </span>
+            ) : null}
           </div>
         </div>
         {live && !s.remote.mic ? (
@@ -653,7 +759,7 @@ function Chip({ onClick, disabled, icon, children }: { onClick: () => void; disa
 function MiniCall({ s }: { s: CallSnapshot }) {
   const peer = s.peer!;
   const now = useNow(s.phase === "active");
-  const showVideo = hasLiveVideo(s.remoteStream) && (s.remote.cam || s.remote.share !== "none") && s.phase === "active";
+  const showVideo = remoteVideoVisible(s);
   return (
     <div
       data-call-ui=""
@@ -662,7 +768,7 @@ function MiniCall({ s }: { s: CallSnapshot }) {
       <button type="button" onClick={() => callEngine.setMinimized(false)} className="flex items-center gap-2.5 text-left">
         <div className="relative h-12 w-12 overflow-hidden rounded-xl">
           {showVideo ? (
-            <CallVideo stream={s.remoteStream} fit={s.remote.share !== "none" ? "contain" : "cover"} />
+            <CallVideo stream={s.remoteStream} fit={s.remote.share !== "none" ? "contain" : "cover"} expectFrames={s.rxVideo} />
           ) : (
             <CallAvatar id={peer.id} name={peer.fullName} className="h-12 w-12 rounded-xl text-base" />
           )}

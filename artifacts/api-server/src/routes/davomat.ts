@@ -1258,7 +1258,22 @@ async function scopeDavomatViewer<
 }
 
 const davomatAnalyticsCache = new Map<string, { at: number; body: unknown }>();
-const DAVOMAT_ANALYTICS_CACHE_MS = 25_000;
+const DAVOMAT_ANALYTICS_CACHE_MS = 90_000;
+/** Bir xil kalit bir vaqtda faqat bir marta hisoblanadi; og‘ir hisoblar navbat bilan (xotira 3+ GB ga chiqib API qayta yiqilmasin) */
+const davomatAnalyticsInflight = new Map<string, Promise<unknown>>();
+let davomatAnalyticsQueue: Promise<unknown> = Promise.resolve();
+
+function runDavomatAnalytics(key: string, compute: () => Promise<unknown>): Promise<unknown> {
+  const existing = davomatAnalyticsInflight.get(key);
+  if (existing) return existing;
+  const job = davomatAnalyticsQueue.then(compute, compute);
+  davomatAnalyticsQueue = job.catch(() => undefined);
+  const tracked = job.finally(() => {
+    if (davomatAnalyticsInflight.get(key) === tracked) davomatAnalyticsInflight.delete(key);
+  });
+  davomatAnalyticsInflight.set(key, tracked);
+  return tracked;
+}
 
 function readDavomatAnalyticsCache(key: string): unknown | null {
   const hit = davomatAnalyticsCache.get(key);
@@ -1765,34 +1780,41 @@ router.get("/davomat/analytics", requireAuth, async (req: AuthRequest, res): Pro
       }
     }
 
-    let employees = await loadDavomatEmployees({}, from, to);
-    employees = await scopeDavomatViewer(req.userRole, req.userId, employees);
+    const userRole = req.userRole;
+    const userId = req.userId;
+    const body = await runDavomatAnalytics(cacheKey, async () => {
+      if (!fresh) {
+        const again = readDavomatAnalyticsCache(cacheKey);
+        if (again) return again;
+      }
+      let employees = await loadDavomatEmployees({}, from, to);
+      employees = await scopeDavomatViewer(userRole, userId, employees);
 
-    const employeeIds = employees.map((e) => e.id);
-    const span = eachDateInclusive(from, to).length;
-    const prevTo = addDays(from, -1);
-    const prevFrom = addDays(prevTo, -(span - 1));
-    const [defs, allRecords] = await Promise.all([
-      getEffectiveShiftDefs(),
-      loadRecords(prevFrom, to, employeeIds),
-    ]);
-    const records = allRecords.filter((r) => r.workDate >= from && r.workDate <= to);
-    const prevRecords = allRecords.filter((r) => r.workDate >= prevFrom && r.workDate <= prevTo);
-    const [report, prevReport] = await Promise.all([
-      buildReportWithJavob(employees, records, from, to, defs),
-      buildReportWithJavob(employees, prevRecords, prevFrom, prevTo, defs),
-    ]);
+      const employeeIds = employees.map((e) => e.id);
+      const span = eachDateInclusive(from, to).length;
+      const prevTo = addDays(from, -1);
+      const prevFrom = addDays(prevTo, -(span - 1));
+      const [defs, allRecords] = await Promise.all([
+        getEffectiveShiftDefs(),
+        loadRecords(prevFrom, to, employeeIds),
+      ]);
+      const records = allRecords.filter((r) => r.workDate >= from && r.workDate <= to);
+      const prevRecords = allRecords.filter((r) => r.workDate >= prevFrom && r.workDate <= prevTo);
+      const report = await buildReportWithJavob(employees, records, from, to, defs);
+      const prevReport = await buildReportWithJavob(employees, prevRecords, prevFrom, prevTo, defs);
 
-    const meta = employees.map((e) => ({
-      id: e.id,
-      userRole: e.userRole ?? null,
-      orgRole: e.orgRole ?? null,
-      shiftType: e.shiftType ?? null,
-      shiftLabel: e.shiftLabel ?? null,
-    }));
+      const meta = employees.map((e) => ({
+        id: e.id,
+        userRole: e.userRole ?? null,
+        orgRole: e.orgRole ?? null,
+        shiftType: e.shiftType ?? null,
+        shiftLabel: e.shiftLabel ?? null,
+      }));
 
-    const body = buildDavomatAnalytics(report, meta, segment, prevReport);
-    writeDavomatAnalyticsCache(cacheKey, body);
+      const built = buildDavomatAnalytics(report, meta, segment, prevReport);
+      writeDavomatAnalyticsCache(cacheKey, built);
+      return built;
+    });
     res.json(body);
   } catch (err) {
     console.error("GET /davomat/analytics error:", err);

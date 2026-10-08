@@ -6,7 +6,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import type { Response } from "express";
 import { pool } from "@workspace/db";
 import { logger } from "./logger";
-import { sendWebPushToUser } from "./web-push";
+import { countUserPushSubscriptions, sendWebPushToUser } from "./web-push";
 
 export const CALL_ADMIN_ROLES = new Set(["admin"]);
 const RING_MS = 45_000;
@@ -344,7 +344,8 @@ export async function startCall(input: {
     }
   }
   if (busy(caller.id)) return { ok: false, status: 409, error: "Sizda faol qo‘ng‘iroq bor", code: "self_busy" };
-  if (!isOnline(callee.id)) {
+  // Brauzer fonda uzoq tursa SSE uziladi — push obunasi bo‘lsa telefon baribir jiringlaydi
+  if (!isOnline(callee.id) && !(await countUserPushSubscriptions(callee.id).catch(() => 0))) {
     return { ok: false, status: 409, error: `${callee.fullName} hozir platformada emas (oflayn)`, code: "offline" };
   }
 
@@ -381,12 +382,18 @@ export async function startCall(input: {
   call.ringTimer = setTimeout(() => void endCall(id, null, "missed"), RING_MS);
 
   pushTo(callee.id, "incoming", publicCall(call));
-  void sendWebPushToUser(callee.id, {
-    title: video ? "📹 Video qo‘ng‘iroq" : "📞 Qo‘ng‘iroq",
-    body: `${caller.fullName} sizga qo‘ng‘iroq qilmoqda`,
-    url: `/qongiroq?call=${id}`,
-    tag: `call-${id}`,
-  }).catch(() => undefined);
+  // Ilova fonda bo‘lsa ham: bildirishnomada «Ko‘tarish» / «Rad etish», jiringlash takrorlanadi
+  void sendWebPushToUser(
+    callee.id,
+    {
+      title: video ? "📹 Video qo‘ng‘iroq" : "📞 Qo‘ng‘iroq",
+      body: `${caller.fullName} sizga qo‘ng‘iroq qilmoqda`,
+      url: `/qongiroq?call=${id}`,
+      tag: `call-${id}`,
+      data: { kind: "call", callId: id, video, ringMs: RING_MS },
+    },
+    { ttl: Math.ceil(RING_MS / 1000) },
+  ).catch(() => undefined);
 
   return { ok: true, call: publicCall(call) };
 }
@@ -412,7 +419,23 @@ export async function acceptCall(id: string, userId: number, cid: string): Promi
   pushTo(call.callerId, "accepted", data, call.callerCid);
   const set = clients.get(userId);
   if (set) for (const c of set.values()) if (c.cid !== cid) write(c, "taken", { id });
+  stopRingPush(call, false);
   return { ok: true };
+}
+
+/** Boshqa qurilmalardagi jiringlayotgan bildirishnoma to‘xtasin; javobsiz qolgan bo‘lsa — «Javobsiz qo‘ng‘iroq» */
+function stopRingPush(call: Call, missed: boolean) {
+  void sendWebPushToUser(
+    call.calleeId,
+    {
+      title: missed ? (call.video ? "📵 Javobsiz video qo‘ng‘iroq" : "📵 Javobsiz qo‘ng‘iroq") : "Qo‘ng‘iroq",
+      body: missed ? call.callerName : "",
+      url: "/qongiroq",
+      tag: `call-${call.id}`,
+      data: { kind: "call-end", callId: call.id, missed },
+    },
+    { ttl: 120 },
+  ).catch(() => undefined);
 }
 
 const FINAL: Record<string, string> = {
@@ -437,8 +460,11 @@ export async function endCall(id: string, byUserId: number | null, reason: strin
   const payload = { id, reason: status, by: byUserId };
   if (byUserId !== call.callerId) pushTo(call.callerId, "ended", payload, call.callerCid);
   // Jiringlayotgan bo‘lsa — barcha qurilmalarida to‘xtasin
-  if (wasRinging) pushTo(call.calleeId, "ended", payload);
-  else if (byUserId !== call.calleeId) pushTo(call.calleeId, "ended", payload, call.calleeCid);
+  if (wasRinging) {
+    pushTo(call.calleeId, "ended", payload);
+    // O‘zi rad etgan bo‘lsa — bildirishnoma allaqachon yopilgan
+    if (status !== "declined") stopRingPush(call, true);
+  } else if (byUserId !== call.calleeId) pushTo(call.calleeId, "ended", payload, call.calleeCid);
   return true;
 }
 

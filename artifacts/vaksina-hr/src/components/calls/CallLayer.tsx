@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
-import { callEngine, endedText, useCall, type CallSnapshot } from "@/lib/calls/engine";
+import { callEngine, endedText, isControllableShare, useCall, type CallSnapshot } from "@/lib/calls/engine";
 
 // ---------------------------------------------------------------- yordamchilar
 
@@ -343,6 +343,36 @@ function ControlSurface({ video, container }: { video: HTMLVideoElement | null; 
   const drag = useRef<{ x: number; y: number; lx: number; ly: number; moved: boolean; id: number } | null>(null);
   const pending = useRef<{ x: number; y: number; dx: number; dy: number } | null>(null);
   const raf = useRef(0);
+  const cursor = useRef<HTMLDivElement>(null);
+  const move = useRef<{ at: number; timer: ReturnType<typeof setTimeout> | null; last: { x: number; y: number } | null }>({
+    at: 0,
+    timer: null,
+    last: null,
+  });
+
+  useEffect(() => () => {
+    if (move.current.timer) clearTimeout(move.current.timer);
+  }, []);
+
+  /** Kursor darhol shu yerda chiziladi; xodimga ~25 marta/s yuboriladi */
+  const pointAt = (clientX: number, clientY: number) => {
+    const el = surface.current;
+    const c = cursor.current;
+    if (!el || !c) return;
+    const r = el.getBoundingClientRect();
+    c.style.opacity = "1";
+    c.style.transform = `translate(${clientX - r.left}px, ${clientY - r.top}px)`;
+    const m = move.current;
+    m.last = { x: (clientX - r.left) / r.width, y: (clientY - r.top) / r.height };
+    const send = () => {
+      m.timer = null;
+      m.at = Date.now();
+      if (m.last) callEngine.sendControl({ e: "move", ...m.last });
+    };
+    const wait = 40 - (Date.now() - m.at);
+    if (wait <= 0) send();
+    else if (!m.timer) m.timer = setTimeout(send, wait);
+  };
 
   useLayoutEffect(() => {
     if (!video || !container) return;
@@ -393,14 +423,20 @@ function ControlSurface({ video, container }: { video: HTMLVideoElement | null; 
     <div
       ref={surface}
       tabIndex={0}
-      className="absolute cursor-crosshair touch-none rounded-sm outline-none ring-2 ring-sky-400/70 focus:ring-sky-300"
+      className="absolute cursor-none touch-none overflow-hidden rounded-sm outline-none ring-2 ring-sky-400/70 focus:ring-sky-300"
       style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
       onPointerDown={(e) => {
         surface.current?.focus({ preventScroll: true });
         e.currentTarget.setPointerCapture(e.pointerId);
+        pointAt(e.clientX, e.clientY);
+        cursor.current?.classList.add("scale-90");
         drag.current = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, id: e.pointerId };
       }}
+      onPointerLeave={(e) => {
+        if (e.pointerType === "mouse" && cursor.current) cursor.current.style.opacity = "0";
+      }}
       onPointerMove={(e) => {
+        pointAt(e.clientX, e.clientY);
         const d = drag.current;
         if (!d || d.id !== e.pointerId) return;
         if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 8) d.moved = true;
@@ -412,6 +448,7 @@ function ControlSurface({ video, container }: { video: HTMLVideoElement | null; 
         d.ly = e.clientY;
       }}
       onPointerUp={(e) => {
+        cursor.current?.classList.remove("scale-90");
         const d = drag.current;
         drag.current = null;
         if (!d || d.moved) return;
@@ -419,6 +456,7 @@ function ControlSurface({ video, container }: { video: HTMLVideoElement | null; 
         callEngine.sendControl({ e: "tap", x, y });
       }}
       onPointerCancel={() => {
+        cursor.current?.classList.remove("scale-90");
         drag.current = null;
       }}
       onWheel={(e) => {
@@ -435,7 +473,16 @@ function ControlSurface({ video, container }: { video: HTMLVideoElement | null; 
           callEngine.sendControl({ e: "text", value: e.key });
         }
       }}
-    />
+    >
+      <div
+        ref={cursor}
+        className="pointer-events-none absolute left-0 top-0 z-10 opacity-0 transition-[scale] duration-100 will-change-transform"
+      >
+        <svg width="26" height="26" viewBox="0 0 24 24" className="-ml-[3px] -mt-[2px] block drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]">
+          <path d="M4 2.5l15.5 9.2-6.9 1.5-3.3 6.4L4 2.5z" fill="#fff" stroke="#0f172a" strokeWidth="1.6" strokeLinejoin="round" />
+        </svg>
+      </div>
+    </div>
   );
 }
 
@@ -593,7 +640,7 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
             </div>
           </>
         )}
-        {controller && showRemoteVideo && s.remote.share === "app" ? <ControlSurface video={videoEl} container={stage} /> : null}
+        {controller && showRemoteVideo && isControllableShare(s.remote.share) ? <ControlSurface video={videoEl} container={stage} /> : null}
         {videoPending ? (
           <div className="pointer-events-none absolute inset-x-0 bottom-[calc(max(1.25rem,env(safe-area-inset-bottom))+9.5rem)] z-[5] flex justify-center">
             <span className="inline-flex items-center gap-2 rounded-full bg-black/60 px-3.5 py-1.5 text-xs text-white/90 backdrop-blur-md">
@@ -626,7 +673,7 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
               <>
                 <p className="truncate text-base font-semibold">{peer.fullName}</p>
                 <p className="text-xs tabular-nums text-white/75">
-                  {remoteSharing ? (s.remote.share === "app" ? "Ilova ekrani · " : "Ekran ulashmoqda · ") : ""}
+                  {remoteSharing ? (isControllableShare(s.remote.share) ? "Ilova ekrani · " : "Ekran ulashmoqda · ") : ""}
                   {statusText(s, now)}
                 </p>
               </>
@@ -670,7 +717,7 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
       ) : s.local.share !== "none" ? (
         <div className="absolute right-3 top-[calc(max(1rem,env(safe-area-inset-top))+3.5rem)] z-20 flex w-28 flex-col items-center gap-1 rounded-2xl bg-emerald-500/20 p-3 text-center text-[11px] ring-1 ring-emerald-400/40 backdrop-blur-md sm:w-36">
           <MonitorUp className="h-5 w-5 text-emerald-300" />
-          {s.local.share === "app" ? "Ilova ekrani ulashilmoqda" : "Ekran ulashilmoqda"}
+          {isControllableShare(s.local.share) ? "Ilova ekrani ulashilmoqda" : "Ekran ulashilmoqda"}
         </div>
       ) : null}
 
@@ -886,7 +933,7 @@ function ShareBanner({ s }: { s: CallSnapshot }) {
       <span className="truncate">
         {controlled
           ? `${s.peer?.fullName ?? "Admin"} qurilmangizni boshqarmoqda`
-          : s.local.share === "app"
+          : isControllableShare(s.local.share)
             ? "Ilova ekraningiz ulashilmoqda"
             : "Ekraningiz ulashilmoqda"}
       </span>

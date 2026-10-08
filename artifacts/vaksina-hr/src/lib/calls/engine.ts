@@ -1,11 +1,17 @@
 import { useSyncExternalStore } from "react";
-import { applyControl, type ControlEvent } from "./remote-control";
-import { canShareScreen, startAppShare, type AppShare } from "./app-share";
+import { applyControl, hideRemoteCursor, type ControlEvent } from "./remote-control";
+import { canCaptureTab, canShareScreen, startAppShare, type AppShare } from "./app-share";
 import * as snd from "./sounds";
 
 export type CallPeer = { id: number; fullName: string; role: string };
 export type CallPhase = "idle" | "outgoing" | "incoming" | "connecting" | "active" | "ended";
-export type ShareMode = "none" | "screen" | "app";
+/** tab — joriy brauzer tabi (real vaqt, boshqaruv mumkin); app — DOM dan chizilgan ko‘rinish (telefonlar) */
+export type ShareMode = "none" | "screen" | "app" | "tab";
+
+/** Boshqaruv koordinatalari faqat ilova oynasiga mos keladigan rejimlarda ishlaydi */
+export function isControllableShare(share: ShareMode): boolean {
+  return share === "app" || share === "tab";
+}
 export type Facing = "user" | "environment";
 export type MediaFlags = { mic: boolean; cam: boolean; share: ShareMode; facing: Facing };
 export type CallPrompt = { kind: "screen" | "control" } | null;
@@ -228,6 +234,8 @@ class CallEngine {
   private st: StatsAcc = statsInit();
   private lastDiag: Record<string, unknown> = {};
   private diagCount = 0;
+  /** Bildirishnomadagi «Ko‘tarish» bosilgan, qo‘ng‘iroq hali kelib ulgurmagan */
+  private pendingAnswer: string | null = null;
 
   subscribe = (fn: () => void) => {
     this.listeners.add(fn);
@@ -241,6 +249,7 @@ class CallEngine {
   private set(patch: Partial<CallSnapshot>) {
     const next = { ...this.snap, ...patch };
     next.controlSide = !next.controlGranted ? "none" : this.iGranted ? "controlled" : "controller";
+    if (this.snap.controlSide === "controlled" && next.controlSide !== "controlled") hideRemoteCursor();
     this.snap = next;
     for (const fn of this.listeners) fn();
   }
@@ -284,9 +293,11 @@ class CallEngine {
     this.cid = clientId();
     snd.primeCallAudio();
     void this.loadConfig(true).catch(() => undefined);
+    this.readAnswerLink();
     this.openStream();
     window.addEventListener("pagehide", this.onPageHide);
     document.addEventListener("visibilitychange", this.onVisible);
+    navigator.serviceWorker?.addEventListener("message", this.onSwMessage);
   }
 
   stop() {
@@ -298,6 +309,7 @@ class CallEngine {
     this.userId = null;
     window.removeEventListener("pagehide", this.onPageHide);
     document.removeEventListener("visibilitychange", this.onVisible);
+    navigator.serviceWorker?.removeEventListener("message", this.onSwMessage);
     this.snap = initial;
     for (const fn of this.listeners) fn();
   }
@@ -315,6 +327,11 @@ class CallEngine {
 
   /** iOS fon rejimidan qaytganda kamera/mikrofon o‘chirilgan bo‘lishi mumkin — qayta olinadi, videoga yangi kalit-kadr */
   private onVisible = () => {
+    if (document.visibilityState === "visible" && this.snap.phase === "incoming") {
+      this.clearCallNotification(this.snap.callId);
+      snd.playRingtone();
+      return;
+    }
     if (document.visibilityState !== "visible" || this.snap.phase !== "active") return;
     void (async () => {
       if (this.micTrack?.readyState === "ended") {
@@ -477,17 +494,69 @@ class CallEngine {
     this.ringTimer = setTimeout(() => {
       if (this.snap.callId === c.id && this.snap.phase === "incoming") void this.finish("missed", { silent: true });
     }, RING_CLIENT_MS);
-    if (document.visibilityState === "hidden" && "Notification" in window && Notification.permission === "granted") {
-      void navigator.serviceWorker?.ready
-        .then((reg) =>
-          reg.showNotification(c.video ? "📹 Video qo‘ng‘iroq" : "📞 Qo‘ng‘iroq", {
-            body: `${c.caller.fullName} sizga qo‘ng‘iroq qilmoqda`,
-            tag: `call-${c.id}`,
-            data: { url: `/qongiroq?call=${c.id}` },
-            requireInteraction: true,
-          } as NotificationOptions),
-        )
-        .catch(() => undefined);
+    if (this.pendingAnswer === c.id) {
+      this.pendingAnswer = null;
+      void this.accept();
+      return;
+    }
+    if (document.visibilityState === "hidden") this.ringInBackground(c);
+  }
+
+  /** Tab/ilova fonda: tizim bildirishnomasi «Ko‘tarish» / «Rad etish» tugmalari bilan, jiringlash takrorlanadi */
+  private ringInBackground(c: PublicCall) {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    void navigator.serviceWorker?.ready
+      .then((reg) =>
+        reg.active?.postMessage({
+          type: "vaksina-call-ring",
+          callId: c.id,
+          title: c.video ? "📹 Video qo‘ng‘iroq" : "📞 Qo‘ng‘iroq",
+          body: `${c.caller.fullName} sizga qo‘ng‘iroq qilmoqda`,
+          ringMs: RING_CLIENT_MS,
+        }),
+      )
+      .catch(() => undefined);
+  }
+
+  private clearCallNotification(id: string | null) {
+    if (!id) return;
+    void navigator.serviceWorker?.ready
+      .then(async (reg) => {
+        reg.active?.postMessage({ type: "vaksina-call-stop", callId: id });
+        for (const n of await reg.getNotifications({ tag: `call-${id}` })) {
+          if ((n.data as { kind?: string } | null)?.kind === "call") n.close();
+        }
+      })
+      .catch(() => undefined);
+  }
+
+  /** Service worker bildirishnomasidagi tugmalar */
+  private onSwMessage = (e: MessageEvent) => {
+    const d = e.data as { type?: string; op?: string; id?: string } | null;
+    if (d?.type !== "vaksina-call" || !d.id) return;
+    const mine = this.snap.callId === d.id;
+    if (d.op === "answer") {
+      if (mine && this.snap.phase === "incoming") void this.accept();
+      else if (!mine) this.pendingAnswer = d.id;
+    } else if (d.op === "declined") {
+      if (mine && this.snap.phase === "incoming") void this.finish("declined", { silent: true });
+    } else if (d.op === "show" && mine) {
+      this.set({ minimized: false });
+    }
+  };
+
+  /** Bildirishnomadan yangi oyna ochilgan: /qongiroq?call=ID&answer=1 */
+  private readAnswerLink() {
+    try {
+      const url = new URL(window.location.href);
+      const id = url.searchParams.get("call");
+      if (!id) return;
+      if (url.searchParams.get("answer") === "1") this.pendingAnswer = id;
+      url.searchParams.delete("call");
+      url.searchParams.delete("answer");
+      window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+    } catch {
+      /* */
     }
   }
 
@@ -531,6 +600,7 @@ class CallEngine {
     const video = asVideo ?? this.snap.video;
     snd.stopSound();
     snd.unlockAudio();
+    this.clearCallNotification(id);
     if (this.ringTimer) clearTimeout(this.ringTimer);
     this.set({ phase: "connecting", conn: "connecting", local: flagsDefault(video) });
     try {
@@ -581,6 +651,7 @@ class CallEngine {
     this.ringTimer = null;
     this.failTimer = null;
     snd.stopSound();
+    if (!this.snap.outgoing) this.clearCallNotification(this.snap.callId);
     if (this.connectedOnce) this.sendDiag(`end:${reason}`);
     this.stopStats();
     try {
@@ -693,7 +764,7 @@ class CallEngine {
 
   private currentVideoTrack(): MediaStreamTrack | null {
     const s = this.snap.local.share;
-    if (s === "screen") return this.screenTrack;
+    if (s === "screen" || s === "tab") return this.screenTrack;
     if (s === "app") return this.appShare?.track ?? null;
     return this.snap.local.cam ? this.camTrack : null;
   }
@@ -743,8 +814,8 @@ class CallEngine {
     const params = sender.getParameters() as RTCRtpSendParameters & { degradationPreference?: string };
     if (!params.encodings?.length) return;
     const enc = params.encodings[0];
-    enc.maxBitrate = share === "screen" ? 2_500_000 : share === "app" ? 1_500_000 : 1_800_000;
-    enc.maxFramerate = share === "none" ? 30 : share === "screen" ? 20 : 10;
+    enc.maxBitrate = share === "screen" || share === "tab" ? 2_500_000 : share === "app" ? 1_500_000 : 1_800_000;
+    enc.maxFramerate = share === "none" || share === "tab" ? 30 : share === "screen" ? 20 : 10;
     enc.scaleResolutionDownBy = 1;
     try {
       await sender.setParameters({ ...params, degradationPreference: share === "none" ? "balanced" : "maintain-resolution" } as RTCRtpSendParameters);
@@ -847,10 +918,46 @@ class CallEngine {
     await this.syncVideo();
   }
 
-  async startShare(mode?: "screen" | "app"): Promise<boolean> {
-    const m = mode ?? (canShareScreen() ? "screen" : "app");
+  /** Joriy tabni real vaqtda uzatish (Chromium kompyuter). Boshqa sirt tanlansa — null (koordinatalar mos kelmaydi) */
+  private async captureTab(): Promise<MediaStreamTrack | null> {
+    if (!canCaptureTab()) return null;
+    try {
+      const s = await navigator.mediaDevices.getDisplayMedia({
+        video: { displaySurface: "browser", frameRate: { ideal: 30, max: 30 }, width: { max: 1920 }, height: { max: 1080 } },
+        audio: false,
+        preferCurrentTab: true,
+        selfBrowserSurface: "include",
+        surfaceSwitching: "exclude",
+      } as DisplayMediaStreamOptions);
+      const track = s.getVideoTracks()[0];
+      if (!track) return null;
+      const surface = (track.getSettings() as { displaySurface?: string }).displaySurface;
+      if (surface && surface !== "browser") {
+        track.stop();
+        this.notify("Boshqaruv uchun «Shu tab» tanlanishi kerak — ilova ko‘rinishi orqali davom etamiz", "warn");
+        return null;
+      }
+      track.contentHint = "detail";
+      track.onended = () => {
+        if (this.screenTrack === track) void this.stopShare();
+      };
+      return track;
+    } catch {
+      return null;
+    }
+  }
+
+  async startShare(mode?: "screen" | "app" | "tab"): Promise<boolean> {
+    let m: "screen" | "app" | "tab" = mode ?? (canShareScreen() ? "screen" : "app");
     this.stopShareTracks();
-    if (m === "screen") {
+    if (m === "tab") {
+      const track = await this.captureTab();
+      if (track) this.screenTrack = track;
+      else m = "app";
+    }
+    if (m === "tab") {
+      this.set({ minimized: true });
+    } else if (m === "screen") {
       try {
         const s = await navigator.mediaDevices.getDisplayMedia({
           video: { frameRate: { ideal: 20, max: 30 }, width: { max: 1920 }, height: { max: 1080 } },
@@ -951,7 +1058,7 @@ class CallEngine {
     } else {
       this.iGranted = true;
       this.set({ controlGranted: true });
-      const done = this.snap.local.share === "app" ? true : await this.startShare("app");
+      const done = isControllableShare(this.snap.local.share) ? true : await this.startShare("tab");
       if (!done) {
         this.iGranted = false;
         this.set({ controlGranted: false });
@@ -988,7 +1095,7 @@ class CallEngine {
       case "state": {
         const remote: MediaFlags = { mic: Boolean(msg.mic), cam: Boolean(msg.cam), share: msg.share, facing: msg.facing };
         const patch: Partial<CallSnapshot> = { remote };
-        if (remote.share !== "app" && this.snap.controlGranted && !this.iGranted) patch.controlGranted = false;
+        if (!isControllableShare(remote.share) && this.snap.controlGranted && !this.iGranted) patch.controlGranted = false;
         if (remote.share !== "none" && this.snap.waiting.screen) patch.waiting = { ...this.snap.waiting, screen: false };
         this.set(patch);
         break;
@@ -1024,7 +1131,10 @@ class CallEngine {
         }
         break;
       case "ctl":
-        if (this.iGranted && this.snap.controlGranted) applyControl(msg.ev);
+        if (this.iGranted && this.snap.controlGranted) {
+          applyControl(msg.ev);
+          if (msg.ev.e !== "move") this.appShare?.kick();
+        }
         break;
     }
   }
@@ -1136,7 +1246,8 @@ class CallEngine {
 
     const now = Date.now();
     const wantsVideo = this.snap.remote.cam || this.snap.remote.share !== "none";
-    if (flowing || !wantsVideo) this.st.heals = 0;
+    // «Ilova ko‘rinishi» kadrlarni sahifa o‘zgarganda yuboradi — siyrak kadr tarmoq nosozligi emas
+    if (flowing || !wantsVideo || this.snap.remote.share === "app") this.st.heals = 0;
     else if (this.st.rxIdle >= 4 && now - this.st.healAt > 5000 && this.st.heals < 6) {
       this.st.healAt = now;
       this.st.heals += 1;
@@ -1144,7 +1255,7 @@ class CallEngine {
       else this.renegotiate();
       this.sendDiag("rx-stall");
     }
-    if (this.st.txIdle >= 4 && now - this.st.txHealAt > 8000) {
+    if (this.st.txIdle >= 4 && now - this.st.txHealAt > 8000 && this.snap.local.share !== "app") {
       this.st.txHealAt = now;
       void this.refreshVideo();
       this.sendDiag("tx-stall");

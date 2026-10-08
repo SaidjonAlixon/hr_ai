@@ -133,7 +133,8 @@ export async function countUserPushSubscriptions(userId: number): Promise<number
 /** Telefonga tizim push (Chrome / Safari PWA) — Telegramdan mustaqil */
 export async function sendWebPushToUser(
   userId: number,
-  payload: { title: string; body: string; url?: string; tag?: string },
+  payload: { title: string; body: string; url?: string; tag?: string; data?: Record<string, unknown> },
+  opts: { ttl?: number } = {},
 ): Promise<{ sent: number; failed: number }> {
   await ensureWebPushConfigured();
   const subs = await db
@@ -146,6 +147,7 @@ export async function sendWebPushToUser(
   let sent = 0;
   let failed = 0;
   const body = JSON.stringify({
+    ...payload.data,
     title: payload.title,
     body: payload.body,
     url: payload.url || "/",
@@ -160,7 +162,7 @@ export async function sendWebPushToUser(
           keys: { p256dh: s.p256dh, auth: s.auth },
         },
         body,
-        { urgency: "high", TTL: 60 * 60 },
+        { urgency: "high", TTL: opts.ttl ?? 60 * 60 },
       );
       sent += 1;
     } catch (err: unknown) {

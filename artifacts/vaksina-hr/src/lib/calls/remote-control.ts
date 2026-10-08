@@ -3,6 +3,7 @@
  * Koordinatalar 0..1 oralig‘ida — ko‘rinib turgan oynaga nisbatan.
  */
 export type ControlEvent =
+  | { e: "move"; x: number; y: number }
   | { e: "tap"; x: number; y: number }
   | { e: "scroll"; x: number; y: number; dx: number; dy: number }
   | { e: "text"; value: string }
@@ -19,6 +20,29 @@ function elementAt(cx: number, cy: number): Element | null {
     if (!el.closest("[data-call-ui]")) return el;
   }
   return null;
+}
+
+/** Admin kursori xodim ekranida — kim nimani ko‘rsatayotgani ko‘rinib tursin */
+let cursorEl: HTMLDivElement | null = null;
+
+function showCursor(cx: number, cy: number) {
+  if (!cursorEl || !cursorEl.isConnected) {
+    cursorEl = document.createElement("div");
+    cursorEl.setAttribute("data-call-ui", "");
+    cursorEl.style.cssText =
+      "position:fixed;left:0;top:0;pointer-events:none;z-index:2147483647;will-change:transform;transition:transform 60ms linear";
+    cursorEl.innerHTML = `<svg width="26" height="26" viewBox="0 0 24 24" style="display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45))">
+      <path d="M4 2.5l15.5 9.2-6.9 1.5-3.3 6.4L4 2.5z" fill="#2563eb" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      <span style="position:absolute;left:20px;top:20px;white-space:nowrap;border-radius:9999px;background:#2563eb;color:#fff;
+      font:600 11px/1 system-ui,sans-serif;padding:3px 7px;box-shadow:0 1px 3px rgba(0,0,0,.3)">Admin</span>`;
+    document.body.appendChild(cursorEl);
+  }
+  cursorEl.style.transform = `translate(${Math.round(cx - 3)}px, ${Math.round(cy - 2)}px)`;
+}
+
+export function hideRemoteCursor() {
+  cursorEl?.remove();
+  cursorEl = null;
 }
 
 function ripple(cx: number, cy: number) {
@@ -135,7 +159,11 @@ export function applyControl(raw: unknown) {
   const W = window.innerWidth;
   const H = window.innerHeight;
   switch (ev.e) {
+    case "move":
+      showCursor(clamp01(ev.x) * W, clamp01(ev.y) * H);
+      break;
     case "tap":
+      showCursor(clamp01(ev.x) * W, clamp01(ev.y) * H);
       tap(clamp01(ev.x) * W, clamp01(ev.y) * H);
       break;
     case "scroll": {

@@ -2,6 +2,7 @@ import { Router, type IRouter, type Response } from "express";
 import { pool } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { logger } from "../lib/logger";
+import { scriptIncludes } from "../lib/script-search";
 import {
   acceptCall,
   attachClient,
@@ -81,12 +82,9 @@ router.get("/calls/contacts", requireAuth, async (req: AuthRequest, res): Promis
       params.push(onlineUserIds());
       where += ` AND (u.id = ANY($${params.length}::int[]) OR pin.user_id IS NOT NULL)`;
     }
-    if (q) {
-      params.push(`%${q}%`);
-      where += ` AND (u.full_name ILIKE $${params.length} OR u.phone ILIKE $${params.length} OR e.location ILIKE $${params.length})`;
-    }
+    // Qidiruv JS da: kirill/lotin farqisiz (Алиев = Aliyev)
     const { rows } = await pool.query(
-      `SELECT u.id, u.full_name, u.role, e.position, COALESCE(NULLIF(TRIM(e.location), ''), NULL) AS branch,
+      `SELECT u.id, u.full_name, u.role, u.phone, e.position, COALESCE(NULLIF(TRIM(e.location), ''), NULL) AS branch,
               (cp.user_id IS NOT NULL) AS can_call, pin.pinned_at
          FROM users u
          LEFT JOIN LATERAL (
@@ -96,10 +94,11 @@ router.get("/calls/contacts", requireAuth, async (req: AuthRequest, res): Promis
          LEFT JOIN call_pins pin ON pin.owner_id = $1 AND pin.user_id = u.id
         WHERE ${where}
         ORDER BY (pin.user_id IS NULL), pin.pinned_at DESC, u.full_name
-        LIMIT ${admin ? 300 : 50}`,
+        ${q ? "" : `LIMIT ${admin ? 300 : 50}`}`,
       params,
     );
     const items = rows
+      .filter((r) => !q || scriptIncludes(`${r.full_name ?? ""} ${r.phone ?? ""} ${r.branch ?? ""}`, q))
       .map((r) => ({
         id: r.id as number,
         fullName: r.full_name as string,

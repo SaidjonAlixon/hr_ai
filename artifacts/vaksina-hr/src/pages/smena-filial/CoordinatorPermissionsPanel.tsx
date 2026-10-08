@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { scriptIncludes } from "@/lib/script-search";
 import { fetchCoordAccess, saveCoordAccess, type CoordAccessItem, type SmenaScope } from "@/lib/smena-api";
 
 function dateTimeUz(iso: string | null) {
@@ -90,12 +91,12 @@ export default function CoordinatorPermissionsPanel({ onOpenHistory }: { onOpenH
   );
 
   const visible = useMemo(() => {
-    const s = q.trim().toLowerCase();
+    const s = q.trim();
     return items.filter((i) => {
       if (filter === "granted" && !i.canRotate && !i.canShift) return false;
       if (filter === "none" && (i.canRotate || i.canShift)) return false;
       if (!s) return true;
-      return i.fullName.toLowerCase().includes(s) || i.branchNames.some((b) => b.toLowerCase().includes(s));
+      return scriptIncludes(`${i.fullName} ${i.branchNames.join(" ")}`, s);
     });
   }, [items, q, filter]);
 

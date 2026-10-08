@@ -5,6 +5,7 @@
 import { pool } from "@workspace/db";
 import { canManageSmenaFilial } from "./roles";
 import { logger } from "./logger";
+import { scriptIncludes } from "./script-search";
 
 export type SmenaScope = "own" | "all";
 
@@ -312,13 +313,7 @@ export async function querySmenaLog(f: {
   else if (f.action) add("action = ?", f.action);
   if (f.fromYmd) add("created_at >= (?::date AT TIME ZONE 'Asia/Tashkent')", f.fromYmd);
   if (f.toYmd) add("created_at < ((?::date + 1) AT TIME ZONE 'Asia/Tashkent')", f.toYmd);
-  if (f.q) {
-    args.push(`%${f.q}%`);
-    const p = `$${args.length}`;
-    where.push(
-      `(employee_name ILIKE ${p} OR actor_name ILIKE ${p} OR from_branch_label ILIKE ${p} OR to_branch_label ILIKE ${p} OR summary ILIKE ${p})`,
-    );
-  }
+  const q = f.q?.trim() || "";
   if (f.limitToActorOrEmployees) {
     args.push(f.limitToActorOrEmployees.actorUserId);
     const a = `$${args.length}`;
@@ -326,12 +321,24 @@ export async function querySmenaLog(f: {
     const b = `$${args.length}`;
     where.push(`(actor_user_id = ${a} OR employee_id = ANY(${b}::int[]))`);
   }
-  args.push(Math.max(1, Math.min(2000, f.limit)));
-  const { rows } = await pool.query(
+  const limit = Math.max(1, Math.min(2000, f.limit));
+  // Kirill/lotin qidiruvi SQL da emas — ko‘proq qator olinib, JS da filtrlanadi
+  args.push(q ? 10_000 : limit);
+  const { rows: raw } = await pool.query(
     `SELECT * FROM smena_change_log ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
      ORDER BY created_at DESC, id DESC LIMIT $${args.length}`,
     args,
   );
+  const rows = q
+    ? raw
+        .filter((r) =>
+          scriptIncludes(
+            [r.employee_name, r.actor_name, r.from_branch_label, r.to_branch_label, r.summary].filter(Boolean).join(" "),
+            q,
+          ),
+        )
+        .slice(0, limit)
+    : raw;
   return rows.map((r) => ({
     id: Number(r.id),
     createdAt: new Date(r.created_at).toISOString(),

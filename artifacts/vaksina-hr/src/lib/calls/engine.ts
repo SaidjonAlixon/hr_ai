@@ -205,11 +205,12 @@ type StatsAcc = {
   heals: number;
   healAt: number;
   txHealAt: number;
+  camMuted: number;
   lost: number;
   recv: number;
 };
 
-const statsInit = (): StatsAcc => ({ dec: -1, enc: -1, rxIdle: 0, txIdle: 0, heals: 0, healAt: 0, txHealAt: 0, lost: 0, recv: 0 });
+const statsInit = (): StatsAcc => ({ dec: -1, enc: -1, rxIdle: 0, txIdle: 0, heals: 0, healAt: 0, txHealAt: 0, camMuted: 0, lost: 0, recv: 0 });
 
 class CallEngine {
   private snap: CallSnapshot = initial;
@@ -228,6 +229,9 @@ class CallEngine {
   private videoTx: RTCRtpTransceiver | null = null;
   private micTrack: MediaStreamTrack | null = null;
   private camTrack: MediaStreamTrack | null = null;
+  private camBusy = false;
+  private camRestartAt = 0;
+  private camRestarts = 0;
   private screenTrack: MediaStreamTrack | null = null;
   private appShare: AppShare | null = null;
   private mirrorDc: RTCDataChannel | null = null;
@@ -361,27 +365,15 @@ class CallEngine {
       if (this.micTrack?.readyState === "ended") {
         try {
           const s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-          const enabled = this.snap.local.mic;
           this.micTrack = s.getAudioTracks()[0] ?? null;
-          if (this.micTrack) this.micTrack.enabled = enabled;
-          await this.audioTx?.sender.replaceTrack(this.micTrack).catch(() => undefined);
+          await this.audioTx?.sender.replaceTrack(this.currentAudioTrack()).catch(() => undefined);
         } catch {
           /* */
         }
       }
-      if (this.snap.local.cam && this.snap.local.share === "none" && this.camTrack?.readyState === "ended") {
-        try {
-          const s = await navigator.mediaDevices.getUserMedia({ video: this.camConstraints(this.snap.local.facing) });
-          this.camTrack = s.getVideoTracks()[0] ?? null;
-          this.watchCam(this.camTrack);
-          await this.syncVideo();
-          return;
-        } catch {
-          this.camTrack = null;
-          this.setLocal({ cam: false });
-          await this.syncVideo();
-          return;
-        }
+      if (this.snap.local.cam && (!this.camTrack || this.camTrack.readyState === "ended" || this.camTrack.muted)) {
+        await this.restartCam(true);
+        return;
       }
       await this.refreshVideo();
     })();
@@ -740,6 +732,61 @@ class CallEngine {
     return { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } };
   }
 
+  /** Kamerani ochish: to‘liq sifat rad etilsa — faqat yo‘nalish bilan (ba’zi telefonlar orqa kamerada 720p bermaydi) */
+  private async openCam(facing: Facing): Promise<MediaStreamTrack> {
+    const md = navigator.mediaDevices;
+    let s: MediaStream;
+    try {
+      s = await md.getUserMedia({ video: this.camConstraints(facing) });
+    } catch (err) {
+      const name = (err as { name?: string })?.name;
+      if (name === "NotAllowedError" || name === "SecurityError") throw err;
+      await new Promise((r) => setTimeout(r, 300));
+      s = await md.getUserMedia({ video: { facingMode: { ideal: facing } } });
+    }
+    const track = s.getVideoTracks()[0];
+    if (!track) throw new Error("no video track");
+    return track;
+  }
+
+  /**
+   * Kamera kadr bermay qolsa (iOS: trek «muted» — tizim uzib qo‘ygan) — kamerani yangidan ochish.
+   * Ketma-ket cheksiz urinmaslik uchun cheklangan.
+   */
+  private async restartCam(force = false) {
+    if (!this.snap.local.cam || this.camBusy) return;
+    const now = Date.now();
+    if (!force && now - this.camRestartAt < 4000) return;
+    if (now - this.camRestartAt > 60_000) this.camRestarts = 0;
+    if (!force && this.camRestarts >= 5) return;
+    this.camRestartAt = now;
+    this.camRestarts += 1;
+    this.camBusy = true;
+    const old = this.camTrack;
+    try {
+      old?.stop();
+      const track = await this.openCam(this.snap.local.facing);
+      if (!this.snap.local.cam || !this.busyNow()) {
+        track.stop();
+        return;
+      }
+      this.camTrack = track;
+      this.watchCam(track);
+    } catch {
+      this.camTrack = null;
+      this.setLocal({ cam: false });
+      this.notify("Kamera ochilmadi — qayta yoqib ko‘ring", "warn");
+    } finally {
+      this.camBusy = false;
+    }
+    await this.syncVideo();
+  }
+
+  /** Mikrofon o‘chirilganda trek to‘xtatilmaydi (iOS da enabled=false kamerani ham uzib qo‘yadi) — faqat uzatilmaydi */
+  private currentAudioTrack(): MediaStreamTrack | null {
+    return this.snap.local.mic ? this.micTrack : null;
+  }
+
   private async acquire(video: boolean) {
     const md = navigator.mediaDevices;
     if (!md?.getUserMedia) throw new CallError("Brauzer qo‘ng‘iroqni qo‘llab-quvvatlamaydi (HTTPS kerak)");
@@ -806,10 +853,13 @@ class CallEngine {
     track.contentHint = "motion";
     track.onended = () => {
       if (this.camTrack !== track || !this.snap.local.cam || document.visibilityState !== "visible") return;
-      this.camTrack = null;
-      this.setLocal({ cam: false });
-      this.notify("Kamera to‘xtadi — qayta yoqing", "warn");
-      void this.syncVideo();
+      void this.restartCam();
+    };
+    track.onmute = () => {
+      setTimeout(() => {
+        if (this.camTrack !== track || !track.muted || document.visibilityState !== "visible") return;
+        void this.restartCam();
+      }, 2500);
     };
   }
 
@@ -900,51 +950,62 @@ class CallEngine {
 
   toggleMic() {
     if (!this.micTrack) return;
-    this.micTrack.enabled = !this.micTrack.enabled;
-    this.setLocal({ mic: this.micTrack.enabled });
+    this.micTrack.enabled = true;
+    this.setLocal({ mic: !this.snap.local.mic });
+    void this.audioTx?.sender.replaceTrack(this.currentAudioTrack()).catch(() => undefined);
     this.sendState();
   }
 
   async toggleCam() {
+    if (this.camBusy) return;
     if (this.snap.local.cam && this.camTrack) {
       this.camTrack.stop();
       this.camTrack = null;
       this.setLocal({ cam: false });
     } else {
+      this.camBusy = true;
       try {
-        const s = await navigator.mediaDevices.getUserMedia({ video: this.camConstraints(this.snap.local.facing) });
-        this.camTrack = s.getVideoTracks()[0] ?? null;
+        this.camTrack?.stop();
+        this.camTrack = await this.openCam(this.snap.local.facing);
         this.watchCam(this.camTrack);
-        this.setLocal({ cam: Boolean(this.camTrack) });
+        this.camRestarts = 0;
+        this.setLocal({ cam: true });
         void this.detectFlip();
       } catch (err) {
+        this.camTrack = null;
         this.notify(this.mediaErrorText(err, "Kamera"), "error");
         return;
+      } finally {
+        this.camBusy = false;
       }
     }
     await this.syncVideo();
   }
 
   async flipCamera() {
-    if (!this.snap.local.cam) return;
-    const next: Facing = this.snap.local.facing === "user" ? "environment" : "user";
-    const old = this.camTrack;
-    old?.stop();
+    if (!this.snap.local.cam || this.camBusy) return;
+    const prev = this.snap.local.facing;
+    const next: Facing = prev === "user" ? "environment" : "user";
+    this.camBusy = true;
+    // iOS bir vaqtda ikki kamerani ochmaydi — eskisi avval to‘xtatiladi
+    this.camTrack?.stop();
+    this.camTrack = null;
     try {
-      const s = await navigator.mediaDevices.getUserMedia({ video: this.camConstraints(next) });
-      this.camTrack = s.getVideoTracks()[0] ?? null;
+      this.camTrack = await this.openCam(next);
       this.watchCam(this.camTrack);
+      this.camRestarts = 0;
       this.setLocal({ facing: next });
     } catch {
       try {
-        const s = await navigator.mediaDevices.getUserMedia({ video: this.camConstraints(this.snap.local.facing) });
-        this.camTrack = s.getVideoTracks()[0] ?? null;
+        this.camTrack = await this.openCam(prev);
         this.watchCam(this.camTrack);
       } catch {
         this.camTrack = null;
         this.setLocal({ cam: false });
       }
       this.notify("Kamerani almashtirib bo‘lmadi", "warn");
+    } finally {
+      this.camBusy = false;
     }
     await this.syncVideo();
   }
@@ -1452,6 +1513,7 @@ class CallEngine {
       tx: ov ? `${codecOf(ov)} ${ov.frameWidth ?? 0}x${ov.frameHeight ?? 0}@${ov.framesPerSecond ?? 0} enc=${enc} limit=${ov.qualityLimitationReason ?? "-"}` : null,
       rx: iv ? `${codecOf(iv)} ${iv.frameWidth ?? 0}x${iv.frameHeight ?? 0}@${iv.framesPerSecond ?? 0} dec=${dec} freeze=${iv.freezeCount ?? "-"}` : null,
       txTrack: vt ? `${vt.readyState}${vt.muted ? ":muted" : ""}` : null,
+      camTrack: this.camTrack ? `${this.camTrack.readyState}${this.camTrack.muted ? ":muted" : ""} ${this.camTrack.getSettings().width ?? 0}x${this.camTrack.getSettings().height ?? 0}` : null,
       mirror: this.mirror ? `tx ${this.mirror.sentBytes()}` : this.snap.remoteMirror ? `rx ${this.mirrorRx} buf=${this.mirrorBuf.length}` : null,
       rxIdle: this.st.rxIdle,
       txIdle: this.st.txIdle,
@@ -1470,7 +1532,14 @@ class CallEngine {
       else this.renegotiate();
       this.sendDiag("rx-stall");
     }
-    if (this.st.txIdle >= 4 && now - this.st.txHealAt > 8000 && this.snap.local.share !== "app") {
+    const cam = this.camTrack;
+    const camStuck = Boolean(this.snap.local.cam && document.visibilityState === "visible" && (!cam || cam.readyState === "ended" || cam.muted));
+    this.st.camMuted = camStuck ? this.st.camMuted + 1 : 0;
+    if (this.st.camMuted >= 3) {
+      this.st.camMuted = 0;
+      void this.restartCam();
+      this.sendDiag("cam-restart");
+    } else if (this.st.txIdle >= 4 && now - this.st.txHealAt > 8000 && this.snap.local.share !== "app") {
       this.st.txHealAt = now;
       void this.refreshVideo();
       this.sendDiag("tx-stall");
@@ -1603,7 +1672,7 @@ class CallEngine {
     this.armConnectTimer();
     try {
       const pc = this.createPeer(true);
-      await this.audioTx!.sender.replaceTrack(this.micTrack);
+      await this.audioTx!.sender.replaceTrack(this.currentAudioTrack());
       await this.videoTx!.sender.replaceTrack(this.currentVideoTrack());
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
@@ -1639,7 +1708,7 @@ class CallEngine {
           }
           for (const t of [this.audioTx, this.videoTx]) if (t) t.direction = "sendrecv";
           preferCodecs(this.videoTx);
-          await this.audioTx?.sender.replaceTrack(this.micTrack);
+          await this.audioTx?.sender.replaceTrack(this.currentAudioTrack());
           await this.videoTx?.sender.replaceTrack(this.currentVideoTrack());
         }
         const answer = await pc.createAnswer();

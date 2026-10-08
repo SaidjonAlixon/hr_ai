@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { scriptIncludes } from "@/lib/script-search";
 import {
   changeShiftOnly,
   fetchShiftBoard,
@@ -235,11 +236,11 @@ export default function ShiftChangeBoard() {
   );
 
   const byBranchAndSearch = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     return staff.filter((s) => {
       if (branchFilter !== "all" && s.branchName !== branchFilter) return false;
       if (!q) return true;
-      return s.fullName.toLowerCase().includes(q) || (s.branchName || "").toLowerCase().includes(q);
+      return scriptIncludes(`${s.fullName} ${s.branchName || ""}`, q);
     });
   }, [staff, search, branchFilter]);
 

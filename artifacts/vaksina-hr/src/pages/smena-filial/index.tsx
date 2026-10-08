@@ -36,6 +36,7 @@ import { useToast } from "../../hooks/use-toast";
 import { useAuth } from "../../contexts/AuthContext";
 import { canManageSmenaFilial } from "../../lib/roles";
 import { cn } from "../../lib/utils";
+import { scriptIncludes } from "../../lib/script-search";
 import { formatYmdDisplay } from "../../lib/javob-olish-api";
 import {
   createWorkSlot,
@@ -236,13 +237,11 @@ export default function SmenaFilialPage() {
 
   // Xodimlar ro'yxatini filtrlash
   const filteredStaff = useMemo(() => {
-    const q = peopleQ.trim().toLowerCase();
+    const q = peopleQ.trim();
     return staff.filter(
       (p) =>
         (peopleRole === "all" || p.orgRole === peopleRole) &&
-        (!q ||
-          p.fullName.toLowerCase().includes(q) ||
-          (p.assignedBranchName || "").toLowerCase().includes(q))
+        (!q || scriptIncludes(`${p.fullName} ${p.assignedBranchName || ""}`, q))
     );
   }, [staff, peopleQ, peopleRole]);
 
@@ -262,14 +261,10 @@ export default function SmenaFilialPage() {
 
   // Filiallar ro'yxatini filtrlash
   const filteredBranches = useMemo(() => {
-    const q = branchQ.trim().toLowerCase();
+    const q = branchQ.trim();
     const pool = pickedIsMudir ? branches.filter((b) => b.id !== pickedPersonId) : branches;
     if (!q) return pool;
-    return pool.filter(
-      (b) =>
-        b.name.toLowerCase().includes(q) ||
-        (b.managerName || "").toLowerCase().includes(q)
-    );
+    return pool.filter((b) => scriptIncludes(`${b.name} ${b.managerName || ""}`, q));
   }, [branches, branchQ, pickedIsMudir, pickedPersonId]);
 
   // Tanlangan xodimning mavjud slotlari
@@ -382,12 +377,7 @@ export default function SmenaFilialPage() {
   const filteredSlots = useMemo(() => {
     return allSlots.filter((s) => {
       // Qidiruv
-      if (monitoringSearch) {
-        const q = monitoringSearch.toLowerCase();
-        const matchesName = (s.fullName || "").toLowerCase().includes(q);
-        const matchesBranch = (s.branchLabel || "").toLowerCase().includes(q);
-        if (!matchesName && !matchesBranch) return false;
-      }
+      if (monitoringSearch.trim() && !scriptIncludes(`${s.fullName || ""} ${s.branchLabel || ""}`, monitoringSearch)) return false;
       // Holat filtri
       if (monitoringStatusFilter === "active" && s.isExpired) return false;
       if (monitoringStatusFilter === "expired" && !s.isExpired) return false;

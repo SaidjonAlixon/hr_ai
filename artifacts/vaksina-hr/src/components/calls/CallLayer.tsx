@@ -30,6 +30,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { callEngine, endedText, isControllableShare, useCall, type CallSnapshot } from "@/lib/calls/engine";
+import type { MirrorPicker } from "./MirrorView";
 
 const MirrorView = lazy(() => import("./MirrorView"));
 
@@ -119,6 +120,7 @@ function CallVideo({
   className,
   videoRef,
   expectFrames = false,
+  onRatio,
 }: {
   stream: MediaStream | null;
   muted?: boolean;
@@ -128,10 +130,28 @@ function CallVideo({
   videoRef?: (el: HTMLVideoElement | null) => void;
   /** Kadrlar kelayotgani ma’lum (getStats) — element ko‘rsatmay qolsa qayta biriktiriladi */
   expectFrames?: boolean;
+  /** Kadr nisbati (eni/bo‘yi) — telefon burilsa yoki kamera almashsa ham */
+  onRatio?: (ratio: number) => void;
 }) {
   const ref = useRef<HTMLVideoElement | null>(null);
   const expectRef = useRef(expectFrames);
   expectRef.current = expectFrames;
+  const ratioRef = useRef(onRatio);
+  ratioRef.current = onRatio;
+  useEffect(() => {
+    const v = ref.current;
+    if (!v) return;
+    const report = () => {
+      if (v.videoWidth && v.videoHeight) ratioRef.current?.(v.videoWidth / v.videoHeight);
+    };
+    report();
+    v.addEventListener("loadedmetadata", report);
+    v.addEventListener("resize", report);
+    return () => {
+      v.removeEventListener("loadedmetadata", report);
+      v.removeEventListener("resize", report);
+    };
+  }, []);
   const setRef = useCallback(
     (el: HTMLVideoElement | null) => {
       ref.current = el;
@@ -371,8 +391,11 @@ function useVideoRect(video: HTMLVideoElement | null, container: HTMLDivElement 
   return rect;
 }
 
-function ControlSurface({ rect }: { rect: Rect | null }) {
+function ControlSurface({ rect, pick }: { rect: Rect | null; pick?: MirrorPicker | null }) {
   const surface = useRef<HTMLDivElement>(null);
+  const pickRef = useRef(pick);
+  pickRef.current = pick;
+  const target = (x: number, y: number) => pickRef.current?.(x, y) ?? {};
   const drag = useRef<{ x: number; y: number; lx: number; ly: number; moved: boolean; id: number } | null>(null);
   const pending = useRef<{ x: number; y: number; dx: number; dy: number } | null>(null);
   const raf = useRef(0);
@@ -400,7 +423,7 @@ function ControlSurface({ rect }: { rect: Rect | null }) {
     const send = () => {
       m.timer = null;
       m.at = Date.now();
-      if (m.last) callEngine.sendControl({ e: "move", ...m.last });
+      if (m.last) callEngine.sendControl({ e: "move", ...m.last, ...target(m.last.x, m.last.y) });
     };
     const wait = 40 - (Date.now() - m.at);
     if (wait <= 0) send();
@@ -416,7 +439,7 @@ function ControlSurface({ rect }: { rect: Rect | null }) {
     raf.current = 0;
     const p = pending.current;
     pending.current = null;
-    if (p && (p.dx || p.dy)) callEngine.sendControl({ e: "scroll", ...p });
+    if (p && (p.dx || p.dy)) callEngine.sendControl({ e: "scroll", ...p, ...target(p.x, p.y) });
   };
 
   const queueScroll = (x: number, y: number, dx: number, dy: number) => {
@@ -462,7 +485,7 @@ function ControlSurface({ rect }: { rect: Rect | null }) {
         drag.current = null;
         if (!d || d.moved) return;
         const { x, y } = norm(e.clientX, e.clientY);
-        callEngine.sendControl({ e: "tap", x, y });
+        callEngine.sendControl({ e: "tap", x, y, ...target(x, y) });
       }}
       onPointerCancel={() => {
         cursor.current?.classList.remove("scale-90");
@@ -590,6 +613,8 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
   const [stage, setStage] = useState<HTMLDivElement | null>(null);
   const [chrome, setChrome] = useState(true);
   const [mirrorRect, setMirrorRect] = useState<Rect | null>(null);
+  const [mirrorPick, setMirrorPick] = useState<MirrorPicker | null>(null);
+  const [pipRatio, setPipRatio] = useState(3 / 4);
   const remoteSharing = s.remote.share !== "none";
   const mirror = s.phase === "active" && s.remoteMirror && remoteSharing;
   const showRemoteVideo = !mirror && remoteVideoVisible(s);
@@ -620,7 +645,7 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
       >
         {mirror ? (
           <Suspense fallback={null}>
-            <MirrorView onRect={setMirrorRect} />
+            <MirrorView onRect={setMirrorRect} onPicker={(fn) => setMirrorPick(() => fn)} />
           </Suspense>
         ) : showRemoteVideo ? (
           <CallVideo
@@ -657,7 +682,9 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
             </div>
           </>
         )}
-        {controller && showRemote && isControllableShare(s.remote.share) ? <ControlSurface rect={mirror ? mirrorRect : videoRect} /> : null}
+        {controller && showRemote && isControllableShare(s.remote.share) ? (
+          <ControlSurface rect={mirror ? mirrorRect : videoRect} pick={mirror ? mirrorPick : null} />
+        ) : null}
         {videoPending ? (
           <div className="pointer-events-none absolute inset-x-0 bottom-[calc(max(1.25rem,env(safe-area-inset-bottom))+9.5rem)] z-[5] flex justify-center">
             <span className="inline-flex items-center gap-2 rounded-full bg-black/60 px-3.5 py-1.5 text-xs text-white/90 backdrop-blur-md">
@@ -725,8 +752,19 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
 
       {/* o‘z kamerasi (PiP) */}
       {s.localStream && s.local.cam ? (
-        <div className="absolute right-3 top-[calc(max(1rem,env(safe-area-inset-top))+3.5rem)] z-20 aspect-[3/4] w-24 overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/25 sm:w-36">
-          <CallVideo stream={s.localStream} mirror={s.local.facing === "user"} />
+        <div
+          className={cn(
+            "absolute right-3 top-[calc(max(1rem,env(safe-area-inset-top))+3.5rem)] z-20 overflow-hidden rounded-2xl bg-black shadow-2xl ring-1 ring-white/25",
+            pipRatio >= 1 ? "w-36 sm:w-52" : "w-24 sm:w-36",
+          )}
+          style={{ aspectRatio: String(pipRatio) }}
+        >
+          <CallVideo
+            stream={s.localStream}
+            mirror={s.local.facing === "user"}
+            className="absolute inset-0"
+            onRatio={(r) => setPipRatio(Math.min(16 / 9, Math.max(9 / 16, r)))}
+          />
           {s.local.share !== "none" ? (
             <div className="absolute inset-x-0 bottom-0 bg-black/60 px-1.5 py-1 text-center text-[10px]">Ekran ulashilmoqda</div>
           ) : null}
@@ -935,11 +973,44 @@ function PromptCard({ s }: { s: CallSnapshot }) {
 function ShareBanner({ s }: { s: CallSnapshot }) {
   const controlled = s.controlSide === "controlled";
   if (!controlled && s.local.share === "none") return null;
+  const stop = () => (controlled ? callEngine.revokeControl() : void callEngine.stopShare());
+  return (
+    <>
+      {/* Mobil: faqat status-bar zonasi bo‘yaladi (ilova tugmalarini yopmaydi) + pastda kichik tugma */}
+      <div
+        data-call-ui=""
+        className={cn(
+          "pointer-events-none fixed inset-x-0 top-0 z-[9998] h-[calc(env(safe-area-inset-top)+3px)] sm:hidden",
+          controlled ? "bg-red-600" : "bg-emerald-600",
+        )}
+      />
+      <button
+        type="button"
+        data-call-ui=""
+        onClick={stop}
+        className={cn(
+          "fixed bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] left-2 z-[9998] inline-flex h-7 items-center gap-1.5 rounded-full pl-2 pr-2.5 text-[11px] font-bold text-white shadow-lg ring-1 ring-white/30 active:scale-95 sm:hidden",
+          controlled ? "bg-red-600/90" : "bg-emerald-600/90",
+        )}
+        aria-label={controlled ? "Boshqaruvni to‘xtatish" : "Ulashishni to‘xtatish"}
+      >
+        <span className="relative flex h-2 w-2">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/70" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
+        </span>
+        {controlled ? "Boshqaruv" : "Ulashish"} · To‘xtatish
+      </button>
+      <ShareBannerDesktop s={s} controlled={controlled} onStop={stop} />
+    </>
+  );
+}
+
+function ShareBannerDesktop({ s, controlled, onStop }: { s: CallSnapshot; controlled: boolean; onStop: () => void }) {
   return (
     <div
       data-call-ui=""
       className={cn(
-        "fixed inset-x-0 top-0 z-[9998] flex items-center justify-center gap-3 px-3 pb-1.5 pt-[max(0.375rem,env(safe-area-inset-top))] text-xs font-semibold text-white shadow-lg sm:text-sm",
+        "fixed inset-x-0 top-0 z-[9998] hidden items-center justify-center gap-3 px-3 pb-1.5 pt-[max(0.375rem,env(safe-area-inset-top))] text-sm font-semibold text-white shadow-lg sm:flex",
         controlled ? "bg-red-600" : "bg-emerald-600",
       )}
     >
@@ -956,8 +1027,8 @@ function ShareBanner({ s }: { s: CallSnapshot }) {
       </span>
       <button
         type="button"
-        onClick={() => (controlled ? callEngine.revokeControl() : void callEngine.stopShare())}
-        className="shrink-0 rounded-full bg-white px-3 py-1 text-[11px] font-bold text-slate-900 active:scale-95 sm:text-xs"
+        onClick={onStop}
+        className="shrink-0 rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-900 active:scale-95"
       >
         To‘xtatish
       </button>

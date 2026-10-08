@@ -1,11 +1,15 @@
 /**
  * Masofaviy boshqaruv: admin yuborgan buyruqlar xodim qurilmasida (faqat VAKSINA HR ilovasi ichida) bajariladi.
  * Koordinatalar 0..1 oralig‘ida — ko‘rinib turgan oynaga nisbatan.
+ * Jonli nusxada (DOM mirror) admin bosgan element `id` bilan keladi: nusxa admin brauzerida boshqa shrift,
+ * safe-area va scrollbar bilan chiziladi, shuning uchun koordinata emas — aynan o‘sha element bosiladi.
  */
+export type NodeTarget = { id?: number; rx?: number; ry?: number };
+
 export type ControlEvent =
-  | { e: "move"; x: number; y: number }
-  | { e: "tap"; x: number; y: number }
-  | { e: "scroll"; x: number; y: number; dx: number; dy: number }
+  | ({ e: "move"; x: number; y: number } & NodeTarget)
+  | ({ e: "tap"; x: number; y: number } & NodeTarget)
+  | ({ e: "scroll"; x: number; y: number; dx: number; dy: number } & NodeTarget)
   | { e: "text"; value: string }
   | { e: "key"; key: "Enter" | "Backspace" | "Tab" | "Escape" }
   | { e: "nav"; to: "back" | "forward" | "home" };
@@ -13,6 +17,34 @@ export type ControlEvent =
 function clamp01(n: unknown): number {
   const v = Number(n);
   return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
+}
+
+let resolveNode: ((id: number) => Node | null) | null = null;
+
+/** Jonli nusxa yozuvchisi ishlayotganda rrweb id → haqiqiy DOM tugun */
+export function setMirrorNodeResolver(fn: ((id: number) => Node | null) | null) {
+  resolveNode = fn;
+}
+
+/** Element bo‘yicha nishon: elementning shu nisbiy nuqtasi (ko‘rinmasa — ko‘rinadigan qilib) */
+function nodePoint(ev: NodeTarget, reveal = false): { cx: number; cy: number; el: Element } | null {
+  const id = Number(ev.id);
+  if (!resolveNode || !Number.isInteger(id) || id <= 0) return null;
+  const node = resolveNode(id);
+  const el = node instanceof Element ? node : (node?.parentElement ?? null);
+  if (!el || !el.isConnected || el.closest("[data-call-ui]")) return null;
+  let r = el.getBoundingClientRect();
+  if (!r.width && !r.height) return null;
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  if (r.bottom < 0 || r.top > H || r.right < 0 || r.left > W) {
+    if (!reveal) return null;
+    el.scrollIntoView({ block: "nearest", inline: "nearest" });
+    r = el.getBoundingClientRect();
+  }
+  const cx = Math.min(W - 1, Math.max(0, r.left + clamp01(ev.rx ?? 0.5) * r.width));
+  const cy = Math.min(H - 1, Math.max(0, r.top + clamp01(ev.ry ?? 0.5) * r.height));
+  return { cx, cy, el };
 }
 
 function elementAt(cx: number, cy: number): Element | null {
@@ -91,8 +123,10 @@ function scrollableAncestor(el: Element | null, dy: number, dx: number): Element
   return window;
 }
 
-function tap(cx: number, cy: number) {
-  const el = elementAt(cx, cy);
+function tap(cx: number, cy: number, target?: Element) {
+  const hit = elementAt(cx, cy);
+  // Nuqtadagi element nishonning ichida bo‘lsa — o‘shani (eng ichki), aks holda nishonning o‘zini bosamiz
+  const el = target ? (hit && target.contains(hit) ? hit : target) : hit;
   ripple(cx, cy);
   if (!el) return;
   const base = { bubbles: true, cancelable: true, composed: true, clientX: cx, clientY: cy, view: window };
@@ -162,19 +196,26 @@ export function applyControl(raw: unknown) {
   const W = window.innerWidth;
   const H = window.innerHeight;
   switch (ev.e) {
-    case "move":
-      showCursor(clamp01(ev.x) * W, clamp01(ev.y) * H);
+    case "move": {
+      const p = nodePoint(ev);
+      showCursor(p?.cx ?? clamp01(ev.x) * W, p?.cy ?? clamp01(ev.y) * H);
       break;
-    case "tap":
-      showCursor(clamp01(ev.x) * W, clamp01(ev.y) * H);
-      tap(clamp01(ev.x) * W, clamp01(ev.y) * H);
+    }
+    case "tap": {
+      const p = nodePoint(ev, true);
+      const cx = p?.cx ?? clamp01(ev.x) * W;
+      const cy = p?.cy ?? clamp01(ev.y) * H;
+      showCursor(cx, cy);
+      tap(cx, cy, p?.el);
       break;
+    }
     case "scroll": {
-      const cx = clamp01(ev.x) * W;
-      const cy = clamp01(ev.y) * H;
+      const p = nodePoint(ev);
+      const cx = p?.cx ?? clamp01(ev.x) * W;
+      const cy = p?.cy ?? clamp01(ev.y) * H;
       const dy = Math.max(-2, Math.min(2, Number(ev.dy) || 0)) * H;
       const dx = Math.max(-2, Math.min(2, Number(ev.dx) || 0)) * W;
-      const target = scrollableAncestor(elementAt(cx, cy), dy, dx);
+      const target = scrollableAncestor(p?.el ?? elementAt(cx, cy), dy, dx);
       target.scrollBy({ top: dy, left: dx, behavior: "auto" });
       break;
     }

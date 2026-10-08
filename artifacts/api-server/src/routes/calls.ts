@@ -17,6 +17,7 @@ import {
   rejoinCall,
   relaySignal,
   setCallPermission,
+  setCallPin,
   startCall,
 } from "../lib/calls";
 
@@ -75,14 +76,10 @@ router.get("/calls/contacts", requireAuth, async (req: AuthRequest, res): Promis
     const params: unknown[] = [req.userId];
     let where = `u.id <> $1 AND u.status <> 'terminated'`;
     if (!admin) where += ` AND u.role = 'admin'`;
+    // Qadalganlar «Onlayn» filtrida ham (oflayn bo‘lsa ham) tepada qoladi
     if (onlyOnline) {
-      const ids = onlineUserIds();
-      if (!ids.length) {
-        res.json({ items: [], onlineTotal: 0 });
-        return;
-      }
-      params.push(ids);
-      where += ` AND u.id = ANY($${params.length}::int[])`;
+      params.push(onlineUserIds());
+      where += ` AND (u.id = ANY($${params.length}::int[]) OR pin.user_id IS NOT NULL)`;
     }
     if (q) {
       params.push(`%${q}%`);
@@ -90,14 +87,15 @@ router.get("/calls/contacts", requireAuth, async (req: AuthRequest, res): Promis
     }
     const { rows } = await pool.query(
       `SELECT u.id, u.full_name, u.role, e.position, COALESCE(NULLIF(TRIM(e.location), ''), NULL) AS branch,
-              (cp.user_id IS NOT NULL) AS can_call
+              (cp.user_id IS NOT NULL) AS can_call, pin.pinned_at
          FROM users u
          LEFT JOIN LATERAL (
            SELECT position, location FROM employees WHERE user_id = u.id ORDER BY id DESC LIMIT 1
          ) e ON TRUE
          LEFT JOIN call_permissions cp ON cp.user_id = u.id
+         LEFT JOIN call_pins pin ON pin.owner_id = $1 AND pin.user_id = u.id
         WHERE ${where}
-        ORDER BY u.full_name
+        ORDER BY (pin.user_id IS NULL), pin.pinned_at DESC, u.full_name
         LIMIT ${admin ? 300 : 50}`,
       params,
     );
@@ -110,13 +108,35 @@ router.get("/calls/contacts", requireAuth, async (req: AuthRequest, res): Promis
         branch: (r.branch as string) || null,
         canCall: Boolean(r.can_call) || isCallAdmin(r.role),
         online: isOnline(r.id),
+        pinnedAt: r.pinned_at ? new Date(r.pinned_at).toISOString() : null,
       }))
-      .sort((a, b) => Number(b.online) - Number(a.online) || a.fullName.localeCompare(b.fullName, "uz"))
+      .sort(
+        (a, b) =>
+          Number(Boolean(b.pinnedAt)) - Number(Boolean(a.pinnedAt)) ||
+          (b.pinnedAt ?? "").localeCompare(a.pinnedAt ?? "") ||
+          Number(b.online) - Number(a.online) ||
+          a.fullName.localeCompare(b.fullName, "uz"),
+      )
       .slice(0, admin ? 80 : 50);
     res.json({ items, onlineTotal: onlineUserIds().filter((id) => id !== req.userId).length });
   } catch (err) {
     console.error("GET /calls/contacts", err);
     res.status(503).json({ error: "Ro‘yxat yuklanmadi" });
+  }
+});
+
+router.put("/calls/pins/:userId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const userId = Number(req.params.userId);
+  if (!Number.isInteger(userId) || userId <= 0 || userId === req.userId) {
+    res.status(400).json({ error: "Noto‘g‘ri foydalanuvchi" });
+    return;
+  }
+  try {
+    await setCallPin(req.userId!, userId, Boolean(req.body?.pinned));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("PUT /calls/pins", err);
+    res.status(503).json({ error: "Saqlanmadi" });
   }
 });
 

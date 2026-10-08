@@ -7,6 +7,8 @@ import {
   PhoneIncoming,
   PhoneMissed,
   PhoneOutgoing,
+  Pin,
+  PinOff,
   Search,
   ShieldCheck,
   ShieldOff,
@@ -30,7 +32,20 @@ type Contact = {
   branch: string | null;
   canCall: boolean;
   online: boolean;
+  pinnedAt: string | null;
 };
+
+type ContactsData = { items: Contact[]; onlineTotal?: number };
+
+function sortContacts(items: Contact[]) {
+  return [...items].sort(
+    (a, b) =>
+      Number(Boolean(b.pinnedAt)) - Number(Boolean(a.pinnedAt)) ||
+      (b.pinnedAt ?? "").localeCompare(a.pinnedAt ?? "") ||
+      Number(b.online) - Number(a.online) ||
+      a.fullName.localeCompare(b.fullName, "uz"),
+  );
+}
 
 type HistoryItem = {
   id: string;
@@ -128,15 +143,23 @@ function ContactRow({
   canCall,
   onPermission,
   permPending,
+  onPin,
 }: {
   c: Contact;
   isAdmin: boolean;
   canCall: boolean;
   onPermission: (c: Contact, allowed: boolean) => void;
   permPending: boolean;
+  onPin: (c: Contact) => void;
 }) {
+  const pinned = Boolean(c.pinnedAt);
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card p-3 shadow-sm transition hover:border-border hover:shadow-md">
+    <div
+      className={cn(
+        "flex items-center gap-2 rounded-2xl border bg-card p-3 shadow-sm transition hover:shadow-md sm:gap-3",
+        pinned ? "border-amber-300/80 bg-amber-50/40 dark:border-amber-500/40 dark:bg-amber-500/5" : "border-border/60 hover:border-border",
+      )}
+    >
       <div className="relative">
         <CallAvatar id={c.id} name={c.fullName} className="h-12 w-12 text-base" />
         <span
@@ -148,12 +171,29 @@ function ContactRow({
         />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold">{c.fullName}</p>
+        <p className="flex items-center gap-1.5 text-sm font-semibold">
+          <span className="truncate">{c.fullName}</span>
+          {pinned ? <Pin className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-500" aria-label="Qadalgan" /> : null}
+        </p>
         <p className="truncate text-xs text-muted-foreground">{roleText(c)}</p>
         <p className={cn("mt-0.5 text-[11px] font-medium", c.online ? "text-emerald-600" : "text-muted-foreground/70")}>
           {c.online ? "Onlayn — qo‘ng‘iroq qilish mumkin" : "Oflayn — platformada emas"}
         </p>
       </div>
+      <button
+        type="button"
+        onClick={() => onPin(c)}
+        className={cn(
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition active:scale-90",
+          pinned
+            ? "bg-amber-100 text-amber-600 hover:bg-amber-200 dark:bg-amber-500/15 dark:text-amber-300"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground",
+        )}
+        aria-label={pinned ? "Qadashni olib tashlash" : "Tepaga qadash"}
+        title={pinned ? "Qadashni olib tashlash" : "Tepaga qadash"}
+      >
+        {pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+      </button>
       {isAdmin && c.role !== "admin" ? (
         <label className="mr-1 hidden flex-col items-center gap-1 text-[10px] font-medium text-muted-foreground sm:flex">
           <Switch checked={c.canCall} disabled={permPending} onCheckedChange={(v) => onPermission(c, v)} />
@@ -205,7 +245,7 @@ export default function QongiroqPage() {
   const contacts = useQuery({
     queryKey: ["calls", "contacts", dq, onlineOnly],
     queryFn: () =>
-      getJson<{ items: Contact[]; onlineTotal?: number }>(
+      getJson<ContactsData>(
         `/api/calls/contacts?q=${encodeURIComponent(dq)}${onlineOnly ? "&online=1" : ""}`,
       ),
     refetchInterval: onlineOnly ? 10_000 : 20_000,
@@ -244,10 +284,56 @@ export default function QongiroqPage() {
     onError: (e: Error) => toast({ title: "Xatolik", description: e.message, variant: "destructive" }),
   });
 
+  const setPin = useMutation({
+    mutationFn: async ({ userId, pinned }: { userId: number; pinned: boolean }) => {
+      const res = await fetch(`/api/calls/pins/${userId}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pinned }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { error?: string }).error || "Saqlanmadi");
+    },
+    onMutate: async ({ userId, pinned }) => {
+      await qc.cancelQueries({ queryKey: ["calls", "contacts"] });
+      const prev = qc.getQueriesData<ContactsData>({ queryKey: ["calls", "contacts"] });
+      const at = new Date().toISOString();
+      qc.setQueriesData<ContactsData>({ queryKey: ["calls", "contacts"] }, (old) =>
+        old
+          ? {
+              ...old,
+              items: sortContacts(old.items.map((c) => (c.id === userId ? { ...c, pinnedAt: pinned ? at : null } : c))),
+            }
+          : old,
+      );
+      return { prev };
+    },
+    onError: (e: Error, _v, ctx) => {
+      for (const [key, data] of ctx?.prev ?? []) qc.setQueryData(key, data);
+      toast({ title: "Xatolik", description: e.message, variant: "destructive" });
+    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: ["calls", "contacts"] }),
+  });
+
   const items = contacts.data?.items ?? [];
+  const pinnedItems = useMemo(() => items.filter((c) => c.pinnedAt), [items]);
+  const otherItems = useMemo(() => items.filter((c) => !c.pinnedAt), [items]);
   const listOnline = useMemo(() => items.filter((c) => c.online).length, [items]);
   const onlineCount = contacts.data?.onlineTotal ?? listOnline;
   const onPermission = (c: Contact, allowed: boolean) => setPerm.mutate({ userId: c.id, allowed, name: c.fullName });
+  const onPin = (c: Contact) => setPin.mutate({ userId: c.id, pinned: !c.pinnedAt });
+  const renderRow = (c: Contact) => (
+    <ContactRow
+      key={c.id}
+      c={c}
+      isAdmin={isAdmin}
+      canCall={canCall}
+      onPermission={onPermission}
+      permPending={setPerm.isPending}
+      onPin={onPin}
+    />
+  );
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-3 pb-24 sm:p-5 sm:pb-8">
@@ -376,16 +462,18 @@ export default function QongiroqPage() {
             />
           ) : (
             <div className="space-y-2">
-              {items.map((c) => (
-                <ContactRow
-                  key={c.id}
-                  c={c}
-                  isAdmin={isAdmin}
-                  canCall={canCall}
-                  onPermission={onPermission}
-                  permPending={setPerm.isPending}
-                />
-              ))}
+              {pinnedItems.length ? (
+                <>
+                  <p className="flex items-center gap-1.5 px-1 text-[11px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-300">
+                    <Pin className="h-3 w-3" /> Qadalganlar · {pinnedItems.length}
+                  </p>
+                  {pinnedItems.map(renderRow)}
+                  {otherItems.length ? (
+                    <p className="px-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Boshqalar</p>
+                  ) : null}
+                </>
+              ) : null}
+              {otherItems.map(renderRow)}
             </div>
           )}
         </TabsContent>

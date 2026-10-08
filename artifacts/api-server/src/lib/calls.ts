@@ -45,7 +45,13 @@ export function ensureCallSchema(): Promise<void> {
          ended_at TIMESTAMPTZ
        );
        CREATE INDEX IF NOT EXISTS call_logs_caller_idx ON call_logs (caller_id, created_at DESC);
-       CREATE INDEX IF NOT EXISTS call_logs_callee_idx ON call_logs (callee_id, created_at DESC);`,
+       CREATE INDEX IF NOT EXISTS call_logs_callee_idx ON call_logs (callee_id, created_at DESC);
+       CREATE TABLE IF NOT EXISTS call_pins (
+         owner_id INT NOT NULL,
+         user_id INT NOT NULL,
+         pinned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         PRIMARY KEY (owner_id, user_id)
+       );`,
     )
     .then(() => rehydrateCalls().catch((err) => logger.warn({ err }, "calls rehydrate")))
     .catch((err) => {
@@ -80,6 +86,20 @@ export async function setCallPermission(userId: number, allowed: boolean, by: { 
   }
   permCache.delete(userId);
   pushTo(userId, "perm", { canCall: allowed });
+}
+
+/** Qadash (pin): qayta qadalsa vaqti yangilanadi — eng oxirgisi ro‘yxatda birinchi */
+export async function setCallPin(ownerId: number, userId: number, pinned: boolean) {
+  await ensureCallSchema();
+  if (pinned) {
+    await pool.query(
+      `INSERT INTO call_pins (owner_id, user_id) VALUES ($1, $2)
+       ON CONFLICT (owner_id, user_id) DO UPDATE SET pinned_at = NOW()`,
+      [ownerId, userId],
+    );
+  } else {
+    await pool.query(`DELETE FROM call_pins WHERE owner_id = $1 AND user_id = $2`, [ownerId, userId]);
+  }
 }
 
 export type CallUser = { id: number; fullName: string; role: string; status: string; phone: string | null };

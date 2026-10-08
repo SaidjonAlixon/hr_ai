@@ -1,5 +1,6 @@
 import { record } from "rrweb";
 import { canZip, gzip, TEXT_CHUNK as CHUNK, ZIP_CHUNK, zipFrame } from "./mirror-wire";
+import { setMirrorNodeResolver } from "./remote-control";
 
 /**
  * «Ilova ko‘rinishi»ning jonli nusxasi: kadr o‘rniga sahifa tuzilmasi va uning o‘zgarishlari yuboriladi.
@@ -121,6 +122,7 @@ export function startMirror(dc: RTCDataChannel, opts: { zip: boolean }): MirrorR
     sendText("X");
     return null;
   }
+  setMirrorNodeResolver((id) => record.mirror.getNode(id));
 
   return {
     full,
@@ -128,6 +130,7 @@ export function startMirror(dc: RTCDataChannel, opts: { zip: boolean }): MirrorR
     stop: () => {
       if (stopped) return;
       stopped = true;
+      setMirrorNodeResolver(null);
       try {
         stopRecord?.();
       } catch {

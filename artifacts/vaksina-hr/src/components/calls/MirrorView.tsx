@@ -4,16 +4,26 @@ import { Replayer, type eventWithTime } from "rrweb";
 import { callEngine } from "@/lib/calls/engine";
 
 export type MirrorRect = { left: number; top: number; width: number; height: number };
+/** Nusxadagi nuqta (0..1) → xodim sahifasidagi element id si va undagi nisbiy joy */
+export type MirrorPicker = (nx: number, ny: number) => { id: number; rx: number; ry: number } | null;
 
 /**
  * Xodim ilovasining jonli nusxasi (admin tomoni). Voqealar kelishi bilanoq qo‘llanadi — kechikish faqat tarmoqqa bog‘liq.
  * Nusxa xodim oynasi o‘lchamida quriladi va konteynerga sig‘diriladi; boshqaruv koordinatalari shu to‘rtburchakka nisbatan.
  */
-export default function MirrorView({ onRect }: { onRect: (r: MirrorRect | null) => void }) {
+export default function MirrorView({
+  onRect,
+  onPicker,
+}: {
+  onRect: (r: MirrorRect | null) => void;
+  onPicker?: (fn: MirrorPicker | null) => void;
+}) {
   const box = useRef<HTMLDivElement>(null);
   const host = useRef<HTMLDivElement>(null);
   const rectCb = useRef(onRect);
   rectCb.current = onRect;
+  const pickerCb = useRef(onPicker);
+  pickerCb.current = onPicker;
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -22,6 +32,24 @@ export default function MirrorView({ onRect }: { onRect: (r: MirrorRect | null) 
     if (!boxEl || !hostEl) return;
     let rp: Replayer | null = null;
     let size = { w: 0, h: 0 };
+
+    const pick: MirrorPicker = (nx, ny) => {
+      const doc = hostEl.querySelector("iframe")?.contentDocument;
+      if (!rp || !doc || !size.w || !size.h) return null;
+      const px = nx * size.w;
+      const py = ny * size.h;
+      const mirror = rp.getMirror();
+      let el: Element | null = doc.elementFromPoint(px, py);
+      while (el && el !== doc.documentElement && mirror.getId(el) <= 0) el = el.parentElement;
+      if (!el || el === doc.documentElement || el === doc.body) return null;
+      const id = mirror.getId(el);
+      if (id <= 0) return null;
+      const r = el.getBoundingClientRect();
+      const rx = r.width ? (px - r.left) / r.width : 0.5;
+      const ry = r.height ? (py - r.top) / r.height : 0.5;
+      return { id, rx: Math.min(1, Math.max(0, rx)), ry: Math.min(1, Math.max(0, ry)) };
+    };
+    pickerCb.current?.(pick);
 
     const layout = () => {
       if (!size.w || !size.h) {
@@ -91,6 +119,7 @@ export default function MirrorView({ onRect }: { onRect: (r: MirrorRect | null) 
       unsubscribe();
       ro.disconnect();
       destroy();
+      pickerCb.current?.(null);
     };
   }, []);
 

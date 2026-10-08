@@ -267,6 +267,7 @@ function RoundButton({
   danger,
   success,
   big,
+  small,
   disabled,
   children,
 }: {
@@ -276,6 +277,7 @@ function RoundButton({
   danger?: boolean;
   success?: boolean;
   big?: boolean;
+  small?: boolean;
   disabled?: boolean;
   children: ReactNode;
 }) {
@@ -284,13 +286,14 @@ function RoundButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="group flex w-16 flex-col items-center gap-1.5 disabled:opacity-40 sm:w-[72px]"
+      className={cn("group flex flex-col items-center gap-1.5 disabled:opacity-40", small ? "w-auto" : "w-16 sm:w-[72px]")}
       aria-label={label}
+      title={small ? label : undefined}
     >
       <span
         className={cn(
           "flex items-center justify-center rounded-full transition-all duration-200 active:scale-90",
-          big ? "h-16 w-16" : "h-12 w-12 sm:h-14 sm:w-14",
+          big ? "h-16 w-16" : small ? "h-10 w-10 [&_svg]:h-[18px] [&_svg]:w-[18px]" : "h-12 w-12 sm:h-14 sm:w-14",
           danger
             ? "bg-red-500 text-white shadow-lg shadow-red-500/40 hover:bg-red-600"
             : success
@@ -302,7 +305,7 @@ function RoundButton({
       >
         {children}
       </span>
-      <span className="max-w-full truncate text-[11px] font-medium leading-tight text-white/85">{label}</span>
+      {small ? null : <span className="max-w-full truncate text-[11px] font-medium leading-tight text-white/85">{label}</span>}
     </button>
   );
 }
@@ -314,7 +317,7 @@ function IncomingScreen({ s }: { s: CallSnapshot }) {
   return (
     <div
       data-call-ui=""
-      className="fixed inset-0 z-[9995] flex flex-col items-center justify-between overflow-hidden bg-slate-950 px-6 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-[max(3.5rem,env(safe-area-inset-top))] text-white animate-in fade-in duration-300"
+      className="call-ui fixed inset-0 z-[9995] flex flex-col items-center justify-between overflow-hidden bg-slate-950 px-6 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-[max(3.5rem,env(safe-area-inset-top))] text-white animate-in fade-in duration-300"
     >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(16,185,129,0.35),transparent_55%),radial-gradient(circle_at_80%_90%,rgba(59,130,246,0.35),transparent_50%)]" />
       <div className="relative z-10 flex flex-col items-center gap-2 text-center">
@@ -527,10 +530,13 @@ function ControlToolbar() {
     setText("");
   };
   return (
-    <div className="pointer-events-auto mx-auto flex w-full max-w-xl flex-col gap-2 rounded-2xl bg-slate-900/85 p-2 text-white shadow-2xl ring-1 ring-sky-400/30 backdrop-blur-xl">
+    <div className="pointer-events-auto mx-auto flex w-full max-w-xl flex-col gap-1.5 rounded-2xl bg-slate-900/85 p-1.5 text-white shadow-2xl ring-1 ring-sky-400/30 backdrop-blur-xl">
       <div className="flex items-center gap-1.5">
-        <span className="mr-auto inline-flex items-center gap-1.5 rounded-full bg-sky-500/20 px-2.5 py-1 text-xs font-semibold text-sky-200">
-          <MousePointerClick className="h-3.5 w-3.5" /> Boshqaruv yoqilgan
+        <span
+          title="Boshqaruv yoqilgan"
+          className="mr-auto inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-sky-500/20 px-2.5 py-1 text-xs font-semibold text-sky-200"
+        >
+          <MousePointerClick className="h-3.5 w-3.5" /> Boshqaruv
         </span>
         <ToolBtn label="Orqaga" onClick={() => callEngine.sendControl({ e: "nav", to: "back" })}>
           <ArrowLeft className="h-4 w-4" />
@@ -594,7 +600,7 @@ function ToolBtn({
       aria-label={label}
       onClick={onClick}
       className={cn(
-        "flex h-9 items-center gap-1.5 rounded-xl px-2.5 text-xs font-medium transition active:scale-95",
+        "flex h-8 items-center gap-1.5 whitespace-nowrap rounded-xl px-2.5 text-xs font-medium transition active:scale-95",
         danger ? "bg-red-500/90 hover:bg-red-500" : active ? "bg-white text-slate-900" : "bg-white/10 hover:bg-white/20",
       )}
     >
@@ -624,6 +630,17 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
   const isAdmin = Boolean(s.me?.isAdmin);
   const live = s.phase === "active";
   const controller = s.controlSide === "controller";
+  // Boshqaruvda xodim ekrani hech narsa bilan yopilmasin: sarlavha — kichik belgi, ekran — panellar orasida
+  const compact = controller && showRemote;
+  const [bottomBar, setBottomBar] = useState<HTMLDivElement | null>(null);
+  const [barH, setBarH] = useState(0);
+  useLayoutEffect(() => {
+    if (!bottomBar) return;
+    const ro = new ResizeObserver(() => setBarH(bottomBar.offsetHeight));
+    ro.observe(bottomBar);
+    setBarH(bottomBar.offsetHeight);
+    return () => ro.disconnect();
+  }, [bottomBar]);
 
   useEffect(() => {
     if (!showRemote || controller) {
@@ -635,10 +652,11 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
   }, [showRemote, controller, chrome]);
 
   return (
-    <div data-call-ui="" className="fixed inset-0 z-[9990] overflow-hidden bg-slate-950 text-white animate-in fade-in duration-200">
+    <div data-call-ui="" className="call-ui fixed inset-0 z-[9990] overflow-hidden bg-slate-950 text-white animate-in fade-in duration-200">
       <div
         ref={setStage}
         className="absolute inset-0"
+        style={compact ? { top: "calc(env(safe-area-inset-top) + 2.25rem)", bottom: barH } : undefined}
         onClick={() => {
           if (!controller) setChrome((v) => !v);
         }}
@@ -696,10 +714,34 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
       </div>
 
       {/* yuqori panel */}
+      {compact ? (
+        <div className="absolute left-2 top-[calc(env(safe-area-inset-top)+0.25rem)] z-10 flex h-7 max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-full bg-white/10 pl-0.5 pr-2.5 text-[11px] text-white/85 ring-1 ring-white/10">
+          <button
+            type="button"
+            onClick={() => callEngine.setMinimized(true)}
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full hover:bg-white/15"
+            aria-label="Kichraytirish"
+            title="Kichraytirish — ilovadan foydalanishda davom eting"
+          >
+            <ChevronDown className="h-4 w-4" />
+          </button>
+          <span className="truncate font-semibold">{peer.fullName}</span>
+          <span className="shrink-0 tabular-nums text-white/60">{statusText(s, now)}</span>
+          {live && !s.remote.mic ? <MicOff className="h-3 w-3 shrink-0 text-white/60" aria-label="Mikrofoni o‘chiq" /> : null}
+          {s.conn === "reconnecting" ? (
+            <WifiOff className="h-3.5 w-3.5 shrink-0 animate-pulse text-amber-300" />
+          ) : live && s.quality === "poor" ? (
+            <SignalLow className="h-3.5 w-3.5 shrink-0 text-red-400" />
+          ) : live && s.quality === "weak" ? (
+            <SignalMedium className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+          ) : null}
+        </div>
+      ) : null}
       <div
         className={cn(
           "pointer-events-none absolute inset-x-0 top-0 z-10 bg-gradient-to-b from-black/70 via-black/30 to-transparent px-4 pb-10 pt-[max(1rem,env(safe-area-inset-top))] transition-opacity duration-300",
           chrome ? "opacity-100" : "opacity-0",
+          compact && "hidden",
         )}
       >
         <div className="pointer-events-auto flex items-start gap-3">
@@ -754,8 +796,10 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
       {s.localStream && s.local.cam ? (
         <div
           className={cn(
-            "absolute right-3 top-[calc(max(1rem,env(safe-area-inset-top))+3.5rem)] z-20 overflow-hidden rounded-2xl bg-black shadow-2xl ring-1 ring-white/25",
-            pipRatio >= 1 ? "w-36 sm:w-52" : "w-24 sm:w-36",
+            "absolute z-20 overflow-hidden rounded-2xl bg-black shadow-2xl ring-1 ring-white/25",
+            compact
+              ? "right-2 top-[calc(env(safe-area-inset-top)+0.25rem)] rounded-lg " + (pipRatio >= 1 ? "w-20 sm:w-28" : "w-12 sm:w-20")
+              : "right-3 top-[calc(max(1rem,env(safe-area-inset-top))+3.5rem)] " + (pipRatio >= 1 ? "w-36 sm:w-52" : "w-24 sm:w-36"),
           )}
           style={{ aspectRatio: String(pipRatio) }}
         >
@@ -778,13 +822,17 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
 
       {/* pastki boshqaruv */}
       <div
+        ref={setBottomBar}
         className={cn(
-          "absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-12 transition-opacity duration-300",
+          "absolute inset-x-0 bottom-0 z-10 px-3 transition-opacity duration-300",
+          compact
+            ? "bg-slate-950 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2"
+            : "bg-gradient-to-t from-black/80 via-black/40 to-transparent pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-12",
           chrome ? "opacity-100" : "pointer-events-none opacity-0",
         )}
       >
         {controller && showRemote ? (
-          <div className="mb-3">
+          <div className={compact ? "mb-2" : "mb-3"}>
             <ControlToolbar />
           </div>
         ) : null}
@@ -812,20 +860,21 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
             </Chip>
           </div>
         ) : null}
-        <div className="mx-auto flex max-w-lg flex-wrap items-start justify-center gap-x-2 gap-y-3 sm:gap-x-4">
-          <RoundButton label={s.local.mic ? "Mikrofon" : "Ovoz o‘chiq"} active={!s.local.mic} onClick={() => callEngine.toggleMic()} disabled={s.phase === "ended"}>
+        <div className={cn("mx-auto flex max-w-lg flex-wrap items-start justify-center gap-x-2 sm:gap-x-4", compact ? "gap-y-1" : "gap-y-3")}>
+          <RoundButton small={compact} label={s.local.mic ? "Mikrofon" : "Ovoz o‘chiq"} active={!s.local.mic} onClick={() => callEngine.toggleMic()} disabled={s.phase === "ended"}>
             {s.local.mic ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
           </RoundButton>
-          <RoundButton label={s.local.cam ? "Kamera" : "Kamera o‘chiq"} active={!s.local.cam} onClick={() => void callEngine.toggleCam()} disabled={s.phase === "ended"}>
+          <RoundButton small={compact} label={s.local.cam ? "Kamera" : "Kamera o‘chiq"} active={!s.local.cam} onClick={() => void callEngine.toggleCam()} disabled={s.phase === "ended"}>
             {s.local.cam ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
           </RoundButton>
           {s.local.cam && s.canFlip ? (
-            <RoundButton label={s.local.facing === "user" ? "Orqa kamera" : "Old kamera"} onClick={() => void callEngine.flipCamera()}>
+            <RoundButton small={compact} label={s.local.facing === "user" ? "Orqa kamera" : "Old kamera"} onClick={() => void callEngine.flipCamera()}>
               <SwitchCamera className="h-5 w-5" />
             </RoundButton>
           ) : null}
           {live ? (
             <RoundButton
+              small={compact}
               label={s.local.share !== "none" ? "To‘xtatish" : "Ekran"}
               active={s.local.share !== "none"}
               onClick={() => (s.local.share !== "none" ? void callEngine.stopShare() : void callEngine.startShare())}
@@ -833,7 +882,7 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
               {s.local.share !== "none" ? <ScreenShareOff className="h-5 w-5" /> : <MonitorUp className="h-5 w-5" />}
             </RoundButton>
           ) : null}
-          <RoundButton danger label="Tugatish" onClick={() => void callEngine.hangup()} disabled={s.phase === "ended"}>
+          <RoundButton small={compact} danger label="Tugatish" onClick={() => void callEngine.hangup()} disabled={s.phase === "ended"}>
             <PhoneOff className="h-6 w-6" />
           </RoundButton>
         </div>
@@ -865,7 +914,7 @@ function MiniCall({ s }: { s: CallSnapshot }) {
   return (
     <div
       data-call-ui=""
-      className="fixed bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] right-3 z-[9990] flex items-center gap-2.5 rounded-2xl bg-slate-900/95 p-2 pr-2.5 text-white shadow-2xl ring-1 ring-white/10 backdrop-blur-xl animate-in slide-in-from-bottom-4 md:bottom-6 md:right-6"
+      className="call-ui fixed bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] right-3 z-[9990] flex items-center gap-2.5 rounded-2xl bg-slate-900/95 p-2 pr-2.5 text-white shadow-2xl ring-1 ring-white/10 backdrop-blur-xl animate-in slide-in-from-bottom-4 md:bottom-6 md:right-6"
     >
       <button type="button" onClick={() => callEngine.setMinimized(false)} className="flex items-center gap-2.5 text-left">
         <div className="relative h-12 w-12 overflow-hidden rounded-xl">
@@ -918,7 +967,7 @@ function PromptCard({ s }: { s: CallSnapshot }) {
   const kind = s.prompt!.kind;
   const name = s.peer?.fullName ?? "Admin";
   return (
-    <div data-call-ui="" className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/50 p-3 backdrop-blur-sm animate-in fade-in sm:items-center">
+    <div data-call-ui="" className="call-ui fixed inset-0 z-[9999] flex items-end justify-center bg-black/50 p-3 backdrop-blur-sm animate-in fade-in sm:items-center">
       <div className="w-full max-w-sm rounded-3xl bg-white p-5 text-slate-900 shadow-2xl animate-in slide-in-from-bottom-6 dark:bg-slate-900 dark:text-white">
         <div
           className={cn(
@@ -980,7 +1029,7 @@ function ShareBanner({ s }: { s: CallSnapshot }) {
       <div
         data-call-ui=""
         className={cn(
-          "pointer-events-none fixed inset-x-0 top-0 z-[9998] h-[calc(env(safe-area-inset-top)+3px)] sm:hidden",
+          "call-ui pointer-events-none fixed inset-x-0 top-0 z-[9998] h-[calc(env(safe-area-inset-top)+3px)] sm:hidden",
           controlled ? "bg-red-600" : "bg-emerald-600",
         )}
       />
@@ -989,7 +1038,7 @@ function ShareBanner({ s }: { s: CallSnapshot }) {
         data-call-ui=""
         onClick={stop}
         className={cn(
-          "fixed bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] left-2 z-[9998] inline-flex h-7 items-center gap-1.5 rounded-full pl-2 pr-2.5 text-[11px] font-bold text-white shadow-lg ring-1 ring-white/30 active:scale-95 sm:hidden",
+          "call-ui fixed bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] left-2 z-[9998] inline-flex h-7 items-center gap-1.5 rounded-full pl-2 pr-2.5 text-[11px] font-bold text-white shadow-lg ring-1 ring-white/30 active:scale-95 sm:hidden",
           controlled ? "bg-red-600/90" : "bg-emerald-600/90",
         )}
         aria-label={controlled ? "Boshqaruvni to‘xtatish" : "Ulashishni to‘xtatish"}
@@ -1010,7 +1059,7 @@ function ShareBannerDesktop({ s, controlled, onStop }: { s: CallSnapshot; contro
     <div
       data-call-ui=""
       className={cn(
-        "fixed inset-x-0 top-0 z-[9998] hidden items-center justify-center gap-3 px-3 pb-1.5 pt-[max(0.375rem,env(safe-area-inset-top))] text-sm font-semibold text-white shadow-lg sm:flex",
+        "call-ui fixed inset-x-0 top-0 z-[9998] hidden items-center justify-center gap-3 px-3 pb-1.5 pt-[max(0.375rem,env(safe-area-inset-top))] text-sm font-semibold text-white shadow-lg sm:flex",
         controlled ? "bg-red-600" : "bg-emerald-600",
       )}
     >
@@ -1047,7 +1096,7 @@ function NoticeToast({ s }: { s: CallSnapshot }) {
   return (
     <div
       data-call-ui=""
-      className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+3.25rem)] z-[10000] flex justify-center px-4"
+      className="call-ui pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+3.25rem)] z-[10000] flex justify-center px-4"
     >
       <div
         className={cn(

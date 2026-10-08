@@ -99,6 +99,8 @@ export default function MirrorView({
           showDebug: false,
           triggerFocus: false,
           pauseAnimation: false,
+          // Xodim qurilmasidagi qo‘ng‘iroq oynalari (bloklangan, faqat klassi qoladi) nusxada ko‘rinmasin
+          insertStyleRules: [".call-ui { display: none !important; }"],
         });
         rp.on("resize", (d) => {
           const dim = d as { width: number; height: number };

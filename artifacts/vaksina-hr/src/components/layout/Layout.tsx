@@ -66,7 +66,8 @@ import {
   getGetNotificationsQueryKey,
   getGetDashboardStatsQueryKey,
 } from '@workspace/api-client-react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { fetchSmenaAccess } from '@/lib/smena-api';
 import { useStaffNeeds } from '@/lib/staff-needs-api';
 import { useOpsDash } from '@/lib/ops-dept-api';
 import { cn } from '@/lib/utils';
@@ -396,6 +397,15 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const [location, setLocation] = useLocation();
   const logout = useLogout();
   const queryClient = useQueryClient();
+  const isKoordinator = normalizeUserRole(user?.role) === 'koordinator';
+  const smenaAccessQ = useQuery({
+    queryKey: ['smena-access'],
+    queryFn: fetchSmenaAccess,
+    enabled: Boolean(user) && isKoordinator,
+    staleTime: 30_000,
+    refetchInterval: 120_000,
+  });
+  const canSeeSmenaFilial = canManageSmenaFilial(user?.role) || (isKoordinator && Boolean(smenaAccessQ.data?.any));
   /** Mobil: drawer ochiq/yopiq. Desktop: kengaytirilgan/icon-only. */
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = React.useState(false);
@@ -872,7 +882,11 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (location.startsWith('/admin/holat') && !canViewHolat(user.role)) {
       setLocation('/dashboard');
     }
-    if (location.startsWith('/smena-filial') && !canManageSmenaFilial(user.role)) {
+    if (
+      location.startsWith('/smena-filial') &&
+      !canSeeSmenaFilial &&
+      !(isKoordinator && smenaAccessQ.isLoading)
+    ) {
       setLocation('/dashboard');
     }
     if (location.startsWith('/logistika') && !canViewLogistika(user.role)) {
@@ -902,7 +916,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         setLocation('/vazifalar');
       }
     }
-  }, [isLoading, isAuthenticated, user, setLocation, location]);
+  }, [isLoading, isAuthenticated, user, setLocation, location, canSeeSmenaFilial, isKoordinator, smenaAccessQ.isLoading]);
 
   if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center">Yuklanmoqda...</div>;
@@ -1447,6 +1461,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Cheklist', path: '/checklist', icon: ClipboardCheck },
       { name: 'Reyting', path: '/checklist-holati', icon: Trophy },
+      smenaNav,
     ],
     it: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
@@ -1766,7 +1781,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     .filter((item) => item.path !== '/admin/kochma-davomat' || canViewKochmaAdmin(userRole))
     .filter((item) => item.path !== '/admin/kochma-xarita' || canViewKochmaAdmin(userRole))
     .filter((item) => item.path !== '/admin/kochma-live' || canViewKochmaAdmin(userRole))
-    .filter((item) => item.path !== '/smena-filial' || userRole !== 'mudir')
+    .filter((item) => item.path !== '/smena-filial' || canSeeSmenaFilial)
     .filter((item) => item.path !== '/admin/holat' || canViewHolat(userRole))
     .filter((item) => item.path !== '/admin/holat/xodim' || canViewHolat(userRole))
     .filter((item) => item.path !== '/distribyutsiya' || canViewDistribyutsiya(userRole))

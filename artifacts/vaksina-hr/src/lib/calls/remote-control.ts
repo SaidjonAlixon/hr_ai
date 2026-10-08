@@ -29,6 +29,8 @@ function showCursor(cx: number, cy: number) {
   if (!cursorEl || !cursorEl.isConnected) {
     cursorEl = document.createElement("div");
     cursorEl.setAttribute("data-call-ui", "");
+    // Jonli nusxada bloklangan element faqat klassi bilan qoladi — oqimdan tashqarida tursin
+    cursorEl.className = "fixed pointer-events-none";
     cursorEl.style.cssText =
       "position:fixed;left:0;top:0;pointer-events:none;z-index:2147483647;will-change:transform;transition:transform 60ms linear";
     cursorEl.innerHTML = `<svg width="26" height="26" viewBox="0 0 24 24" style="display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45))">
@@ -48,6 +50,7 @@ export function hideRemoteCursor() {
 function ripple(cx: number, cy: number) {
   const dot = document.createElement("div");
   dot.setAttribute("data-call-ui", "");
+  dot.className = "fixed pointer-events-none";
   dot.style.cssText = `position:fixed;left:${cx - 18}px;top:${cy - 18}px;width:36px;height:36px;border-radius:9999px;
     background:rgba(59,130,246,.35);border:2px solid rgba(59,130,246,.9);pointer-events:none;z-index:2147483646;
     transform:scale(.4);opacity:1;transition:transform .45s ease-out,opacity .45s ease-out`;

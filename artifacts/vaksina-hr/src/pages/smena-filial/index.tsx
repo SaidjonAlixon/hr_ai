@@ -22,8 +22,12 @@ import {
   Briefcase,
   Layers,
   SlidersHorizontal,
+  History,
+  KeyRound,
 } from "lucide-react";
 import ShiftChangeBoard from "./ShiftChangeBoard";
+import SmenaHistoryPanel from "./SmenaHistoryPanel";
+import CoordinatorPermissionsPanel from "./CoordinatorPermissionsPanel";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -38,6 +42,7 @@ import {
   deleteWorkSlot,
   updateWorkSlotShift,
   fetchAllWorkSlots,
+  fetchSmenaAccess,
   fetchSmenaMe,
   todayTashkentYmd,
   WEEKDAY_OPTIONS,
@@ -114,6 +119,7 @@ function orgLabel(org: string | null) {
   if (org === "pharmacist") return "Farmasevt";
   if (org === "intern") return "Stajyor";
   if (org === "manager") return "Mudir";
+  if (org === "supervisor") return "Boshqaruvchi";
   return "Xodim";
 }
 
@@ -140,10 +146,34 @@ export default function SmenaFilialPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const isAllowed = canManageSmenaFilial(user?.role);
+  const isFull = canManageSmenaFilial(user?.role);
+  const accessQ = useQuery({
+    queryKey: ["smena-access"],
+    queryFn: fetchSmenaAccess,
+    enabled: !isFull && user?.role === "koordinator",
+    staleTime: 30_000,
+  });
+  const access = isFull
+    ? { full: true, canRotate: true, canShift: true, scope: "all" as const, any: true }
+    : accessQ.data;
+  const isAllowed = Boolean(access?.any);
+  const canRotate = Boolean(access?.canRotate);
+  const canShift = Boolean(access?.canShift);
 
-  // Asosiy yorliq: "create" (Yangi rotatsiya), "shift" (Smena o‘zgartirish) yoki "monitoring" (Baza va tarix)
-  const [activeMainTab, setActiveMainTab] = useState<"create" | "shift" | "monitoring">("create");
+  type MainTab = "create" | "shift" | "monitoring" | "history" | "perms";
+  const [tabPick, setActiveMainTab] = useState<MainTab | null>(null);
+  const [historyActorId, setHistoryActorId] = useState<number | null>(null);
+  const allowedTabs: MainTab[] = [
+    ...(canRotate ? (["create"] as const) : []),
+    ...(canShift ? (["shift"] as const) : []),
+    "monitoring",
+    "history",
+    ...(isFull ? (["perms"] as const) : []),
+  ];
+  const activeMainTab: MainTab = tabPick && allowedTabs.includes(tabPick) ? tabPick : allowedTabs[0];
+
+  // Filtr: kimlar ro‘yxatda (1-qadam)
+  const [peopleRole, setPeopleRole] = useState<"all" | "pharmacist" | "intern" | "supervisor" | "manager">("all");
 
   // Rotatsiya rejimi: doimiy, muddatli, haftalik, kunlik
   const [mode, setMode] = useState<SlotMode>("permanent");
@@ -207,24 +237,40 @@ export default function SmenaFilialPage() {
   // Xodimlar ro'yxatini filtrlash
   const filteredStaff = useMemo(() => {
     const q = peopleQ.trim().toLowerCase();
-    if (!q) return staff;
     return staff.filter(
       (p) =>
-        p.fullName.toLowerCase().includes(q) ||
-        (p.assignedBranchName || "").toLowerCase().includes(q)
+        (peopleRole === "all" || p.orgRole === peopleRole) &&
+        (!q ||
+          p.fullName.toLowerCase().includes(q) ||
+          (p.assignedBranchName || "").toLowerCase().includes(q))
     );
-  }, [staff, peopleQ]);
+  }, [staff, peopleQ, peopleRole]);
+
+  const roleCounts = useMemo(
+    () => ({
+      all: staff.length,
+      pharmacist: staff.filter((p) => p.orgRole === "pharmacist").length,
+      intern: staff.filter((p) => p.orgRole === "intern").length,
+      supervisor: staff.filter((p) => p.orgRole === "supervisor").length,
+      manager: staff.filter((p) => p.orgRole === "manager").length,
+    }),
+    [staff]
+  );
+
+  const pickedIsMudir = pickedPerson?.orgRole === "manager";
+  const mudirPermanentBlocked = pickedIsMudir && mode === "permanent";
 
   // Filiallar ro'yxatini filtrlash
   const filteredBranches = useMemo(() => {
     const q = branchQ.trim().toLowerCase();
-    if (!q) return branches;
-    return branches.filter(
+    const pool = pickedIsMudir ? branches.filter((b) => b.id !== pickedPersonId) : branches;
+    if (!q) return pool;
+    return pool.filter(
       (b) =>
         b.name.toLowerCase().includes(q) ||
         (b.managerName || "").toLowerCase().includes(q)
     );
-  }, [branches, branchQ]);
+  }, [branches, branchQ, pickedIsMudir, pickedPersonId]);
 
   // Tanlangan xodimning mavjud slotlari
   const slotsForPicked = useMemo(() => {
@@ -238,6 +284,9 @@ export default function SmenaFilialPage() {
       if (!pickedPersonId) throw new Error("Iltimos, avval xodimni tanlang");
       if (!pickedBranchId) throw new Error("Iltimos, filialni tanlang");
       if (!pickedShift) throw new Error("Iltimos, smenani tanlang");
+      if (mudirPermanentBlocked) {
+        throw new Error("Mudirni doimiy o‘tkazish «Aptekalar tarmog‘i» bo‘limida qilinadi. Bu yerda muddatli, haftalik yoki kunlik rotatsiyani tanlang.");
+      }
 
       if (mode === "period") {
         if (!validTo) throw new Error("Muddatli rotatsiyada tugash sanasi majburiy!");
@@ -275,6 +324,7 @@ export default function SmenaFilialPage() {
     onSuccess: (res) => {
       void qc.invalidateQueries({ queryKey: ["smena-slots-all"] });
       void qc.invalidateQueries({ queryKey: ["smena-me"] });
+      void qc.invalidateQueries({ queryKey: ["smena-history"] });
       toast({
         title: "Rotatsiya muvaffaqiyatli saqlandi! 🎉",
         description: `${pickedPerson?.fullName} → ${pickedBranch?.name} (${SHIFT_CONFIG[pickedShift]?.label})`,
@@ -298,6 +348,7 @@ export default function SmenaFilialPage() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["smena-slots-all"] });
       void qc.invalidateQueries({ queryKey: ["smena-me"] });
+      void qc.invalidateQueries({ queryKey: ["smena-history"] });
       toast({ title: "Rotatsiya bekor qilindi (o‘chirildi)" });
     },
     onError: (err: Error) => {
@@ -313,6 +364,7 @@ export default function SmenaFilialPage() {
       setEditingSlotId(null);
       void qc.invalidateQueries({ queryKey: ["smena-slots-all"] });
       void qc.invalidateQueries({ queryKey: ["smena-me"] });
+      void qc.invalidateQueries({ queryKey: ["smena-history"] });
       toast({ title: "Smena muvaffaqiyatli yangilandi!" });
     },
     onError: (err: Error) => {
@@ -345,6 +397,15 @@ export default function SmenaFilialPage() {
     });
   }, [allSlots, monitoringSearch, monitoringStatusFilter, monitoringModeFilter]);
 
+  if (!isFull && accessQ.isLoading) {
+    return (
+      <div className="mx-auto flex max-w-lg items-center justify-center gap-2 p-10 text-sm text-muted-foreground">
+        <RefreshCw className="h-4 w-4 animate-spin" />
+        Ruxsatlar tekshirilmoqda…
+      </div>
+    );
+  }
+
   // Ruxsat yo'q bo'lsa
   if (!isAllowed) {
     return (
@@ -356,8 +417,8 @@ export default function SmenaFilialPage() {
               Ruxsat berilmagan
             </h2>
             <p className="text-sm text-rose-700 dark:text-rose-300">
-              Smena va filial boshqaruvi (rotatsiya) faqat <strong>HR menejer</strong> va{" "}
-              <strong>Admin</strong> uchun ochiq.
+              «Smena va filial» bo‘limi <strong>HR menejer</strong>, <strong>Admin</strong> va ular alohida ruxsat
+              bergan <strong>koordinatorlar</strong> uchun ochiq.
             </p>
           </CardContent>
         </Card>
@@ -379,74 +440,120 @@ export default function SmenaFilialPage() {
             </h1>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Xodimlarni boshqa dorixonaga doimiy yoki vaqtincha biriktirish, smena va ish soatlarini nazorat qilish
+            Farmasevt, stajyor va mudirlarni boshqa dorixonaga doimiy yoki vaqtincha biriktirish, smena va ish
+            soatlarini boshqarish — har bir amal tarixga yoziladi
           </p>
         </div>
+      </div>
 
-        {/* Asosiy yorliqlar: Yangi rotatsiya / Baza monitoring */}
-        <div className="flex rounded-xl border border-border bg-muted/40 p-1">
-          <button
-            type="button"
-            onClick={() => setActiveMainTab("create")}
-            className={cn(
-              "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition",
-              activeMainTab === "create"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <RefreshCw className="h-4 w-4" />
-            Yangi rotatsiya
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveMainTab("shift")}
-            className={cn(
-              "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition",
-              activeMainTab === "shift"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <SlidersHorizontal className="h-4 w-4" />
-            Smena o‘zgartirish
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveMainTab("monitoring")}
-            className={cn(
-              "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition",
-              activeMainTab === "monitoring"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <Layers className="h-4 w-4" />
-            Monitoring va Baza
-            {allSlots.length > 0 && (
-              <span className="ml-1 rounded-full bg-primary-foreground/20 px-1.5 py-0.2 text-xs">
-                {allSlots.length}
-              </span>
-            )}
-          </button>
+      {!isFull && access && (
+        <div className="flex flex-col gap-2 rounded-2xl border border-primary/25 bg-primary/5 p-3.5 text-xs sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-2.5">
+            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <div>
+              <p className="font-bold text-foreground">Koordinator sifatidagi ruxsatlaringiz</p>
+              <p className="mt-0.5 text-muted-foreground">
+                {access.scope === "all"
+                  ? "Butun tarmoqdagi farmasevt, stajyor va mudirlar ustidan."
+                  : "Faqat sizga biriktirilgan filiallardagi farmasevt, stajyor va mudirlar ustidan."}{" "}
+                Barcha amallaringiz ismingiz va vaqti bilan tarixga yoziladi.
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 gap-1.5">
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-bold",
+                canRotate ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" : "bg-muted text-muted-foreground line-through"
+              )}
+            >
+              <Repeat className="h-3 w-3" /> Rotatsiya
+            </span>
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-bold",
+                canShift ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" : "bg-muted text-muted-foreground line-through"
+              )}
+            >
+              <Clock className="h-3 w-3" /> Smena
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Asosiy yorliqlar — faqat ruxsat berilganlari */}
+      <div>
+        <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-muted/40 p-1">
+          {(
+            [
+              { key: "create", label: "Yangi rotatsiya", icon: RefreshCw },
+              { key: "shift", label: "Smena o‘zgartirish", icon: SlidersHorizontal },
+              { key: "monitoring", label: "Monitoring va baza", icon: Layers, count: allSlots.length },
+              { key: "history", label: "Tarix", icon: History },
+              { key: "perms", label: "Koordinator ruxsatlari", icon: KeyRound },
+            ] as const
+          )
+            .filter((t) => allowedTabs.includes(t.key))
+            .map((t) => {
+              const Icon = t.icon;
+              const count = "count" in t ? t.count : 0;
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => {
+                    if (t.key === "history") setHistoryActorId(null);
+                    setActiveMainTab(t.key);
+                  }}
+                  className={cn(
+                    "flex min-w-[160px] flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition",
+                    activeMainTab === t.key
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  {t.label}
+                  {count > 0 && (
+                    <span className="ml-0.5 rounded-full bg-primary-foreground/20 px-1.5 text-xs">{count}</span>
+                  )}
+                </button>
+              );
+            })}
         </div>
       </div>
 
       {activeMainTab === "shift" && <ShiftChangeBoard />}
 
+      {activeMainTab === "history" && (
+        <SmenaHistoryPanel initialActorUserId={historyActorId} showPermChanges={isFull} />
+      )}
+
+      {activeMainTab === "perms" && (
+        <CoordinatorPermissionsPanel
+          onOpenHistory={(userId) => {
+            setHistoryActorId(userId);
+            setActiveMainTab("history");
+          }}
+        />
+      )}
+
       {/* Tushuntirish / Yo'riqnoma bloki */}
-      <div className={cn("grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4", activeMainTab === "shift" && "hidden")}>
+      <div className={cn("grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4", activeMainTab !== "create" && "hidden")}>
         {/* 1. Doimiy */}
         <div
           onClick={() => {
+            if (pickedIsMudir) return;
             setMode("permanent");
             setActiveMainTab("create");
           }}
           className={cn(
-            "cursor-pointer rounded-2xl border p-4 transition hover:shadow-md",
-            mode === "permanent" && activeMainTab === "create"
-              ? "border-primary bg-primary/5 ring-2 ring-primary/20"
-              : "border-border bg-card hover:border-primary/40"
+            "rounded-2xl border p-4 transition",
+            pickedIsMudir
+              ? "cursor-not-allowed border-dashed border-border bg-muted/30 opacity-70"
+              : mode === "permanent" && activeMainTab === "create"
+                ? "cursor-pointer border-primary bg-primary/5 ring-2 ring-primary/20 hover:shadow-md"
+                : "cursor-pointer border-border bg-card hover:border-primary/40 hover:shadow-md"
           )}
         >
           <div className="flex items-center gap-2.5">
@@ -456,12 +563,21 @@ export default function SmenaFilialPage() {
             <h3 className="font-bold text-foreground">Doimiy rotatsiya</h3>
           </div>
           <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-            Xodimni yangi filialga <strong>doimiy o‘tkazish</strong>. Hech qanday muddat talab etilmaydi.
-            Shu kundan yangi joyda bemalol davomat qiladi.
+            {pickedIsMudir ? (
+              <>
+                Mudirni doimiy o‘tkazish filial tuzilmasini o‘zgartiradi — bu <strong>«Aptekalar tarmog‘i»</strong>{" "}
+                bo‘limida qilinadi.
+              </>
+            ) : (
+              <>
+                Xodimni yangi filialga <strong>doimiy o‘tkazish</strong>. Hech qanday muddat talab etilmaydi.
+                Shu kundan yangi joyda bemalol davomat qiladi.
+              </>
+            )}
           </p>
           <div className="mt-3 flex items-center gap-1 text-[11px] font-semibold text-primary">
-            <span>Tanlash</span>
-            <ArrowRight className="h-3 w-3" />
+            <span>{pickedIsMudir ? "Mudir uchun mavjud emas" : "Tanlash"}</span>
+            {!pickedIsMudir && <ArrowRight className="h-3 w-3" />}
           </div>
         </div>
 
@@ -588,7 +704,7 @@ export default function SmenaFilialPage() {
                       <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">
                         1
                       </span>
-                      Xodimni tanlang (Farmasevt / Stajyor)
+                      Xodimni tanlang (Farmasevt / Stajyor / Mudir)
                     </label>
                     {pickedPerson && (
                       <Button
@@ -625,8 +741,47 @@ export default function SmenaFilialPage() {
                         Tanlandi ✓
                       </span>
                     </div>
-                  ) : (
+                  ) : null}
+                  {pickedIsMudir && (
+                    <div className="flex items-start gap-2 rounded-xl border border-sky-300/60 bg-sky-50/70 p-3 text-[11px] leading-relaxed text-sky-900 dark:border-sky-800/50 dark:bg-sky-950/20 dark:text-sky-200">
+                      <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <span>
+                        <strong>Mudir rotatsiyasi:</strong> mudir belgilangan kun(lar)da boshqa filialda ishlab, davomatini
+                        o‘sha yerda qiladi. Uning o‘z filiali, filial xodimlari va lavozimi o‘zgarmaydi. Doimiy o‘tkazish
+                        uchun «Aptekalar tarmog‘i» bo‘limidan foydalaning.
+                      </span>
+                    </div>
+                  )}
+                  {pickedPerson ? null : (
                     <div className="space-y-2">
+                      <div className="flex flex-wrap gap-1.5">
+                        {(
+                          [
+                            ["all", "Hammasi"],
+                            ["pharmacist", "Farmasevtlar"],
+                            ["intern", "Stajyorlar"],
+                            ["supervisor", "Boshqaruvchilar"],
+                            ["manager", "Mudirlar"],
+                          ] as const
+                        )
+                          .filter(([k]) => k !== "supervisor" || roleCounts.supervisor > 0)
+                          .map(([k, label]) => (
+                          <button
+                            key={k}
+                            type="button"
+                            onClick={() => setPeopleRole(k)}
+                            className={cn(
+                              "rounded-full border px-3 py-1 text-xs font-semibold transition",
+                              peopleRole === k
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-border bg-card text-muted-foreground hover:text-foreground"
+                            )}
+                          >
+                            {label}
+                            <span className="ml-1 opacity-70">{roleCounts[k]}</span>
+                          </button>
+                        ))}
+                      </div>
                       <div className="relative">
                         <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input
@@ -649,6 +804,10 @@ export default function SmenaFilialPage() {
                               onClick={() => {
                                 setPickedPersonId(p.id);
                                 setPeopleQ("");
+                                if (p.orgRole === "manager") {
+                                  if (mode === "permanent") setMode("period");
+                                  if (pickedBranchId === p.id) setPickedBranchId(null);
+                                }
                               }}
                               className="flex w-full items-center justify-between p-3 text-left transition hover:bg-muted/60"
                             >
@@ -930,6 +1089,7 @@ export default function SmenaFilialPage() {
                     (mode === "period" && !validTo) ||
                     (mode === "weekly" && !weekdays.length) ||
                     (mode === "days" && !selectedDates.length) ||
+                    mudirPermanentBlocked ||
                     saveRotationMutation.isPending
                   }
                   onClick={() => saveRotationMutation.mutate()}
@@ -1374,7 +1534,7 @@ export default function SmenaFilialPage() {
                                     Smenani o‘zgartirish
                                   </Button>
                                 )}
-                                <Button
+                                {canRotate && <Button
                                   size="sm"
                                   variant="ghost"
                                   className="h-7 w-7 p-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/40"
@@ -1390,7 +1550,7 @@ export default function SmenaFilialPage() {
                                   }}
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
+                                </Button>}
                               </div>
                             </td>
                           </tr>

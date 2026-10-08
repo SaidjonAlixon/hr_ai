@@ -63,8 +63,6 @@ async function ringLoop(d) {
     while (Date.now() < until) {
       await sleep(5000);
       if (stoppedCalls.has(id)) return;
-      const open = await self.registration.getNotifications({ tag: callTag(id) });
-      if (!open.length || !open.some((n) => n.data && n.data.kind === "call")) return;
       await showCallNotification(d);
     }
     await closeCallNotifications(id);
@@ -171,6 +169,12 @@ self.addEventListener("push", (event) => {
       nudgeClients(),
     ]),
   );
+});
+
+/** Popup vaqti tugab yashirinishi «yopildi» degani emas — jiringlash faqat foydalanuvchi o‘zi surib yopganda to‘xtaydi */
+self.addEventListener("notificationclose", (event) => {
+  const nd = event.notification.data || {};
+  if (nd.kind === "call" && nd.callId) stoppedCalls.add(nd.callId);
 });
 
 self.addEventListener("notificationclick", (event) => {

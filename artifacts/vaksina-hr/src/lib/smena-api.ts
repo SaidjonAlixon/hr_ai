@@ -18,7 +18,19 @@ export type ShiftPick = "one" | "two" | "three" | "one+two" | "two+three";
 export type SlotShiftKey = "one" | "two" | "three" | "one+two" | "two+three";
 export type SlotMode = "permanent" | "period" | "weekly" | "days";
 
+export type SmenaScope = "own" | "all";
+
+/** «Smena va filial» ruxsati: Admin/HR — full; koordinator — Admin bergan ruxsatlar */
+export type SmenaAccess = {
+  full: boolean;
+  canRotate: boolean;
+  canShift: boolean;
+  scope: SmenaScope;
+  any: boolean;
+};
+
 export type SmenaMe = {
+  access?: SmenaAccess;
   pharmacyStaff: boolean;
   canPickShift: boolean;
   canPickOwnBranch: boolean;
@@ -302,6 +314,103 @@ export function createWorkSlot(body: {
 
 export function deleteWorkSlot(id: number) {
   return apiJson<{ ok: boolean }>(`/smena/slots/${id}`, { method: "DELETE" });
+}
+
+export function fetchSmenaAccess() {
+  return apiJson<SmenaAccess>("/smena/access");
+}
+
+export type CoordAccessItem = {
+  userId: number;
+  fullName: string;
+  status: string;
+  employeeId: number | null;
+  hasCard: boolean;
+  branchCount: number;
+  branchNames: string[];
+  staffCount: number;
+  mudirCount: number;
+  canRotate: boolean;
+  canShift: boolean;
+  scope: SmenaScope;
+  grantedByName: string | null;
+  grantedAt: string | null;
+  actionsTotal: number;
+  actions30d: number;
+  lastActionAt: string | null;
+};
+
+export function fetchCoordAccess() {
+  return apiJson<{ items: CoordAccessItem[] }>("/smena/coord-access");
+}
+
+export function saveCoordAccess(userId: number, body: { canRotate: boolean; canShift: boolean; scope: SmenaScope }) {
+  return apiJson<{ ok: boolean }>(`/smena/coord-access/${userId}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export type SmenaLogAction =
+  | "rotation_create"
+  | "rotation_cancel"
+  | "slot_shift_change"
+  | "shift_change"
+  | "shift_override"
+  | "legacy_assign"
+  | "legacy_day_rotation"
+  | "legacy_day_rotation_cancel"
+  | "perm_change";
+
+export type SmenaHistoryItem = {
+  id: number;
+  createdAt: string;
+  action: SmenaLogAction;
+  source: "live" | "legacy";
+  actorUserId: number | null;
+  actorName: string | null;
+  actorRole: string | null;
+  employeeId: number | null;
+  employeeName: string | null;
+  employeeOrgRole: string | null;
+  fromBranchId: number | null;
+  fromBranchLabel: string | null;
+  toBranchId: number | null;
+  toBranchLabel: string | null;
+  fromShift: string | null;
+  toShift: string | null;
+  mode: string | null;
+  validFrom: string | null;
+  validTo: string | null;
+  weekdays: number[] | null;
+  workDates: string[] | null;
+  note: string | null;
+  summary: string;
+  slotId: number | null;
+  targetUserId: number | null;
+  ip: string | null;
+};
+
+export type SmenaHistoryActor = { userId: number; name: string | null; role: string | null; total: number };
+
+export type SmenaHistoryFilter = {
+  actorUserId?: number | null;
+  employeeId?: number | null;
+  action?: string | null;
+  from?: string | null;
+  to?: string | null;
+  q?: string | null;
+  limit?: number;
+};
+
+export function fetchSmenaHistory(f: SmenaHistoryFilter) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(f)) {
+    if (v != null && v !== "") q.set(k, String(v));
+  }
+  return apiJson<{ items: SmenaHistoryItem[]; actors: SmenaHistoryActor[]; full: boolean }>(
+    `/smena/history?${q.toString()}`,
+  );
 }
 
 export function shiftLabelShort(type: string | null | undefined): string {

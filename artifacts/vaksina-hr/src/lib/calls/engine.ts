@@ -1,7 +1,10 @@
 import { useSyncExternalStore } from "react";
 import { applyControl, hideRemoteCursor, type ControlEvent } from "./remote-control";
 import { canCaptureTab, canShareScreen, startAppShare, type AppShare } from "./app-share";
+import type { MirrorRecorder } from "./dom-mirror";
+import { canZip, fixSafariCss, gunzip, readZipFrame } from "./mirror-wire";
 import * as snd from "./sounds";
+import type { eventWithTime } from "rrweb";
 
 export type CallPeer = { id: number; fullName: string; role: string };
 export type CallPhase = "idle" | "outgoing" | "incoming" | "connecting" | "active" | "ended";
@@ -44,6 +47,8 @@ export type CallSnapshot = {
   rxVideo: boolean;
   quality: "good" | "weak" | "poor" | null;
   dcOpen: boolean;
+  /** Qarshi tomon ilovasini video emas, jonli DOM nusxasi sifatida yuboryapti */
+  remoteMirror: boolean;
 };
 
 type PublicCall = {
@@ -69,7 +74,11 @@ type DcMsg =
   | { t: "req"; what: "screen" | "control" }
   | { t: "res"; what: "screen" | "control"; ok: boolean }
   | { t: "stop"; what: "screen" | "control" }
-  | { t: "ctl"; ev: ControlEvent };
+  | { t: "ctl"; ev: ControlEvent }
+  | { t: "caps"; mirror: boolean; zip?: boolean }
+  | { t: "mfull" };
+
+const MIRROR_DC_ID = 42;
 
 const API = "/api/calls";
 const RING_CLIENT_MS = 50_000;
@@ -129,6 +138,7 @@ const initial: CallSnapshot = {
   rxVideo: false,
   quality: null,
   dcOpen: false,
+  remoteMirror: false,
 };
 
 /**
@@ -220,6 +230,20 @@ class CallEngine {
   private camTrack: MediaStreamTrack | null = null;
   private screenTrack: MediaStreamTrack | null = null;
   private appShare: AppShare | null = null;
+  private mirrorDc: RTCDataChannel | null = null;
+  private mirror: MirrorRecorder | null = null;
+  private peerMirror = false;
+  private peerZip = false;
+  private mirrorBuf: eventWithTime[] = [];
+  private mirrorParts = new Map<string, { parts: string[]; got: number }>();
+  private mirrorZip = new Map<number, { parts: Uint8Array[]; got: number; size: number }>();
+  /** Siqilgan voqea ochilayotganda keyingi xabarlar navbatda kutadi — tartib buzilmasin */
+  private mirrorRxChain: Promise<void> = Promise.resolve();
+  private mirrorRxPending = 0;
+  private mirrorGen = 0;
+  private mirrorSubs = new Set<(ev: eventWithTime | null) => void>();
+  private mirrorFullAt = 0;
+  private mirrorRx = 0;
   private pendingIce: RTCIceCandidateInit[] = [];
   private sigChain: Promise<unknown> = Promise.resolve();
   private ringTimer: ReturnType<typeof setTimeout> | null = null;
@@ -656,6 +680,7 @@ class CallEngine {
     this.stopStats();
     try {
       this.dc?.close();
+      this.mirrorDc?.close();
     } catch {
       /* */
     }
@@ -665,6 +690,10 @@ class CallEngine {
       /* */
     }
     this.dc = null;
+    this.mirrorDc = null;
+    this.peerMirror = false;
+    this.peerZip = false;
+    this.resetMirrorFeed();
     this.pc = null;
     this.audioTx = null;
     this.videoTx = null;
@@ -758,8 +787,10 @@ class CallEngine {
   private releaseMedia() {
     for (const t of [this.micTrack, this.camTrack, this.screenTrack]) t?.stop();
     this.appShare?.stop();
+    this.mirror?.stop();
     this.micTrack = this.camTrack = this.screenTrack = null;
     this.appShare = null;
+    this.mirror = null;
   }
 
   private currentVideoTrack(): MediaStreamTrack | null {
@@ -975,9 +1006,11 @@ class CallEngine {
         return false;
       }
     } else {
-      this.appShare = startAppShare(this.snap.controlGranted ? 8 : 6, () =>
-        this.notify("Ekran tasviri olinmayapti — sahifani yangilab, qayta ulashing", "warn"),
-      );
+      if (!(await this.startMirrorShare())) {
+        this.appShare = startAppShare(this.snap.controlGranted ? 8 : 6, () =>
+          this.notify("Ekran tasviri olinmayapti — sahifani yangilab, qayta ulashing", "warn"),
+        );
+      }
       this.set({ minimized: true });
     }
     this.setLocal({ share: m });
@@ -985,11 +1018,27 @@ class CallEngine {
     return true;
   }
 
+  /** Qarshi tomon jonli nusxani qabul qila olsa — kadr chizish o‘rniga DOM o‘zgarishlari yuboriladi */
+  private async startMirrorShare(): Promise<boolean> {
+    const dc = this.mirrorDc;
+    if (!this.peerMirror || dc?.readyState !== "open") return false;
+    try {
+      const { startMirror } = await import("./dom-mirror");
+      if (this.mirrorDc !== dc) return false;
+      this.mirror = startMirror(dc, { zip: this.peerZip });
+    } catch {
+      this.mirror = null;
+    }
+    return Boolean(this.mirror);
+  }
+
   private stopShareTracks() {
     this.screenTrack?.stop();
     this.screenTrack = null;
     this.appShare?.stop();
     this.appShare = null;
+    this.mirror?.stop();
+    this.mirror = null;
   }
 
   async stopShare() {
@@ -1058,7 +1107,7 @@ class CallEngine {
     } else {
       this.iGranted = true;
       this.set({ controlGranted: true });
-      const done = isControllableShare(this.snap.local.share) ? true : await this.startShare("tab");
+      const done = isControllableShare(this.snap.local.share) ? true : await this.startShare(this.peerMirror ? "app" : "tab");
       if (!done) {
         this.iGranted = false;
         this.set({ controlGranted: false });
@@ -1097,9 +1146,17 @@ class CallEngine {
         const patch: Partial<CallSnapshot> = { remote };
         if (!isControllableShare(remote.share) && this.snap.controlGranted && !this.iGranted) patch.controlGranted = false;
         if (remote.share !== "none" && this.snap.waiting.screen) patch.waiting = { ...this.snap.waiting, screen: false };
+        if (remote.share !== "app" && this.snap.remoteMirror) this.resetMirrorFeed();
         this.set(patch);
         break;
       }
+      case "caps":
+        this.peerMirror = Boolean(msg.mirror);
+        this.peerZip = Boolean(msg.zip);
+        break;
+      case "mfull":
+        this.mirror?.full();
+        break;
       case "req":
         if (msg.what === "control" && this.snap.peer?.role !== "admin") return;
         this.set({ prompt: { kind: msg.what }, minimized: false });
@@ -1141,15 +1198,172 @@ class CallEngine {
 
   private setupDc(dc: RTCDataChannel) {
     this.dc = dc;
-    dc.onopen = () => {
+    let opened = false;
+    const open = () => {
+      if (opened) return;
+      opened = true;
       this.set({ dcOpen: true });
+      this.send({ t: "caps", mirror: true, zip: canZip });
       this.sendState();
     };
+    dc.onopen = open;
     dc.onmessage = (e) => this.onDcMessage(String(e.data));
     dc.onclose = () => {
       if (this.dc !== dc) return;
       this.set({ dcOpen: false });
       if (this.snap.phase === "active") void this.finish("ended");
+    };
+    if (dc.readyState === "open") open();
+    if (this.pc && !this.mirrorDc) {
+      try {
+        this.setupMirrorDc(this.pc.createDataChannel("mirror", { negotiated: true, id: MIRROR_DC_ID, ordered: true }));
+      } catch {
+        /* eski brauzer — video orqali ulashiladi */
+      }
+    }
+  }
+
+  // ------------------------------------------------------------ ilova ekranining jonli nusxasi
+
+  private setupMirrorDc(dc: RTCDataChannel) {
+    this.mirrorDc = dc;
+    dc.binaryType = "arraybuffer";
+    dc.onmessage = (e) => {
+      const data = e.data as unknown;
+      if (typeof data === "string" || data instanceof ArrayBuffer) this.onMirrorFrame(data);
+    };
+    dc.onclose = () => {
+      if (this.mirrorDc !== dc) return;
+      this.mirrorDc = null;
+      this.peerMirror = false;
+      this.resetMirrorFeed();
+      if (this.mirror) {
+        this.mirror.stop();
+        this.mirror = null;
+        if (this.snap.local.share === "app") void this.stopShare();
+      }
+    };
+  }
+
+  private onMirrorFrame(data: string | ArrayBuffer) {
+    this.mirrorRx += typeof data === "string" ? data.length : data.byteLength;
+    if (!this.mirrorRxPending) {
+      const job = this.handleMirrorFrame(data);
+      if (job) this.trackMirrorJob(job);
+      return;
+    }
+    this.trackMirrorJob(this.mirrorRxChain.then(() => this.handleMirrorFrame(data) ?? undefined));
+  }
+
+  private trackMirrorJob(job: Promise<void>) {
+    this.mirrorRxPending += 1;
+    this.mirrorRxChain = this.mirrorRxChain
+      .then(() => job)
+      .catch(() => undefined)
+      .finally(() => {
+        this.mirrorRxPending -= 1;
+      });
+  }
+
+  /** Siqilgan voqea to‘liq kelganda — ochish va’dasi qaytadi, aks holda sinxron qayta ishlanadi */
+  private handleMirrorFrame(data: string | ArrayBuffer): Promise<void> | null {
+    if (typeof data !== "string") {
+      const f = readZipFrame(data);
+      if (!f || !(f.total > 0) || f.idx >= f.total) return null;
+      let entry = this.mirrorZip.get(f.id);
+      if (!entry || entry.parts.length !== f.total) {
+        entry = { parts: new Array<Uint8Array>(f.total), got: 0, size: 0 };
+        this.mirrorZip.set(f.id, entry);
+      }
+      if (!entry.parts[f.idx]) {
+        entry.parts[f.idx] = f.body;
+        entry.got += 1;
+        entry.size += f.body.length;
+      }
+      if (entry.got < f.total) return null;
+      this.mirrorZip.delete(f.id);
+      const all = new Uint8Array(entry.size);
+      let at = 0;
+      for (const p of entry.parts) {
+        all.set(p, at);
+        at += p.length;
+      }
+      const gen = this.mirrorGen;
+      return gunzip(all).then((json) => {
+        if (gen === this.mirrorGen) this.onMirrorEvent(json);
+      });
+    }
+    this.onMirrorText(data);
+    return null;
+  }
+
+  private onMirrorText(data: string) {
+    const kind = data[0];
+    if (kind === "S") {
+      this.resetMirrorFeed();
+      this.set({ remoteMirror: true });
+    } else if (kind === "X") {
+      this.resetMirrorFeed();
+    } else if (kind === "e") {
+      this.onMirrorEvent(data.slice(1));
+    } else if (kind === "c") {
+      const a = data.indexOf("|");
+      const b = data.indexOf("|", a + 1);
+      const c = data.indexOf("|", b + 1);
+      if (a < 0 || b < 0 || c < 0) return;
+      const id = data.slice(1, a);
+      const idx = Number(data.slice(a + 1, b));
+      const total = Number(data.slice(b + 1, c));
+      if (!(total > 0) || !(idx >= 0) || idx >= total) return;
+      let entry = this.mirrorParts.get(id);
+      if (!entry || entry.parts.length !== total) {
+        entry = { parts: new Array<string>(total), got: 0 };
+        this.mirrorParts.set(id, entry);
+      }
+      if (entry.parts[idx] === undefined) {
+        entry.parts[idx] = data.slice(c + 1);
+        entry.got += 1;
+      }
+      if (entry.got === total) {
+        this.mirrorParts.delete(id);
+        this.onMirrorEvent(entry.parts.join(""));
+      }
+    }
+  }
+
+  private onMirrorEvent(json: string) {
+    let ev: eventWithTime;
+    try {
+      ev = JSON.parse(fixSafariCss(json)) as eventWithTime;
+    } catch {
+      return;
+    }
+    if (!this.snap.remoteMirror) this.set({ remoteMirror: true });
+    if (ev.type === 4) this.mirrorBuf = [];
+    this.mirrorBuf.push(ev);
+    // Uzoq seansda xotira o‘smasin — vaqti-vaqti bilan yangi to‘liq nusxa so‘raladi
+    if (this.mirrorBuf.length > 20_000 && Date.now() - this.mirrorFullAt > 20_000) {
+      this.mirrorFullAt = Date.now();
+      this.send({ t: "mfull" });
+    }
+    for (const fn of this.mirrorSubs) fn(ev);
+  }
+
+  private resetMirrorFeed() {
+    this.mirrorGen += 1;
+    this.mirrorBuf = [];
+    this.mirrorParts.clear();
+    this.mirrorZip.clear();
+    for (const fn of this.mirrorSubs) fn(null);
+    if (this.snap.remoteMirror) this.set({ remoteMirror: false });
+  }
+
+  /** Ko‘rinish keyin ochilsa ham oxirgi to‘liq nusxadan boshlab tiklanadi; null — tozalash */
+  subscribeMirror(fn: (ev: eventWithTime | null) => void): () => void {
+    for (const ev of this.mirrorBuf) fn(ev);
+    this.mirrorSubs.add(fn);
+    return () => {
+      this.mirrorSubs.delete(fn);
     };
   }
 
@@ -1238,6 +1452,7 @@ class CallEngine {
       tx: ov ? `${codecOf(ov)} ${ov.frameWidth ?? 0}x${ov.frameHeight ?? 0}@${ov.framesPerSecond ?? 0} enc=${enc} limit=${ov.qualityLimitationReason ?? "-"}` : null,
       rx: iv ? `${codecOf(iv)} ${iv.frameWidth ?? 0}x${iv.frameHeight ?? 0}@${iv.framesPerSecond ?? 0} dec=${dec} freeze=${iv.freezeCount ?? "-"}` : null,
       txTrack: vt ? `${vt.readyState}${vt.muted ? ":muted" : ""}` : null,
+      mirror: this.mirror ? `tx ${this.mirror.sentBytes()}` : this.snap.remoteMirror ? `rx ${this.mirrorRx} buf=${this.mirrorBuf.length}` : null,
       rxIdle: this.st.rxIdle,
       txIdle: this.st.txIdle,
     };

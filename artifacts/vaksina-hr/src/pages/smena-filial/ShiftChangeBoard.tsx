@@ -83,6 +83,8 @@ const SHIFT_SHORT: Record<SlotShiftKey, string> = {
 function orgLabel(org: string | null) {
   if (org === "pharmacist") return "Farmasevt";
   if (org === "intern") return "Stajyor";
+  if (org === "manager") return "Mudir";
+  if (org === "supervisor") return "Boshqaruvchi";
   return "Xodim";
 }
 
@@ -260,6 +262,7 @@ export default function ShiftChangeBoard() {
     void qc.invalidateQueries({ queryKey: ["smena-shift-board"] });
     void qc.invalidateQueries({ queryKey: ["smena-slots-all"] });
     void qc.invalidateQueries({ queryKey: ["smena-me"] });
+    void qc.invalidateQueries({ queryKey: ["smena-history"] });
   };
 
   return (

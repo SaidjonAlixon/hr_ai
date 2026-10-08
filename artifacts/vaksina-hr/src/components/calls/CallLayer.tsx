@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   ChevronDown,
@@ -30,6 +30,8 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { callEngine, endedText, isControllableShare, useCall, type CallSnapshot } from "@/lib/calls/engine";
+
+const MirrorView = lazy(() => import("./MirrorView"));
 
 // ---------------------------------------------------------------- yordamchilar
 
@@ -337,8 +339,39 @@ function IncomingScreen({ s }: { s: CallSnapshot }) {
 
 type Rect = { left: number; top: number; width: number; height: number };
 
-function ControlSurface({ video, container }: { video: HTMLVideoElement | null; container: HTMLDivElement | null }) {
+/** Video kadri konteynerda (object-contain) egallagan to‘rtburchak */
+function useVideoRect(video: HTMLVideoElement | null, container: HTMLDivElement | null): Rect | null {
   const [rect, setRect] = useState<Rect | null>(null);
+  useLayoutEffect(() => {
+    if (!video || !container) {
+      setRect(null);
+      return;
+    }
+    const calc = () => {
+      const cw = container.clientWidth;
+      const ch = container.clientHeight;
+      const vw = video.videoWidth || 16;
+      const vh = video.videoHeight || 9;
+      const k = Math.min(cw / vw, ch / vh);
+      const w = vw * k;
+      const h = vh * k;
+      setRect({ left: (cw - w) / 2, top: (ch - h) / 2, width: w, height: h });
+    };
+    calc();
+    const ro = new ResizeObserver(calc);
+    ro.observe(container);
+    video.addEventListener("resize", calc);
+    video.addEventListener("loadedmetadata", calc);
+    return () => {
+      ro.disconnect();
+      video.removeEventListener("resize", calc);
+      video.removeEventListener("loadedmetadata", calc);
+    };
+  }, [video, container]);
+  return rect;
+}
+
+function ControlSurface({ rect }: { rect: Rect | null }) {
   const surface = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; y: number; lx: number; ly: number; moved: boolean; id: number } | null>(null);
   const pending = useRef<{ x: number; y: number; dx: number; dy: number } | null>(null);
@@ -373,30 +406,6 @@ function ControlSurface({ video, container }: { video: HTMLVideoElement | null; 
     if (wait <= 0) send();
     else if (!m.timer) m.timer = setTimeout(send, wait);
   };
-
-  useLayoutEffect(() => {
-    if (!video || !container) return;
-    const calc = () => {
-      const cw = container.clientWidth;
-      const ch = container.clientHeight;
-      const vw = video.videoWidth || 16;
-      const vh = video.videoHeight || 9;
-      const k = Math.min(cw / vw, ch / vh);
-      const w = vw * k;
-      const h = vh * k;
-      setRect({ left: (cw - w) / 2, top: (ch - h) / 2, width: w, height: h });
-    };
-    calc();
-    const ro = new ResizeObserver(calc);
-    ro.observe(container);
-    video.addEventListener("resize", calc);
-    video.addEventListener("loadedmetadata", calc);
-    return () => {
-      ro.disconnect();
-      video.removeEventListener("resize", calc);
-      video.removeEventListener("loadedmetadata", calc);
-    };
-  }, [video, container]);
 
   const norm = (clientX: number, clientY: number) => {
     const r = surface.current!.getBoundingClientRect();
@@ -580,21 +589,25 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const [stage, setStage] = useState<HTMLDivElement | null>(null);
   const [chrome, setChrome] = useState(true);
+  const [mirrorRect, setMirrorRect] = useState<Rect | null>(null);
   const remoteSharing = s.remote.share !== "none";
-  const showRemoteVideo = remoteVideoVisible(s);
+  const mirror = s.phase === "active" && s.remoteMirror && remoteSharing;
+  const showRemoteVideo = !mirror && remoteVideoVisible(s);
+  const showRemote = mirror || showRemoteVideo;
   const videoPending = showRemoteVideo && !s.rxVideo;
+  const videoRect = useVideoRect(showRemoteVideo ? videoEl : null, stage);
   const isAdmin = Boolean(s.me?.isAdmin);
   const live = s.phase === "active";
   const controller = s.controlSide === "controller";
 
   useEffect(() => {
-    if (!showRemoteVideo || controller) {
+    if (!showRemote || controller) {
       setChrome(true);
       return;
     }
     const t = setTimeout(() => setChrome(false), 5000);
     return () => clearTimeout(t);
-  }, [showRemoteVideo, controller, chrome]);
+  }, [showRemote, controller, chrome]);
 
   return (
     <div data-call-ui="" className="fixed inset-0 z-[9990] overflow-hidden bg-slate-950 text-white animate-in fade-in duration-200">
@@ -605,7 +618,11 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
           if (!controller) setChrome((v) => !v);
         }}
       >
-        {showRemoteVideo ? (
+        {mirror ? (
+          <Suspense fallback={null}>
+            <MirrorView onRect={setMirrorRect} />
+          </Suspense>
+        ) : showRemoteVideo ? (
           <CallVideo
             stream={s.remoteStream}
             fit={remoteSharing ? "contain" : "cover"}
@@ -640,7 +657,7 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
             </div>
           </>
         )}
-        {controller && showRemoteVideo && isControllableShare(s.remote.share) ? <ControlSurface video={videoEl} container={stage} /> : null}
+        {controller && showRemote && isControllableShare(s.remote.share) ? <ControlSurface rect={mirror ? mirrorRect : videoRect} /> : null}
         {videoPending ? (
           <div className="pointer-events-none absolute inset-x-0 bottom-[calc(max(1.25rem,env(safe-area-inset-bottom))+9.5rem)] z-[5] flex justify-center">
             <span className="inline-flex items-center gap-2 rounded-full bg-black/60 px-3.5 py-1.5 text-xs text-white/90 backdrop-blur-md">
@@ -669,7 +686,7 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
             <ChevronDown className="h-5 w-5" />
           </button>
           <div className="min-w-0 flex-1 text-center">
-            {showRemoteVideo ? (
+            {showRemote ? (
               <>
                 <p className="truncate text-base font-semibold">{peer.fullName}</p>
                 <p className="text-xs tabular-nums text-white/75">
@@ -728,7 +745,7 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
           chrome ? "opacity-100" : "pointer-events-none opacity-0",
         )}
       >
-        {controller && showRemoteVideo ? (
+        {controller && showRemote ? (
           <div className="mb-3">
             <ControlToolbar />
           </div>
@@ -806,7 +823,7 @@ function Chip({ onClick, disabled, icon, children }: { onClick: () => void; disa
 function MiniCall({ s }: { s: CallSnapshot }) {
   const peer = s.peer!;
   const now = useNow(s.phase === "active");
-  const showVideo = remoteVideoVisible(s);
+  const showVideo = !s.remoteMirror && remoteVideoVisible(s);
   return (
     <div
       data-call-ui=""

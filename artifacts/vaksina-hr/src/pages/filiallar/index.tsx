@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { Copy, MapPin, Navigation, Phone, Search, X } from "lucide-react";
+import { Copy, MapPin, Navigation, Phone, Search, UserPlus, X } from "lucide-react";
 import { foldScript } from "@/lib/script-fold";
 import { yandexNavigatorUrl, yandexPointUrl } from "@/lib/external-maps";
 
@@ -19,7 +19,44 @@ type Place = {
   mudirName: string;
   coordinatorName: string;
   coordinatorPhone: string;
+  needs: Need[];
+  needCount: number;
 };
+
+type Need = {
+  role: string;
+  count: number;
+  shift: string;
+  openedAt: string;
+  daysOpen: number;
+  neededBy: string | null;
+};
+
+/** "all" — barcha filiallar, "need" — ochiq «Xodim kerak» arizasi borlar, "role:<lavozim>" — shu lavozim kerak bo‘lganlar */
+type NeedFilter = "all" | "need" | `role:${string}`;
+
+function initialNeedFilter(): NeedFilter {
+  const raw = new URLSearchParams(window.location.search).get("kerak");
+  if (raw == null) return "all";
+  return raw && raw !== "1" ? `role:${raw}` : "need";
+}
+
+function daysLabel(days: number): string {
+  return days <= 0 ? "bugun" : `${days} kun`;
+}
+
+function dateLabel(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
+}
+
+function urgencyClass(days: number): string {
+  if (days >= 14) return "bg-red-100 text-red-800";
+  if (days >= 7) return "bg-amber-100 text-amber-800";
+  return "bg-emerald-100 text-emerald-800";
+}
 
 type Ring = number[][];
 type Geom = { type: string; coordinates: Ring[] | Ring[][] };
@@ -73,14 +110,19 @@ function escapePin(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function pinHtml(numberLabel: string, name: string, active: boolean): string {
-  const bg = active ? "#9f1239" : "#e11d48";
-  return `<div style="display:inline-flex;align-items:center;gap:5px;max-width:240px;background:${bg};color:#fff;font:700 11px/1.2 system-ui,sans-serif;padding:2px 8px 2px 2px;border-radius:999px;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)"><span style="flex:none;background:rgba(255,255,255,.2);border-radius:999px;padding:2px 6px">${escapePin(numberLabel)}</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:650">${escapePin(name)}</span></div>`;
+function pinHtml(numberLabel: string, name: string, active: boolean, need: number, needMode: boolean): string {
+  const bg = needMode ? (active ? "#9a3412" : "#ea580c") : active ? "#9f1239" : "#e11d48";
+  const badge =
+    need > 0
+      ? `<span style="flex:none;background:#fff;color:#c2410c;border-radius:999px;padding:1px 6px;font-weight:800">${need} kerak</span>`
+      : "";
+  return `<div style="display:inline-flex;align-items:center;gap:5px;max-width:280px;background:${bg};color:#fff;font:700 11px/1.2 system-ui,sans-serif;padding:2px ${need > 0 ? 3 : 8}px 2px 2px;border-radius:999px;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)"><span style="flex:none;background:rgba(255,255,255,.2);border-radius:999px;padding:2px 6px">${escapePin(numberLabel)}</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:650">${escapePin(name)}</span>${badge}</div>`;
 }
 
-function pinSize(numberLabel: string, name: string): [number, number] {
+function pinSize(numberLabel: string, name: string, need: number): [number, number] {
   const chars = Math.min(name.trim().length, 28);
-  const width = Math.min(240, 46 + numberLabel.length * 7 + chars * 7);
+  const badge = need > 0 ? 50 + String(need).length * 7 : 0;
+  const width = Math.min(280, 46 + numberLabel.length * 7 + chars * 7 + badge);
   return [width, 26];
 }
 
@@ -170,6 +212,8 @@ export default function PublicFilialMapPage() {
   const [q, setQ] = useState("");
   const [district, setDistrict] = useState("all");
   const [coordinator, setCoordinator] = useState("all");
+  const [needFilter, setNeedFilter] = useState<NeedFilter>(initialNeedFilter);
+  const needMode = needFilter !== "all";
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
   const [showRegions, setShowRegions] = useState(true);
@@ -195,7 +239,7 @@ export default function PublicFilialMapPage() {
         return res.json() as Promise<{ places: Place[]; districts: string[] }>;
       })
       .then((data) => {
-        setPlaces(data.places || []);
+        setPlaces((data.places || []).map((p) => ({ ...p, needs: p.needs ?? [], needCount: p.needCount ?? 0 })));
         setDistricts(data.districts || []);
       })
       .catch(() => {
@@ -366,10 +410,46 @@ export default function PublicFilialMapPage() {
     return list;
   }, [places]);
 
+  const needStats = useMemo(() => {
+    const roles = new Map<string, { branches: number; people: number }>();
+    let branches = 0;
+    let people = 0;
+    let withoutGps = 0;
+    for (const p of places) {
+      if (!p.needCount) continue;
+      branches++;
+      people += p.needCount;
+      if (p.lat == null || p.lng == null) withoutGps++;
+      const seen = new Set<string>();
+      for (const n of p.needs) {
+        const r = roles.get(n.role) ?? { branches: 0, people: 0 };
+        r.people += n.count;
+        if (!seen.has(n.role)) r.branches++;
+        seen.add(n.role);
+        roles.set(n.role, r);
+      }
+    }
+    const roleList = Array.from(roles.entries())
+      .map(([role, v]) => ({ role, ...v }))
+      .sort((a, b) => b.people - a.people || a.role.localeCompare(b.role, "uz"));
+    return { branches, people, withoutGps, roles: roleList };
+  }, [places]);
+
+  const needRole = needFilter.startsWith("role:") ? needFilter.slice(5) : null;
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (needFilter === "all") url.searchParams.delete("kerak");
+    else url.searchParams.set("kerak", needRole ?? "1");
+    window.history.replaceState(window.history.state, "", url.toString());
+  }, [needFilter, needRole]);
+
   const visible = useMemo(() => {
     const query = foldScript(q.trim());
     const numberQuery = q.replace(/\D/g, "");
-    return places.filter((p) => {
+    const list = places.filter((p) => {
+      if (needMode && !p.needCount) return false;
+      if (needRole && !p.needs.some((n) => n.role === needRole)) return false;
       if (district !== "all" && p.district !== district) return false;
       if (coordinator !== "all" && p.coordinatorName !== coordinator) return false;
       if (boundaryGeom.current && p.lat != null && p.lng != null) {
@@ -383,7 +463,23 @@ export default function PublicFilialMapPage() {
       if (numberQuery && p.branchNo != null && String(p.branchNo) === numberQuery) return true;
       return false;
     });
-  }, [places, q, district, coordinator, boundaryName]);
+    if (!needMode) return list;
+    const oldest = (p: Place) => p.needs.reduce((m, n) => Math.max(m, n.daysOpen), 0);
+    return list.sort((a, b) => oldest(b) - oldest(a) || b.needCount - a.needCount);
+  }, [places, q, district, coordinator, boundaryName, needMode, needRole]);
+
+  const visibleNeedStats = useMemo(() => {
+    let people = 0;
+    let oldest = 0;
+    for (const p of visible) {
+      for (const n of p.needs) {
+        if (needRole && n.role !== needRole) continue;
+        people += n.count;
+        oldest = Math.max(oldest, n.daysOpen);
+      }
+    }
+    return { people, oldest };
+  }, [visible, needRole]);
 
   const selected = places.find((p) => p.id === selectedId) ?? null;
 
@@ -393,15 +489,23 @@ export default function PublicFilialMapPage() {
     }
   }, [visible, selectedId]);
 
+  const fitKey = `${coordinator}|${needFilter}|${places.length}`;
+  const lastFit = useRef("");
   useEffect(() => {
-    if (coordinator === "all" || !mapObj.current) return;
+    if (!mapObj.current || !places.length || lastFit.current === fitKey) return;
+    const first = lastFit.current === "";
+    lastFit.current = fitKey;
+    if (coordinator === "all" && !needMode && first) return;
+    if (district !== "all" || boundaryGeom.current) return;
     const withGps = visible.filter((p): p is Place & { lat: number; lng: number } => p.lat != null && p.lng != null);
     if (!withGps.length) return;
     const bounds = L.latLngBounds(withGps.map((p) => [p.lat, p.lng]));
     if (bounds.isValid()) {
       mapObj.current.fitBounds(bounds, { padding: [36, 36], maxZoom: 13 });
     }
-  }, [coordinator]);
+    // Faqat filtr almashganda moslanadi, qidiruvda xarita sakramasin
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitKey]);
 
   useEffect(() => {
     const map = mapObj.current;
@@ -412,10 +516,11 @@ export default function PublicFilialMapPage() {
     for (const p of withGps) {
       const label = p.numberLabel || "•";
       const name = p.name.trim() || "Filial";
-      const [width, height] = pinSize(label, name);
+      const need = needRole ? p.needs.filter((n) => n.role === needRole).reduce((s, n) => s + n.count, 0) : p.needCount;
+      const [width, height] = pinSize(label, name, need);
       const icon = L.divIcon({
         className: "filial-public-pin",
-        html: pinHtml(label, name, p.id === selectedId),
+        html: pinHtml(label, name, p.id === selectedId, need, needMode),
         iconSize: [width, height],
         iconAnchor: [Math.round(width / 2), height],
       });
@@ -423,7 +528,7 @@ export default function PublicFilialMapPage() {
       marker.on("click", () => setSelectedId(p.id));
       marker.addTo(group);
     }
-  }, [visible, selectedId]);
+  }, [visible, selectedId, needMode, needRole]);
 
   useEffect(() => {
     const map = mapObj.current;
@@ -432,7 +537,8 @@ export default function PublicFilialMapPage() {
   }, [selectedId]);
 
   const copyLink = async () => {
-    const url = `${window.location.origin}/filiallar`;
+    const kerak = needFilter === "need" ? "?kerak=1" : needRole ? `?kerak=${encodeURIComponent(needRole)}` : "";
+    const url = `${window.location.origin}/filiallar${kerak}`;
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
@@ -445,7 +551,7 @@ export default function PublicFilialMapPage() {
   return (
     <div className="flex h-dvh flex-col bg-slate-50 text-slate-900 md:flex-row">
       <style>{`.filial-public-pin{background:transparent!important;border:none!important}`}</style>
-      <aside className="flex max-h-[48dvh] w-full shrink-0 flex-col border-b border-slate-200 bg-white md:max-h-none md:w-[400px] md:border-b-0 md:border-r">
+      <aside className="flex max-h-[52dvh] w-full shrink-0 flex-col overflow-y-auto border-b border-slate-200 bg-white md:max-h-none md:w-[420px] md:overflow-hidden md:border-b-0 md:border-r lg:w-[440px]">
         <div className="border-b border-slate-200 px-4 py-3">
           <div className="flex items-start justify-between gap-2">
             <div>
@@ -516,6 +622,86 @@ export default function PublicFilialMapPage() {
               </button>
             ) : null}
           </div>
+          <div className="mt-2 flex gap-2">
+            <div className="relative min-w-0 flex-1">
+              <UserPlus
+                className={`pointer-events-none absolute left-2 top-2.5 h-4 w-4 ${needMode ? "text-orange-600" : "text-slate-400"}`}
+              />
+              <select
+                value={needFilter}
+                onChange={(e) => setNeedFilter(e.target.value as NeedFilter)}
+                className={`h-9 w-full rounded-lg border pl-8 pr-2 text-xs font-medium outline-none ${
+                  needMode
+                    ? "border-orange-300 bg-orange-50 text-orange-900 focus:border-orange-500"
+                    : "border-slate-200 bg-white text-slate-800 focus:border-rose-400"
+                }`}
+              >
+                <option value="all">Barcha filiallar ({places.length})</option>
+                <option value="need">
+                  Xodim kerak — ariza berilgan ({needStats.branches} filial · {needStats.people} kishi)
+                </option>
+                {needStats.roles.map((r) => (
+                  <option key={r.role} value={`role:${r.role}`}>
+                    {r.role} kerak ({r.branches} filial · {r.people} kishi)
+                  </option>
+                ))}
+              </select>
+            </div>
+            {needMode ? (
+              <button
+                type="button"
+                onClick={() => setNeedFilter("all")}
+                title="«Xodim kerak» filtrini tozalash"
+                className="inline-flex h-9 items-center justify-center rounded-lg bg-orange-100 px-2.5 text-xs font-semibold text-orange-800 hover:bg-orange-200"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
+          {needMode ? (
+            <div className="mt-2 rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50 p-2.5">
+              <div className="grid grid-cols-3 gap-1.5 text-center">
+                <div className="rounded-lg bg-white/80 px-1 py-1.5">
+                  <p className="text-base font-extrabold leading-none text-orange-700">{visible.length}</p>
+                  <p className="mt-0.5 text-[10px] font-medium text-slate-500">filial</p>
+                </div>
+                <div className="rounded-lg bg-white/80 px-1 py-1.5">
+                  <p className="text-base font-extrabold leading-none text-orange-700">{visibleNeedStats.people}</p>
+                  <p className="mt-0.5 text-[10px] font-medium text-slate-500">kishi kerak</p>
+                </div>
+                <div className="rounded-lg bg-white/80 px-1 py-1.5">
+                  <p className="text-base font-extrabold leading-none text-orange-700">
+                    {visible.length ? daysLabel(visibleNeedStats.oldest) : "—"}
+                  </p>
+                  <p className="mt-0.5 text-[10px] font-medium text-slate-500">eng uzoq kutayotgan</p>
+                </div>
+              </div>
+              {needStats.roles.length > 1 ? (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {needStats.roles.map((r) => {
+                    const on = needRole === r.role;
+                    return (
+                      <button
+                        key={r.role}
+                        type="button"
+                        onClick={() => setNeedFilter(on ? "need" : `role:${r.role}`)}
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold transition ${
+                          on ? "bg-orange-600 text-white" : "bg-white text-orange-800 ring-1 ring-orange-200 hover:bg-orange-100"
+                        }`}
+                      >
+                        {r.role} · {r.people}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+              {needStats.withoutGps > 0 ? (
+                <p className="mt-1.5 text-[10px] text-orange-800/80">
+                  {needStats.withoutGps} ta arizali filialning GPS nuqtasi yo‘q — ular faqat ro‘yxatda.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           <div className="mt-2 flex flex-wrap gap-1.5">
             <button
               type="button"
@@ -556,7 +742,7 @@ export default function PublicFilialMapPage() {
             ) : null}
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="shrink-0 md:min-h-0 md:flex-1 md:shrink md:overflow-y-auto">
           {loading ? <p className="px-4 py-6 text-sm text-slate-500">Yuklanmoqda…</p> : null}
           {error ? (
             <div className="px-4 py-6 text-sm text-rose-700">
@@ -571,30 +757,66 @@ export default function PublicFilialMapPage() {
             </div>
           ) : null}
           {!loading && !error && visible.length === 0 ? (
-            <p className="px-4 py-6 text-sm text-slate-500">Filial topilmadi.</p>
+            <p className="px-4 py-6 text-sm text-slate-500">
+              {needMode && !needStats.branches
+                ? "Hozir ochiq «Xodim kerak» arizasi yo‘q — barcha filiallar to‘liq."
+                : "Filial topilmadi."}
+            </p>
           ) : null}
           <ul>
-            {visible.map((p) => (
-              <li key={p.id}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedId(p.id)}
-                  className={`flex w-full items-start gap-2 border-b border-slate-100 px-3 py-2.5 text-left hover:bg-rose-50 ${selectedId === p.id ? "bg-rose-50" : ""}`}
-                >
-                  <span className="mt-0.5 inline-flex min-w-[3.2rem] shrink-0 items-center justify-center rounded-md bg-rose-600 px-1.5 py-1 text-[11px] font-bold text-white">
-                    {p.numberLabel || "—"}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold leading-snug">{p.name}</span>
-                    <span className="mt-0.5 block text-[11px] text-slate-500">
-                      {p.district}
-                      {p.coordinatorName && p.coordinatorName !== "Tayinlanmagan" ? ` · ${p.coordinatorName}` : ""}
-                      {p.lat == null ? " · GPS yo‘q" : ""}
+            {visible.map((p) => {
+              const needs = needRole ? p.needs.filter((n) => n.role === needRole) : p.needs;
+              return (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(p.id)}
+                    className={`flex w-full items-start gap-2 border-b border-slate-100 px-3 py-2.5 text-left ${
+                      needMode ? "hover:bg-orange-50" : "hover:bg-rose-50"
+                    } ${selectedId === p.id ? (needMode ? "bg-orange-50" : "bg-rose-50") : ""}`}
+                  >
+                    <span
+                      className={`mt-0.5 inline-flex min-w-[3.2rem] shrink-0 items-center justify-center rounded-md px-1.5 py-1 text-[11px] font-bold text-white ${
+                        needMode ? "bg-orange-600" : "bg-rose-600"
+                      }`}
+                    >
+                      {p.numberLabel || "—"}
                     </span>
-                  </span>
-                </button>
-              </li>
-            ))}
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-start justify-between gap-2">
+                        <span className="block text-sm font-semibold leading-snug">{p.name}</span>
+                        {!needMode && p.needCount > 0 ? (
+                          <span className="shrink-0 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-700">
+                            {p.needCount} kerak
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="mt-0.5 block text-[11px] text-slate-500">
+                        {p.district}
+                        {p.coordinatorName && p.coordinatorName !== "Tayinlanmagan" ? ` · ${p.coordinatorName}` : ""}
+                        {p.lat == null ? " · GPS yo‘q" : ""}
+                      </span>
+                      {needMode && needs.length ? (
+                        <span className="mt-1.5 flex flex-wrap gap-1">
+                          {needs.map((n, i) => (
+                            <span
+                              key={i}
+                              className="inline-flex items-center gap-1 rounded-md border border-orange-200 bg-white px-1.5 py-0.5 text-[10.5px] font-semibold text-slate-800"
+                            >
+                              <span className="text-orange-700">{n.role} ×{n.count}</span>
+                              <span className="font-normal text-slate-500">{n.shift}</span>
+                              <span className={`rounded px-1 text-[10px] font-semibold ${urgencyClass(n.daysOpen)}`}>
+                                {daysLabel(n.daysOpen)}
+                              </span>
+                            </span>
+                          ))}
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       </aside>
@@ -603,7 +825,11 @@ export default function PublicFilialMapPage() {
         {selected ? (
           <div className="absolute inset-x-3 bottom-3 z-[500] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl md:inset-x-auto md:right-4 md:w-[340px]">
             <div className="flex items-start gap-2">
-              <span className="inline-flex shrink-0 items-center rounded-md bg-rose-600 px-2 py-1 text-xs font-bold text-white">
+              <span
+                className={`inline-flex shrink-0 items-center rounded-md px-2 py-1 text-xs font-bold text-white ${
+                  selected.needCount > 0 ? "bg-orange-600" : "bg-rose-600"
+                }`}
+              >
                 {selected.numberLabel || "—"}
               </span>
               <div className="min-w-0 flex-1">
@@ -616,6 +842,35 @@ export default function PublicFilialMapPage() {
                 <X className="h-4 w-4" />
               </button>
             </div>
+            {selected.needs.length ? (
+              <div className="mt-2 rounded-xl border border-orange-200 bg-orange-50/70 p-2">
+                <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-orange-800">
+                  <UserPlus className="h-3.5 w-3.5" />
+                  Xodim kerak · {selected.needCount} kishi
+                </p>
+                <ul className="mt-1.5 space-y-1">
+                  {selected.needs.map((n, i) => (
+                    <li key={i} className="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1.5 text-xs">
+                      <span className="min-w-0">
+                        <span className="font-semibold text-slate-900">
+                          {n.role} ×{n.count}
+                        </span>
+                        <span className="text-slate-500"> · {n.shift}</span>
+                        {n.neededBy ? <span className="block text-[10.5px] text-slate-500">Kerak: {n.neededBy}</span> : null}
+                      </span>
+                      <span className="shrink-0 text-right">
+                        <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${urgencyClass(n.daysOpen)}`}>
+                          {daysLabel(n.daysOpen)}
+                        </span>
+                        <span className="block text-[10px] text-slate-400">
+                          {dateLabel(n.openedAt)}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             <dl className="mt-2 space-y-1 text-xs text-slate-700">
               <div className="flex gap-2">
                 <dt className="w-[5.6rem] shrink-0 text-slate-400">Filial</dt>
@@ -708,8 +963,10 @@ export default function PublicFilialMapPage() {
             )}
           </div>
         ) : (
-          <p className="pointer-events-none absolute left-3 top-3 z-[500] rounded-lg bg-white/90 px-2.5 py-1.5 text-[11px] text-slate-600 shadow">
-            Filialni bosing. Ko‘k — viloyat, binafsha — tuman chegarasi.
+          <p className="pointer-events-none absolute left-14 right-3 top-3 z-[500] w-fit rounded-lg bg-white/90 px-2.5 py-1.5 text-[11px] text-slate-600 shadow">
+            {needMode
+              ? "To‘q sariq — xodim kerak filiallar. Bosing: kim, qaysi smena, necha kundan beri."
+              : "Filialni bosing. Ko‘k — viloyat, binafsha — tuman chegarasi."}
           </p>
         )}
       </div>

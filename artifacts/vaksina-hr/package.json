@@ -82,6 +82,7 @@
     "jsqr": "^1.4.0",
     "leaflet": "^1.9.4",
     "modern-screenshot": "^4.7.0",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "rrweb": "2.1.7"
   }
 }

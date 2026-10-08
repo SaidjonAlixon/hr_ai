@@ -27,10 +27,21 @@ import {
   type WorkSlotRow,
 } from "../lib/work-slots";
 import { addDaysYmd } from "../lib/attendance-engine";
+import {
+  smenaAccessFor,
+  logSmenaChange,
+  listCoordAccess,
+  setCoordAccess,
+  querySmenaLog,
+  smenaLogStatsByActor,
+  listSmenaLogActors,
+  type SmenaActorAccess,
+  type SmenaLogEntry,
+} from "../lib/smena-access";
 
 const router: IRouter = Router();
 
-const STAFF_ORG = new Set(["pharmacist", "intern"]);
+const STAFF_ORG = new Set(["pharmacist", "intern", "supervisor"]);
 const MANAGER_ORG = "manager";
 
 function isLeadRole(role: string) {
@@ -84,7 +95,31 @@ async function empByUserId(userId: number): Promise<EmpRow | null> {
 
 async function empById(id: number): Promise<EmpRow | null> {
   const [row] = await db.select(EMP_COLS).from(employeesTable).where(eq(employeesTable.id, id)).limit(1);
-  return row ?? null;
+  return row ? (await fillOrgFromUsers([row]))[0]! : null;
+}
+
+const ORG_FROM_USER_ROLE: Record<string, string> = { farmasevt: "pharmacist", stajyor: "intern" };
+
+/** Kartasida org_role bo‘sh, lekin akkaunti farmasevt/stajyor — davomatdagidek dorixona xodimi deb olinadi */
+async function fillOrgFromUsers<T extends { orgRole: string | null; userId: number | null }>(rows: T[]): Promise<T[]> {
+  const ids = [...new Set(rows.filter((r) => !r.orgRole && r.userId != null).map((r) => r.userId!))];
+  if (!ids.length) return rows;
+  const users = await db
+    .select({ id: usersTable.id, role: usersTable.role })
+    .from(usersTable)
+    .where(inArray(usersTable.id, ids));
+  const orgByUser = new Map(
+    users.filter((u) => ORG_FROM_USER_ROLE[u.role]).map((u) => [u.id, ORG_FROM_USER_ROLE[u.role]!]),
+  );
+  return rows.map((r) => (!r.orgRole && r.userId != null && orgByUser.has(r.userId) ? { ...r, orgRole: orgByUser.get(r.userId)! } : r));
+}
+
+async function activePeople(): Promise<EmpRow[]> {
+  const rows = await db
+    .select(EMP_COLS)
+    .from(employeesTable)
+    .where(sql`coalesce(${employeesTable.employmentStatus}, 'working') <> 'dismissed'`);
+  return fillOrgFromUsers(rows);
 }
 
 function hasGps(e: { latitude: number | null; longitude: number | null }) {
@@ -254,6 +289,279 @@ function applyShiftTypePatch(
   };
 }
 
+// ---------------------------------------------------------------- ruxsat, doira, jurnal
+
+type SmenaActor = {
+  access: SmenaActorAccess;
+  me: EmpRow | null;
+  /** null — cheklovsiz (admin / HR / «barcha xodimlar» doirali koordinator) */
+  scope: Set<number> | null;
+  info: { id: number; name: string | null; role: string };
+  ip: string | null;
+};
+
+/** Smena/rotatsiya qo‘yiladigan xodim: farmasevt, stajyor yoki haqiqiy mudir (filial kartasi emas) */
+function isSmenaTarget(p: EmpRow): boolean {
+  if (isOpenHireSlot(p)) return false;
+  const org = p.orgRole || "";
+  if (STAFF_ORG.has(org)) return true;
+  return org === MANAGER_ORG && p.userId != null && p.employmentStatus !== "no_manager" && hasGps(p);
+}
+
+function targetInScope(actor: SmenaActor, target: EmpRow): boolean {
+  if (!actor.scope) return true;
+  return actor.scope.has(target.id) || (actor.me != null && target.reportsToId === actor.me.id);
+}
+
+function reqIp(req: AuthRequest): string | null {
+  const fwd = String(req.headers["x-forwarded-for"] || "").split(",")[0]?.trim();
+  return (fwd || req.ip || "").slice(0, 64) || null;
+}
+
+async function loadSmenaActor(req: AuthRequest): Promise<SmenaActor> {
+  const role = req.userRole || "";
+  const [access, me, user] = await Promise.all([
+    smenaAccessFor(role, req.userId),
+    empByUserId(req.userId!),
+    db.select({ fullName: usersTable.fullName }).from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1),
+  ]);
+  const scope = access.full || access.scope === "all" ? null : me ? await coordinatorScopeIds(me) : new Set<number>();
+  return { access, me, scope, info: { id: req.userId!, name: user[0]?.fullName ?? null, role }, ip: reqIp(req) };
+}
+
+/** 403 qaytaradi va null beradi; ruxsat bo‘lsa amal bajaruvchini qaytaradi */
+async function requireSmena(
+  req: AuthRequest,
+  res: { status(code: number): { json(body: unknown): void } },
+  need: "rotate" | "shift" | "any",
+): Promise<SmenaActor | null> {
+  const actor = await loadSmenaActor(req);
+  const a = actor.access;
+  if (!a.any) {
+    res.status(403).json({ error: "«Smena va filial» bo‘limiga ruxsatingiz yo‘q. Ruxsatni Admin yoki HR menejer beradi." });
+    return null;
+  }
+  if (need === "rotate" && !a.canRotate) {
+    res.status(403).json({ error: "Sizga rotatsiya qilish ruxsati berilmagan." });
+    return null;
+  }
+  if (need === "shift" && !a.canShift) {
+    res.status(403).json({ error: "Sizga smena o‘zgartirish ruxsati berilmagan." });
+    return null;
+  }
+  return actor;
+}
+
+function denyOutOfScope(actor: SmenaActor, target: EmpRow, res: { status(code: number): { json(body: unknown): void } }): boolean {
+  if (!isSmenaTarget(target)) {
+    res.status(400).json({ error: "Smena va rotatsiya faqat dorixona xodimlari (farmasevt, stajyor, boshqaruvchi, mudir) uchun" });
+    return true;
+  }
+  if (!targetInScope(actor, target)) {
+    res.status(403).json({ error: "Bu xodim sizning filiallaringizga tegishli emas. Ruxsatingiz faqat o‘z xodimlaringiz uchun." });
+    return true;
+  }
+  return false;
+}
+
+async function branchLabelOf(branchId: number | null): Promise<string | null> {
+  if (!branchId) return null;
+  const b = await empById(branchId);
+  if (!b) return null;
+  return displayBranchName(b.location) || (b.location || "").split("|")[0].trim() || b.fullName;
+}
+
+/** Xodimning hozirgi asosiy filiali va asosiy smenasi — jurnaldagi «qayerdan» */
+async function placementOf(target: EmpRow): Promise<{ branchId: number | null; branchLabel: string | null; shiftKey: string }> {
+  const slots = await db
+    .select()
+    .from(employeeWorkSlotsTable)
+    .where(and(eq(employeeWorkSlotsTable.employeeId, target.id), eq(employeeWorkSlotsTable.active, true)));
+  const homeId = homeBranchIdFor(target, slots);
+  const base =
+    slots.find((r) => !r.overrideBase && r.mode === "permanent" && r.branchId === homeId) ||
+    slots.find((r) => !r.overrideBase && r.mode === "permanent") ||
+    null;
+  return {
+    branchId: homeId,
+    branchLabel: await branchLabelOf(homeId),
+    shiftKey: toBoardShiftKey(base?.shiftKey || target.shiftType),
+  };
+}
+
+function logBase(actor: SmenaActor, target: EmpRow): Pick<SmenaLogEntry, "actor" | "employee" | "ip"> {
+  return {
+    actor: actor.info,
+    employee: { id: target.id, name: target.fullName, orgRole: target.orgRole },
+    ip: actor.ip,
+  };
+}
+
+function periodText(mode: string, validFrom: string | null, validTo: string | null, weekdays: number[] | null, workDates: string[] | null): string {
+  if (mode === "permanent") return `doimiy, ${validFrom || todayTashkentYmd()} dan`;
+  if (mode === "period") return `${validFrom} — ${validTo || "cheksiz"}`;
+  if (mode === "weekly") return `har hafta: ${(weekdays || []).map((d) => WEEKDAY_FULL_UZ[d] || weekdayLabelUz(d)).join(", ")}`;
+  if (mode === "days") return `${(workDates || []).length} kun: ${(workDates || []).join(", ")}`;
+  return "";
+}
+
+router.get("/smena/access", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  res.json(await smenaAccessFor(req.userRole, req.userId));
+});
+
+const SCOPE_UZ: Record<"own" | "all", string> = { own: "faqat o‘z filiallari", all: "barcha filiallar" };
+
+/** Barcha koordinatorlar: kartasi, filiallari, berilgan ruxsatlar va faollik (faqat Admin / HR) */
+router.get("/smena/coord-access", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (denyNonAdminOrHr(req.userRole || "", res)) return;
+  try {
+    const coords = await db
+      .select({ id: usersTable.id, fullName: usersTable.fullName, status: usersTable.status })
+      .from(usersTable)
+      .where(and(eq(usersTable.role, "koordinator"), sql`coalesce(${usersTable.status}, 'active') <> 'terminated'`));
+    const people = await activePeople();
+    const [accessMap, stats] = await Promise.all([listCoordAccess(), smenaLogStatsByActor()]);
+
+    const items = coords.map((u) => {
+      const card = people.find((p) => p.userId === u.id) || null;
+      const branches = card
+        ? people.filter((p) => p.orgRole === MANAGER_ORG && p.reportsToId === card.id && hasGps(p))
+        : [];
+      const branchIds = new Set(branches.map((b) => b.id));
+      const staff = people.filter(
+        (p) =>
+          STAFF_ORG.has(p.orgRole || "") &&
+          !isOpenHireSlot(p) &&
+          ((p.reportsToId != null && branchIds.has(p.reportsToId)) ||
+            (p.assignedBranchId != null && branchIds.has(p.assignedBranchId))),
+      );
+      const a = accessMap.get(u.id) || null;
+      const st = stats.get(u.id);
+      return {
+        userId: u.id,
+        fullName: card?.fullName || u.fullName,
+        status: u.status,
+        employeeId: card?.id ?? null,
+        hasCard: Boolean(card),
+        branchCount: branches.length,
+        branchNames: branches.map((b) => displayBranchName(b.location) || b.fullName).slice(0, 30),
+        staffCount: staff.length,
+        mudirCount: branches.filter((b) => b.userId).length,
+        canRotate: Boolean(a?.canRotate),
+        canShift: Boolean(a?.canShift),
+        scope: a?.scope ?? "own",
+        grantedByName: a?.grantedByName ?? null,
+        grantedAt: a?.updatedAt ?? null,
+        actionsTotal: st?.total ?? 0,
+        actions30d: st?.last30 ?? 0,
+        lastActionAt: st?.lastAt ?? null,
+      };
+    });
+    items.sort((x, y) => x.fullName.localeCompare(y.fullName, "uz"));
+    res.json({ items });
+  } catch (err) {
+    req.log?.error?.({ err }, "smena coord-access list");
+    res.status(500).json({ error: "Koordinatorlar ro‘yxatini yuklab bo‘lmadi" });
+  }
+});
+
+/** Koordinatorga rotatsiya / smena ruxsatini berish yoki olish (faqat Admin / HR) */
+router.put("/smena/coord-access/:userId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (denyNonAdminOrHr(req.userRole || "", res)) return;
+  try {
+    const userId = Number(req.params.userId);
+    const [coord] = await db
+      .select({ id: usersTable.id, fullName: usersTable.fullName, role: usersTable.role })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    if (!coord || coord.role !== "koordinator") {
+      res.status(404).json({ error: "Koordinator topilmadi" });
+      return;
+    }
+    const canRotate = req.body?.canRotate === true;
+    const canShift = req.body?.canShift === true;
+    const scope: "own" | "all" = req.body?.scope === "all" ? "all" : "own";
+
+    const [me] = await db
+      .select({ id: usersTable.id, fullName: usersTable.fullName, role: usersTable.role })
+      .from(usersTable)
+      .where(eq(usersTable.id, req.userId!))
+      .limit(1);
+    const prev = (await listCoordAccess()).get(userId) || null;
+    const saved = await setCoordAccess(userId, { canRotate, canShift, scope }, { id: req.userId!, name: me?.fullName || "" });
+
+    const yn = (v: boolean) => (v ? "bor" : "yo‘q");
+    const prevTxt = prev
+      ? `rotatsiya ${yn(prev.canRotate)}, smena ${yn(prev.canShift)}, ${SCOPE_UZ[prev.scope]}`
+      : "ruxsat yo‘q";
+    const nextTxt =
+      canRotate || canShift ? `rotatsiya ${yn(canRotate)}, smena ${yn(canShift)}, ${SCOPE_UZ[scope]}` : "ruxsat yo‘q";
+    await logSmenaChange({
+      action: "perm_change",
+      actor: { id: req.userId!, name: me?.fullName || null, role: me?.role || req.userRole || null },
+      targetUserId: userId,
+      ip: reqIp(req),
+      summary: `${coord.fullName}: ${prevTxt} → ${nextTxt}`,
+      note: coord.fullName,
+    });
+
+    if (prevTxt !== nextTxt) {
+      const granted = [canRotate && "rotatsiya qilish", canShift && "smena o‘zgartirish"].filter(Boolean).join(" va ");
+      await notifyUser({
+        userId,
+        text: granted
+          ? `Sizga «Smena va filial» bo‘limida ${granted} ruxsati berildi (${SCOPE_UZ[scope]}). Bo‘lim menyuda paydo bo‘ldi.`
+          : "«Smena va filial» bo‘limidagi ruxsatlaringiz olib qo‘yildi.",
+        type: "smena_slot",
+        linkUrl: granted ? "/smena-filial" : "/",
+      });
+    }
+    res.json({ ok: true, access: saved });
+  } catch (err) {
+    req.log?.error?.({ err }, "smena coord-access save");
+    res.status(500).json({ error: "Ruxsatni saqlab bo‘lmadi" });
+  }
+});
+
+/** Rotatsiya va smena o‘zgarishlari tarixi: kim, kimni, qachon, qayerdan → qayerga */
+router.get("/smena/history", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const actor = await requireSmena(req, res, "any");
+  if (!actor) return;
+  try {
+    const num = (v: unknown) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
+    const ymd = (v: unknown) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+    const action = typeof req.query.action === "string" ? req.query.action.trim() || null : null;
+    if (action === "perm_change" && !actor.access.full) {
+      res.status(403).json({ error: "Ruxsatlar tarixi faqat Admin va HR uchun" });
+      return;
+    }
+    const items = await querySmenaLog({
+      actorUserId: num(req.query.actorUserId),
+      employeeId: num(req.query.employeeId),
+      action,
+      fromYmd: ymd(req.query.from),
+      toYmd: ymd(req.query.to),
+      q: typeof req.query.q === "string" ? req.query.q.trim().slice(0, 80) || null : null,
+      limitToActorOrEmployees: actor.scope
+        ? { actorUserId: actor.info.id, employeeIds: [...actor.scope] }
+        : null,
+      limit: num(req.query.limit) ?? 500,
+    });
+    const visible = actor.access.full ? items : items.filter((i) => i.action !== "perm_change");
+    const actors = actor.access.full
+      ? await listSmenaLogActors()
+      : [...new Map(visible.filter((i) => i.actorUserId).map((i) => [i.actorUserId!, { userId: i.actorUserId!, name: i.actorName, role: i.actorRole, total: 0 }])).values()];
+    res.json({ items: visible, actors, full: actor.access.full });
+  } catch (err) {
+    req.log?.error?.({ err }, "smena history");
+    res.status(500).json({ error: "Tarixni yuklab bo‘lmadi" });
+  }
+});
+
 router.get("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole || "";
   const me = await empByUserId(req.userId!);
@@ -273,21 +581,15 @@ router.get("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<void
     assignedBranchName: string | null;
   }> = [];
 
-  const viewerIsMudir = mudirActor(role, me?.orgRole);
-  if (me && !viewerIsMudir && (role === "farmasevt" || role === "koordinator" || isLeadRole(role))) {
-    const scope = role === "koordinator" ? await coordinatorScopeIds(me) : null;
-    const people = await db
-      .select(EMP_COLS)
-      .from(employeesTable)
-      .where(sql`coalesce(${employeesTable.employmentStatus}, 'working') <> 'dismissed'`);
+  const access = await smenaAccessFor(role, req.userId);
+  if (access.any) {
+    const scope = access.full || access.scope === "all" ? null : me ? await coordinatorScopeIds(me) : new Set<number>();
+    const people = await activePeople();
 
     const branchName = (id: number | null) => branches.find((b) => b.id === id)?.name || null;
     for (const p of people) {
-      if (!canAssignTarget({ role, me, target: p, scope })) continue;
-      if (isOpenHireSlot(p)) continue;
-      if (p.id === me.id && (role === "farmasevt" || p.orgRole === "pharmacist")) continue;
-      // GPS yo‘q / bo‘sh filial kartalari — smena xodim tanlashda chiqmasin
-      if (p.orgRole === MANAGER_ORG && !hasGps(p)) continue;
+      if (!isSmenaTarget(p)) continue;
+      if (scope && !(scope.has(p.id) || (me != null && p.reportsToId === me.id))) continue;
       assignable.push({
         id: p.id,
         fullName: p.fullName,
@@ -305,9 +607,10 @@ router.get("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<void
     assignable.sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"));
   }
 
-  const canManage = canManageSmenaFilial(role);
+  const canManage = access.any;
 
   res.json({
+    access,
     pharmacyStaff: pharmacy,
     canPickShift: canManage,
     canPickOwnBranch: false,
@@ -489,9 +792,26 @@ router.patch("/smena/assign/:employeeId", requireAuth, async (req: AuthRequest, 
     patch.shiftLabel = applied.shiftLabel;
   }
 
+  const before = await placementOf(target);
   await db.update(employeesTable).set(patch).where(eq(employeesTable.id, target.id));
   if (hasBranch && branchId) {
     await moveShiftOverridesToBranch(target.id, branchId, loc || null);
+  }
+  {
+    const actor = await loadSmenaActor(req);
+    const toShift = patch.shiftType ? toBoardShiftKey(String(patch.shiftType)) : before.shiftKey;
+    await logSmenaChange({
+      ...logBase(actor, target),
+      action: "legacy_assign",
+      fromBranch: { id: before.branchId, label: before.branchLabel },
+      toBranch: { id: branchId, label: loc || null },
+      fromShift: before.shiftKey,
+      toShift,
+      mode: "permanent",
+      summary: hasBranch
+        ? `Asosiy filial: «${before.branchLabel || "—"}» → «${loc}»${patch.shiftType ? `, smena ${formatShiftKeyUz(before.shiftKey)} → ${formatShiftKeyUz(toShift)}` : ""}`
+        : `Asosiy smena: ${formatShiftKeyUz(before.shiftKey)} → ${formatShiftKeyUz(toShift)}`,
+    });
   }
 
   if (target.userId) {
@@ -683,6 +1003,25 @@ router.post("/smena/rotation", requireAuth, async (req: AuthRequest, res): Promi
     }
   }
 
+  {
+    const actor = await loadSmenaActor(req);
+    const before = await placementOf(target);
+    await logSmenaChange({
+      ...logBase(actor, target),
+      action: "legacy_day_rotation",
+      fromBranch: { id: before.branchId, label: before.branchLabel },
+      toBranch: { id: branchId, label: branchLabel },
+      fromShift: before.shiftKey,
+      toShift: shiftEncoded,
+      mode: "days",
+      validFrom: workDates[0],
+      validTo: workDates[workDates.length - 1],
+      workDates,
+      note,
+      summary: `Kunlik rotatsiya: «${before.branchLabel || "—"}» → «${branchLabel}», ${workDates.length} kun`,
+    });
+  }
+
   if (target.userId) {
     const shiftTxt = shiftEncoded ? `, smena: ${shiftEncoded}` : "";
     const daysTxt =
@@ -816,6 +1155,18 @@ router.delete("/smena/rotation/:id", requireAuth, async (req: AuthRequest, res):
         eq(employeeDayShiftPlansTable.workDate, row.validFrom),
       ),
     );
+  {
+    const actor = await loadSmenaActor(req);
+    await logSmenaChange({
+      ...logBase(actor, target),
+      action: "legacy_day_rotation_cancel",
+      fromBranch: { id: row.branchId, label: row.branchLabel },
+      mode: "days",
+      validFrom: row.validFrom,
+      validTo: row.validTo,
+      summary: `Kunlik rotatsiya bekor qilindi: «${row.branchLabel || "—"}», ${row.validFrom}`,
+    });
+  }
   res.json({ ok: true });
 });
 
@@ -867,13 +1218,14 @@ async function syncPrimaryFromSlots(employeeId: number): Promise<void> {
     rows.filter((r) => !r.overrideBase).map(mapSlotRow),
   );
   if (!resolved.length) return;
+  const target = await empById(employeeId);
+  if (!target) return;
+  if (target.orgRole === MANAGER_ORG && !resolved.some((s) => s.mode === "permanent")) return;
   const primary = resolved[0]!;
   const keys = resolved
     .flatMap((s) => parseShiftKeys(s.shiftKey))
     .filter((k): k is "one" | "two" | "three" => k === "one" || k === "two" || k === "three");
   const shiftType = encodeShiftKeys(keys);
-  const target = await empById(employeeId);
-  if (!target) return;
   const patch: {
     shiftType: string;
     shiftLabel: string;
@@ -884,11 +1236,12 @@ async function syncPrimaryFromSlots(employeeId: number): Promise<void> {
     shiftType,
     shiftLabel: resolved.map((s) => formatShiftKeyUz(s.shiftKey)).join(" + "),
   };
+  // Mudir kartasi filialning o‘zi: location (nom + GPS) va bog‘lanishlar rotatsiyadan o‘zgarmasligi kerak
   if (target.orgRole !== MANAGER_ORG) {
     patch.assignedBranchId = primary.branchId;
     patch.reportsToId = primary.branchId;
+    if (primary.branchLabel) patch.location = primary.branchLabel;
   }
-  if (primary.branchLabel) patch.location = primary.branchLabel;
   await db.update(employeesTable).set(patch).where(eq(employeesTable.id, employeeId));
 }
 
@@ -946,21 +1299,12 @@ router.get("/smena/slots", requireAuth, async (req: AuthRequest, res): Promise<v
 
 /** Doira ichidagi barcha faol slotlar (ro‘yxat) */
 router.get("/smena/slots/all", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  const role = req.userRole || "";
-  if (!canManageSmenaFilial(role)) {
-    res.status(403).json({ error: "Smena va filial ro‘yxati faqat HR menejer va Adminga berilgan." });
-    return;
-  }
-  const me = await empByUserId(req.userId!);
-  if (!me) {
-    res.status(400).json({ error: "Xodim kartochkasi yo‘q" });
-    return;
-  }
+  const actor = await requireSmena(req, res, "any");
+  if (!actor) return;
 
-  const people = await db
-    .select(EMP_COLS)
-    .from(employeesTable)
-    .where(sql`coalesce(${employeesTable.employmentStatus}, 'working') <> 'dismissed'`);
+  const people = (await activePeople()).filter(
+    (p) => !actor.scope || (isSmenaTarget(p) && targetInScope(actor, p)),
+  );
 
   if (!people.length) {
     res.json({ items: [], staffMonitoring: [] });
@@ -1017,7 +1361,7 @@ router.get("/smena/slots/all", requireAuth, async (req: AuthRequest, res): Promi
 
   // Ayni vaqtdagi xodimlar holati (Live staff monitoring base)
   const staffMonitoring = people
-    .filter((p) => STAFF_ORG.has(p.orgRole || ""))
+    .filter((p) => isSmenaTarget(p))
     .map((p) => {
       const pSlots = rows.filter((r) => r.employeeId === p.id && r.active);
       const daySlots = resolveSlotsForDay(today, pSlots.map(mapSlotRow));
@@ -1044,13 +1388,8 @@ router.get("/smena/slots/all", requireAuth, async (req: AuthRequest, res): Promi
 
 router.post("/smena/slots", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
-    const role = req.userRole || "";
-    if (denyNonAdminOrHr(role, res)) return;
-    const me = await empByUserId(req.userId!);
-    if (!me) {
-      res.status(400).json({ error: "Xodim kartochkasi yo‘q" });
-      return;
-    }
+    const actor = await requireSmena(req, res, "rotate");
+    if (!actor) return;
 
     const employeeId = Number(req.body?.employeeId);
     const branchId = Number(req.body?.branchId);
@@ -1063,15 +1402,8 @@ router.post("/smena/slots", requireAuth, async (req: AuthRequest, res): Promise<
       res.status(404).json({ error: "Xodim topilmadi" });
       return;
     }
-    const org = target.orgRole || "";
-    if (!(org === MANAGER_ORG || STAFF_ORG.has(org))) {
-      res.status(400).json({ error: "Faqat mudir, farmasevt yoki stajyor" });
-      return;
-    }
-    if (isMudirPerson(org)) {
-      res.status(400).json({ error: "Mudirga smena, filial va rotatsiya qo‘yilmaydi" });
-      return;
-    }
+    if (denyOutOfScope(actor, target, res)) return;
+    const targetIsMudir = isMudirPerson(target.orgRole);
 
     const branch = await empById(branchId);
     if (!branch || branch.orgRole !== MANAGER_ORG || !hasGps(branch)) {
@@ -1080,6 +1412,18 @@ router.post("/smena/slots", requireAuth, async (req: AuthRequest, res): Promise<
     }
 
     const mode = String(req.body?.mode || "permanent").trim();
+    if (targetIsMudir && mode === "permanent") {
+      res.status(400).json({
+        error:
+          "Mudirni boshqa filialga doimiy o‘tkazish filial tuzilmasini o‘zgartiradi — buni «Aptekalar tarmog‘i» bo‘limida qiling. Bu yerda mudirga muddatli, haftalik yoki kunlik rotatsiya qo‘yiladi.",
+      });
+      return;
+    }
+    if (targetIsMudir && branchId === target.id) {
+      res.status(400).json({ error: "Mudir o‘z filialida ishlaydi — rotatsiya uchun boshqa filialni tanlang" });
+      return;
+    }
+    const before = await placementOf(target);
     const today = todayTashkentYmd();
 
     const parsed = validateSlotInput({
@@ -1225,6 +1569,23 @@ router.post("/smena/slots", requireAuth, async (req: AuthRequest, res): Promise<
       await syncPrimaryFromSlots(employeeId);
     }
 
+    await logSmenaChange({
+      ...logBase(actor, target),
+      action: "rotation_create",
+      fromBranch: { id: before.branchId, label: before.branchLabel },
+      toBranch: { id: branchId, label: branchLabel },
+      fromShift: before.shiftKey,
+      toShift: parsed.shiftKey,
+      mode: parsed.mode,
+      validFrom: parsed.validFrom,
+      validTo: parsed.validTo,
+      weekdays: parsed.weekdays,
+      workDates: parsed.workDates,
+      note,
+      slotId: row!.id,
+      summary: `${formatModeUz(parsed.mode)} rotatsiya: «${before.branchLabel || "—"}» → «${branchLabel}», ${formatShiftKeyUz(parsed.shiftKey)} (${periodText(parsed.mode, parsed.validFrom, parsed.validTo, parsed.weekdays, parsed.workDates)})`,
+    });
+
     if (target.userId) {
       let notifText = "";
       if (parsed.mode === "permanent") {
@@ -1267,13 +1628,8 @@ router.post("/smena/slots", requireAuth, async (req: AuthRequest, res): Promise<
 });
 
 router.delete("/smena/slots/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  const role = req.userRole || "";
-  if (denyNonAdminOrHr(role, res)) return;
-  const me = await empByUserId(req.userId!);
-  if (!me) {
-    res.status(400).json({ error: "Xodim kartochkasi yo‘q" });
-    return;
-  }
+  const actor = await requireSmena(req, res, "rotate");
+  if (!actor) return;
   const id = Number(req.params.id);
   const [row] = await db.select().from(employeeWorkSlotsTable).where(eq(employeeWorkSlotsTable.id, id)).limit(1);
   if (!row) {
@@ -1285,11 +1641,38 @@ router.delete("/smena/slots/:id", requireAuth, async (req: AuthRequest, res): Pr
     res.status(404).json({ error: "Xodim topilmadi" });
     return;
   }
+  if (actor.scope && denyOutOfScope(actor, target, res)) return;
   await db
     .update(employeeWorkSlotsTable)
     .set({ active: false, updatedAt: new Date() })
     .where(eq(employeeWorkSlotsTable.id, id));
   await syncPrimaryFromSlots(row.employeeId);
+  const after = await placementOf(target);
+  const weekdays = (row.weekdays as number[] | null) || null;
+  const workDates = (row.workDates as string[] | null) || null;
+  await logSmenaChange({
+    ...logBase(actor, target),
+    action: "rotation_cancel",
+    fromBranch: { id: row.branchId, label: row.branchLabel },
+    toBranch: { id: after.branchId, label: after.branchLabel },
+    fromShift: row.shiftKey,
+    toShift: after.shiftKey,
+    mode: row.mode,
+    validFrom: row.validFrom,
+    validTo: row.validTo,
+    weekdays,
+    workDates,
+    slotId: row.id,
+    summary: `${row.overrideBase ? "Haftalik smena almashtirish" : `${formatModeUz(row.mode)} rotatsiya`} bekor qilindi: «${row.branchLabel || "—"}», ${formatShiftKeyUz(row.shiftKey)} (${periodText(row.mode, row.validFrom, row.validTo, weekdays, workDates)})`,
+  });
+  if (target.userId && actor.info.id !== target.userId) {
+    await notifyUser({
+      userId: target.userId,
+      text: `«${row.branchLabel || "Filial"}» filialidagi ${formatModeUz(row.mode).toLowerCase()} rotatsiyangiz bekor qilindi. Davomat endi «${after.branchLabel || "asosiy filial"}» bo‘yicha.`,
+      type: "smena_slot",
+      linkUrl: "/davomat-face",
+    });
+  }
   res.json({ ok: true });
 });
 
@@ -1299,13 +1682,8 @@ router.delete("/smena/slots/:id", requireAuth, async (req: AuthRequest, res): Pr
  */
 router.patch("/smena/slots/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
-    const role = req.userRole || "";
-    if (denyNonAdminOrHr(role, res)) return;
-    const me = await empByUserId(req.userId!);
-    if (!me) {
-      res.status(400).json({ error: "Xodim kartochkasi yo‘q" });
-      return;
-    }
+    const actor = await requireSmena(req, res, "any");
+    if (!actor) return;
     const id = Number(req.params.id);
     const [row] = await db.select().from(employeeWorkSlotsTable).where(eq(employeeWorkSlotsTable.id, id)).limit(1);
     if (!row || !row.active) {
@@ -1317,6 +1695,7 @@ router.patch("/smena/slots/:id", requireAuth, async (req: AuthRequest, res): Pro
       res.status(404).json({ error: "Xodim topilmadi" });
       return;
     }
+    if (actor.scope && denyOutOfScope(actor, target, res)) return;
 
     const newShiftRaw = String(req.body?.shiftKey ?? "").trim();
     if (!newShiftRaw) {
@@ -1378,6 +1757,28 @@ router.patch("/smena/slots/:id", requireAuth, async (req: AuthRequest, res): Pro
 
     await syncPrimaryFromSlots(row.employeeId);
 
+    await logSmenaChange({
+      ...logBase(actor, target),
+      action: "slot_shift_change",
+      fromBranch: { id: row.branchId, label: row.branchLabel },
+      toBranch: { id: row.branchId, label: row.branchLabel },
+      fromShift: row.shiftKey,
+      toShift: parsed.shiftKey,
+      mode: row.mode,
+      validFrom: row.validFrom,
+      validTo: row.validTo,
+      slotId: row.id,
+      summary: `${formatModeUz(row.mode)} rotatsiya smenasi: ${formatShiftKeyUz(row.shiftKey)} → ${formatShiftKeyUz(parsed.shiftKey)}, filial «${row.branchLabel || "—"}» o‘zgarmadi`,
+    });
+    if (target.userId) {
+      await notifyUser({
+        userId: target.userId,
+        text: `«${row.branchLabel || "Filial"}» filialidagi smenangiz o‘zgardi: ${formatShiftKeyUz(row.shiftKey)} → ${formatShiftKeyUz(parsed.shiftKey)}.`,
+        type: "smena_slot",
+        linkUrl: "/davomat-face",
+      });
+    }
+
     res.json({
       ok: true,
       item: {
@@ -1399,27 +1800,16 @@ router.patch("/smena/slots/:id", requireAuth, async (req: AuthRequest, res): Pro
  */
 router.patch("/smena/shift-only/:employeeId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
-    const role = req.userRole || "";
-    if (denyNonAdminOrHr(role, res)) return;
-    const me = await empByUserId(req.userId!);
-    if (!me) {
-      res.status(400).json({ error: "Xodim kartochkasi yo‘q" });
-      return;
-    }
+    const actor = await requireSmena(req, res, "shift");
+    if (!actor) return;
     const employeeId = Number(req.params.employeeId);
     const target = await empById(employeeId);
     if (!target) {
       res.status(404).json({ error: "Xodim topilmadi" });
       return;
     }
-    if (isMudirPerson(target.orgRole)) {
-      res.status(400).json({ error: "Mudirga smena, filial va rotatsiya qo‘yilmaydi" });
-      return;
-    }
-    if (!isPharmacyShiftStaff(null, target.orgRole)) {
-      res.status(400).json({ error: "Smena faqat mudir, farmasevt va stajyor uchun" });
-      return;
-    }
+    if (denyOutOfScope(actor, target, res)) return;
+    const before = await placementOf(target);
 
     const shiftRaw = String(req.body?.shiftKey ?? req.body?.shiftType ?? "").trim();
     if (!shiftRaw) {
@@ -1488,6 +1878,17 @@ router.patch("/smena/shift-only/:employeeId", requireAuth, async (req: AuthReque
       (target.location || "").split("|")[0].trim() ||
       "Filial";
 
+    await logSmenaChange({
+      ...logBase(actor, target),
+      action: "shift_change",
+      fromBranch: { id: branchId, label: branchName },
+      toBranch: { id: branchId, label: branchName },
+      fromShift: before.shiftKey,
+      toShift: applied.shiftType,
+      mode: "permanent",
+      summary: `Asosiy smena: ${formatShiftKeyUz(before.shiftKey)} → ${formatShiftKeyUz(applied.shiftType)}, filial «${branchName}» o‘zgarmadi`,
+    });
+
     if (target.userId) {
       await notifyUser({
         userId: target.userId,
@@ -1548,19 +1949,14 @@ function homeBranchIdFor(
  * bugungi smena va haftaning har bir kuni uchun reja.
  */
 router.get("/smena/shift-board", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  const role = req.userRole || "";
-  if (denyNonAdminOrHr(role, res)) return;
+  const actor = await requireSmena(req, res, "shift");
+  if (!actor) return;
   try {
     const defs = await getEffectiveShiftDefs();
     const branches = await listBranches();
     const branchName = (id: number | null) => (id ? branches.find((b) => b.id === id)?.name || null : null);
 
-    const people = (
-      await db
-        .select(EMP_COLS)
-        .from(employeesTable)
-        .where(sql`coalesce(${employeesTable.employmentStatus}, 'working') <> 'dismissed'`)
-    ).filter((p) => STAFF_ORG.has(p.orgRole || "") && !isOpenHireSlot(p));
+    const people = (await activePeople()).filter((p) => isSmenaTarget(p) && targetInScope(actor, p));
 
     const ids = people.map((p) => p.id);
     const slotRows = ids.length
@@ -1644,8 +2040,8 @@ router.get("/smena/shift-board", requireAuth, async (req: AuthRequest, res): Pro
  * shiftKey = null — tanlangan kunlar asosiy smenaga qaytadi.
  */
 router.post("/smena/shift-override", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  const role = req.userRole || "";
-  if (denyNonAdminOrHr(role, res)) return;
+  const actor = await requireSmena(req, res, "shift");
+  if (!actor) return;
   try {
     const employeeId = Number(req.body?.employeeId);
     const weekdays = normalizeWeekdays(req.body?.weekdays);
@@ -1663,10 +2059,7 @@ router.post("/smena/shift-override", requireAuth, async (req: AuthRequest, res):
       res.status(404).json({ error: "Xodim topilmadi" });
       return;
     }
-    if (!STAFF_ORG.has(target.orgRole || "")) {
-      res.status(400).json({ error: "Smena faqat farmasevt va stajyor uchun" });
-      return;
-    }
+    if (denyOutOfScope(actor, target, res)) return;
 
     const slots = await db
       .select()
@@ -1810,6 +2203,28 @@ router.post("/smena/shift-override", requireAuth, async (req: AuthRequest, res):
     const text = newShift
       ? `Smena jadvalingiz yangilandi: ${daysTxt} kunlari — ${shiftNameUz(newShift)}. Qolgan kunlar asosiy smena (${shiftNameUz(baseShiftKey)}). Filial o‘zgarmadi.`
       : `Smena jadvalingiz yangilandi: ${daysTxt} kunlari asosiy smenaga (${shiftNameUz(baseShiftKey)}) qaytarildi.`;
+    const prevOnDays = [
+      ...new Set(
+        weekdays.map((d) => overrides.find((o) => ((o.weekdays as number[] | null) || []).includes(d))?.shiftKey ?? baseShiftKey),
+      ),
+    ].join(", ");
+    await logSmenaChange({
+      actor: actor.info,
+      employee: { id: target.id, name: target.fullName, orgRole: target.orgRole },
+      ip: actor.ip,
+      action: "shift_override",
+      fromBranch: { id: branchId, label: branchLabel },
+      toBranch: { id: branchId, label: branchLabel },
+      fromShift: prevOnDays,
+      toShift: newShift ?? baseShiftKey,
+      mode: "weekly",
+      validFrom: today,
+      weekdays,
+      summary: newShift
+        ? `Haftalik smena: ${daysTxt} — ${shiftNameUz(newShift)} (asosiy ${shiftNameUz(baseShiftKey)}), filial «${branchLabel || "—"}» o‘zgarmadi`
+        : `Haftalik smena: ${daysTxt} asosiy smenaga (${shiftNameUz(baseShiftKey)}) qaytarildi`,
+    });
+
     if (target.userId) {
       await notifyUser({ userId: target.userId, text, type: "smena_slot", linkUrl: "/davomat-face" });
     }

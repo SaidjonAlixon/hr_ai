@@ -484,7 +484,7 @@ export default function QongiroqPage() {
           ) : (history.data?.items ?? []).length === 0 ? (
             <EmptyState icon={<History className="h-6 w-6" />} title="Tarix bo‘sh" text="Qilingan va kelgan qo‘ng‘iroqlar shu yerda ko‘rinadi." />
           ) : (
-            <div className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm">
+            <div className="max-h-[min(55vh,26rem)] divide-y divide-border/60 overflow-y-auto overscroll-contain rounded-2xl border border-border/60 bg-card shadow-sm [scrollbar-width:thin]">
               {history.data!.items.map((h) => {
                 const missed = !h.outgoing && (h.status === "missed" || h.status === "cancelled");
                 const Icon = missed ? PhoneMissed : h.outgoing ? PhoneOutgoing : PhoneIncoming;

@@ -81,6 +81,7 @@ import { FaceIdEnroll } from '@/components/FaceIdEnroll';
 import { HELP_ASSISTANT_ENABLED, HelpAssistantDialog } from '@/components/HelpAssistantDialog';
 import { OperatorHeadsetIcon } from '@/components/OperatorHeadsetIcon';
 import { LanguageSwitcher } from '@/components/language-switcher';
+import { useCall } from '@/lib/calls/engine';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
 import { VerifiedBadge, VerifiedName } from "@/components/VerifiedBadge";
@@ -387,6 +388,34 @@ function NavBadge({
     >
       {label}
     </span>
+  );
+}
+
+function HeaderCallButton({ active }: { active: boolean }) {
+  const s = useCall();
+  const live = s.phase !== 'idle' && s.phase !== 'ended';
+  return (
+    <Link
+      href="/qongiroq"
+      title="Qo‘ng‘iroq"
+      aria-label="Qo‘ng‘iroq"
+      aria-current={active ? 'page' : undefined}
+      className={cn(
+        'app-header-call-chip group relative inline-flex h-[34px] shrink-0 items-center gap-1.5 rounded-full border border-white/20 p-0.5 text-white transition-all duration-200 active:scale-95 sm:pr-3',
+        active && 'ring-2 ring-emerald-400/60 ring-offset-2 ring-offset-card',
+      )}
+    >
+      <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/20 ring-1 ring-white/30 transition group-hover:bg-white/25">
+        <Headset className="h-4 w-4" />
+        {live ? (
+          <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/80" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-white ring-2 ring-emerald-600" />
+          </span>
+        ) : null}
+      </span>
+      <span className="hidden text-xs font-semibold tracking-wide sm:inline">Qo‘ng‘iroq</span>
+    </Link>
   );
 }
 
@@ -961,7 +990,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const atestatsiyaJoylashNav = { name: 'Atestatsiya joylash', path: '/admin/atestatsiya', icon: BadgeCheck };
   const reviziyaNav = { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck };
   const itNav = { name: 'AyTi', path: '/it', icon: Cpu };
-  const qongiroqNav = { name: "Qo‘ng‘iroq", path: '/qongiroq', icon: Headset };
   const distribNav = { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck };
   const omborIshNav = { name: 'Omborxona_ish', path: '/omborxona-ish', icon: Package };
   const logistikaNavItems: NavItem[] = [
@@ -990,9 +1018,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     // AyTi zayavka — barcha rollar (farmasevt, mudir, ofis, ...)
     if (!next.some((i) => i.path === '/it')) {
       next = [...next, itNav];
-    }
-    if (!next.some((i) => i.path === '/qongiroq')) {
-      next = [...next, qongiroqNav];
     }
     if (isLimitedOfficeStaffRole(role)) {
       if (!next.some((i) => i.path === '/javob-olish')) {
@@ -2485,6 +2510,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            <HeaderCallButton active={location.startsWith('/qongiroq')} />
             <LanguageSwitcher />
             {HELP_ASSISTANT_ENABLED ? (
               <button

@@ -11,6 +11,7 @@ import { RealtimeSync } from './lib/realtime-sync';
 import { DeviceSecurityListener } from './components/DeviceSecurityListener';
 import { DisciplineLockOverlay } from './components/DisciplineLockOverlay';
 import { ExplanationLetterPrompt } from './components/explanation-letter/ExplanationLetterPrompt';
+import { CallLayer } from './components/calls/CallLayer';
 
 // Login asosiy paketda qoladi. Qolgan sahifalar kirish/yangilashda birga tahlil qilinmasin.
 import Login from './pages/login';
@@ -87,6 +88,7 @@ const TgEntryPage = lazy(() => import('./pages/tg-entry'));
 const JavobOlishPage = lazy(() => import('./pages/javob-olish/index'));
 const JavobOlishHolatPage = lazy(() => import('./pages/javob-olish/holat'));
 const TxVerifyPage = lazy(() => import('./pages/tx-verify'));
+const QongiroqPage = lazy(() => import('./pages/qongiroq/index'));
 
 function PageFallback() {
   return (
@@ -273,6 +275,7 @@ function Router() {
       <ProtectedRoute path="/tashkiliy-tuzilma" component={TashkiliyTuzilmaPage} />
       <ProtectedRoute path="/internships" component={InternshipsPage} />
       <ProtectedRoute path="/notifications" component={NotificationsPage} />
+      <ProtectedRoute path="/qongiroq" component={QongiroqPage} />
       <ProtectedRoute path="/admin/users" component={AdminUsersPage} />
       <ProtectedRoute path="/admin/boshatilganlar" component={BoshatilganlarPage} />
       <ProtectedRoute path="/admin/holat/xodim" component={XodimHisobotPage} />
@@ -313,6 +316,7 @@ function App() {
               <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, '') || ''}>
                 <Router />
                 <ExplanationLetterPrompt />
+                <CallLayer />
               </WouterRouter>
               <Toaster />
             </TooltipProvider>

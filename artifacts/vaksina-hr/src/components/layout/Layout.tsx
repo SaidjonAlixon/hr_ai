@@ -55,6 +55,7 @@ import {
   Library,
   BadgeCheck,
   FileSignature,
+  Headset,
 } from 'lucide-react';
 import {
   useLogout,
@@ -143,7 +144,7 @@ const NAV_SECTIONS: {
     id: 'main',
     label: 'Asosiy',
     icon: Layers,
-    paths: ['/dashboard', '/kirish', '/preboarding', '/darsliklar', '/atestatsiya', '/javob-olish', '/javob-olish/holat', '/tashkiliy-tuzilma', '/oylik', '/tushuntirish-xatim', '/hisobkitob', '/reyting', '/reviziya', '/it'],
+    paths: ['/dashboard', '/kirish', '/preboarding', '/darsliklar', '/atestatsiya', '/javob-olish', '/javob-olish/holat', '/tashkiliy-tuzilma', '/oylik', '/tushuntirish-xatim', '/hisobkitob', '/reyting', '/reviziya', '/it', '/qongiroq'],
   },
   {
     id: 'attendance',
@@ -311,6 +312,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/texnik')) return '/texnik';
   if (path.startsWith('/logistika')) return path;
   if (path.startsWith('/boglanish')) return '/boglanish';
+  if (path.startsWith('/qongiroq')) return '/qongiroq';
   if (path.startsWith('/tashkiliy-tuzilma')) return '/tashkiliy-tuzilma';
   if (path.startsWith('/ehtiyoj')) return '/ehtiyoj';
   if (path.startsWith('/javob-olish/holat')) return '/javob-olish/holat';
@@ -825,6 +827,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         location.startsWith('/tashkiliy-tuzilma') ||
         location.startsWith('/vazifalar') ||
         location.startsWith('/tushuntirish-xatim') ||
+        location.startsWith('/qongiroq') ||
         location === '/notifications' ||
         location === '/profile' ||
         location.startsWith('/account');
@@ -893,6 +896,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         location.startsWith('/davomat-kochma') ||
         location.startsWith('/omborxona-ish') ||
         location.startsWith('/it') ||
+        location.startsWith('/qongiroq') ||
         location === '/notifications';
       if (!allowed) {
         setLocation('/vazifalar');
@@ -943,6 +947,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const atestatsiyaJoylashNav = { name: 'Atestatsiya joylash', path: '/admin/atestatsiya', icon: BadgeCheck };
   const reviziyaNav = { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck };
   const itNav = { name: 'AyTi', path: '/it', icon: Cpu };
+  const qongiroqNav = { name: "Qo‘ng‘iroq", path: '/qongiroq', icon: Headset };
   const distribNav = { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck };
   const omborIshNav = { name: 'Omborxona_ish', path: '/omborxona-ish', icon: Package };
   const logistikaNavItems: NavItem[] = [
@@ -971,6 +976,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     // AyTi zayavka — barcha rollar (farmasevt, mudir, ofis, ...)
     if (!next.some((i) => i.path === '/it')) {
       next = [...next, itNav];
+    }
+    if (!next.some((i) => i.path === '/qongiroq')) {
+      next = [...next, qongiroqNav];
     }
     if (isLimitedOfficeStaffRole(role)) {
       if (!next.some((i) => i.path === '/javob-olish')) {

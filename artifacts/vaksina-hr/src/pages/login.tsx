@@ -16,6 +16,7 @@ import { OperatorHeadsetIcon } from '../components/OperatorHeadsetIcon';
 import { useI18n } from '../i18n/I18nProvider';
 import { isStajyor, isLimitedOfficeStaffRole, isReviziyaRole } from '../lib/roles';
 import { loginWithDevice, requestDeviceChange } from '../lib/device-security-api';
+import { takeAfterLogin } from '../lib/conference/api';
 
 type DeviceGate =
   | null
@@ -41,6 +42,11 @@ export default function Login() {
 
   const goAfterLogin = (user: User) => {
     switchToUser(user);
+    const back = takeAfterLogin();
+    if (back) {
+      setLocation(back);
+      return;
+    }
     if (isStajyor(user.role)) {
       setLocation('/kirish');
       return;

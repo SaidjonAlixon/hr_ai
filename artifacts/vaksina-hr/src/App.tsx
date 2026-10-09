@@ -89,6 +89,7 @@ const JavobOlishPage = lazy(() => import('./pages/javob-olish/index'));
 const JavobOlishHolatPage = lazy(() => import('./pages/javob-olish/holat'));
 const TxVerifyPage = lazy(() => import('./pages/tx-verify'));
 const QongiroqPage = lazy(() => import('./pages/qongiroq/index'));
+const KonferensiyaPage = lazy(() => import('./pages/konferensiya/index'));
 
 function PageFallback() {
   return (
@@ -172,6 +173,13 @@ function Router() {
         <Suspense fallback={<PageFallback />}>
           <DavomatFacePage />
         </Suspense>
+      </Route>
+      <Route path="/konferensiya/:code">
+        {params => (
+          <Suspense fallback={<div className="min-h-[100dvh] bg-slate-950" />}>
+            <KonferensiyaPage params={params} />
+          </Suspense>
+        )}
       </Route>
       <Route path="/davomat/face">
         <Redirect to="/davomat-face" />

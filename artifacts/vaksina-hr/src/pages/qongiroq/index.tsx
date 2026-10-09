@@ -14,7 +14,11 @@ import {
   ShieldOff,
   Users,
   Video,
+  Presentation,
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { hasFullPlatformAccess } from "@/lib/roles";
+import { ConferenceTab } from "./ConferenceTab";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -234,9 +238,12 @@ export default function QongiroqPage() {
   const s = useCall();
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
   const isAdmin = Boolean(s.me?.isAdmin);
   const canCall = Boolean(s.me?.canCall || isAdmin);
-  const [tab, setTab] = useState("contacts");
+  const [tab, setTab] = useState(() =>
+    new URLSearchParams(window.location.search).get("tab") === "konferensiya" ? "conference" : "contacts",
+  );
   const [q, setQ] = useState("");
   const [scope, setScope] = useState<"online" | "all">("online");
   const dq = useDebounced(q.trim());
@@ -390,16 +397,19 @@ export default function QongiroqPage() {
       ) : null}
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className={cn("grid w-full", isAdmin ? "grid-cols-3" : "grid-cols-2")}>
+        <TabsList className={cn("grid w-full", isAdmin ? "grid-cols-4" : "grid-cols-3")}>
           <TabsTrigger value="contacts" className="gap-1.5">
-            <Users className="h-4 w-4" /> {isAdmin ? "Xodimlar" : "Adminlar"}
+            <Users className="h-4 w-4" /> <span className="hidden sm:inline">{isAdmin ? "Xodimlar" : "Adminlar"}</span>
+          </TabsTrigger>
+          <TabsTrigger value="conference" className="gap-1.5">
+            <Presentation className="h-4 w-4" /> <span className="hidden sm:inline">Konferensiya</span>
           </TabsTrigger>
           <TabsTrigger value="history" className="gap-1.5">
-            <History className="h-4 w-4" /> Tarix
+            <History className="h-4 w-4" /> <span className="hidden sm:inline">Tarix</span>
           </TabsTrigger>
           {isAdmin ? (
             <TabsTrigger value="permissions" className="gap-1.5">
-              <ShieldCheck className="h-4 w-4" /> Ruxsatlar
+              <ShieldCheck className="h-4 w-4" /> <span className="hidden sm:inline">Ruxsatlar</span>
             </TabsTrigger>
           ) : null}
         </TabsList>
@@ -476,6 +486,10 @@ export default function QongiroqPage() {
               {otherItems.map(renderRow)}
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="conference" className="mt-3">
+          <ConferenceTab isPlatformAdmin={hasFullPlatformAccess(user?.role)} />
         </TabsContent>
 
         <TabsContent value="history" className="mt-3">

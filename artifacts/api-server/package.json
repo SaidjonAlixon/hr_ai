@@ -24,6 +24,7 @@
     "esbuild-plugin-pino": "^2.3.3",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
+    "livekit-server-sdk": "^2.19.1",
     "pdf-lib": "^1.17.1",
     "pg": "^8.22.0",
     "pino": "^9.14.0",

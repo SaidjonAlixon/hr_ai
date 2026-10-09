@@ -18,7 +18,10 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 echo "==> LiveKit server binari"
-curl -sSL https://get.livekit.io | bash
+# Qayta ishga tushirganda GitHub'dan qayta yuklamaydi (sekin/osilib qolishi mumkin); yangilash: LK_UPGRADE=1
+if [[ "${LK_UPGRADE:-0}" == "1" ]] || ! command -v livekit-server >/dev/null; then
+  curl -sSL --connect-timeout 20 https://get.livekit.io | bash
+fi
 command -v livekit-server >/dev/null || { echo "livekit-server o‘rnatilmadi" >&2; exit 1; }
 livekit-server --version || true
 

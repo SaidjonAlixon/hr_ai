@@ -46,11 +46,18 @@ rtc:
   port_range_end: 60000
   use_external_ip: true
 room:
+  # Xonani faqat API ochadi — yakunlangan konferensiya eski token bilan qayta ochilmaydi
+  auto_create: false
   empty_timeout: 900
   departure_timeout: 60
   max_participants: 150
 keys:
   ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
+# Kim qachon kirdi/chiqdi — konferensiya tarixi uchun
+webhook:
+  api_key: ${LIVEKIT_API_KEY}
+  urls:
+    - http://127.0.0.1:8080/api/conferences/livekit-webhook
 CONF
 chown root:livekit "$LK_CONF"
 chmod 640 "$LK_CONF"

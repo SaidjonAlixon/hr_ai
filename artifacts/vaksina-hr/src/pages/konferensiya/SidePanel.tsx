@@ -28,8 +28,8 @@ import { canPublish, displayName, handOf, hhmm, roleOf, userIdOf } from "./room-
 
 export function PanelShell({ title, onClose, children }: { title: ReactNode; onClose: () => void; children: ReactNode }) {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background text-foreground">
-      <div className="flex h-14 shrink-0 items-center justify-between border-b px-4">
+    <div className="flex h-full min-h-0 flex-col bg-slate-900 text-foreground">
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 px-4">
         <h2 className="text-sm font-semibold">{title}</h2>
         <button
           type="button"
@@ -46,6 +46,21 @@ export function PanelShell({ title, onClose, children }: { title: ReactNode; onC
 }
 
 // ---------------------------------------------------------------- chat
+
+const NAME_COLORS = [
+  "text-sky-400",
+  "text-emerald-400",
+  "text-amber-400",
+  "text-pink-400",
+  "text-violet-400",
+  "text-orange-400",
+  "text-teal-400",
+  "text-rose-400",
+];
+
+export function nameColor(userId: number) {
+  return NAME_COLORS[Math.abs(userId) % NAME_COLORS.length];
+}
 
 export function ChatPanel({
   messages,
@@ -98,20 +113,27 @@ export function ChatPanel({
         ) : (
           messages.map((m, i) => {
             const mine = m.userId === meUid;
-            const grouped = i > 0 && messages[i - 1].userId === m.userId;
+            const prev = messages[i - 1];
+            const grouped = Boolean(prev && prev.userId === m.userId && new Date(m.at).getTime() - new Date(prev.at).getTime() < 5 * 60_000);
             return (
-              <div key={m.id} className={cn("flex gap-2", mine && "flex-row-reverse", grouped && "-mt-2")}>
-                {grouped ? <div className="w-8 shrink-0" /> : <CallAvatar id={m.userId} name={m.name} className="h-8 w-8 text-[11px]" />}
-                <div className={cn("min-w-0 max-w-[80%]", mine && "text-right")}>
+              <div key={m.id} className={cn("flex gap-2.5", mine && "flex-row-reverse", grouped && "-mt-2")}>
+                {grouped ? <div className="w-8 shrink-0" /> : <CallAvatar id={m.userId} name={m.name} className="h-8 w-8 shrink-0 text-[11px]" />}
+                <div className={cn("flex min-w-0 max-w-[85%] flex-col", mine ? "items-end" : "items-start")}>
                   {!grouped ? (
-                    <p className="mb-0.5 truncate text-[11px] font-medium text-muted-foreground">
-                      {mine ? "Siz" : m.name} · {hhmm(m.at)}
-                    </p>
+                    <div className={cn("mb-1 flex max-w-full flex-wrap items-baseline gap-x-2 px-1", mine && "flex-row-reverse")}>
+                      <span className={cn("break-words text-[12.5px] font-semibold leading-snug", nameColor(m.userId))}>
+                        {m.name}
+                        {mine ? <span className="font-normal text-muted-foreground"> (siz)</span> : null}
+                      </span>
+                      <span className="shrink-0 text-[10.5px] tabular-nums text-muted-foreground">{hhmm(m.at)}</span>
+                    </div>
                   ) : null}
                   <div
+                    title={hhmm(m.at)}
                     className={cn(
-                      "inline-block whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-left text-sm",
-                      mine ? "rounded-tr-md bg-primary text-primary-foreground" : "rounded-tl-md bg-muted",
+                      "whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-left text-sm leading-relaxed",
+                      mine ? "rounded-tr-md bg-sky-600 text-white" : "rounded-tl-md bg-white/[0.07] text-foreground ring-1 ring-white/[0.06]",
+                      grouped && (mine ? "rounded-tr-2xl" : "rounded-tl-2xl"),
                     )}
                   >
                     {m.text}

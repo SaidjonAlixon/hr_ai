@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { RoomEvent, Track, type Participant, type Room } from "livekit-client";
-import type { ConfSettings, Spotlight } from "@/lib/conference/api";
+import { hhmmOf, type ConfSettings, type Spotlight } from "@/lib/conference/api";
 
 /** Xona hodisalarida qayta chizish — bir kadrda bir marta (25 kishilik xonada ham silliq) */
 export function useRoomTick(room: Room | null): number {
@@ -8,8 +8,17 @@ export function useRoomTick(room: Room | null): number {
   useEffect(() => {
     if (!room) return;
     let frame = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const bump = () => {
-      if (frame) return;
+      if (frame || timer) return;
+      // Yashirin tabda rAF ishlamaydi (ekran ulashib boshqa oynaga o‘tganda) — taymer bilan
+      if (document.hidden) {
+        timer = setTimeout(() => {
+          timer = null;
+          setTick((t) => t + 1);
+        }, 500);
+        return;
+      }
       frame = requestAnimationFrame(() => {
         frame = 0;
         setTick((t) => t + 1);
@@ -41,6 +50,7 @@ export function useRoomTick(room: Room | null): number {
     return () => {
       for (const e of events) room.off(e, bump);
       if (frame) cancelAnimationFrame(frame);
+      if (timer) clearTimeout(timer);
     };
   }, [room]);
   return tick;
@@ -149,5 +159,5 @@ export function canShareScreen(): boolean {
 }
 
 export function hhmm(iso: string): string {
-  return new Date(iso).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
+  return hhmmOf(iso);
 }

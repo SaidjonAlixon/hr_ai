@@ -1,4 +1,4 @@
-import { Router, type IRouter, type Response } from "express";
+import express, { Router, type IRouter, type Response } from "express";
 import { pool } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { hasFullPlatformAccess } from "../lib/roles";
@@ -7,8 +7,11 @@ import {
   CODE_RE,
   MOD_ACTIONS,
   applyLivePerms,
+  conferenceHistory,
   conferenceUrl,
+  deleteConference,
   endConference,
+  handleLiveKitWebhook,
   ensureConferenceSchema,
   invitedUserIds,
   isModerator,
@@ -179,16 +182,19 @@ router.get("/conferences", requireAuth, async (req: AuthRequest, res): Promise<v
     const { rows } = await pool.query(
       `SELECT c.*, u.full_name AS host_name,
               (SELECT COUNT(*)::int FROM conference_members m WHERE m.conference_id = c.id AND m.invited) AS invited_count,
+              (SELECT COUNT(*)::int FROM conference_members m WHERE m.conference_id = c.id AND m.joined_at IS NOT NULL) AS attended_count,
+              (SELECT MIN(s.joined_at) FROM conference_sessions s WHERE s.conference_id = c.id) AS first_join,
+              (SELECT MAX(COALESCE(s.left_at, NOW())) FROM conference_sessions s WHERE s.conference_id = c.id) AS last_leave,
               me.role AS my_role, me.invited AS my_invited
          FROM conferences c
          LEFT JOIN users u ON u.id = c.host_id
          LEFT JOIN conference_members me ON me.conference_id = c.id AND me.user_id = $1
         WHERE ${visible}
-          AND (c.status IN ('scheduled','live') OR c.created_at > NOW() - INTERVAL '60 days')
+          AND (c.status IN ('scheduled','live') OR c.created_at > NOW() - INTERVAL '365 days')
         ORDER BY (c.status IN ('scheduled','live')) DESC,
                  CASE WHEN c.status IN ('scheduled','live') THEN c.scheduled_at END ASC,
                  c.scheduled_at DESC
-        LIMIT 120`,
+        LIMIT 300`,
       [req.userId],
     );
     const liveCodes = rows.filter((r) => r.status === "live").map((r) => r.code as string);
@@ -196,20 +202,31 @@ router.get("/conferences", requireAuth, async (req: AuthRequest, res): Promise<v
     res.json({
       canCreate: all,
       serverReady: Boolean(liveKitConfig()),
-      items: rows.map((r) => ({
-        code: r.code as string,
-        title: r.title as string,
-        description: (r.description as string) || null,
-        scheduledAt: new Date(r.scheduled_at).toISOString(),
-        durationMin: Number(r.duration_min) || 60,
-        status: r.status as string,
-        host: { id: r.host_id as number, fullName: (r.host_name as string) || "—" },
-        invitedCount: Number(r.invited_count) || 0,
-        liveCount: counts.get(r.code as string) ?? 0,
-        myRole: r.host_id === req.userId ? "host" : ((r.my_role as string) ?? null),
-        invited: Boolean(r.my_invited),
-        link: conferenceUrl(r.code as string),
-      })),
+      items: rows.map((r) => {
+        const start = r.first_join ?? r.started_at;
+        const end = r.ended_at ?? (r.status === "live" ? null : r.last_leave);
+        const startMs = start ? new Date(start).getTime() : null;
+        const endMs = end ? new Date(end).getTime() : null;
+        return {
+          code: r.code as string,
+          title: r.title as string,
+          description: (r.description as string) || null,
+          scheduledAt: new Date(r.scheduled_at).toISOString(),
+          durationMin: Number(r.duration_min) || 60,
+          status: r.status as string,
+          host: { id: r.host_id as number, fullName: (r.host_name as string) || "—" },
+          invitedCount: Number(r.invited_count) || 0,
+          attendedCount: Number(r.attended_count) || 0,
+          actualStart: startMs ? new Date(startMs).toISOString() : null,
+          actualEnd: endMs ? new Date(endMs).toISOString() : null,
+          actualSeconds: startMs && endMs && endMs > startMs ? Math.round((endMs - startMs) / 1000) : 0,
+          liveCount: counts.get(r.code as string) ?? 0,
+          myRole: r.host_id === req.userId ? "host" : ((r.my_role as string) ?? null),
+          canDelete: r.host_id === req.userId || all,
+          invited: Boolean(r.my_invited),
+          link: conferenceUrl(r.code as string),
+        };
+      }),
     });
   } catch (err) {
     serverError(res, "GET /conferences", err);
@@ -524,6 +541,69 @@ router.post("/conferences/:code/end", requireAuth, async (req: AuthRequest, res)
     res.json({ ok: true });
   } catch (err) {
     serverError(res, "POST /conferences/:code/end", err);
+  }
+});
+
+// ---------------------------------------------------------------- tarix va o‘chirish
+
+/** LiveKit → API (faqat shu server ichida, imzo bilan): kim qachon kirdi/chiqdi */
+router.post(
+  "/conferences/livekit-webhook",
+  express.raw({ type: () => true, limit: "1mb" }),
+  async (req, res): Promise<void> => {
+    try {
+      const body = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : typeof req.body === "string" ? req.body : JSON.stringify(req.body ?? {});
+      await handleLiveKitWebhook(body, req.get("Authorization") ?? undefined);
+      res.json({ ok: true });
+    } catch (err) {
+      console.warn("POST /conferences/livekit-webhook", (err as Error)?.message);
+      res.status(401).json({ error: "invalid webhook" });
+    }
+  },
+);
+
+router.get("/conferences/:code/history", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    await ensureConferenceSchema();
+    const ctx = await context(req, res);
+    if (!ctx) return;
+    const member = await loadMember(ctx.conf.id, ctx.actor.id);
+    if (!ctx.moderator && !member) {
+      fail(res, 403, "Ruxsat yo‘q");
+      return;
+    }
+    const { rows: hostRows } = await pool.query(`SELECT full_name FROM users WHERE id = $1`, [ctx.conf.hostId]);
+    const history = await conferenceHistory(ctx.conf);
+    res.json({
+      conference: confJson(ctx.conf, (hostRows[0]?.full_name as string) || "—", undefined),
+      canDelete: ctx.owner,
+      ...history,
+      // Qatnashuv faqat tashkilotchiga; oddiy ishtirokchi faqat o‘zini ko‘radi
+      attendance: ctx.moderator ? history.attendance : history.attendance.filter((a) => a.userId === ctx.actor.id),
+    });
+  } catch (err) {
+    serverError(res, "GET /conferences/:code/history", err);
+  }
+});
+
+router.delete("/conferences/:code/purge", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const ctx = await context(req, res);
+    if (!ctx) return;
+    if (!ctx.owner) {
+      fail(res, 403, "Faqat asosiy tashkilotchi o‘chira oladi");
+      return;
+    }
+    const { conf } = ctx;
+    if (conf.status === "scheduled") {
+      const ids = await invitedUserIds(conf.id, { excludeUserId: ctx.actor.id });
+      await endConference(conf, "cancelled");
+      void notifyConferenceUsers(conf, ids, "cancelled").catch(() => undefined);
+    }
+    await deleteConference(conf);
+    res.json({ ok: true });
+  } catch (err) {
+    serverError(res, "DELETE /conferences/:code/purge", err);
   }
 });
 

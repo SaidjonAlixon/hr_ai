@@ -33,10 +33,39 @@ export type ConferenceListItem = {
   status: ConfStatus;
   host: { id: number; fullName: string };
   invitedCount: number;
+  attendedCount: number;
+  actualStart: string | null;
+  actualEnd: string | null;
+  actualSeconds: number;
   liveCount: number;
   myRole: MemberRole | null;
+  canDelete: boolean;
   invited: boolean;
   link: string;
+};
+
+export type AttendanceRow = {
+  userId: number;
+  fullName: string;
+  position: string | null;
+  role: MemberRole;
+  invited: boolean;
+  firstJoin: string | null;
+  lastLeave: string | null;
+  seconds: number;
+  sessions: number;
+};
+
+export type ConferenceHistory = {
+  conference: ConferenceDetails["conference"];
+  canDelete: boolean;
+  actualStart: string | null;
+  actualEnd: string | null;
+  actualSeconds: number;
+  invitedCount: number;
+  attendedCount: number;
+  attendance: AttendanceRow[];
+  messages: ChatMessage[];
 };
 
 export type ConferenceList = { canCreate: boolean; serverReady: boolean; items: ConferenceListItem[] };
@@ -158,6 +187,8 @@ export const conferenceApi = {
   cancel: (code: string) => request<{ ok: true }>(base(code), { method: "DELETE", json: {} }),
   join: (code: string) => request<JoinTicket>(`${base(code)}/join`, { method: "POST", json: {} }),
   end: (code: string) => request<{ ok: true }>(`${base(code)}/end`, { method: "POST", json: {} }),
+  history: (code: string) => request<ConferenceHistory>(`${base(code)}/history`),
+  purge: (code: string) => request<{ ok: true }>(`${base(code)}/purge`, { method: "DELETE", json: {} }),
   moderate: (code: string, action: ModAction, userId?: number) =>
     request<{ ok: true; count?: number }>(`${base(code)}/moderate`, { method: "POST", json: { action, userId } }),
   settings: (code: string, settings: Partial<ConfSettings>) =>
@@ -186,14 +217,52 @@ export function conferenceLink(code: string) {
   return `${window.location.origin}${conferencePath(code)}`;
 }
 
+// Brauzerlarning «uz» lokali qisqa oy nomini «M10» deb chiqaradi — o‘zimiz yozamiz
+const MONTHS = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"];
+const MONTHS_SHORT = ["yan", "fev", "mar", "apr", "may", "iyun", "iyul", "avg", "sen", "okt", "noy", "dek"];
+const WEEKDAYS = ["yakshanba", "dushanba", "seshanba", "chorshanba", "payshanba", "juma", "shanba"];
+
+const pad = (n: number) => String(n).padStart(2, "0");
+
+export function hhmmOf(iso: string | Date) {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export function monthShort(d: Date) {
+  return MONTHS_SHORT[d.getMonth()];
+}
+
+/** 9-oktabr 2026 (yil joriy bo‘lsa ham ko‘rsatiladi — tarix uchun aniq) */
+export function formatDate(iso: string | Date, opts?: { weekday?: boolean; year?: boolean }) {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  const base = `${d.getDate()}-${MONTHS[d.getMonth()]}`;
+  const year = opts?.year === false ? "" : ` ${d.getFullYear()}`;
+  const wd = opts?.weekday ? `, ${WEEKDAYS[d.getDay()]}` : "";
+  return `${base}${year}${wd}`;
+}
+
 export function formatWhen(iso: string) {
   const d = new Date(iso);
   const today = new Date();
   const tomorrow = new Date(Date.now() + 86_400_000);
-  const time = d.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
+  const yesterday = new Date(Date.now() - 86_400_000);
+  const time = hhmmOf(d);
   if (d.toDateString() === today.toDateString()) return `Bugun, ${time}`;
   if (d.toDateString() === tomorrow.toDateString()) return `Ertaga, ${time}`;
-  return `${d.toLocaleDateString("uz-UZ", { day: "numeric", month: "long" })}, ${time}`;
+  if (d.toDateString() === yesterday.toDateString()) return `Kecha, ${time}`;
+  return `${formatDate(d, { year: d.getFullYear() !== today.getFullYear() })}, ${time}`;
+}
+
+/** 1 soat 25 daqiqa / 12 daqiqa / 40 soniya */
+export function formatSpan(seconds: number) {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s} soniya`;
+  const m = Math.round(s / 60);
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  if (!h) return `${m} daqiqa`;
+  return mm ? `${h} soat ${mm} daqiqa` : `${h} soat`;
 }
 
 export async function copyText(text: string): Promise<boolean> {

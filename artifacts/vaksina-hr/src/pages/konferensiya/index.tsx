@@ -134,17 +134,22 @@ export default function KonferensiyaPage({ params }: { params: { code?: string }
       let lk: Room | null = null;
       try {
         const ticket = await conferenceApi.join(code);
+        // Oddiy uy/ofis interneti (yuklash 2–5 Mbit) ham ko‘tarsin: kamera ≤ 0.8 Mbit, ekran ≤ 1.6 Mbit.
+        // Ovoz uzluksiz (dtx o‘chiq — so‘z boshlari «yutilmaydi»), RED — paket yo‘qolsa ham ovoz uzilmaydi.
         lk = new Room({
           adaptiveStream: true,
           dynacast: true,
           disconnectOnPageLeave: true,
-          videoCaptureDefaults: { resolution: VideoPresets.h720.resolution },
+          videoCaptureDefaults: { resolution: VideoPresets.h540.resolution },
           audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
           publishDefaults: {
             simulcast: true,
+            videoEncoding: { maxBitrate: 800_000, maxFramerate: 24 },
             videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360],
-            screenShareEncoding: ScreenSharePresets.h1080fps15.encoding,
-            dtx: true,
+            screenShareEncoding: { maxBitrate: 1_600_000, maxFramerate: 12 },
+            screenShareSimulcastLayers: [ScreenSharePresets.h720fps5],
+            degradationPreference: "balanced",
+            dtx: false,
             red: true,
           },
         });
@@ -220,6 +225,16 @@ export default function KonferensiyaPage({ params }: { params: { code?: string }
     [code, qc, toast],
   );
 
+  const ended = useCallback(async () => {
+    leavingRef.current = true;
+    const r = roomRef.current;
+    roomRef.current = null;
+    setRoom(null);
+    await r?.disconnect();
+    setPhase("ended");
+    void qc.invalidateQueries({ queryKey: ["conferences"] });
+  }, [qc]);
+
   const refetchDetails = details.refetch;
   const onTimeReached = useCallback(() => void refetchDetails(), [refetchDetails]);
 
@@ -240,7 +255,15 @@ export default function KonferensiyaPage({ params }: { params: { code?: string }
   }
 
   if (phase === "in" && room && details.data) {
-    return <ConferenceRoom room={room} code={code} details={details.data} onLeave={(all) => void leave(all)} />;
+    return (
+      <ConferenceRoom
+        room={room}
+        code={code}
+        details={details.data}
+        onLeave={leave}
+        onEnded={() => void ended()}
+      />
+    );
   }
 
   if (!isBrowserSupported()) {

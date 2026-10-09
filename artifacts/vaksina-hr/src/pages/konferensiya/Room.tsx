@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  ConnectionQuality,
   ConnectionState,
   Room,
   RoomEvent,
@@ -17,6 +18,7 @@ import {
   Hand,
   LayoutGrid,
   Loader2,
+  LogOut,
   Maximize,
   MessageSquare,
   Mic,
@@ -27,6 +29,7 @@ import {
   PhoneOff,
   Presentation,
   Settings2,
+  Signal,
   Star,
   Users,
   Video,
@@ -35,6 +38,16 @@ import {
   VolumeX,
   WifiOff,
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -82,6 +95,23 @@ function Elapsed({ since }: { since: number }) {
     return () => clearInterval(t);
   }, []);
   return <span className="font-mono tabular-nums">{formatDuration((now - since) / 1000)}</span>;
+}
+
+function NetworkBadge({ q }: { q: ConnectionQuality }) {
+  const map: Partial<Record<ConnectionQuality, { text: string; cls: string }>> = {
+    [ConnectionQuality.Excellent]: { text: "A’lo", cls: "text-emerald-300" },
+    [ConnectionQuality.Good]: { text: "Yaxshi", cls: "text-emerald-300" },
+    [ConnectionQuality.Poor]: { text: "Sust internet", cls: "text-amber-300 bg-amber-500/15" },
+    [ConnectionQuality.Lost]: { text: "Aloqa yo‘q", cls: "text-red-300 bg-red-500/15" },
+  };
+  const m = map[q];
+  if (!m) return null;
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-full bg-white/[0.07] px-2 py-0.5", m.cls)} title="Sizning internet aloqangiz">
+      <Signal className="h-3 w-3" />
+      <span className="hidden sm:inline">{m.text}</span>
+    </span>
+  );
 }
 
 function CtrlButton({
@@ -274,11 +304,14 @@ export function ConferenceRoom({
   code,
   details,
   onLeave,
+  onEnded,
 }: {
   room: Room;
   code: string;
   details: ConferenceDetails;
-  onLeave: (endForAll: boolean) => void;
+  onLeave: (endForAll: boolean) => Promise<void> | void;
+  /** Tashkilotchi hamma uchun yakunladi */
+  onEnded: () => void;
 }) {
   const { toast } = useToast();
   const tick = useRoomTick(room);
@@ -327,6 +360,11 @@ export function ConferenceRoom({
       alive = false;
     };
   }, [code]);
+
+  const onEndedRef = useRef(onEnded);
+  onEndedRef.current = onEnded;
+  const [endOpen, setEndOpen] = useState(false);
+  const [ending, setEnding] = useState(false);
 
   const enableMic = useCallback(async () => {
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -387,6 +425,9 @@ export function ConferenceRoom({
           break;
         case "cohost-granted":
           toast({ title: "Siz yordamchi tashkilotchi bo‘ldingiz" });
+          break;
+        case "ended":
+          onEndedRef.current();
           break;
       }
     };
@@ -472,11 +513,15 @@ export function ConferenceRoom({
       return;
     }
     try {
+      // systemAudio: exclude — aks holda butun kompyuter ovozi (boshqalarning ovozi ham) qayta yuborilib, aks-sado bo‘ladi.
+      // Konferensiya oynasining o‘zi ro‘yxatda chiqmaydi (cheksiz ko‘zgu bo‘lmasin).
       await local.setScreenShareEnabled(!screenOn, {
         audio: true,
+        systemAudio: "exclude",
         selfBrowserSurface: "exclude",
         surfaceSwitching: "include",
-        systemAudio: "include",
+        suppressLocalAudioPlayback: false,
+        contentHint: "detail",
       });
     } catch (e) {
       if ((e as { name?: string })?.name !== "NotAllowedError") {
@@ -534,7 +579,11 @@ export function ConferenceRoom({
   const spotTile: TileRef | null = spotP
     ? { p: spotP, source: spot?.source !== "camera" && spotP.isScreenShareEnabled ? "screen" : "camera" }
     : null;
-  const screenTiles: TileRef[] = participants.filter((p) => p.isScreenShareEnabled).map((p) => ({ p, source: "screen" }));
+  // Boshqalarning ekrani birinchi: o‘z ekranini ulashayotgan odamga boshqa taqdimot bo‘lsa — o‘sha kattalashadi
+  const screenTiles: TileRef[] = participants
+    .filter((p) => p.isScreenShareEnabled)
+    .sort((a, b) => Number(a.isLocal) - Number(b.isLocal))
+    .map((p) => ({ p, source: "screen" }));
   const pinTile: TileRef | null = (() => {
     if (!localPin) return null;
     const [identity, source] = localPin.split(":");
@@ -593,21 +642,23 @@ export function ConferenceRoom({
     <RoomUiContext.Provider value={ui}>
       <div className="flex h-[100dvh] flex-col overflow-hidden bg-slate-950 text-white">
         {/* Yuqori panel */}
-        <header className="flex h-14 shrink-0 items-center gap-3 px-3 sm:px-5">
+        <header className="flex h-16 shrink-0 items-center gap-3 border-b border-white/[0.06] bg-gradient-to-b from-slate-900/80 to-slate-950 px-3 sm:px-5">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <div className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-sky-600 sm:flex">
-              <Presentation className="h-4.5 w-4.5" />
+            <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-sky-600 shadow-lg shadow-emerald-500/20 sm:flex">
+              <Presentation className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">{details.conference.title}</p>
-              <p className="flex items-center gap-2 text-[11px] text-white/60">
-                <span className="inline-flex items-center gap-1">
+              <p className="truncate text-[15px] font-semibold tracking-tight">{details.conference.title}</p>
+              <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-white/70">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/15 px-2 py-0.5 font-semibold text-red-300">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />
                   <Elapsed since={since} />
                 </span>
-                <span>·</span>
-                <span>{participants.length} kishi</span>
-              </p>
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/[0.07] px-2 py-0.5">
+                  <Users className="h-3 w-3" /> {participants.length}
+                </span>
+                <NetworkBadge q={local.connectionQuality} />
+              </div>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -616,7 +667,7 @@ export function ConferenceRoom({
               onClick={async () => {
                 if (await copyText(conferenceLink(code))) toast({ title: "Taklif havolasi nusxalandi", description: conferenceLink(code) });
               }}
-              className="hidden items-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold transition hover:bg-white/20 sm:inline-flex"
+              className="hidden items-center gap-1.5 rounded-xl bg-white/[0.08] px-3 py-2 text-xs font-semibold ring-1 ring-white/10 transition hover:bg-white/15 sm:inline-flex"
             >
               <Copy className="h-3.5 w-3.5" /> Havola
             </button>
@@ -757,15 +808,18 @@ export function ConferenceRoom({
           {/* Yon panel: kompyuterda yonida, telefonda ustida */}
           {panelNode ? (
             desktop ? (
-              <aside className="mb-2 mr-4 w-[360px] shrink-0 overflow-hidden rounded-2xl">{panelNode}</aside>
+              <aside className="dark mb-2 mr-4 w-[360px] shrink-0 overflow-hidden rounded-3xl border border-white/10 shadow-2xl shadow-black/40">
+                {panelNode}
+              </aside>
             ) : (
-              <div className="fixed inset-0 z-40 flex flex-col">{panelNode}</div>
+              <div className="dark fixed inset-0 z-40 flex flex-col">{panelNode}</div>
             )
           ) : null}
         </div>
 
         {/* Boshqaruv paneli */}
-        <footer className="flex shrink-0 items-center justify-center gap-0.5 px-2 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-1 sm:gap-1">
+        <footer className="flex shrink-0 justify-center px-2 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-1">
+          <div className="flex max-w-full items-center gap-0.5 overflow-x-auto rounded-[28px] border border-white/10 bg-slate-900/90 px-1.5 py-1 shadow-2xl shadow-black/50 backdrop-blur [scrollbar-width:none] sm:gap-1 sm:px-3">
           <div className="relative">
             <CtrlButton
               active={micOn}
@@ -817,48 +871,64 @@ export function ConferenceRoom({
             label="Ishtirokchilar"
             badge={moderator ? participants.filter((p) => handOf(p) > 0).length : 0}
           />
-          <div className="ml-1 sm:ml-3">
+          <div className="mx-1 h-9 w-px shrink-0 bg-white/10 sm:mx-2" />
+          <div className="flex shrink-0 items-center gap-1.5 pr-0.5">
+            <button
+              type="button"
+              onClick={() => onLeave(false)}
+              title="Faqat o‘zim chiqaman — konferensiya davom etadi"
+              className={cn(
+                "flex h-11 items-center gap-2 rounded-full px-3.5 text-sm font-semibold text-white transition active:scale-95 sm:h-12 sm:px-4",
+                moderator ? "bg-white/10 hover:bg-white/20" : "bg-red-500 shadow-lg shadow-red-500/30 hover:bg-red-600",
+              )}
+            >
+              {moderator ? <LogOut className="h-5 w-5" /> : <PhoneOff className="h-5 w-5" />}
+              <span className="hidden sm:inline">Chiqish</span>
+            </button>
             {moderator ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    className="flex h-11 items-center gap-2 rounded-full bg-red-500 px-4 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition hover:bg-red-600 active:scale-95 sm:h-12 sm:px-5"
-                  >
-                    <PhoneOff className="h-5 w-5" />
-                    <span className="hidden sm:inline">Chiqish</span>
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent side="top" align="end" className="w-64">
-                  <DropdownMenuItem onClick={() => onLeave(false)} className="gap-2">
-                    <PhoneOff className="h-4 w-4" /> Konferensiyadan chiqish
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => {
-                      if (window.confirm("Konferensiya hamma uchun yakunlansinmi? Barcha ishtirokchilar chiqariladi.")) onLeave(true);
-                    }}
-                    className="gap-2 text-red-600 focus:text-red-600"
-                  >
-                    <PhoneOff className="h-4 w-4" /> Hamma uchun yakunlash
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : (
               <button
                 type="button"
-                onClick={() => onLeave(false)}
-                className="flex h-11 items-center gap-2 rounded-full bg-red-500 px-4 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition hover:bg-red-600 active:scale-95 sm:h-12 sm:px-5"
+                onClick={() => setEndOpen(true)}
+                title="Konferensiyani hamma uchun yakunlash"
+                className="flex h-11 items-center gap-2 rounded-full bg-red-500 px-3.5 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition hover:bg-red-600 active:scale-95 sm:h-12 sm:px-4"
               >
                 <PhoneOff className="h-5 w-5" />
-                <span className="hidden sm:inline">Chiqish</span>
+                <span className="hidden md:inline">Hamma uchun yakunlash</span>
+                <span className="hidden sm:inline md:hidden">Yakunlash</span>
               </button>
-            )}
+            ) : null}
+          </div>
           </div>
         </footer>
 
         <AudioRenderer room={room} tick={tick} />
         {moderator ? <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} code={code} settings={settings} /> : null}
+        <AlertDialog open={endOpen} onOpenChange={(v) => !ending && setEndOpen(v)}>
+          <AlertDialogContent className="max-w-md rounded-3xl">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Konferensiyani yakunlaysizmi?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Konferensiya hamma uchun to‘liq tugaydi: barcha {participants.length} ishtirokchi chiqariladi va havola orqali qayta kirib
+                bo‘lmaydi. Qatnashuv va chat tarixi saqlanib qoladi.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={ending}>Bekor qilish</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={ending}
+                onClick={(e) => {
+                  e.preventDefault();
+                  setEnding(true);
+                  void Promise.resolve(onLeave(true)).finally(() => setEnding(false));
+                }}
+                className="bg-red-600 text-white hover:bg-red-700"
+              >
+                {ending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PhoneOff className="mr-2 h-4 w-4" />}
+                Hamma uchun yakunlash
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </RoomUiContext.Provider>
   );

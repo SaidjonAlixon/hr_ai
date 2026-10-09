@@ -11,7 +11,7 @@ import {
 import { AlertTriangle, CalendarClock, Clock, Crown, Loader2, Mic, MicOff, Users, Video, VideoOff, VolumeX } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CallAvatar } from "@/components/calls/CallLayer";
-import { formatWhen, type ConferenceDetails } from "@/lib/conference/api";
+import { formatWhen, hhmmOf, type ConferenceDetails } from "@/lib/conference/api";
 
 export type JoinPrefs = {
   micOn: boolean;
@@ -129,7 +129,7 @@ export function PreJoin({
     }
     let alive = true;
     let created: LocalVideoTrack | null = null;
-    createLocalVideoTrack({ resolution: VideoPresets.h720.resolution, deviceId: videoId || undefined, facingMode: "user" })
+    createLocalVideoTrack({ resolution: VideoPresets.h540.resolution, deviceId: videoId || undefined, facingMode: "user" })
       .then((t) => {
         if (!alive) {
           t.stop();
@@ -304,7 +304,7 @@ export function PreJoin({
         <div className="mt-5 space-y-2.5 text-sm text-white/80">
           <p className="flex items-center gap-2.5">
             <Clock className="h-4 w-4 text-white/50" />
-            {formatWhen(c.scheduledAt)} – {end.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })}
+            {formatWhen(c.scheduledAt)} – {hhmmOf(end)}
           </p>
           <p className="flex items-center gap-2.5">
             <Crown className="h-4 w-4 text-amber-400" />

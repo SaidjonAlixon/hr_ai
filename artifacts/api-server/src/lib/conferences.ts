@@ -9,6 +9,7 @@ import {
   DataPacket_Kind,
   RoomServiceClient,
   TrackSource,
+  WebhookReceiver,
   type ParticipantInfo,
 } from "livekit-server-sdk";
 import { pool } from "@workspace/db";
@@ -86,7 +87,17 @@ export function ensureConferenceSchema(): Promise<void> {
          text TEXT NOT NULL,
          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
        );
-       CREATE INDEX IF NOT EXISTS conference_messages_conf_idx ON conference_messages (conference_id, id);`,
+       CREATE INDEX IF NOT EXISTS conference_messages_conf_idx ON conference_messages (conference_id, id);
+       CREATE TABLE IF NOT EXISTS conference_sessions (
+         id SERIAL PRIMARY KEY,
+         conference_id INT NOT NULL,
+         user_id INT NOT NULL,
+         participant_sid TEXT,
+         joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         left_at TIMESTAMPTZ
+       );
+       CREATE INDEX IF NOT EXISTS conference_sessions_conf_idx ON conference_sessions (conference_id, user_id);
+       CREATE UNIQUE INDEX IF NOT EXISTS conference_sessions_sid_uq ON conference_sessions (participant_sid);`,
     )
     .then(() => undefined)
     .catch((err) => {
@@ -699,6 +710,7 @@ export async function endConference(conf: Conference, status: "ended" | "cancell
     [conf.id, status],
   );
   conf.status = status;
+  await closeOpenSessions(conf.id);
   const rs = roomService();
   if (!rs) return;
   await sendRoomData(conf, "mod", { type: "ended" });
@@ -744,6 +756,171 @@ export async function postMessage(conf: Conference, user: { id: number; fullName
   };
   await sendRoomData(conf, "chat", msg);
   return msg;
+}
+
+// ---------------------------------------------------------------- qatnashuv (kim qachon kirdi/chiqdi)
+
+async function closeOpenSessions(confId: number): Promise<void> {
+  await pool.query(`UPDATE conference_sessions SET left_at = NOW() WHERE conference_id = $1 AND left_at IS NULL`, [confId]);
+}
+
+function tsFromSeconds(v: unknown): Date | null {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 1_000_000_000 ? new Date(n * 1000) : null;
+}
+
+let webhookReceiver: { key: string; receiver: WebhookReceiver } | null = null;
+
+/** LiveKit webhook: participant_joined / participant_left / room_finished — imzo tekshiriladi */
+export async function handleLiveKitWebhook(body: string, authHeader: string | undefined): Promise<void> {
+  const cfg = liveKitConfig();
+  if (!cfg) throw new Error("LiveKit sozlanmagan");
+  const key = `${cfg.apiKey}|${cfg.apiSecret}`;
+  if (webhookReceiver?.key !== key) webhookReceiver = { key, receiver: new WebhookReceiver(cfg.apiKey, cfg.apiSecret) };
+  const event = await webhookReceiver.receiver.receive(body, authHeader);
+  const roomName = event.room?.name ?? "";
+  if (!roomName.startsWith("conf_")) return;
+  await ensureConferenceSchema();
+  const conf = await loadConference(roomName.slice(5));
+  if (!conf) return;
+  const at = tsFromSeconds(event.createdAt) ?? new Date();
+
+  if (event.event === "room_finished") {
+    await pool.query(
+      `UPDATE conference_sessions SET left_at = $2 WHERE conference_id = $1 AND left_at IS NULL`,
+      [conf.id, at],
+    );
+    return;
+  }
+  const p = event.participant;
+  const uid = p ? userIdFromIdentity(p.identity) : null;
+  if (!p || uid == null) return;
+  if (event.event === "participant_joined") {
+    const joined = tsFromSeconds(p.joinedAt) ?? at;
+    await pool.query(
+      `INSERT INTO conference_sessions (conference_id, user_id, participant_sid, joined_at)
+       VALUES ($1, $2, $3, $4) ON CONFLICT (participant_sid) DO NOTHING`,
+      [conf.id, uid, p.sid, joined],
+    );
+    return;
+  }
+  if (event.event === "participant_left" || event.event === "participant_connection_aborted") {
+    const { rowCount } = await pool.query(
+      `UPDATE conference_sessions SET left_at = $2 WHERE participant_sid = $1 AND left_at IS NULL`,
+      [p.sid, at],
+    );
+    if (!rowCount) {
+      const joined = tsFromSeconds(p.joinedAt);
+      if (joined) {
+        await pool.query(
+          `INSERT INTO conference_sessions (conference_id, user_id, participant_sid, joined_at, left_at)
+           VALUES ($1, $2, $3, $4, $5) ON CONFLICT (participant_sid) DO NOTHING`,
+          [conf.id, uid, p.sid, joined, at],
+        );
+      }
+    }
+  }
+}
+
+export type AttendanceRow = {
+  userId: number;
+  fullName: string;
+  position: string | null;
+  role: MemberRole;
+  invited: boolean;
+  firstJoin: string | null;
+  lastLeave: string | null;
+  seconds: number;
+  sessions: number;
+};
+
+export type ConferenceHistory = {
+  actualStart: string | null;
+  actualEnd: string | null;
+  actualSeconds: number;
+  invitedCount: number;
+  attendedCount: number;
+  attendance: AttendanceRow[];
+  messages: ChatMessage[];
+};
+
+/** Yakunlangan (yoki davom etayotgan) konferensiya tarixi: qatnashuv va to‘liq chat */
+export async function conferenceHistory(conf: Conference): Promise<ConferenceHistory> {
+  const [{ rows: att }, { rows: msgs }] = await Promise.all([
+    pool.query(
+      `WITH s AS (
+         SELECT user_id,
+                MIN(joined_at) AS first_join,
+                MAX(COALESCE(left_at, NOW())) AS last_leave,
+                SUM(EXTRACT(EPOCH FROM (COALESCE(left_at, NOW()) - joined_at)))::int AS seconds,
+                COUNT(*)::int AS sessions
+           FROM conference_sessions WHERE conference_id = $1 GROUP BY user_id
+       )
+       SELECT COALESCE(m.user_id, s.user_id) AS user_id, u.full_name, e.position,
+              COALESCE(m.role, 'participant') AS role, COALESCE(m.invited, FALSE) AS invited,
+              COALESCE(s.first_join, m.joined_at) AS first_join,
+              COALESCE(s.last_leave, m.last_join_at) AS last_leave,
+              COALESCE(s.seconds, 0) AS seconds, COALESCE(s.sessions, CASE WHEN m.joined_at IS NOT NULL THEN 1 ELSE 0 END) AS sessions
+         FROM (SELECT * FROM conference_members WHERE conference_id = $1) m
+         FULL OUTER JOIN s ON s.user_id = m.user_id
+         LEFT JOIN users u ON u.id = COALESCE(m.user_id, s.user_id)
+         LEFT JOIN LATERAL (SELECT position FROM employees WHERE user_id = u.id ORDER BY id DESC LIMIT 1) e ON TRUE
+        ORDER BY COALESCE(s.seconds, 0) DESC, u.full_name`,
+      [conf.id],
+    ),
+    pool.query(
+      `SELECT m.id, m.user_id, m.text, m.created_at, u.full_name
+         FROM conference_messages m LEFT JOIN users u ON u.id = m.user_id
+        WHERE m.conference_id = $1 ORDER BY m.id LIMIT 5000`,
+      [conf.id],
+    ),
+  ]);
+  const attendance: AttendanceRow[] = att.map((r) => ({
+    userId: r.user_id as number,
+    fullName: (r.full_name as string) || "—",
+    position: (r.position as string) || null,
+    role: ((r.role as string) === "host" || r.user_id === conf.hostId ? "host" : (r.role as MemberRole)) || "participant",
+    invited: Boolean(r.invited),
+    firstJoin: r.first_join ? new Date(r.first_join).toISOString() : null,
+    lastLeave: r.last_leave ? new Date(r.last_leave).toISOString() : null,
+    seconds: Math.max(0, Number(r.seconds) || 0),
+    sessions: Number(r.sessions) || 0,
+  }));
+  const joined = attendance.filter((a) => a.firstJoin);
+  const firstJoin = joined.reduce<number | null>((min, a) => {
+    const t = new Date(a.firstJoin!).getTime();
+    return min == null || t < min ? t : min;
+  }, null);
+  const start = firstJoin ?? conf.startedAt?.getTime() ?? null;
+  const lastLeave = joined.reduce<number | null>((max, a) => {
+    const t = a.lastLeave ? new Date(a.lastLeave).getTime() : null;
+    return t != null && (max == null || t > max) ? t : max;
+  }, null);
+  const end = conf.endedAt?.getTime() ?? (conf.status === "live" ? Date.now() : lastLeave);
+  return {
+    actualStart: start ? new Date(start).toISOString() : null,
+    actualEnd: end ? new Date(end).toISOString() : null,
+    actualSeconds: start && end && end > start ? Math.round((end - start) / 1000) : 0,
+    invitedCount: attendance.filter((a) => a.invited).length,
+    attendedCount: joined.length,
+    attendance,
+    messages: msgs.map((r) => ({
+      id: r.id as number,
+      userId: r.user_id as number,
+      name: (r.full_name as string) || "—",
+      text: r.text as string,
+      at: new Date(r.created_at).toISOString(),
+    })),
+  };
+}
+
+/** Konferensiyani va butun tarixini o‘chirish (davom etayotgan bo‘lsa avval yakunlanadi) */
+export async function deleteConference(conf: Conference): Promise<void> {
+  if (conf.status === "live") await endConference(conf, "ended");
+  await pool.query(`DELETE FROM conference_sessions WHERE conference_id = $1`, [conf.id]);
+  await pool.query(`DELETE FROM conference_messages WHERE conference_id = $1`, [conf.id]);
+  await pool.query(`DELETE FROM conference_members WHERE conference_id = $1`, [conf.id]);
+  await pool.query(`DELETE FROM conferences WHERE id = $1`, [conf.id]);
 }
 
 // ---------------------------------------------------------------- bildirishnomalar
@@ -874,6 +1051,12 @@ export async function conferenceTick(): Promise<void> {
     `SELECT * FROM conferences
       WHERE (status = 'live' AND scheduled_at + make_interval(mins => duration_min) < NOW() - INTERVAL '15 minutes')
          OR (status = 'scheduled' AND scheduled_at + make_interval(mins => duration_min) < NOW() - INTERVAL '2 hours')`,
+  );
+  // Webhook kelmay qolgan bo‘lsa — yopilgan konferensiyadagi ochiq sessiyalarni yopamiz
+  await pool.query(
+    `UPDATE conference_sessions s SET left_at = GREATEST(s.joined_at, COALESCE(c.ended_at, NOW()))
+       FROM conferences c
+      WHERE c.id = s.conference_id AND s.left_at IS NULL AND c.status IN ('ended','cancelled')`,
   );
   if (!stale.length) return;
   const confs = stale.map(mapConf);

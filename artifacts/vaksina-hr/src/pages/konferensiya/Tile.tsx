@@ -14,6 +14,7 @@ import {
   Mic,
   MicOff,
   MonitorOff,
+  MonitorUp,
   MoreVertical,
   Pin,
   PinOff,
@@ -91,6 +92,40 @@ function VideoView({ pub, mirror, contain }: { pub: TrackPublication; mirror: bo
   );
 }
 
+/** O‘z ekrani o‘zida ko‘rsatilmaydi: butun monitor ulashilsa oyna o‘zini cheksiz takrorlab, kompyuter va internetni qotiradi */
+function SelfScreenNotice({ small }: { small: boolean }) {
+  const ui = useRoomUi();
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-sky-950 via-slate-900 to-slate-950 p-3 text-center">
+      <div
+        className={cn(
+          "flex items-center justify-center rounded-2xl bg-sky-500/15 text-sky-300 ring-1 ring-sky-400/30",
+          small ? "h-9 w-9" : "h-14 w-14",
+        )}
+      >
+        <MonitorUp className={small ? "h-4 w-4" : "h-7 w-7"} />
+      </div>
+      {small ? (
+        <p className="text-[11px] font-medium text-white/80">Ekraningiz ulashilmoqda</p>
+      ) : (
+        <>
+          <p className="text-sm font-semibold sm:text-base">Siz ekraningizni hammaga ko‘rsatyapsiz</p>
+          <p className="max-w-sm text-xs leading-relaxed text-white/55">
+            Oynalar takrorlanib qotmasligi uchun o‘z ekraningiz bu yerda ko‘rsatilmaydi. Boshqalar uni to‘liq ko‘rmoqda.
+          </p>
+          <button
+            type="button"
+            onClick={() => void ui.room.localParticipant.setScreenShareEnabled(false)}
+            className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-red-500 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-red-500/30 transition hover:bg-red-600"
+          >
+            <MonitorOff className="h-4 w-4" /> Ulashishni to‘xtatish
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function QualityBadge({ q }: { q: ConnectionQuality }) {
   if (q !== ConnectionQuality.Poor && q !== ConnectionQuality.Lost) return null;
   return (
@@ -130,18 +165,21 @@ export const VideoTile = memo(function VideoTile({
   const pinned = ui.localPin === key;
   const name = displayName(p);
   const small = variant === "strip";
+  const selfScreen = p.isLocal && source === "screen";
 
   return (
     <div
       style={style}
       onDoubleClick={() => ui.setLocalPin(pinned ? null : key)}
       className={cn(
-        "group relative overflow-hidden rounded-2xl bg-slate-800 ring-1 ring-white/5 transition-shadow",
-        p.isSpeaking && source === "camera" && "ring-2 ring-emerald-400 shadow-[0_0_0_4px_rgba(52,211,153,0.15)]",
+        "group relative overflow-hidden rounded-2xl bg-slate-900 ring-1 ring-white/[0.07] transition-[box-shadow] duration-200",
+        p.isSpeaking && source === "camera" && "ring-2 ring-emerald-400 shadow-[0_0_0_4px_rgba(52,211,153,0.18)]",
         className,
       )}
     >
-      {hasVideo && pub ? (
+      {selfScreen ? (
+        <SelfScreenNotice small={small} />
+      ) : hasVideo && pub ? (
         <VideoView pub={pub} mirror={p.isLocal && source === "camera"} contain={source === "screen" || variant === "main"} />
       ) : (
         <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900">

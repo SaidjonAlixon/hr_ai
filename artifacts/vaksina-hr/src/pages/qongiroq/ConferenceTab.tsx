@@ -1,6 +1,33 @@
 import { useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CalendarPlus, Clock, Copy, Crown, MoreHorizontal, Pencil, Radio, Trash2, Users, Video } from "lucide-react";
+import {
+  AlertTriangle,
+  Ban,
+  CalendarDays,
+  CalendarPlus,
+  Clock,
+  Copy,
+  Crown,
+  History,
+  Loader2,
+  MoreHorizontal,
+  Pencil,
+  Radio,
+  Timer,
+  Trash2,
+  Users,
+  Video,
+} from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Link } from "wouter";
 import {
   DropdownMenu,
@@ -12,16 +39,30 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { conferenceApi, conferenceLink, copyText, formatWhen, type ConferenceListItem } from "@/lib/conference/api";
+import {
+  conferenceApi,
+  conferenceLink,
+  copyText,
+  formatDate,
+  formatSpan,
+  hhmmOf,
+  monthShort,
+  type ConferenceListItem,
+} from "@/lib/conference/api";
 import { ConferenceFormDialog } from "./ConferenceForm";
+import { ConferenceHistoryDialog } from "./ConferenceHistory";
 
-function DateBadge({ iso, live }: { iso: string; live: boolean }) {
+function DateBadge({ iso, live, past }: { iso: string; live: boolean; past: boolean }) {
   const d = new Date(iso);
   return (
     <div
       className={cn(
         "flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-2xl text-center",
-        live ? "bg-red-500 text-white shadow-md shadow-red-500/30" : "bg-primary/10 text-primary",
+        live
+          ? "bg-red-500 text-white shadow-md shadow-red-500/30"
+          : past
+            ? "bg-muted text-muted-foreground"
+            : "bg-primary/10 text-primary",
       )}
     >
       {live ? (
@@ -32,7 +73,7 @@ function DateBadge({ iso, live }: { iso: string; live: boolean }) {
       ) : (
         <>
           <span className="text-lg font-bold leading-none">{d.getDate()}</span>
-          <span className="mt-0.5 text-[10px] font-semibold uppercase">{d.toLocaleDateString("uz-UZ", { month: "short" })}</span>
+          <span className="mt-0.5 text-[10px] font-semibold uppercase">{monthShort(d)}</span>
         </>
       )}
     </div>
@@ -53,26 +94,37 @@ function ConferenceCard({
   c,
   onEdit,
   onCancel,
+  onHistory,
+  onDelete,
 }: {
   c: ConferenceListItem;
   onEdit: (code: string) => void;
   onCancel: (c: ConferenceListItem) => void;
+  onHistory: (code: string) => void;
+  onDelete: (c: ConferenceListItem) => void;
 }) {
   const { toast } = useToast();
   const live = c.status === "live";
   const active = c.status === "live" || c.status === "scheduled";
+  const past = !active;
   const manage = c.myRole === "host" || c.myRole === "cohost";
   const st = statusLabel(c);
-  const end = new Date(new Date(c.scheduledAt).getTime() + c.durationMin * 60_000);
+  const planEnd = new Date(new Date(c.scheduledAt).getTime() + c.durationMin * 60_000);
+  const happened = c.status === "ended" && c.actualStart;
+  const dateIso = happened ? c.actualStart! : c.scheduledAt;
   return (
     <div
+      role={past ? "button" : undefined}
+      tabIndex={past ? 0 : undefined}
+      onClick={past ? () => onHistory(c.code) : undefined}
+      onKeyDown={past ? (e) => e.key === "Enter" && onHistory(c.code) : undefined}
       className={cn(
         "flex items-center gap-3 rounded-2xl border bg-card p-3 shadow-sm transition hover:shadow-md sm:p-4",
         live ? "border-red-300/70 dark:border-red-500/40" : "border-border/60",
-        !active && "opacity-75",
+        past && "cursor-pointer hover:border-primary/30",
       )}
     >
-      <DateBadge iso={c.scheduledAt} live={live} />
+      <DateBadge iso={dateIso} live={live} past={past} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <p className="truncate text-sm font-semibold sm:text-base">{c.title}</p>
@@ -80,16 +132,35 @@ function ConferenceCard({
         </div>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1">
-            <Clock className="h-3.5 w-3.5" />
-            {formatWhen(c.scheduledAt)} – {end.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })}
+            <CalendarDays className="h-3.5 w-3.5" />
+            {formatDate(dateIso, { weekday: true })}
           </span>
+          <span className="inline-flex items-center gap-1 tabular-nums">
+            <Clock className="h-3.5 w-3.5" />
+            {happened
+              ? `${hhmmOf(c.actualStart!)} – ${c.actualEnd ? hhmmOf(c.actualEnd) : "…"}`
+              : live && c.actualStart
+                ? `${hhmmOf(c.actualStart)} dan beri`
+                : `${hhmmOf(c.scheduledAt)} – ${hhmmOf(planEnd)}`}
+          </span>
+          {happened && c.actualSeconds ? (
+            <span className="inline-flex items-center gap-1 font-medium text-foreground/80">
+              <Timer className="h-3.5 w-3.5" /> {formatSpan(c.actualSeconds)} gaplashildi
+            </span>
+          ) : null}
           <span className="inline-flex items-center gap-1">
-            <Users className="h-3.5 w-3.5" /> {c.invitedCount} taklif
+            <Users className="h-3.5 w-3.5" />
+            {past ? `${c.attendedCount} qatnashdi / ${c.invitedCount} taklif` : `${c.invitedCount} taklif`}
           </span>
           <span className="truncate">Tashkilotchi: {c.host.fullName}</span>
         </p>
         <span className={cn("mt-1.5 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold", st.cls)}>{st.text}</span>
       </div>
+      {past ? (
+        <span className="hidden shrink-0 items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold text-muted-foreground sm:inline-flex">
+          <History className="h-4 w-4" /> Tarix
+        </span>
+      ) : null}
       {active ? (
         <Link
           href={`/konferensiya/${c.code}`}
@@ -106,34 +177,41 @@ function ConferenceCard({
         <DropdownMenuTrigger asChild>
           <button
             type="button"
+            onClick={(e) => e.stopPropagation()}
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground"
             aria-label="Amallar"
           >
             <MoreHorizontal className="h-4 w-4" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuItem
-            onClick={async () => {
-              if (await copyText(conferenceLink(c.code))) toast({ title: "Havola nusxalandi", description: conferenceLink(c.code) });
-            }}
-          >
-            <Copy className="mr-2 h-4 w-4" /> Havolani nusxalash
+        <DropdownMenuContent align="end" className="w-56" onClick={(e) => e.stopPropagation()}>
+          <DropdownMenuItem onClick={() => onHistory(c.code)}>
+            <History className="mr-2 h-4 w-4" /> Tarix va hisobot
           </DropdownMenuItem>
+          {active ? (
+            <DropdownMenuItem
+              onClick={async () => {
+                if (await copyText(conferenceLink(c.code))) toast({ title: "Havola nusxalandi", description: conferenceLink(c.code) });
+              }}
+            >
+              <Copy className="mr-2 h-4 w-4" /> Havolani nusxalash
+            </DropdownMenuItem>
+          ) : null}
           {manage && active ? (
-            <>
-              <DropdownMenuItem onClick={() => onEdit(c.code)}>
-                <Pencil className="mr-2 h-4 w-4" /> Tahrirlash va taklif
-              </DropdownMenuItem>
-              {c.myRole === "host" ? (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => onCancel(c)} className="text-red-600 focus:text-red-600">
-                    <Trash2 className="mr-2 h-4 w-4" /> {live ? "Yakunlash" : "Bekor qilish"}
-                  </DropdownMenuItem>
-                </>
-              ) : null}
-            </>
+            <DropdownMenuItem onClick={() => onEdit(c.code)}>
+              <Pencil className="mr-2 h-4 w-4" /> Tahrirlash va taklif
+            </DropdownMenuItem>
+          ) : null}
+          {c.canDelete ? <DropdownMenuSeparator /> : null}
+          {c.canDelete && active ? (
+            <DropdownMenuItem onClick={() => onCancel(c)} className="text-red-600 focus:text-red-600">
+              <Ban className="mr-2 h-4 w-4" /> {live ? "Hamma uchun yakunlash" : "Bekor qilish"}
+            </DropdownMenuItem>
+          ) : null}
+          {c.canDelete ? (
+            <DropdownMenuItem onClick={() => onDelete(c)} className="text-red-600 focus:text-red-600">
+              <Trash2 className="mr-2 h-4 w-4" /> O‘chirish
+            </DropdownMenuItem>
           ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
@@ -171,15 +249,28 @@ export function ConferenceTab({ isPlatformAdmin }: { isPlatformAdmin: boolean })
   const past = items.filter((c) => c.status === "ended" || c.status === "cancelled");
   const canCreate = list.data?.canCreate ?? isPlatformAdmin;
 
-  const onCancel = async (c: ConferenceListItem) => {
-    const what = c.status === "live" ? "yakunlansinmi? Hamma chiqarib yuboriladi." : "bekor qilinsinmi? Taklif qilinganlarga xabar boradi.";
-    if (!window.confirm(`«${c.title}» ${what}`)) return;
+  const [historyCode, setHistoryCode] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{ kind: "cancel" | "delete"; c: ConferenceListItem } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const runConfirm = async () => {
+    if (!confirm) return;
+    const { kind, c } = confirm;
+    setBusy(true);
     try {
-      await conferenceApi.cancel(c.code);
-      toast({ title: c.status === "live" ? "Yakunlandi" : "Bekor qilindi" });
+      if (kind === "delete") {
+        await conferenceApi.purge(c.code);
+        toast({ title: "O‘chirildi", description: `«${c.title}» va uning tarixi o‘chirildi` });
+      } else {
+        await conferenceApi.cancel(c.code);
+        toast({ title: c.status === "live" ? "Konferensiya hamma uchun yakunlandi" : "Bekor qilindi" });
+      }
+      setConfirm(null);
       refresh();
     } catch (e) {
       toast({ title: "Xatolik", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -191,9 +282,29 @@ export function ConferenceTab({ isPlatformAdmin }: { isPlatformAdmin: boolean })
         setEditCode(code);
         setFormOpen(true);
       }}
-      onCancel={onCancel}
+      onCancel={(x) => setConfirm({ kind: "cancel", c: x })}
+      onDelete={(x) => setConfirm({ kind: "delete", c: x })}
+      onHistory={setHistoryCode}
     />
   );
+
+  const confirmText = (() => {
+    if (!confirm) return { title: "", body: "", action: "" };
+    const { kind, c } = confirm;
+    if (kind === "delete")
+      return {
+        title: "Konferensiya o‘chirilsinmi?",
+        body: `«${c.title}» va uning butun tarixi — qatnashuv va chat — butunlay o‘chiriladi.${c.status === "scheduled" ? " Taklif qilinganlarga bekor qilingani haqida xabar boradi." : ""}${c.status === "live" ? " Konferensiya hamma uchun darhol tugaydi." : ""}`,
+        action: "O‘chirish",
+      };
+    if (c.status === "live")
+      return {
+        title: "Hamma uchun yakunlansinmi?",
+        body: `«${c.title}» darhol tugaydi, barcha ishtirokchilar chiqariladi. Tarix saqlanib qoladi.`,
+        action: "Yakunlash",
+      };
+    return { title: "Bekor qilinsinmi?", body: `«${c.title}» bekor qilinadi, taklif qilinganlarga xabar boradi.`, action: "Bekor qilish" };
+  })();
 
   return (
     <div className="space-y-4">
@@ -260,6 +371,34 @@ export function ConferenceTab({ isPlatformAdmin }: { isPlatformAdmin: boolean })
       )}
 
       <ConferenceFormDialog open={formOpen} onOpenChange={setFormOpen} editCode={editCode} onSaved={refresh} />
+      <ConferenceHistoryDialog
+        code={historyCode}
+        open={historyCode != null}
+        onOpenChange={(v) => !v && setHistoryCode(null)}
+        onDeleted={refresh}
+      />
+      <AlertDialog open={confirm != null} onOpenChange={(v) => !v && !busy && setConfirm(null)}>
+        <AlertDialogContent className="max-w-md rounded-3xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmText.title}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmText.body}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Yopish</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={(e) => {
+                e.preventDefault();
+                void runConfirm();
+              }}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {confirmText.action}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

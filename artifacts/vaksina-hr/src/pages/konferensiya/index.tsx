@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import {
   DisconnectReason,
@@ -10,10 +10,34 @@ import {
   VideoPresets,
   isBrowserSupported,
 } from "livekit-client";
-import { ArrowLeft, CheckCircle2, Loader2, LogOut, MonitorSmartphone, RefreshCw, UserX, VideoOff, WifiOff } from "lucide-react";
+import {
+  ArrowLeft,
+  Ban,
+  CalendarDays,
+  CheckCircle2,
+  Clock,
+  Crown,
+  Link2Off,
+  Loader2,
+  LogOut,
+  MonitorSmartphone,
+  RefreshCw,
+  UserX,
+  VideoOff,
+  WifiOff,
+} from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { ApiError, conferenceApi, rememberAfterLogin } from "@/lib/conference/api";
+import { cn } from "@/lib/utils";
+import {
+  ApiError,
+  conferenceApi,
+  formatDate,
+  formatSpan,
+  hhmmOf,
+  rememberAfterLogin,
+  type ConferenceDetails,
+} from "@/lib/conference/api";
 import { PreJoin, type JoinPrefs } from "./PreJoin";
 import { ConferenceRoom } from "./Room";
 import { canPublish } from "./room-utils";
@@ -83,6 +107,102 @@ function EndCard({
   );
 }
 
+type Tone = "red" | "amber" | "emerald" | "slate";
+
+const TONES: Record<Tone, { ring: string; glow: string; icon: string; badge: string }> = {
+  red: {
+    ring: "border-red-500/30",
+    glow: "from-red-500/15",
+    icon: "bg-red-500/15 text-red-300 ring-red-400/30",
+    badge: "bg-red-500/15 text-red-300 ring-red-400/30",
+  },
+  amber: {
+    ring: "border-amber-500/30",
+    glow: "from-amber-500/15",
+    icon: "bg-amber-500/15 text-amber-300 ring-amber-400/30",
+    badge: "bg-amber-500/15 text-amber-300 ring-amber-400/30",
+  },
+  emerald: {
+    ring: "border-emerald-500/30",
+    glow: "from-emerald-500/15",
+    icon: "bg-emerald-500/15 text-emerald-300 ring-emerald-400/30",
+    badge: "bg-emerald-500/15 text-emerald-300 ring-emerald-400/30",
+  },
+  slate: {
+    ring: "border-white/10",
+    glow: "from-white/5",
+    icon: "bg-white/10 text-white/80 ring-white/15",
+    badge: "bg-white/10 text-white/80 ring-white/15",
+  },
+};
+
+/** Tugagan / bekor qilingan / eskirgan havola — kamera yoqilmaydi, faqat aniq holat */
+function ClosedCard({
+  tone,
+  icon,
+  badge,
+  title,
+  text,
+  conf,
+  actions,
+}: {
+  tone: Tone;
+  icon: ReactNode;
+  badge: string;
+  title: string;
+  text: string;
+  conf?: ConferenceDetails["conference"];
+  actions?: ReactNode;
+}) {
+  const t = TONES[tone];
+  const start = conf ? new Date(conf.startedAt ?? conf.scheduledAt) : null;
+  const planEnd = conf ? new Date(new Date(conf.scheduledAt).getTime() + conf.durationMin * 60_000) : null;
+  const realEnd = conf?.endedAt ? new Date(conf.endedAt) : null;
+  const lasted = conf?.startedAt && realEnd ? (realEnd.getTime() - new Date(conf.startedAt).getTime()) / 1000 : 0;
+  return (
+    <div className="mx-auto mt-[8vh] w-full max-w-md px-4 pb-10">
+      <div className={cn("relative overflow-hidden rounded-[28px] border bg-slate-900/80 p-6 shadow-2xl shadow-black/40 backdrop-blur", t.ring)}>
+        <div className={cn("pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b to-transparent", t.glow)} />
+        <div className="relative flex flex-col items-center text-center">
+          <div className={cn("flex h-20 w-20 items-center justify-center rounded-full ring-1", t.icon)}>{icon}</div>
+          <span className={cn("mt-4 rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wider ring-1", t.badge)}>{badge}</span>
+          <h1 className="mt-3 text-2xl font-bold tracking-tight">{title}</h1>
+          <p className="mt-2 text-sm leading-relaxed text-white/65">{text}</p>
+        </div>
+        {conf && start ? (
+          <div className="relative mt-6 space-y-2.5 rounded-2xl bg-white/[0.04] p-4 text-sm ring-1 ring-white/[0.06]">
+            <p className="text-base font-semibold">{conf.title}</p>
+            <p className="flex items-center gap-2 text-white/70">
+              <CalendarDays className="h-4 w-4 shrink-0 text-white/45" />
+              {formatDate(start, { weekday: true })}
+            </p>
+            <p className="flex items-center gap-2 tabular-nums text-white/70">
+              <Clock className="h-4 w-4 shrink-0 text-white/45" />
+              {realEnd && conf.startedAt
+                ? `${hhmmOf(conf.startedAt)} – ${hhmmOf(realEnd)}`
+                : `${hhmmOf(conf.scheduledAt)} – ${hhmmOf(planEnd!)}`}
+              {lasted > 0 ? <span className="text-white/45">· {formatSpan(lasted)} davom etdi</span> : null}
+            </p>
+            <p className="flex items-center gap-2 text-white/70">
+              <Crown className="h-4 w-4 shrink-0 text-amber-400" />
+              Tashkilotchi: {conf.host.fullName}
+            </p>
+          </div>
+        ) : null}
+        <div className="relative mt-6 flex flex-col gap-2 sm:flex-row-reverse">
+          {actions}
+          <Link
+            href="/qongiroq?tab=konferensiya"
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white/10 px-5 py-3 text-sm font-semibold transition hover:bg-white/20"
+          >
+            <ArrowLeft className="h-4 w-4" /> Konferensiyalar
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function KonferensiyaPage({ params }: { params: { code?: string } }) {
   const code = String(params.code || "").toLowerCase();
   const { isAuthenticated, isLoading } = useAuth();
@@ -107,7 +227,9 @@ export default function KonferensiyaPage({ params }: { params: { code?: string }
     queryFn: () => conferenceApi.details(code),
     enabled: isAuthenticated && Boolean(code),
     refetchInterval: phase === "prejoin" ? 15_000 : false,
-    retry: (n, err) => !(err instanceof ApiError && (err.status === 404 || err.status === 401)) && n < 2,
+    retry: (n, err) => !(err instanceof ApiError && [401, 403, 404, 410].includes(err.status)) && n < 2,
+    // Havola xona ichida yangilansa — yangi kod yuklanguncha xona ko‘rinishi saqlanadi
+    placeholderData: keepPreviousData,
   });
 
   useEffect(() => {
@@ -233,7 +355,16 @@ export default function KonferensiyaPage({ params }: { params: { code?: string }
     await r?.disconnect();
     setPhase("ended");
     void qc.invalidateQueries({ queryKey: ["conferences"] });
+    void qc.invalidateQueries({ queryKey: ["conference"] });
   }, [qc]);
+
+  const onCodeChanged = useCallback(
+    (next: string) => {
+      if (next && next !== code) setLocation(`/konferensiya/${next}`, { replace: true });
+      void qc.invalidateQueries({ queryKey: ["conferences"] });
+    },
+    [code, setLocation, qc],
+  );
 
   const refetchDetails = details.refetch;
   const onTimeReached = useCallback(() => void refetchDetails(), [refetchDetails]);
@@ -262,6 +393,7 @@ export default function KonferensiyaPage({ params }: { params: { code?: string }
         details={details.data}
         onLeave={leave}
         onEnded={() => void ended()}
+        onCodeChanged={onCodeChanged}
       />
     );
   }
@@ -310,6 +442,32 @@ export default function KonferensiyaPage({ params }: { params: { code?: string }
     },
   };
 
+  const conf = details.data?.conference;
+  const reason = details.data?.reason;
+
+  if (phase === "ended" || ((phase === "prejoin" || phase === "connecting") && (reason === "ended" || reason === "cancelled"))) {
+    const cancelled = phase !== "ended" && reason === "cancelled";
+    return (
+      <Screen>
+        <TopBar />
+        <ClosedCard
+          tone={cancelled ? "slate" : phase === "ended" ? "emerald" : "red"}
+          icon={cancelled ? <Ban className="h-9 w-9" /> : phase === "ended" ? <CheckCircle2 className="h-9 w-9" /> : <VideoOff className="h-9 w-9" />}
+          badge={cancelled ? "Bekor qilingan" : "Tugagan"}
+          title={cancelled ? "Konferensiya bekor qilingan" : phase === "ended" ? "Konferensiya yakunlandi" : "Konferensiya tugagan"}
+          text={
+            cancelled
+              ? "Tashkilotchi bu konferensiyani bekor qilgan. Yangi uchrashuv bo‘lsa, sizga bot orqali alohida taklif keladi."
+              : phase === "ended"
+                ? "Qatnashganingiz uchun rahmat! Tashkilotchi konferensiyani hamma uchun yakunladi."
+                : "Bu konferensiya allaqachon yakunlangan, havola orqali endi kirib bo‘lmaydi. Yangi uchrashuv bo‘lsa, sizga yangi havola yuboriladi."
+          }
+          conf={conf}
+        />
+      </Screen>
+    );
+  }
+
   if (phase !== "prejoin" && phase !== "connecting") {
     const s = endState[phase as keyof typeof endState];
     return (
@@ -327,6 +485,24 @@ export default function KonferensiyaPage({ params }: { params: { code?: string }
         <div className="flex min-h-[60vh] items-center justify-center text-white/70">
           <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Yuklanmoqda…
         </div>
+      ) : details.isError && (details.error as ApiError)?.status === 410 ? (
+        (details.error as ApiError).reason === "ended" ? (
+          <ClosedCard
+            tone="red"
+            icon={<VideoOff className="h-9 w-9" />}
+            badge="Tugagan"
+            title="Konferensiya tugagan"
+            text="Bu konferensiya allaqachon yakunlangan, havola orqali endi kirib bo‘lmaydi. Yangi uchrashuv bo‘lsa, sizga yangi havola yuboriladi."
+          />
+        ) : (
+          <ClosedCard
+            tone="amber"
+            icon={<Link2Off className="h-9 w-9" />}
+            badge="Havola eskirgan"
+            title="Bu havola endi ishlamaydi"
+            text="Tashkilotchi konferensiya uchun yangi havola yaratgan, eskisi bekor qilingan. Yangi havolani bot xabaridan yoki tashkilotchidan oling."
+          />
+        )
       ) : details.isError ? (
         <EndCard
           icon={<VideoOff className="h-9 w-9 text-white/70" />}

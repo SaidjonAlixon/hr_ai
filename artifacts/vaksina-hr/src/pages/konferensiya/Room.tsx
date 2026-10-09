@@ -28,6 +28,7 @@ import {
   MonitorX,
   PhoneOff,
   Presentation,
+  RefreshCw,
   Settings2,
   Signal,
   Star,
@@ -69,6 +70,7 @@ import {
   type ConferenceDetails,
 } from "@/lib/conference/api";
 import { Segmented, ToggleRow } from "../qongiroq/ConferenceForm";
+import { RotateLinkDialog } from "../qongiroq/RotateLinkDialog";
 import { mediaErrorText } from "./PreJoin";
 import { AudioRenderer, RoomUiContext, VideoTile, tileKey, type RoomUi, type TileSource } from "./Tile";
 import { ChatPanel, PanelShell, PeoplePanel, useUnread } from "./SidePanel";
@@ -223,11 +225,13 @@ function SettingsDialog({
   onOpenChange,
   code,
   settings,
+  onRotateLink,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   code: string;
   settings: ConfSettings;
+  onRotateLink?: () => void;
 }) {
   const { toast } = useToast();
   const [draft, setDraft] = useState(settings);
@@ -291,6 +295,21 @@ function SettingsDialog({
             <ToggleRow label="Yangi kirganlar mikrofoni o‘chiq" checked={draft.muteOnJoin} onChange={(v) => void save({ muteOnJoin: v })} />
             <ToggleRow label="Yangi kirganlar kamerasi o‘chiq" checked={draft.camOffOnJoin} onChange={(v) => void save({ camOffOnJoin: v })} />
           </div>
+          {onRotateLink ? (
+            <button
+              type="button"
+              onClick={onRotateLink}
+              className="flex w-full items-center gap-3 rounded-2xl border px-3 py-3 text-left transition hover:bg-muted"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                <RefreshCw className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold">Yangi havola yaratish</span>
+                <span className="block text-xs text-muted-foreground">Eski havola darhol eskiradi, ichkaridagilar uzilmaydi</span>
+              </span>
+            </button>
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>
@@ -305,6 +324,7 @@ export function ConferenceRoom({
   details,
   onLeave,
   onEnded,
+  onCodeChanged,
 }: {
   room: Room;
   code: string;
@@ -312,6 +332,8 @@ export function ConferenceRoom({
   onLeave: (endForAll: boolean) => Promise<void> | void;
   /** Tashkilotchi hamma uchun yakunladi */
   onEnded: () => void;
+  /** Tashkilotchi yangi taklif havolasi yaratdi */
+  onCodeChanged: (code: string) => void;
 }) {
   const { toast } = useToast();
   const tick = useRoomTick(room);
@@ -363,6 +385,9 @@ export function ConferenceRoom({
 
   const onEndedRef = useRef(onEnded);
   onEndedRef.current = onEnded;
+  const onCodeChangedRef = useRef(onCodeChanged);
+  onCodeChangedRef.current = onCodeChanged;
+  const [rotateOpen, setRotateOpen] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
   const [ending, setEnding] = useState(false);
 
@@ -428,6 +453,12 @@ export function ConferenceRoom({
           break;
         case "ended":
           onEndedRef.current();
+          break;
+        case "link-changed":
+          if (typeof data.code === "string") {
+            onCodeChangedRef.current(data.code);
+            toast({ title: "Taklif havolasi yangilandi", description: "Eski havola endi ishlamaydi" });
+          }
           break;
       }
     };
@@ -902,7 +933,31 @@ export function ConferenceRoom({
         </footer>
 
         <AudioRenderer room={room} tick={tick} />
-        {moderator ? <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} code={code} settings={settings} /> : null}
+        {moderator ? (
+          <SettingsDialog
+            open={settingsOpen}
+            onOpenChange={setSettingsOpen}
+            code={code}
+            settings={settings}
+            onRotateLink={
+              owner
+                ? () => {
+                    setSettingsOpen(false);
+                    setRotateOpen(true);
+                  }
+                : undefined
+            }
+          />
+        ) : null}
+        {owner ? (
+          <RotateLinkDialog
+            code={code}
+            title={details.conference.title}
+            open={rotateOpen}
+            onOpenChange={setRotateOpen}
+            onRotated={(next) => onCodeChanged(next)}
+          />
+        ) : null}
         <AlertDialog open={endOpen} onOpenChange={(v) => !ending && setEndOpen(v)}>
           <AlertDialogContent className="max-w-md rounded-3xl">
             <AlertDialogHeader>

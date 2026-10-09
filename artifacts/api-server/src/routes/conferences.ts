@@ -22,7 +22,9 @@ import {
   liveCounts,
   liveKitConfig,
   loadConference,
+  loadConferenceByOldCode,
   loadMember,
+  rotateConferenceCode,
   moderate,
   muteAll,
   newConferenceCode,
@@ -63,17 +65,37 @@ function serverError(res: Response, where: string, err: unknown): void {
 
 type Ctx = { conf: Conference; actor: Actor; moderator: boolean; owner: boolean };
 
-/** Kod bo‘yicha konferensiya va foydalanuvchi huquqlari */
-async function context(req: AuthRequest, res: Response): Promise<Ctx | null> {
+const EXPIRED_TEXT = "Bu havola eskirgan — tashkilotchi yangi havola yaratgan. Yangi havolani tashkilotchidan yoki bot xabaridan oling.";
+
+/**
+ * Kod bo‘yicha konferensiya va foydalanuvchi huquqlari.
+ * allowOld — havola yangilanganda xona ichida o‘tirganlar (allaqachon kirganlar) uzilib qolmasin;
+ * kirish, sahifani ochish va boshqarish faqat yangi kod bilan.
+ */
+async function context(req: AuthRequest, res: Response, allowOld = false): Promise<Ctx | null> {
   const code = String(req.params.code || "").toLowerCase();
   if (!CODE_RE.test(code)) {
     fail(res, 404, "Konferensiya topilmadi");
     return null;
   }
-  const [conf, actor] = await Promise.all([loadConference(code), loadActor(req)]);
+  const [found, actor] = await Promise.all([loadConference(code), loadActor(req)]);
   if (!actor) {
     fail(res, 401, "Kirish talab qilinadi");
     return null;
+  }
+  let conf = found;
+  let viaOld = false;
+  if (!conf) {
+    conf = await loadConferenceByOldCode(code);
+    viaOld = Boolean(conf);
+    if (conf && !allowOld) {
+      if (conf.status === "ended" || conf.status === "cancelled") {
+        res.status(410).json({ error: "Bu konferensiya tugagan — havola orqali endi kirib bo‘lmaydi.", reason: "ended" });
+      } else {
+        res.status(410).json({ error: EXPIRED_TEXT, reason: "expired" });
+      }
+      return null;
+    }
   }
   if (!conf) {
     fail(res, 404, "Konferensiya topilmadi");
@@ -81,11 +103,15 @@ async function context(req: AuthRequest, res: Response): Promise<Ctx | null> {
   }
   const member = await loadMember(conf.id, actor.id);
   const moderator = conf.hostId === actor.id || isModerator(member, actor.role);
+  if (viaOld && !moderator && !member?.joinedAt) {
+    res.status(410).json({ error: EXPIRED_TEXT, reason: "expired" });
+    return null;
+  }
   return { conf, actor, moderator, owner: isOwner(conf, actor.id, actor.role) };
 }
 
-async function requireModerator(req: AuthRequest, res: Response): Promise<Ctx | null> {
-  const ctx = await context(req, res);
+async function requireModerator(req: AuthRequest, res: Response, allowOld = false): Promise<Ctx | null> {
+  const ctx = await context(req, res, allowOld);
   if (!ctx) return null;
   if (!ctx.moderator) {
     fail(res, 403, "Faqat tashkilotchi uchun");
@@ -197,8 +223,9 @@ router.get("/conferences", requireAuth, async (req: AuthRequest, res): Promise<v
         LIMIT 300`,
       [req.userId],
     );
-    const liveCodes = rows.filter((r) => r.status === "live").map((r) => r.code as string);
-    const counts = (await liveCounts(liveCodes)) ?? new Map<string, number>();
+    const roomOf = (r: Record<string, unknown>) => (r.room as string) || `conf_${r.code as string}`;
+    const liveRooms = rows.filter((r) => r.status === "live").map(roomOf);
+    const counts = (await liveCounts(liveRooms)) ?? new Map<string, number>();
     res.json({
       canCreate: all,
       serverReady: Boolean(liveKitConfig()),
@@ -220,7 +247,7 @@ router.get("/conferences", requireAuth, async (req: AuthRequest, res): Promise<v
           actualStart: startMs ? new Date(startMs).toISOString() : null,
           actualEnd: endMs ? new Date(endMs).toISOString() : null,
           actualSeconds: startMs && endMs && endMs > startMs ? Math.round((endMs - startMs) / 1000) : 0,
-          liveCount: counts.get(r.code as string) ?? 0,
+          liveCount: counts.get(roomOf(r)) ?? 0,
           myRole: r.host_id === req.userId ? "host" : ((r.my_role as string) ?? null),
           canDelete: r.host_id === req.userId || all,
           invited: Boolean(r.my_invited),
@@ -443,7 +470,7 @@ router.get("/conferences/:code", requireAuth, async (req: AuthRequest, res): Pro
     const perms = permsFor(conf, member, actor.role);
     const state = joinState(conf, member, moderator);
     const { rows: hostRows } = await pool.query(`SELECT full_name FROM users WHERE id = $1`, [conf.hostId]);
-    const counts = conf.status === "live" ? await liveCounts([conf.code]) : null;
+    const counts = conf.status === "live" ? await liveCounts([conf.room]) : null;
     let members: unknown[] | undefined;
     if (moderator) {
       const { rows } = await pool.query(
@@ -467,7 +494,7 @@ router.get("/conferences/:code", requireAuth, async (req: AuthRequest, res): Pro
       }));
     }
     res.json({
-      conference: confJson(conf, (hostRows[0]?.full_name as string) || "—", counts?.get(conf.code)),
+      conference: confJson(conf, (hostRows[0]?.full_name as string) || "—", counts?.get(conf.room)),
       me: {
         userId: actor.id,
         fullName: actor.fullName,
@@ -535,7 +562,7 @@ router.post("/conferences/:code/join", requireAuth, async (req: AuthRequest, res
 
 router.post("/conferences/:code/end", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
-    const ctx = await requireModerator(req, res);
+    const ctx = await requireModerator(req, res, true);
     if (!ctx) return;
     await endConference(ctx.conf, "ended");
     res.json({ ok: true });
@@ -607,11 +634,36 @@ router.delete("/conferences/:code/purge", requireAuth, async (req: AuthRequest, 
   }
 });
 
+/** Yangi taklif havolasi — eski havola darhol eskiradi. Xohlasa taklif qilinganlarga yangisi yuboriladi. */
+router.post("/conferences/:code/rotate-link", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const ctx = await context(req, res);
+    if (!ctx) return;
+    if (!ctx.owner) {
+      fail(res, 403, "Faqat asosiy tashkilotchi havolani yangilay oladi");
+      return;
+    }
+    const { conf } = ctx;
+    if (conf.status !== "scheduled" && conf.status !== "live") {
+      fail(res, 409, "Konferensiya yakunlangan — yangi havola kerak emas");
+      return;
+    }
+    const code = await rotateConferenceCode(conf);
+    if (req.body?.notify !== false) {
+      const ids = await invitedUserIds(conf.id, { excludeUserId: ctx.actor.id });
+      void notifyConferenceUsers(conf, ids, "link").catch(() => undefined);
+    }
+    res.json({ ok: true, code, link: conferenceUrl(code) });
+  } catch (err) {
+    serverError(res, "POST /conferences/:code/rotate-link", err);
+  }
+});
+
 // ---------------------------------------------------------------- xona ichida
 
 router.post("/conferences/:code/moderate", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
-    const ctx = await requireModerator(req, res);
+    const ctx = await requireModerator(req, res, true);
     if (!ctx) return;
     const action = String(req.body?.action || "") as ModAction;
     if (action === ("mute-all" as ModAction)) {
@@ -637,7 +689,7 @@ router.post("/conferences/:code/moderate", requireAuth, async (req: AuthRequest,
 
 router.put("/conferences/:code/settings", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
-    const ctx = await requireModerator(req, res);
+    const ctx = await requireModerator(req, res, true);
     if (!ctx) return;
     const settings = normalizeSettings(req.body?.settings, ctx.conf.settings);
     await updateSettings(ctx.conf, settings);
@@ -649,7 +701,7 @@ router.put("/conferences/:code/settings", requireAuth, async (req: AuthRequest, 
 
 router.put("/conferences/:code/spotlight", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
-    const ctx = await requireModerator(req, res);
+    const ctx = await requireModerator(req, res, true);
     if (!ctx) return;
     const userId = Number(req.body?.userId);
     const raw = String(req.body?.source || "auto");
@@ -663,7 +715,7 @@ router.put("/conferences/:code/spotlight", requireAuth, async (req: AuthRequest,
 
 router.post("/conferences/:code/hand", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
-    const ctx = await context(req, res);
+    const ctx = await context(req, res, true);
     if (!ctx) return;
     await raiseHand(ctx.conf, ctx.actor.id, Boolean(req.body?.raised));
     res.json({ ok: true });
@@ -674,7 +726,7 @@ router.post("/conferences/:code/hand", requireAuth, async (req: AuthRequest, res
 
 router.get("/conferences/:code/messages", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
-    const ctx = await context(req, res);
+    const ctx = await context(req, res, true);
     if (!ctx) return;
     res.json({ items: await listMessages(ctx.conf.id) });
   } catch (err) {
@@ -686,7 +738,7 @@ const lastMessageAt = new Map<number, number>();
 
 router.post("/conferences/:code/messages", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
-    const ctx = await context(req, res);
+    const ctx = await context(req, res, true);
     if (!ctx) return;
     const { conf, actor, moderator } = ctx;
     const text = String(req.body?.text || "").trim().slice(0, 2000);

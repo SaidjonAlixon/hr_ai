@@ -97,7 +97,13 @@ export function ensureConferenceSchema(): Promise<void> {
          left_at TIMESTAMPTZ
        );
        CREATE INDEX IF NOT EXISTS conference_sessions_conf_idx ON conference_sessions (conference_id, user_id);
-       CREATE UNIQUE INDEX IF NOT EXISTS conference_sessions_sid_uq ON conference_sessions (participant_sid);`,
+       CREATE UNIQUE INDEX IF NOT EXISTS conference_sessions_sid_uq ON conference_sessions (participant_sid);
+       ALTER TABLE conferences ADD COLUMN IF NOT EXISTS room TEXT;
+       CREATE TABLE IF NOT EXISTS conference_old_codes (
+         code TEXT PRIMARY KEY,
+         conference_id INT NOT NULL,
+         replaced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+       );`,
     )
     .then(() => undefined)
     .catch((err) => {
@@ -156,6 +162,8 @@ export type ConfStatus = "scheduled" | "live" | "ended" | "cancelled";
 export type Conference = {
   id: number;
   code: string;
+  /** LiveKit xona nomi — havola yangilansa ham o‘zgarmaydi */
+  room: string;
   title: string;
   description: string | null;
   hostId: number;
@@ -194,6 +202,7 @@ function mapConf(r: Record<string, unknown>): Conference {
   return {
     id: r.id as number,
     code: r.code as string,
+    room: (r.room as string) || roomNameFor(r.code as string),
     title: r.title as string,
     description: (r.description as string) || null,
     hostId: r.host_id as number,
@@ -236,6 +245,61 @@ export async function loadConference(code: string): Promise<Conference | null> {
   await ensureConferenceSchema();
   const { rows } = await pool.query(`SELECT * FROM conferences WHERE code = $1`, [code]);
   return rows[0] ? mapConf(rows[0]) : null;
+}
+
+/** Eskirgan (yangilangan) havola kodi bo‘yicha */
+export async function loadConferenceByOldCode(code: string): Promise<Conference | null> {
+  if (!CODE_RE.test(code)) return null;
+  await ensureConferenceSchema();
+  const { rows } = await pool.query(
+    `SELECT c.* FROM conference_old_codes o JOIN conferences c ON c.id = o.conference_id WHERE o.code = $1`,
+    [code],
+  );
+  return rows[0] ? mapConf(rows[0]) : null;
+}
+
+async function loadConferenceByRoom(room: string): Promise<Conference | null> {
+  const { rows } = await pool.query(
+    `SELECT * FROM conferences WHERE room = $1 OR (room IS NULL AND 'conf_' || code = $1) LIMIT 1`,
+    [room],
+  );
+  return rows[0] ? mapConf(rows[0]) : null;
+}
+
+/** Yangi taklif havolasi: eski kod darhol ishlamay qoladi (xona va ichidagilar o‘zgarmaydi) */
+export async function rotateConferenceCode(conf: Conference): Promise<string> {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const next = newConferenceCode();
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const { rowCount } = await client.query(
+        `UPDATE conferences SET room = COALESCE(room, $3), code = $2, updated_at = NOW()
+          WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM conferences WHERE code = $2)
+            AND NOT EXISTS (SELECT 1 FROM conference_old_codes WHERE code = $2)`,
+        [conf.id, next, conf.room],
+      );
+      if (!rowCount) {
+        await client.query("ROLLBACK");
+        continue;
+      }
+      await client.query(
+        `INSERT INTO conference_old_codes (code, conference_id) VALUES ($1, $2) ON CONFLICT (code) DO NOTHING`,
+        [conf.code, conf.id],
+      );
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+    conf.code = next;
+    // Xonadagilar sahifa manzilini va API kodini yangilab oladi
+    await sendRoomData(conf, "mod", { type: "link-changed", code: next });
+    return next;
+  }
+  throw new Error("Yangi kod yaratib bo‘lmadi");
 }
 
 export async function loadMember(confId: number, userId: number): Promise<Member | null> {
@@ -321,15 +385,15 @@ export function joinState(conf: Conference, member: Member | null, moderator: bo
 
 // ---------------------------------------------------------------- LiveKit bilan ishlash
 
-/** null — LiveKit javob bermadi (xona holati noma’lum) */
-export async function liveCounts(codes: string[]): Promise<Map<string, number> | null> {
+/** Xona nomi → ichidagilar soni. null — LiveKit javob bermadi (xona holati noma’lum) */
+export async function liveCounts(roomNames: string[]): Promise<Map<string, number> | null> {
   const out = new Map<string, number>();
   const rs = roomService();
   if (!rs) return null;
-  if (!codes.length) return out;
+  if (!roomNames.length) return out;
   try {
-    const rooms = await rs.listRooms(codes.map(roomNameFor));
-    for (const room of rooms) out.set(room.name.replace(/^conf_/, ""), room.numParticipants);
+    const rooms = await rs.listRooms(roomNames);
+    for (const room of rooms) out.set(room.name, room.numParticipants);
     return out;
   } catch (err) {
     logger.warn({ err }, "conference listRooms");
@@ -342,7 +406,7 @@ async function ensureRoom(conf: Conference): Promise<void> {
   if (!rs) return;
   const metadata = roomMetadata(conf);
   const room = await rs.createRoom({
-    name: roomNameFor(conf.code),
+    name: conf.room,
     emptyTimeout: 15 * 60,
     departureTimeout: 60,
     maxParticipants: 150,
@@ -355,7 +419,7 @@ async function pushRoomMetadata(conf: Conference): Promise<void> {
   const rs = roomService();
   if (!rs) return;
   try {
-    await rs.updateRoomMetadata(roomNameFor(conf.code), roomMetadata(conf));
+    await rs.updateRoomMetadata(conf.room, roomMetadata(conf));
   } catch {
     /* xona hali ochilmagan — keyingi kirishda yoziladi */
   }
@@ -365,7 +429,7 @@ async function roomParticipants(conf: Conference): Promise<ParticipantInfo[]> {
   const rs = roomService();
   if (!rs) return [];
   try {
-    return await rs.listParticipants(roomNameFor(conf.code));
+    return await rs.listParticipants(conf.room);
   } catch {
     return [];
   }
@@ -400,7 +464,7 @@ export async function applyLivePerms(conf: Conference, onlyUserIds?: number[]): 
   if (!targets.length) return;
   const members = new Map((await loadMembers(conf.id)).map((m) => [m.userId, m]));
   const roles = await userRoles(targets.map((t) => t.uid));
-  const room = roomNameFor(conf.code);
+  const room = conf.room;
   await Promise.all(
     targets.map(async ({ p, uid }) => {
       const member = members.get(uid) ?? null;
@@ -424,7 +488,7 @@ export async function applyLivePerms(conf: Conference, onlyUserIds?: number[]): 
 async function muteSources(conf: Conference, p: ParticipantInfo, sources: TrackSource[]): Promise<void> {
   const rs = roomService();
   if (!rs) return;
-  const room = roomNameFor(conf.code);
+  const room = conf.room;
   for (const t of p.tracks) {
     if (!sources.includes(t.source) || t.muted) continue;
     try {
@@ -439,7 +503,7 @@ async function participantOf(conf: Conference, userId: number): Promise<Particip
   const rs = roomService();
   if (!rs) return null;
   try {
-    return await rs.getParticipant(roomNameFor(conf.code), identityFor(userId));
+    return await rs.getParticipant(conf.room, identityFor(userId));
   } catch {
     return null;
   }
@@ -453,7 +517,7 @@ async function sendRoomData(conf: Conference, topic: string, payload: unknown, u
   if (!rs) return;
   if (userIds && !userIds.length) return;
   try {
-    await rs.sendData(roomNameFor(conf.code), encoder.encode(JSON.stringify(payload)), DataPacket_Kind.RELIABLE, {
+    await rs.sendData(conf.room, encoder.encode(JSON.stringify(payload)), DataPacket_Kind.RELIABLE, {
       topic,
       destinationIdentities: userIds?.map(identityFor),
     });
@@ -501,7 +565,7 @@ export async function issueJoinToken(
       speak: perms.canSpeak ? "1" : "0",
     },
   });
-  at.addGrant({ roomJoin: true, room: roomNameFor(conf.code), canUpdateOwnMetadata: false, ...grantFor(perms) });
+  at.addGrant({ roomJoin: true, room: conf.room, canUpdateOwnMetadata: false, ...grantFor(perms) });
   return { url: cfg.url, token: await at.toJwt(), identity: identityFor(user.id) };
 }
 
@@ -561,7 +625,7 @@ async function setHand(conf: Conference, userId: number, raised: boolean): Promi
   const rs = roomService();
   if (!rs) return;
   try {
-    await rs.updateParticipant(roomNameFor(conf.code), identityFor(userId), {
+    await rs.updateParticipant(conf.room, identityFor(userId), {
       attributes: { hand: raised ? String(Date.now()) : "" },
     });
   } catch {
@@ -644,7 +708,7 @@ export async function moderate(
       const rs = roomService();
       if (rs && p) {
         try {
-          await rs.removeParticipant(roomNameFor(conf.code), identityFor(targetId));
+          await rs.removeParticipant(conf.room, identityFor(targetId));
         } catch (err) {
           logger.warn({ err, code: conf.code }, "conference removeParticipant");
         }
@@ -715,7 +779,7 @@ export async function endConference(conf: Conference, status: "ended" | "cancell
   if (!rs) return;
   await sendRoomData(conf, "mod", { type: "ended" });
   try {
-    await rs.deleteRoom(roomNameFor(conf.code));
+    await rs.deleteRoom(conf.room);
   } catch {
     /* xona allaqachon yopilgan */
   }
@@ -781,7 +845,7 @@ export async function handleLiveKitWebhook(body: string, authHeader: string | un
   const roomName = event.room?.name ?? "";
   if (!roomName.startsWith("conf_")) return;
   await ensureConferenceSchema();
-  const conf = await loadConference(roomName.slice(5));
+  const conf = await loadConferenceByRoom(roomName);
   if (!conf) return;
   const at = tsFromSeconds(event.createdAt) ?? new Date();
 
@@ -920,6 +984,7 @@ export async function deleteConference(conf: Conference): Promise<void> {
   await pool.query(`DELETE FROM conference_sessions WHERE conference_id = $1`, [conf.id]);
   await pool.query(`DELETE FROM conference_messages WHERE conference_id = $1`, [conf.id]);
   await pool.query(`DELETE FROM conference_members WHERE conference_id = $1`, [conf.id]);
+  await pool.query(`DELETE FROM conference_old_codes WHERE conference_id = $1`, [conf.id]);
   await pool.query(`DELETE FROM conferences WHERE id = $1`, [conf.id]);
 }
 
@@ -944,7 +1009,7 @@ export function whenUz(d: Date): string {
   });
 }
 
-export type NotifyKind = "invite" | "reminder" | "started" | "updated" | "cancelled";
+export type NotifyKind = "invite" | "reminder" | "started" | "updated" | "cancelled" | "link";
 
 function notifyText(conf: Conference, kind: NotifyKind, hostName: string): { title: string; body: string } {
   const when = whenUz(conf.scheduledAt);
@@ -973,6 +1038,11 @@ function notifyText(conf: Conference, kind: NotifyKind, hostName: string): { tit
       return {
         title: "Konferensiya bekor qilindi",
         body: `❌ «${conf.title}» konferensiyasi (${when}) bekor qilindi.\n👤 Tashkilotchi: ${hostName}`,
+      };
+    case "link":
+      return {
+        title: "Konferensiya havolasi yangilandi",
+        body: `🔗 «${conf.title}» konferensiyasi uchun yangi havola.\n🗓 ${when}\n👤 Tashkilotchi: ${hostName}\n\nEski havola endi ishlamaydi — faqat shu yangi havola orqali kiring.`,
       };
   }
 }
@@ -1013,7 +1083,7 @@ export async function notifyConferenceUsers(conf: Conference, userIds: number[],
       logger.warn({ err, userId }, "conference telegram");
     }
   }
-  if (kind === "invite" || kind === "updated") {
+  if (kind === "invite" || kind === "updated" || kind === "link") {
     await pool.query(
       `UPDATE conference_members SET notified_at = NOW() WHERE conference_id = $1 AND user_id = ANY($2::int[])`,
       [conf.id, ids],
@@ -1061,9 +1131,9 @@ export async function conferenceTick(): Promise<void> {
   if (!stale.length) return;
   const confs = stale.map(mapConf);
   const live = confs.filter((c) => c.status === "live");
-  const counts = live.length ? await liveCounts(live.map((c) => c.code)) : new Map<string, number>();
+  const counts = live.length ? await liveCounts(live.map((c) => c.room)) : new Map<string, number>();
   for (const conf of confs) {
-    if (conf.status === "live" && (!counts || (counts.get(conf.code) ?? 0) > 0)) continue;
+    if (conf.status === "live" && (!counts || (counts.get(conf.room) ?? 0) > 0)) continue;
     await endConference(conf, "ended");
   }
 }

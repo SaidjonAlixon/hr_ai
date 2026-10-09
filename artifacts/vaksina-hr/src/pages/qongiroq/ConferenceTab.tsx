@@ -13,6 +13,7 @@ import {
   MoreHorizontal,
   Pencil,
   Radio,
+  RefreshCw,
   Timer,
   Trash2,
   Users,
@@ -51,6 +52,7 @@ import {
 } from "@/lib/conference/api";
 import { ConferenceFormDialog } from "./ConferenceForm";
 import { ConferenceHistoryDialog } from "./ConferenceHistory";
+import { RotateLinkDialog } from "./RotateLinkDialog";
 
 function DateBadge({ iso, live, past }: { iso: string; live: boolean; past: boolean }) {
   const d = new Date(iso);
@@ -96,12 +98,14 @@ function ConferenceCard({
   onCancel,
   onHistory,
   onDelete,
+  onRotate,
 }: {
   c: ConferenceListItem;
   onEdit: (code: string) => void;
   onCancel: (c: ConferenceListItem) => void;
   onHistory: (code: string) => void;
   onDelete: (c: ConferenceListItem) => void;
+  onRotate: (c: ConferenceListItem) => void;
 }) {
   const { toast } = useToast();
   const live = c.status === "live";
@@ -197,6 +201,11 @@ function ConferenceCard({
               <Copy className="mr-2 h-4 w-4" /> Havolani nusxalash
             </DropdownMenuItem>
           ) : null}
+          {c.canDelete && active ? (
+            <DropdownMenuItem onClick={() => onRotate(c)}>
+              <RefreshCw className="mr-2 h-4 w-4" /> Yangi havola yaratish
+            </DropdownMenuItem>
+          ) : null}
           {manage && active ? (
             <DropdownMenuItem onClick={() => onEdit(c.code)}>
               <Pencil className="mr-2 h-4 w-4" /> Tahrirlash va taklif
@@ -252,6 +261,7 @@ export function ConferenceTab({ isPlatformAdmin }: { isPlatformAdmin: boolean })
   const [historyCode, setHistoryCode] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ kind: "cancel" | "delete"; c: ConferenceListItem } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [rotating, setRotating] = useState<ConferenceListItem | null>(null);
 
   const runConfirm = async () => {
     if (!confirm) return;
@@ -285,6 +295,7 @@ export function ConferenceTab({ isPlatformAdmin }: { isPlatformAdmin: boolean })
       onCancel={(x) => setConfirm({ kind: "cancel", c: x })}
       onDelete={(x) => setConfirm({ kind: "delete", c: x })}
       onHistory={setHistoryCode}
+      onRotate={setRotating}
     />
   );
 
@@ -376,6 +387,13 @@ export function ConferenceTab({ isPlatformAdmin }: { isPlatformAdmin: boolean })
         open={historyCode != null}
         onOpenChange={(v) => !v && setHistoryCode(null)}
         onDeleted={refresh}
+      />
+      <RotateLinkDialog
+        code={rotating?.code ?? null}
+        title={rotating?.title}
+        open={rotating != null}
+        onOpenChange={(v) => !v && setRotating(null)}
+        onRotated={refresh}
       />
       <AlertDialog open={confirm != null} onOpenChange={(v) => !v && !busy && setConfirm(null)}>
         <AlertDialogContent className="max-w-md rounded-3xl">

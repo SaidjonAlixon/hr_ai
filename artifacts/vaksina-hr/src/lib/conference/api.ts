@@ -189,6 +189,8 @@ export const conferenceApi = {
   end: (code: string) => request<{ ok: true }>(`${base(code)}/end`, { method: "POST", json: {} }),
   history: (code: string) => request<ConferenceHistory>(`${base(code)}/history`),
   purge: (code: string) => request<{ ok: true }>(`${base(code)}/purge`, { method: "DELETE", json: {} }),
+  rotateLink: (code: string, notify: boolean) =>
+    request<{ ok: true; code: string; link: string }>(`${base(code)}/rotate-link`, { method: "POST", json: { notify } }),
   moderate: (code: string, action: ModAction, userId?: number) =>
     request<{ ok: true; count?: number }>(`${base(code)}/moderate`, { method: "POST", json: { action, userId } }),
   settings: (code: string, settings: Partial<ConfSettings>) =>

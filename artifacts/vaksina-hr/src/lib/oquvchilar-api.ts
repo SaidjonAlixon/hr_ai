@@ -51,6 +51,7 @@ export type StudentRoster = {
   };
   items: Student[];
   groups: string[];
+  groupCounts?: Array<{ name: string; count: number }>;
   stages: Array<{ stage: number; title: string; passed: number; avgScore: number | null }>;
   stageCount: number;
   passScore: number;
@@ -114,6 +115,18 @@ export function useResetStudentPassword() {
 
 export function useResetStudentProgress() {
   return useInvalidating((id: number) => api<{ ok: boolean }>(`/oquvchilar/${id}/reset-progress`, { method: "POST" }));
+}
+
+export function useCreateStudentGroup() {
+  return useInvalidating((name: string) =>
+    api<{ name: string }>("/oquvchilar/groups", { method: "POST", body: JSON.stringify({ name }) }),
+  );
+}
+
+export function useDeleteStudentGroup() {
+  return useInvalidating((name: string) =>
+    api<{ ok: boolean }>(`/oquvchilar/groups/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  );
 }
 
 export function useDeleteStudent() {

@@ -65,6 +65,7 @@ import {
   type Student,
   type StudentCred,
 } from "@/lib/oquvchilar-api";
+import { GroupPicker } from "@/components/student/GroupPicker";
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   not_started: { label: "Boshlamagan", cls: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
@@ -141,9 +142,8 @@ export default function OquvchilarPage() {
   const [exporting, setExporting] = useState(false);
 
   const [addOpen, setAddOpen] = useState(false);
-  const emptyForm = { lastName: "", firstName: "", phone: "+998 ", groupName: "", login: "", password: "", note: "" };
+  const emptyForm = { lastName: "", firstName: "", phone: "+998 ", groupName: "", note: "" };
   const [form, setForm] = useState(emptyForm);
-  const [customCreds, setCustomCreds] = useState(false);
   const phoneDigits = form.phone.replace(/\D/g, "");
   const formValid = form.lastName.trim().length >= 2 && form.firstName.trim().length >= 2 && phoneDigits.length >= 12;
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -204,15 +204,12 @@ export default function OquvchilarPage() {
         fullName: `${form.lastName.trim()} ${form.firstName.trim()}`,
         phone: `+${phoneDigits}`,
         groupName: form.groupName || undefined,
-        login: customCreds ? form.login || undefined : undefined,
-        password: customCreds ? form.password || undefined : undefined,
         note: form.note || undefined,
       },
       {
         onSuccess: (r) => {
           setAddOpen(false);
           setForm({ ...emptyForm, groupName: form.groupName });
-          setCustomCreds(false);
           setCreds({ title: "O‘quvchi qo‘shildi", list: [r.student] });
         },
         onError: (err) => errToast(err, "Qo‘shilmadi"),
@@ -298,6 +295,7 @@ export default function OquvchilarPage() {
   };
 
   const groupsList = data?.groups ?? [];
+  const groupCounts = Object.fromEntries((data?.groupCounts ?? []).map((g) => [g.name, g.count]));
   const sum = data?.summary;
 
   return (
@@ -603,38 +601,16 @@ export default function OquvchilarPage() {
                 <p className="text-[11px] text-red-600">Raqam to‘liq emas (+998 XX XXX XX XX)</p>
               ) : null}
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 sm:col-span-2">
               <Label>Guruh</Label>
-              <Input
-                list="oquvchi-groups"
+              <GroupPicker
+                groups={groupsList}
+                counts={groupCounts}
                 value={form.groupName}
-                placeholder="Masalan: 2026-oktabr"
-                onChange={(e) => setForm({ ...form, groupName: e.target.value })}
+                allowDelete
+                onChange={(g) => setForm({ ...form, groupName: g })}
               />
             </div>
-            <div className="sm:col-span-2">
-              <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-                <input
-                  type="checkbox"
-                  className="h-3.5 w-3.5 accent-[#0b3a5c]"
-                  checked={customCreds}
-                  onChange={(e) => setCustomCreds(e.target.checked)}
-                />
-                Login va parolni o‘zim beraman
-              </label>
-            </div>
-            {customCreds ? (
-              <>
-                <div className="space-y-1.5">
-                  <Label>Login</Label>
-                  <Input value={form.login} onChange={(e) => setForm({ ...form, login: e.target.value })} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Parol</Label>
-                  <Input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-                </div>
-              </>
-            ) : null}
             <div className="space-y-1.5 sm:col-span-2">
               <Label>Izoh</Label>
               <Textarea rows={2} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
@@ -668,7 +644,7 @@ export default function OquvchilarPage() {
             />
             <div className="space-y-1.5">
               <Label>Guruh (ixtiyoriy)</Label>
-              <Input list="oquvchi-groups" value={bulkGroup} onChange={(e) => setBulkGroup(e.target.value)} />
+              <GroupPicker groups={groupsList} counts={groupCounts} value={bulkGroup} onChange={setBulkGroup} />
             </div>
             <p className="text-xs text-muted-foreground">
               {bulkText.split(/\r?\n/).filter((l) => l.trim()).length} ta qator
@@ -684,12 +660,6 @@ export default function OquvchilarPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <datalist id="oquvchi-groups">
-        {groupsList.map((g) => (
-          <option key={g} value={g} />
-        ))}
-      </datalist>
 
       <Dialog open={creds != null} onOpenChange={(o) => !o && setCreds(null)}>
         <DialogContent className="sm:max-w-lg">
@@ -765,7 +735,12 @@ export default function OquvchilarPage() {
             </div>
             <div className="space-y-1.5">
               <Label>Guruh</Label>
-              <Input list="oquvchi-groups" value={editForm.groupName} onChange={(e) => setEditForm({ ...editForm, groupName: e.target.value })} />
+              <GroupPicker
+                groups={groupsList}
+                counts={groupCounts}
+                value={editForm.groupName}
+                onChange={(g) => setEditForm({ ...editForm, groupName: g })}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Login</Label>

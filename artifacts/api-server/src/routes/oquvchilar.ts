@@ -88,6 +88,7 @@ async function upsertProfile(userId: number, groupName: string | null, note: str
      ON CONFLICT (user_id) DO UPDATE SET group_name = EXCLUDED.group_name, note = EXCLUDED.note`,
     [userId, groupName, note, createdById ?? null],
   );
+  await rememberGroup(groupName, createdById ?? undefined);
 }
 
 async function loadStudent(id: number) {
@@ -140,9 +141,11 @@ async function buildRoster(groupFilter?: string) {
       kirish: { ...kirish, status: done ? "completed" : kirish.status },
     };
   });
-  const groups = [...new Set(items.map((i) => i.groupName).filter((g): g is string => Boolean(g)))].sort((a, b) =>
-    a.localeCompare(b, "uz"),
-  );
+  const { rows: groupRows } = await pool.query<{ name: string }>("SELECT name FROM oquvchi_groups");
+  const groups = [
+    ...new Set([...groupRows.map((g) => g.name), ...items.map((i) => i.groupName)].filter((g): g is string => Boolean(g))),
+  ].sort((a, b) => a.localeCompare(b, "uz"));
+  const groupCounts = groups.map((name) => ({ name, count: items.filter((i) => i.groupName === name).length }));
   if (groupFilter) items = items.filter((i) => (i.groupName ?? "") === groupFilter);
 
   const withScore = items.filter((i) => i.kirish.avgScore != null);
@@ -170,8 +173,50 @@ async function buildRoster(groupFilter?: string) {
       avgScore: scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null,
     };
   });
-  return { summary, items, groups, stages, stageCount: defs.length, passScore: KIRISH_PASS_SCORE };
+  return { summary, items, groups, groupCounts, stages, stageCount: defs.length, passScore: KIRISH_PASS_SCORE };
 }
+
+function cleanGroupName(raw: unknown): string {
+  return String(raw ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+}
+
+async function rememberGroup(name: string | null, actorId?: number) {
+  if (!name) return;
+  await pool.query("INSERT INTO oquvchi_groups (name, created_by_id) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING", [
+    name,
+    actorId ?? null,
+  ]);
+}
+
+router.post("/oquvchilar/groups", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!guard(req, res)) return;
+  const name = cleanGroupName(req.body?.name);
+  if (name.length < 2) {
+    res.status(400).json({ error: "Guruh nomini yozing" });
+    return;
+  }
+  try {
+    await rememberGroup(name, req.userId);
+    res.status(201).json({ name });
+  } catch (err) {
+    console.error("POST /oquvchilar/groups error:", err);
+    res.status(500).json({ error: "Guruh yaratilmadi" });
+  }
+});
+
+/** Guruhni o‘chirish: o‘quvchilar o‘chmaydi, faqat guruhsiz qoladi */
+router.delete("/oquvchilar/groups/:name", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!guard(req, res)) return;
+  const name = cleanGroupName(req.params.name);
+  try {
+    await pool.query("DELETE FROM oquvchi_groups WHERE name = $1", [name]);
+    await pool.query("UPDATE oquvchi_profiles SET group_name = NULL WHERE group_name = $1", [name]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("DELETE /oquvchilar/groups error:", err);
+    res.status(500).json({ error: "Guruh o‘chirilmadi" });
+  }
+});
 
 router.get("/oquvchilar", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!guard(req, res)) return;

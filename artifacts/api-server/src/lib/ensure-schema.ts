@@ -220,6 +220,11 @@ CREATE TABLE IF NOT EXISTS oquvchi_profiles (
   created_by_id INTEGER,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE TABLE IF NOT EXISTS oquvchi_groups (
+  name TEXT PRIMARY KEY,
+  created_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 -- 5-bosqich: stajyor videosi (Google Drive)
 INSERT INTO kirish_videos (stage, youtube_url, youtube_id, video_drive_file_id, questions_json)

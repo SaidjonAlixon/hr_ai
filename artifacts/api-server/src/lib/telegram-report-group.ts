@@ -10,7 +10,7 @@ import { isHrManager } from "./roles";
 
 export type ReportGroup = { chatId: string; chatTitle: string; threadId: number | null; topicName: string };
 
-const TOPIC_RE = /koordinator|координатор/i;
+const TOPIC_RE = /k[oa]rdinator|координатор|кординатор/i;
 const SILENT_TITLE_RE = /vaksinamed|вакцинамед|ваксинамед/i;
 const REGISTER_CMD_RE = /^\/hisobot_guruh(@\w+)?(\s|$)/i;
 

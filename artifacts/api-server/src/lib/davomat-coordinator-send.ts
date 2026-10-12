@@ -48,6 +48,9 @@ const LIST_LABEL: Record<ReportListKind, string> = {
 };
 const ALL_LISTS: ReportListKind[] = ["absent", "late", "present"];
 
+const HR_NOTICE =
+  "Har bir xodim kelmaganligi yoki kechikkanligi sababini alohida izohlab, ushbu holat qayta takrorlanmasligi uchun qanday choralar ko‘rganingizni HR bo‘limiga — @hrvaksina ga ma’lum qilishingiz shart. Aks holda, sizga jarima solishga sabab bo‘ladi.";
+
 function peopleOf(sections: BuiltSection[]) {
   return sections.flatMap((s) => s.blocks.flatMap((b) => b.people));
 }
@@ -243,7 +246,7 @@ export async function sendCoordinatorReportsNow(opts: CoordinatorSendOptions): P
         reportHm: now.hm,
         updated: true,
         title: "Davomat · joriy hisobot",
-        warningText: warning,
+        warningText: `Bugungi kun: ${label}. Hisobot vaqti: soat ${now.hm} (shu daqiqadagi holat). ${HR_NOTICE}`,
         filterLine: [`Koordinator: ${section.coordinatorName}`, `Ko‘rsatilgan: ${listsLine}`, opts.filterLine]
           .filter(Boolean)
           .join(" · "),
@@ -265,13 +268,16 @@ export async function sendCoordinatorReportsNow(opts: CoordinatorSendOptions): P
       ...summaryLines(c, lists),
       "",
       "To‘liq jadval shu xabar tagidagi PDF da.",
-      "Kelmagan va kechikkan xodimlarni HR menejerlarga yozib, sababli qildiring.",
+      "",
+      `⚠️ ${HR_NOTICE}`,
     ].join("\n");
     const groupHead = [
       "sizning xodimlaringiz davomati",
       `${escapeHtml(label)}, soat ${now.hm}`,
       "",
-      ...summaryLines(c, lists).map(escapeHtml),
+      ...summaryLines(c, lists).map((l) => `• ${escapeHtml(l)}`),
+      "",
+      `⚠️ <b>Diqqat!</b> ${escapeHtml(HR_NOTICE)}`,
     ].join("\n");
     await deliver(
       { name: section.coordinatorName, userId: section.userId, telegramId: section.telegramId },

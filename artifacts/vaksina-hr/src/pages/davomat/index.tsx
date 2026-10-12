@@ -2812,10 +2812,10 @@ export default function DavomatPage() {
                     </p>
                   ) : null}
                 </CardHeader>
-                <CardContent className="overflow-x-auto">
-                  <table className="w-full min-w-[1100px] border-collapse text-sm">
-                    <thead>
-                      <tr className="border-b bg-muted text-left text-xs text-muted-foreground">
+                <CardContent className="max-h-[calc(100dvh-7rem)] overflow-auto overscroll-contain p-0 sm:px-6 sm:pb-6">
+                  <table className="w-full min-w-[1100px] border-separate border-spacing-0 text-sm">
+                    <thead className="sticky top-0 z-20 shadow-[0_2px_6px_-2px_rgba(15,23,42,0.18)]">
+                      <tr className="bg-muted text-left text-xs text-muted-foreground [&>th]:border-b [&>th]:bg-muted">
                         <th className="w-12 px-2 py-2 text-center">№</th>
                         <th className="px-3 py-2">F.I.Sh.</th>
                         <th className="px-3 py-2">Lavozim</th>
@@ -2833,7 +2833,7 @@ export default function DavomatPage() {
                         {showRowActions ? <th className="px-3 py-2 w-20" /> : null}
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="[&>tr>td]:border-b [&>tr>td]:border-slate-100 dark:[&>tr>td]:border-slate-700/60">
                       {visibleEmployeesForDay.length === 0 ? (
                         <tr>
                           <td

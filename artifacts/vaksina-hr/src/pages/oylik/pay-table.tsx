@@ -59,7 +59,7 @@ export function DavomatJarimaCard({ month, onOpen }: { month: string; onOpen?: (
           : own
             ? self
               ? `${self.strikes} marta · ${waiting ? "qoralama" : "tasdiqlangan"}`
-              : "01.10.2026 dan kechikkan va kelmagan"
+              : "12.10.2026 dan kechikkan va kelmagan"
             : `${formatSom(total)} · ${waiting ? "qoralama" : "shu oy"}`}
       </div>
     </button>
@@ -105,7 +105,7 @@ export function DavomatJarimaPanel({ month }: { month: string }) {
       <header className="bg-[#172033] px-5 py-5 text-white sm:px-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-200">Jarima · 01.10.2026 dan</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-200">Jarima · 12.10.2026 dan</p>
             <h2 className="mt-1 text-2xl font-semibold tracking-tight">Kechikkan va kelmagan</h2>
             <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-white/70">
               Mudir, farmasevt va stajyor. Har bir qatorda kim, lavozimi, qaysi sana, nima sabab va izoh to‘liq yozilgan.
@@ -185,7 +185,7 @@ export function DavomatJarimaPanel({ month }: { month: string }) {
       ) : shown.length === 0 ? (
         <p className="px-5 py-8 text-sm text-slate-500 sm:px-6">
           {people.length === 0
-            ? "Bu oyda jarima yo‘q. 01.10.2026 dan kechikkan va kelmagan xodimlar shu yerda chiqadi."
+            ? "Bu oyda jarima yo‘q. 12.10.2026 dan kechikkan va kelmagan xodimlar shu yerda chiqadi."
             : `${filterLabel} bo‘yicha yozuv yo‘q.`}
         </p>
       ) : (

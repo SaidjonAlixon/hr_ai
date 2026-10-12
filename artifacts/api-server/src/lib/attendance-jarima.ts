@@ -6,7 +6,7 @@ import { FINAL_STRIKE, cancelledLetterKeys } from "./explanation-letter";
 import { getJarimaSwitch, isJarimaOffDay } from "./jarima-switch";
 
 /** Jarima shu kundan boshlanadi. Undan oldingi kechikish va kelmaslik hisobga kirmaydi. */
-export const JARIMA_START = "2026-10-01";
+export const JARIMA_START = "2026-10-12";
 
 export const JARIMA_RULE = [
   "1-marta — ogohlantirish va tushuntirish xati",

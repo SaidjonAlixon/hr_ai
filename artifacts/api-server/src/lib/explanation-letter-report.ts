@@ -360,8 +360,8 @@ export async function reportSchedule(): Promise<{ lastSentOn: string | null; nex
   const { rows } = await pool.query(`SELECT sent_on FROM explanation_report_log ORDER BY sent_on DESC LIMIT 1`);
   const last = rows[0]?.sent_on ? String(rows[0].sent_on) : null;
   const { ymd, hour } = tashkentNow();
-  let next = last ? addDays(last, REPORT_EVERY_DAYS) : hour < REPORT_HOUR ? ymd : addDays(ymd, 1);
-  if (next < ymd || (next === ymd && hour > REPORT_HOUR)) next = hour < REPORT_HOUR ? ymd : addDays(ymd, 1);
+  let next = last ? addDays(last, REPORT_EVERY_DAYS) : ymd;
+  if (last && (next < ymd || (next === ymd && hour > REPORT_HOUR))) next = hour < REPORT_HOUR ? ymd : addDays(ymd, 1);
   return { lastSentOn: last, nextSendOn: next, chatId: REPORT_CHAT_ID, everyDays: REPORT_EVERY_DAYS, hour: REPORT_HOUR };
 }
 
@@ -369,11 +369,11 @@ export async function reportSchedule(): Promise<{ lastSentOn: string | null; nex
 export async function explanationReportTick(): Promise<void> {
   if (!isTelegramConfigured()) return;
   const { ymd, hour } = tashkentNow();
-  if (hour !== REPORT_HOUR) return;
   await ensureExplanationSchema();
   const { rows } = await pool.query(`SELECT sent_on FROM explanation_report_log ORDER BY sent_on DESC LIMIT 1`);
   const last = rows[0]?.sent_on ? String(rows[0].sent_on) : null;
-  if (last && daysBetween(last, ymd) < REPORT_EVERY_DAYS) return;
+  // Hech qachon yuborilmagan bo‘lsa — darhol (bugungi to‘liq hisobot), keyin har 3 kunda 10:00 da
+  if (last && (hour !== REPORT_HOUR || daysBetween(last, ymd) < REPORT_EVERY_DAYS)) return;
   const claim = await pool.query(
     `INSERT INTO explanation_report_log (sent_on, chat_id) VALUES ($1, $2) ON CONFLICT (sent_on) DO NOTHING`,
     [ymd, REPORT_CHAT_ID],

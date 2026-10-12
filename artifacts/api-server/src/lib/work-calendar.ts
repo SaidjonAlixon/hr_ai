@@ -81,6 +81,42 @@ const SEED_RULES: Array<[string, number[]]> = [
   ["dorixona:orta", []],
 ];
 
+/**
+ * Dorixona smenalari uchun qat'iy qoida (sozlamadan o‘zgarmaydi, barcha sanalarga):
+ * faqat 1-smena yakshanba ixtiyoriy dam oladi (kelmasa jarima yo‘q), qolgan smenalarda dam kuni yo‘q.
+ * Almashuv (swap) bundan mustasno — u alohida tasdiqlanadi.
+ */
+export const PHARMACY_FIXED_NOTE = "Doimiy qoida: faqat 1-smena yakshanba dam (ixtiyoriy), qolgan smenalar har kuni ishlaydi";
+
+export function isFixedPharmacyScope(scope: string): boolean {
+  return scope.startsWith("dorixona:");
+}
+
+function fixedPharmacyCalendar(scope: string): ScopeCalendar {
+  return new ScopeCalendar([
+    {
+      id: 0,
+      scope,
+      restWeekdays: scope === "dorixona:1" ? [7] : [],
+      effectiveFrom: "2000-01-01",
+      note: PHARMACY_FIXED_NOTE,
+      updatedByName: "Tizim",
+      updatedAt: null,
+    },
+  ]);
+}
+
+const PHARMACY_SCOPES = [
+  "dorixona:1",
+  "dorixona:2",
+  "dorixona:3",
+  "dorixona:12",
+  "dorixona:23",
+  "dorixona:orta",
+  "dorixona:office",
+  "dorixona:other",
+];
+
 export function scopeLabel(scope: string): string {
   return SCOPE_LABELS[scope] || scope.replace(/^dorixona:/, "");
 }
@@ -317,13 +353,15 @@ async function readSnapshot(): Promise<Snapshot> {
   const rulesByScope = new Map<string, RestRule[]>();
   for (const row of rules.rows) {
     const rule = rowToRule(row);
+    if (isFixedPharmacyScope(rule.scope)) continue;
     rulesByScope.set(rule.scope, [...(rulesByScope.get(rule.scope) ?? []), rule]);
   }
   const calendars = new Map<string, ScopeCalendar>();
   for (const [scope, list] of rulesByScope) calendars.set(scope, new ScopeCalendar(list));
+  for (const scope of PHARMACY_SCOPES) calendars.set(scope, fixedPharmacyCalendar(scope));
   for (const row of days.rows) {
     const parsed = parseCalendarStorageKey(String(row.day));
-    if (!parsed) continue;
+    if (!parsed || isFixedPharmacyScope(parsed.scope)) continue;
     let cal = calendars.get(parsed.scope);
     if (!cal) {
       cal = new ScopeCalendar();
@@ -365,6 +403,7 @@ export function invalidateWorkCalendar() {
 }
 
 export function scopeCalendar(calendars: Map<string, Map<string, boolean>>, scope: string): Map<string, boolean> {
+  if (isFixedPharmacyScope(scope)) return calendars.get(scope) ?? fixedPharmacyCalendar(scope);
   return calendars.get(scope) ?? new ScopeCalendar();
 }
 
@@ -381,7 +420,9 @@ export function swapOn(employeeId: number | null | undefined, ymd: string): { ki
 
 /** Smena kalendari bo‘yicha: { work, reason } yoki qoida yo‘q bo‘lsa null */
 export function scopeDayStatus(scope: string, ymd: string): { work: boolean; reason: string } | null {
-  const cal = snapshot.calendars.get(scope);
+  const cal = isFixedPharmacyScope(scope)
+    ? (snapshot.calendars.get(scope) ?? fixedPharmacyCalendar(scope))
+    : snapshot.calendars.get(scope);
   if (!cal) return null;
   if (cal.has(ymd)) {
     const work = cal.get(ymd)!;
@@ -390,6 +431,7 @@ export function scopeDayStatus(scope: string, ymd: string): { work: boolean; rea
   const rule = ruleOn(cal.rules, ymd);
   if (!rule) return null;
   const work = !rule.restWeekdays.includes(isoWeekday(ymd));
+  if (!work && isFixedPharmacyScope(scope)) return { work, reason: "Yakshanba — 1-smena ixtiyoriy dam" };
   return { work, reason: work ? "Ish kuni" : `Haftalik dam kuni · ${scopeLabel(scope)}` };
 }
 

@@ -712,7 +712,8 @@ function RuleEditor({ data, schedule, month }: { data: WorkCalendarData; schedul
   }, [schedule.scope, currentKey, data.today]);
 
   const dirty = days.slice().sort().join(",") !== current.slice().sort().join(",") || from !== data.today;
-  const locked = schedule.scope === "xavfsizlik" || !data.canEdit;
+  const pharmacyFixed = schedule.scope.startsWith("dorixona:");
+  const locked = schedule.scope === "xavfsizlik" || pharmacyFixed || !data.canEdit;
   const workPerWeek = 7 - days.length;
 
   const toggle = (d: number) => {
@@ -739,7 +740,13 @@ function RuleEditor({ data, schedule, month }: { data: WorkCalendarData; schedul
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="text-sm font-semibold text-[#0f2744] dark:text-white">Haftalik dam kunlari</p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">{scopeHint(schedule.scope)}</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            {pharmacyFixed
+              ? schedule.scope === "dorixona:1"
+                ? "Doimiy qoida: yakshanba — ixtiyoriy dam (kelmasa jarima yo‘q, kelsa ish kuni hisoblanadi)."
+                : "Doimiy qoida: bu smenada dam kuni yo‘q — har kuni ish."
+              : scopeHint(schedule.scope)}
+          </p>
         </div>
         <span className="rounded-full bg-[#0b3a5c]/[0.07] px-2.5 py-1 text-[11px] font-bold text-[#0b3a5c] dark:bg-white/10 dark:text-sky-200">
           Haftada {workPerWeek} kun ish · {days.length} kun dam
@@ -841,7 +848,7 @@ function ScopeDetail({ data, schedule, month }: { data: WorkCalendarData; schedu
         <MonthGrid
           month={month}
           schedule={schedule}
-          canEdit={data.canEdit}
+          canEdit={data.canEdit && !schedule.scope.startsWith("dorixona:")}
           pending={toggleDay.isPending}
           onToggle={(day, isWork) =>
             toggleDay.mutate(

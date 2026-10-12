@@ -33,7 +33,7 @@ import {
 import { loadStaffFromUsers } from "../lib/staff-directory";
 import { coordinatorsFor } from "../lib/davomat-shift-report";
 import { isSbRole, NON_STAFF_ROLES } from "../lib/roles";
-import { ScopeCalendar, calendarWorkStatus } from "../lib/work-calendar";
+import { PHARMACY_FIXED_NOTE, ScopeCalendar, calendarWorkStatus, isFixedPharmacyScope } from "../lib/work-calendar";
 
 const router: IRouter = Router();
 
@@ -112,6 +112,10 @@ router.patch("/oylik/calendar", requireAuth, async (req: AuthRequest, res): Prom
   }
   if (!isPayrollCalendarScope(scope)) {
     res.status(400).json({ error: "Ish kuni guruhi noto‘g‘ri" });
+    return;
+  }
+  if (isFixedPharmacyScope(scope)) {
+    res.status(400).json({ error: PHARMACY_FIXED_NOTE });
     return;
   }
   const isWork = Boolean(req.body?.isWork);

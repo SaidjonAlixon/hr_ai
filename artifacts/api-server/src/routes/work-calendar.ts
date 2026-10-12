@@ -41,6 +41,8 @@ import {
   invalidateWorkCalendar,
   isPayrollCalendarScope,
   loadWorkCalendar,
+  isFixedPharmacyScope,
+  PHARMACY_FIXED_NOTE,
   normalizeRestWeekdays,
   payrollCalendarScope,
   rowToRule,
@@ -239,6 +241,10 @@ router.put("/work-calendar/rule", requireAuth, async (req: AuthRequest, res): Pr
   const scope = String(req.body?.scope || "").slice(0, 40);
   if (!isPayrollCalendarScope(scope) || scope === "xavfsizlik") {
     res.status(400).json({ error: "Smena noto‘g‘ri" });
+    return;
+  }
+  if (isFixedPharmacyScope(scope)) {
+    res.status(400).json({ error: PHARMACY_FIXED_NOTE });
     return;
   }
   const restWeekdays = normalizeRestWeekdays(req.body?.restWeekdays);

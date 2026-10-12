@@ -39,7 +39,13 @@ export type DavomatShiftPdfInput = {
   warningText?: string;
   filterLine?: string | null;
   sections: ReportCoordinatorSection[];
+  /** Faqat shu ro‘yxatlar chiziladi (bo‘sh/yo‘q — hammasi) */
+  lists?: ReportListKind[];
+  /** Bir nechta koordinator bo‘lsa, boshida koordinatorlar bo‘yicha qisqa jadval */
+  summary?: boolean;
 };
+
+const ALL_LISTS: ReportListKind[] = ["absent", "late", "present"];
 
 const PAGE_W = 595.28;
 const PAGE_H = 841.89;
@@ -55,11 +61,11 @@ const WARN_FG = rgb(0.573, 0.251, 0.055);
 
 const LIST_META: Record<
   ReportListKind,
-  { n: string; title: string; bar: ReturnType<typeof rgb>; fg: ReturnType<typeof rgb> }
+  { title: string; chip: string; bar: ReturnType<typeof rgb>; fg: ReturnType<typeof rgb> }
 > = {
-  absent: { n: "1", title: "Kelmaganlar", bar: rgb(0.996, 0.886, 0.898), fg: rgb(0.745, 0.071, 0.235) },
-  late: { n: "2", title: "Kechikkanlar", bar: rgb(1, 0.984, 0.922), fg: rgb(0.706, 0.325, 0.035) },
-  present: { n: "3", title: "Kelganlar", bar: rgb(0.925, 0.992, 0.961), fg: rgb(0.016, 0.471, 0.341) },
+  absent: { title: "Kelmaganlar", chip: "Kelmagan", bar: rgb(0.996, 0.886, 0.898), fg: rgb(0.745, 0.071, 0.235) },
+  late: { title: "Kechikkanlar", chip: "Kechikkan", bar: rgb(1, 0.984, 0.922), fg: rgb(0.706, 0.325, 0.035) },
+  present: { title: "Kelganlar", chip: "Kelgan", bar: rgb(0.925, 0.992, 0.961), fg: rgb(0.016, 0.471, 0.341) },
 };
 
 const COLS = [
@@ -121,7 +127,12 @@ type Draw = {
   pageNo: number;
   dateLabel: string;
   reportHm: string;
+  lists: ReportListKind[];
 };
+
+function listNo(d: Draw, kind: ReportListKind): string {
+  return String(d.lists.indexOf(kind) + 1);
+}
 
 function newPage(d: Draw, continued: boolean) {
   d.page = d.doc.addPage([PAGE_W, PAGE_H]);
@@ -139,10 +150,14 @@ function newPage(d: Draw, continued: boolean) {
 }
 
 function drawFooter(d: Draw) {
-  d.page.drawText(
-    `VAKSINA HR  ·  ${d.pageNo}-sahifa  ·  1 Kelmaganlar  ·  2 Kechikkanlar  ·  3 Kelganlar`,
-    { x: M, y: 16, size: 7.5, font: d.font, color: MUTED },
-  );
+  const legend = d.lists.map((k) => `${listNo(d, k)} ${LIST_META[k].title}`).join("  ·  ");
+  d.page.drawText(`VAKSINA HR  ·  ${d.pageNo}-sahifa  ·  ${legend}`, {
+    x: M,
+    y: 16,
+    size: 7.5,
+    font: d.font,
+    color: MUTED,
+  });
 }
 
 function ensure(d: Draw, need: number) {
@@ -259,7 +274,7 @@ function drawList(d: Draw, kind: ReportListKind, people: ReportPerson[]) {
   ensure(d, 22);
   const y = d.y - 18;
   d.page.drawRectangle({ x: M, y, width: PAGE_W - M * 2, height: 18, color: meta.bar });
-  d.page.drawText(`${meta.n}. ${meta.title}`, {
+  d.page.drawText(`${listNo(d, kind)}. ${meta.title}`, {
     x: M + 8,
     y: y + 5,
     size: 10,
@@ -301,6 +316,56 @@ function counts(people: ReportPerson[]) {
   };
 }
 
+/** Koordinatorlar kesimida qisqa jadval: har biri bo‘yicha sanoq */
+function drawSummary(d: Draw, sections: ReportCoordinatorSection[]) {
+  const width = PAGE_W - M * 2;
+  const numW = 70;
+  const nameW = width - numW * (d.lists.length + 1);
+  const cols = [
+    { label: "Koordinator", w: nameW },
+    ...d.lists.map((k) => ({ label: LIST_META[k].chip, w: numW })),
+    { label: "Jami", w: numW },
+  ];
+  ensure(d, 40);
+  d.page.drawText("Koordinatorlar bo‘yicha qisqacha", { x: M, y: d.y - 14, size: 11, font: d.bold, color: NAVY });
+  d.y -= 20;
+  const head = d.y - 16;
+  d.page.drawRectangle({ x: M, y: head, width, height: 16, color: NAVY });
+  let x = M;
+  for (const c of cols) {
+    d.page.drawText(c.label, { x: x + 4, y: head + 4.5, size: 8, font: d.bold, color: PAPER });
+    x += c.w;
+  }
+  d.y = head;
+  const rows = sections.map((s) => {
+    const people = s.blocks.flatMap((b) => b.people);
+    return { name: s.coordinatorName, c: counts(people), total: people.length };
+  });
+  rows.forEach((row, i) => {
+    ensure(d, 16);
+    const y = d.y - 15;
+    d.page.drawRectangle({ x: M, y, width, height: 15, color: i % 2 ? rgb(0.973, 0.98, 0.988) : PAPER });
+    let cx = M;
+    d.page.drawText(fit(row.name, d.bold, 8.5, nameW - 8), { x: cx + 4, y: y + 4, size: 8.5, font: d.bold, color: INK });
+    cx += nameW;
+    for (const k of d.lists) {
+      const v = row.c[k];
+      d.page.drawText(String(v), {
+        x: cx + 4,
+        y: y + 4,
+        size: 9,
+        font: v ? d.bold : d.font,
+        color: v ? LIST_META[k].fg : MUTED,
+      });
+      cx += numW;
+    }
+    d.page.drawText(String(row.total), { x: cx + 4, y: y + 4, size: 9, font: d.bold, color: INK });
+    d.page.drawLine({ start: { x: M, y }, end: { x: M + width, y }, thickness: 0.4, color: LINE });
+    d.y = y;
+  });
+  d.y -= 16;
+}
+
 /** Ogohlantirish: bugungi kun, keyingi vaqt, shu vaqtgacha sababli qilish. */
 export function reportWarning(dateLabel: string, reportHm: string, nextWhen: string): string {
   return `Bugungi kun: ${dateLabel}. Hisobot vaqti: soat ${reportHm}. Keyingi vaqt: ${nextWhen}. Shu vaqtgacha kelmagan va kechikkan xodimlarni HR menejerlarga yozib, sababli qildiring. Aks holda bu bir kunlik jarimaga sabab bo‘ladi.`;
@@ -320,6 +385,7 @@ export async function renderDavomatShiftPdf(input: DavomatShiftPdfInput): Promis
     pageNo: 1,
     dateLabel: input.dateLabel,
     reportHm: input.reportHm,
+    lists: input.lists?.length ? ALL_LISTS.filter((k) => input.lists!.includes(k)) : ALL_LISTS,
   };
 
   d.page.drawRectangle({ x: 0, y: PAGE_H - 78, width: PAGE_W, height: 78, color: NAVY });
@@ -378,26 +444,27 @@ export async function renderDavomatShiftPdf(input: DavomatShiftPdfInput): Promis
 
   const all = input.sections.flatMap((s) => s.blocks.flatMap((b) => b.people));
   const sum = counts(all);
-  const chips = [
-    { label: "Kelmagan", n: sum.absent, fg: LIST_META.absent.fg },
-    { label: "Kechikkan", n: sum.late, fg: LIST_META.late.fg },
-    { label: "Kelgan", n: sum.present, fg: LIST_META.present.fg },
-  ];
   let cx = M;
-  for (const chip of chips) {
-    const text = `${chip.label}: ${chip.n}`;
-    const w = bold.widthOfTextAtSize(text, 10) + 16;
-    d.page.drawText(text, { x: cx, y: d.y - 12, size: 10, font: bold, color: chip.fg });
-    cx += w;
+  for (const kind of d.lists) {
+    const text = `${LIST_META[kind].chip}: ${sum[kind]}`;
+    d.page.drawText(text, { x: cx, y: d.y - 12, size: 10, font: bold, color: LIST_META[kind].fg });
+    cx += bold.widthOfTextAtSize(text, 10) + 16;
   }
+  const total = `Jami: ${all.length}`;
+  d.page.drawText(total, { x: cx, y: d.y - 12, size: 10, font: bold, color: INK });
   d.y -= 18;
-  const legend =
-    "Holat: Kelmagan — ishga kelmagan. Kechikkan — kech kelgan. Kelgan — o‘z vaqtida kelgan. Keldi, ketishi yo‘q — kelgan, lekin Ketdim bosilmagan. Xodim ostidagi qator — shu oyning sanalari va holati.";
-  for (const line of wrap(legend, font, 8, PAGE_W - M * 2)) {
+  const legendParts: string[] = [];
+  if (d.lists.includes("absent")) legendParts.push("Kelmagan — bugun ishga kelmagan");
+  if (d.lists.includes("late")) legendParts.push("Kechikkan — smena boshlanishidan kech kelgan");
+  if (d.lists.includes("present")) legendParts.push("Kelgan — o‘z vaqtida kelgan (Keldi, ketishi yo‘q — Ketdim bosilmagan)");
+  legendParts.push("Xodim ostidagi qator — shu oyda kelmagan/kechikkan kunlari");
+  for (const line of wrap(`${legendParts.join(". ")}.`, font, 8, PAGE_W - M * 2)) {
     d.page.drawText(line, { x: M, y: d.y - 11, size: 8, font, color: MUTED });
     d.y -= 11;
   }
   d.y -= 8;
+
+  if (input.summary && input.sections.length > 1) drawSummary(d, input.sections);
 
   if (!input.sections.length) {
     d.page.drawText("Tanlangan filtr bo‘yicha xodim topilmadi", {
@@ -429,12 +496,13 @@ export async function renderDavomatShiftPdf(input: DavomatShiftPdfInput): Promis
         color: INK,
       });
       d.y -= 20;
-      const absent = block.people.filter((p) => p.list === "absent");
-      const late = block.people.filter((p) => p.list === "late");
-      const present = block.people.filter((p) => p.list === "present");
-      drawList(d, "absent", absent);
-      drawList(d, "late", late);
-      drawList(d, "present", present);
+      for (const kind of d.lists) {
+        drawList(
+          d,
+          kind,
+          block.people.filter((p) => p.list === kind),
+        );
+      }
       d.y -= 6;
     }
   }

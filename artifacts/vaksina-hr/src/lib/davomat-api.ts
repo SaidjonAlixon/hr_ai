@@ -1064,8 +1064,14 @@ export async function downloadDavomatExcel(params: {
   return deliverFile(blob, `davomat_${params.from}_${params.to}.xlsx`);
 }
 
+export type ReportListKind = "absent" | "late" | "present";
+export type ReportSendMode = "coordinators" | "director";
+
 export type CoordinatorSendResult = {
+  mode: ReportSendMode;
   coordinators: number;
+  people: number;
+  recipients: number;
   personal: number;
   group: number;
   groupReady: boolean;
@@ -1074,16 +1080,33 @@ export type CoordinatorSendResult = {
   withoutCoordinator: number;
 };
 
-/** Shu daqiqadagi holat — har koordinatorga o‘z xodimlari (Telegram shaxsiy + guruh) */
+export type SendReportOptions = {
+  coordinators: { id: number; name: string; hasTelegram: boolean; staff: number }[];
+  withoutCoordinator: number;
+  directors: { name: string; hasTelegram: boolean }[];
+  group: { title: string; topic: string } | null;
+};
+
+export async function fetchSendReportOptions(): Promise<SendReportOptions> {
+  const res = await fetch("/api/davomat/send-report-options", { credentials: "include" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((body as { error?: string }).error || `Ma’lumot yuklanmadi (${res.status})`);
+  return body as SendReportOptions;
+}
+
+/** Shu daqiqadagi holat — koordinatorlarga (har biriga o‘z xodimlari) yoki direktorga to‘liq */
 export async function sendCoordinatorReports(params: {
-  employeeIds: number[];
-  filterLine?: string;
+  mode: ReportSendMode;
+  lists: ReportListKind[];
+  coordinatorIds: number[];
+  toPersonal: boolean;
+  toGroup: boolean;
 }): Promise<CoordinatorSendResult> {
   const res = await fetch("/api/davomat/send-coordinator-reports", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ employeeIds: params.employeeIds, filterLine: params.filterLine || null }),
+    body: JSON.stringify(params),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((body as { error?: string }).error || `Hisobot yuborilmadi (${res.status})`);

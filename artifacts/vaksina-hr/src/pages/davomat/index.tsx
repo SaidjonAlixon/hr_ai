@@ -103,7 +103,6 @@ import { scriptIncludes } from "../../lib/script-search";
 import {
   downloadDavomatExcel,
   downloadDavomatDayPdf,
-  sendCoordinatorReports,
   fetchDavomat,
   resetDavomatManual,
   type DavomatResetPart,
@@ -119,6 +118,7 @@ import {
 } from "../../lib/davomat-api";
 import { downloadDavomatPdf } from "../../lib/davomat-pdf-export";
 import { DavomatAnalyticsDashboard } from "./analytics";
+import { SendReportDialog } from "./send-report-dialog";
 import { useAuth } from "../../contexts/AuthContext";
 import { useI18n } from "../../i18n/I18nProvider";
 import { displayBranchName } from "../../lib/pharmacy-staff-api";
@@ -752,7 +752,6 @@ export default function DavomatPage() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
   const [sendOpen, setSendOpen] = useState(false);
-  const [sending, setSending] = useState(false);
   const canSendReports = isHrManager(user?.role);
   const [edit, setEdit] = useState<EditState | null>(null);
   const [noteView, setNoteView] = useState<{
@@ -1367,47 +1366,6 @@ export default function DavomatPage() {
       });
     } finally {
       setExporting(null);
-    }
-  };
-
-  const onSendReports = async () => {
-    if (sending) return;
-    const pharmacyView = viewFilter === "pharmacy";
-    const ids = pharmacyView ? filteredEmployees.map((emp) => emp.id) : [];
-    if (pharmacyView && !ids.length) {
-      toast({ title: "Jadvalda xodim yo‘q", variant: "destructive" });
-      return;
-    }
-    setSending(true);
-    try {
-      const r = await sendCoordinatorReports({
-        employeeIds: ids,
-        filterLine: pharmacyView
-          ? [
-              staffGroupLabel,
-              selectedPharmacyCoordinator ? `Koordinator: ${selectedPharmacyCoordinator.label}` : null,
-              selectedPharmacyBranch ? `Filial: ${selectedPharmacyBranch.label}` : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")
-          : undefined,
-      });
-      const lines = [
-        `Koordinatorlar: ${r.coordinators} ta. Shaxsiy chatga: ${r.personal}. Guruhga: ${r.groupReady ? r.group : "guruh hali aniqlanmagan"}.`,
-        r.notInBot.length ? `Botga kirmagan: ${r.notInBot.join(", ")}.` : null,
-        r.failed.length ? `Xato: ${r.failed.join("; ")}.` : null,
-        r.withoutCoordinator ? `Koordinatori yo‘q xodimlar: ${r.withoutCoordinator} ta.` : null,
-      ].filter(Boolean);
-      toast({
-        title: r.coordinators ? "Hisobot yuborildi" : "Yuboriladigan koordinator topilmadi",
-        description: lines.join("\n"),
-        variant: r.failed.length ? "destructive" : undefined,
-      });
-      setSendOpen(false);
-    } catch (err) {
-      toast({ title: "Hisobot yuborilmadi", description: (err as Error).message, variant: "destructive" });
-    } finally {
-      setSending(false);
     }
   };
 
@@ -2491,9 +2449,8 @@ export default function DavomatPage() {
                 type="button"
                 className="h-11 min-w-[148px] gap-2 rounded-xl bg-gradient-to-b from-sky-500 to-sky-600 px-4 font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_8px_18px_-8px_rgba(14,165,233,0.7)] transition hover:-translate-y-0.5 hover:from-sky-600 hover:to-sky-700"
                 onClick={() => setSendOpen(true)}
-                disabled={sending || (loading && !report)}
               >
-                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                <Send className="h-4 w-4" />
                 Hisobot yuborish
               </Button>
             ) : null}
@@ -3772,29 +3729,7 @@ export default function DavomatPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={sendOpen} onOpenChange={(o) => !sending && setSendOpen(o)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Koordinatorlarga hisobot yuborish</AlertDialogTitle>
-            <AlertDialogDescription>
-              Shu daqiqadagi holat (
-              {viewFilter === "pharmacy"
-                ? `${filteredEmployees.length} xodim, joriy filtr bo‘yicha`
-                : "barcha dorixona xodimlari"}
-              ) har bir koordinatorga faqat o‘z
-              xodimlari jadvali bilan yuboriladi: shaxsiy Telegramiga va guruhdagi «Koordinatorlar» mavzusiga (nik bilan
-              belgilanadi).
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={sending}>{t("ui.cancelFull")}</AlertDialogCancel>
-            <Button type="button" className="gap-2" disabled={sending} onClick={() => void onSendReports()}>
-              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              Yuborish
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {canSendReports ? <SendReportDialog open={sendOpen} onOpenChange={setSendOpen} /> : null}
     </div>
   );
 }

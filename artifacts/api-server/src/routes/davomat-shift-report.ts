@@ -6,9 +6,11 @@ import { sendCoordinatorReportsNow } from "../lib/davomat-coordinator-send";
 import {
   buildCoordinatorShiftReport,
   dateLabelUz,
+  listPharmacyCoordinators,
   tashkentNow,
 } from "../lib/davomat-shift-report";
-import { renderDavomatShiftPdf, reportWarning } from "../lib/davomat-shift-report-pdf";
+import { renderDavomatShiftPdf, reportWarning, type ReportListKind } from "../lib/davomat-shift-report-pdf";
+import { getReportGroup } from "../lib/telegram-report-group";
 
 const router: IRouter = Router();
 
@@ -63,22 +65,68 @@ router.post("/davomat/day-report.pdf", requireAuth, async (req: AuthRequest, res
   }
 });
 
-/** «Hisobot yuborish»: shu daqiqadagi holat — har koordinatorga o‘z xodimlari (shaxsiy + guruh) */
+function positiveIds(raw: unknown, max: number): number[] {
+  return (Array.isArray(raw) ? raw : [])
+    .map((id) => Number(id))
+    .filter((id) => Number.isFinite(id) && id > 0)
+    .slice(0, max);
+}
+
+/** Yuborish oynasi uchun: koordinatorlar, direktorlar va guruh holati */
+router.get("/davomat/send-report-options", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!isHrManager(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin va HR yubora oladi" });
+    return;
+  }
+  try {
+    const [coords, directors, group] = await Promise.all([
+      listPharmacyCoordinators(),
+      pool.query(
+        `SELECT full_name, telegram_id IS NOT NULL AS tg FROM users
+          WHERE role = 'director' AND status IN ('active', 'on_leave') ORDER BY full_name`,
+      ),
+      getReportGroup().catch(() => null),
+    ]);
+    res.json({
+      coordinators: coords.items,
+      withoutCoordinator: coords.withoutCoordinator,
+      directors: directors.rows.map((r) => ({ name: String(r.full_name || "Direktor"), hasTelegram: Boolean(r.tg) })),
+      group: group ? { title: group.chatTitle, topic: group.topicName } : null,
+    });
+  } catch (err) {
+    req.log?.error({ err }, "Hisobot yuborish sozlamalari");
+    res.status(500).json({ error: "Ma’lumot yuklanmadi" });
+  }
+});
+
+/** «Hisobot yuborish»: shu daqiqadagi holat — koordinatorlarga yoki direktorga (shaxsiy + guruh) */
 router.post("/davomat/send-coordinator-reports", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!isHrManager(req.userRole)) {
     res.status(403).json({ error: "Faqat admin va HR yubora oladi" });
     return;
   }
-  const body = req.body as { employeeIds?: number[]; filterLine?: string | null };
-  const ids = (Array.isArray(body.employeeIds) ? body.employeeIds : [])
-    .map((id) => Number(id))
-    .filter((id) => Number.isFinite(id) && id > 0)
-    .slice(0, 3000);
+  const body = req.body as {
+    mode?: string;
+    lists?: string[];
+    coordinatorIds?: number[];
+    toPersonal?: boolean;
+    toGroup?: boolean;
+    employeeIds?: number[];
+    filterLine?: string | null;
+  };
+  const lists = (Array.isArray(body.lists) ? body.lists : ["absent", "late", "present"]).filter(
+    (k): k is ReportListKind => k === "absent" || k === "late" || k === "present",
+  );
   try {
     const { rows } = await pool.query(`SELECT full_name FROM users WHERE id = $1`, [req.userId]);
     res.json(
       await sendCoordinatorReportsNow({
-        employeeIds: ids,
+        mode: body.mode === "director" ? "director" : "coordinators",
+        lists,
+        coordinatorIds: positiveIds(body.coordinatorIds, 500),
+        toPersonal: body.toPersonal !== false,
+        toGroup: body.toGroup !== false,
+        employeeIds: positiveIds(body.employeeIds, 3000),
         filterLine: typeof body.filterLine === "string" ? body.filterLine.slice(0, 300) : null,
         actorName: String(rows[0]?.full_name || "Admin"),
       }),

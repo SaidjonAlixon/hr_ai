@@ -1,17 +1,36 @@
 /**
- * «Hisobot yuborish» tugmasi: shu daqiqadagi davomat — har koordinatorga faqat o‘z xodimlari.
- * 1) koordinatorning shaxsiy Telegrami + platformadagi bildirishnoma;
- * 2) hisobot guruhidagi «Koordinatorlar» mavzusi — koordinator nik bilan belgilanadi.
+ * «Hisobot yuborish» tugmasi: shu daqiqadagi davomat.
+ * - koordinatorlarga: har biriga faqat o‘z xodimlari;
+ * - direktorga: tanlangan koordinatorlar bo‘yicha bitta to‘liq hisobot.
+ * Holat (kelmagan / kechikkan / kelgan) va koordinatorlar tanlanadi.
+ * Yuborish: shaxsiy Telegram + platforma bildirishnomasi, guruhdagi «Koordinatorlar» mavzusi (nik bilan belgilanadi).
  */
-import { db, notificationsTable } from "@workspace/db";
+import { db, notificationsTable, pool } from "@workspace/db";
 import { logger } from "./logger";
 import { escapeHtml, getChatMember, isTelegramConfigured, sendDocument, sendMessage } from "./telegram";
 import { buildCoordinatorShiftReport, dateLabelUz, tashkentNow, type BuiltSection } from "./davomat-shift-report";
-import { renderDavomatShiftPdf } from "./davomat-shift-report-pdf";
+import { renderDavomatShiftPdf, type ReportListKind } from "./davomat-shift-report-pdf";
 import { getReportGroup } from "./telegram-report-group";
 
+export type ReportSendMode = "coordinators" | "director";
+
+export type CoordinatorSendOptions = {
+  mode: ReportSendMode;
+  lists: ReportListKind[];
+  /** Bo‘sh — barcha koordinatorlar */
+  coordinatorIds: number[];
+  toPersonal: boolean;
+  toGroup: boolean;
+  employeeIds?: number[];
+  filterLine?: string | null;
+  actorName: string;
+};
+
 export type CoordinatorSendResult = {
+  mode: ReportSendMode;
   coordinators: number;
+  people: number;
+  recipients: number;
   personal: number;
   group: number;
   groupReady: boolean;
@@ -20,62 +39,97 @@ export type CoordinatorSendResult = {
   withoutCoordinator: number;
 };
 
-function countsOf(section: BuiltSection) {
-  const people = section.blocks.flatMap((b) => b.people);
+type Recipient = { name: string; userId: number | null; telegramId: string | null };
+
+const LIST_LABEL: Record<ReportListKind, string> = {
+  absent: "Kelmaganlar",
+  late: "Kechikkanlar",
+  present: "Kelganlar",
+};
+const ALL_LISTS: ReportListKind[] = ["absent", "late", "present"];
+
+function peopleOf(sections: BuiltSection[]) {
+  return sections.flatMap((s) => s.blocks.flatMap((b) => b.people));
+}
+
+function countsOf(sections: BuiltSection[]) {
+  const people = peopleOf(sections);
   return {
     total: people.length,
     absent: people.filter((p) => p.list === "absent").length,
     late: people.filter((p) => p.list === "late").length,
-    came: people.filter((p) => p.statusLabel === "Kelgan").length,
-    noLeave: people.filter((p) => p.statusLabel.startsWith("Keldi, ketishi")).length,
-    excused: people.filter((p) => p.statusLabel === "Sababli").length,
+    present: people.filter((p) => p.list === "present").length,
   };
 }
 
-function summaryLines(c: ReturnType<typeof countsOf>): string[] {
-  return [
-    `Xodimlar: ${c.total}`,
-    `Kelmagan: ${c.absent}`,
-    `Kechikkan: ${c.late}`,
-    `Kelgan: ${c.came}`,
-    `Keldi, ketishi yo‘q: ${c.noLeave}`,
-    ...(c.excused ? [`Sababli: ${c.excused}`] : []),
-  ];
+function summaryLines(c: ReturnType<typeof countsOf>, lists: ReportListKind[]): string[] {
+  return [...lists.map((k) => `${LIST_LABEL[k]}: ${c[k]}`), `Jami: ${c.total}`];
 }
 
-async function mentionOf(chatId: string, section: BuiltSection): Promise<string> {
-  const name = escapeHtml(section.coordinatorName);
-  if (!section.telegramId) return `<b>${name}</b>`;
+/** Faqat tanlangan holatdagi xodimlar qoladi; bo‘sh smena va koordinatorlar tashlanadi */
+function keepLists(sections: BuiltSection[], lists: ReportListKind[]): BuiltSection[] {
+  const keep = new Set(lists);
+  return sections
+    .map((s) => ({
+      ...s,
+      blocks: s.blocks
+        .map((b) => ({ ...b, people: b.people.filter((p) => keep.has(p.list)) }))
+        .filter((b) => b.people.length),
+    }))
+    .filter((s) => s.blocks.length);
+}
+
+async function mentionOf(chatId: string, who: Recipient): Promise<string> {
+  const name = escapeHtml(who.name);
+  if (!who.telegramId) return `<b>${name}</b>`;
   try {
-    const member = await getChatMember(chatId, section.telegramId);
+    const member = await getChatMember(chatId, who.telegramId);
     if (member.user?.username) return `@${escapeHtml(member.user.username)} (${name})`;
   } catch {
     /* guruhda yo‘q yoki topilmadi — havola bilan belgilaymiz */
   }
-  return `<a href="tg://user?id=${encodeURIComponent(section.telegramId)}">${name}</a>`;
+  return `<a href="tg://user?id=${encodeURIComponent(who.telegramId)}">${name}</a>`;
 }
 
-export async function sendCoordinatorReportsNow(opts: {
-  employeeIds: number[];
-  filterLine?: string | null;
-  actorName: string;
-}): Promise<CoordinatorSendResult> {
+async function loadDirectors(): Promise<Recipient[]> {
+  const { rows } = await pool.query(
+    `SELECT id, full_name, telegram_id FROM users
+      WHERE role = 'director' AND status IN ('active', 'on_leave')
+      ORDER BY full_name`,
+  );
+  return rows.map((r) => ({
+    name: String(r.full_name || "Direktor"),
+    userId: Number(r.id),
+    telegramId: r.telegram_id ? String(r.telegram_id) : null,
+  }));
+}
+
+export async function sendCoordinatorReportsNow(opts: CoordinatorSendOptions): Promise<CoordinatorSendResult> {
   if (!isTelegramConfigured()) throw new Error("Telegram bot sozlanmagan");
+  const lists = ALL_LISTS.filter((k) => opts.lists.includes(k));
+  if (!lists.length) throw new Error("Kamida bitta holatni tanlang");
+  if (!opts.toPersonal && !opts.toGroup) throw new Error("Qayerga yuborishni tanlang");
+
   const now = tashkentNow();
   const label = dateLabelUz(now.ymd);
-  const sections = await buildCoordinatorShiftReport({
+  const built = await buildCoordinatorShiftReport({
     ymd: now.ymd,
     employeeIds: opts.employeeIds,
     pharmacyOnly: true,
   });
-  const targets = sections.filter((s) => s.coordinatorEmployeeId && s.blocks.some((b) => b.people.length));
-  const withoutCoordinator = sections
-    .filter((s) => !s.coordinatorEmployeeId)
-    .reduce((n, s) => n + s.blocks.reduce((m, b) => m + b.people.length, 0), 0);
+  const withoutCoordinator = peopleOf(built.filter((s) => !s.coordinatorEmployeeId)).length;
+  const wantedCoords = new Set(opts.coordinatorIds);
+  const chosen = built.filter(
+    (s) => s.coordinatorEmployeeId && (!wantedCoords.size || wantedCoords.has(s.coordinatorEmployeeId)),
+  );
+  const sections = keepLists(chosen, lists);
 
-  const group = await getReportGroup().catch(() => null);
+  const group = opts.toGroup ? await getReportGroup().catch(() => null) : null;
   const result: CoordinatorSendResult = {
-    coordinators: targets.length,
+    mode: opts.mode,
+    coordinators: sections.length,
+    people: peopleOf(sections).length,
+    recipients: 0,
     personal: 0,
     group: 0,
     groupReady: !!group,
@@ -83,77 +137,35 @@ export async function sendCoordinatorReportsNow(opts: {
     failed: [],
     withoutCoordinator,
   };
-  if (!targets.length) return result;
+  if (!sections.length) return result;
 
+  const listsLine = lists.map((k) => LIST_LABEL[k]).join(", ");
   const warning = `Bugungi kun: ${label}. Hisobot vaqti: soat ${now.hm} (shu daqiqadagi holat). Kelmagan va kechikkan xodimlarni HR menejerlarga yozib, sababli qildiring. Aks holda bu bir kunlik jarimaga sabab bo‘ladi.`;
   const file = `davomat_${now.ymd}_${now.hm.replace(":", "")}.pdf`;
 
-  if (group) {
-    await sendMessage(
-      group.chatId,
-      `📋 <b>Davomat hisoboti</b> · ${escapeHtml(label)}, soat ${now.hm}\nHar bir koordinatorga faqat o‘z xodimlari jadvali.`,
-      { message_thread_id: group.threadId },
-    ).catch((err) => logger.warn({ err }, "Koordinator guruhiga sarlavha yuborilmadi"));
-  }
-
-  for (const section of targets) {
-    const c = countsOf(section);
-    let pdf: Buffer;
-    try {
-      pdf = await renderDavomatShiftPdf({
-        dateLabel: label,
-        reportHm: now.hm,
-        updated: true,
-        title: "Davomat · joriy hisobot",
-        warningText: warning,
-        filterLine: [section.coordinatorName, opts.filterLine].filter(Boolean).join(" · "),
-        sections: [section],
-      });
-    } catch (err) {
-      result.failed.push(`${section.coordinatorName}: PDF tayyorlanmadi`);
-      logger.error({ err, coordinator: section.coordinatorName }, "Koordinator hisobot PDF");
-      continue;
-    }
-
-    const personalCaption = [
-      "Davomat · joriy hisobot",
-      `Koordinator: ${section.coordinatorName}`,
-      "",
-      `Bugungi kun: ${label}, soat ${now.hm}`,
-      "Faqat sizning xodimlaringiz:",
-      ...summaryLines(c),
-      "",
-      "To‘liq jadval shu xabar tagidagi PDF da.",
-      "Kelmagan va kechikkan xodimlarni HR menejerlarga yozib, sababli qildiring.",
-    ].join("\n");
-
-    if (section.telegramId) {
-      try {
-        await sendDocument(section.telegramId, pdf, file, { mimeType: "application/pdf", caption: personalCaption.slice(0, 1000) });
-        result.personal += 1;
-      } catch (err) {
-        result.failed.push(`${section.coordinatorName}: shaxsiy chatga yuborilmadi`);
-        logger.error({ err, coordinator: section.coordinatorName }, "Koordinator hisobot shaxsiy chatga");
+  const deliver = async (to: Recipient, pdf: Buffer, personalCaption: string, groupHead: string) => {
+    if (opts.toPersonal) {
+      if (to.telegramId) {
+        try {
+          await sendDocument(to.telegramId, pdf, file, { mimeType: "application/pdf", caption: personalCaption.slice(0, 1000) });
+          result.personal += 1;
+        } catch (err) {
+          result.failed.push(`${to.name}: shaxsiy chatga yuborilmadi`);
+          logger.error({ err, to: to.name }, "Davomat hisobot shaxsiy chatga");
+        }
+      } else {
+        result.notInBot.push(to.name);
       }
-    } else {
-      result.notInBot.push(section.coordinatorName);
+      if (to.userId) {
+        await db
+          .insert(notificationsTable)
+          .values({ userId: to.userId, text: personalCaption.slice(0, 2000), type: "davomat_coordinator_manual", linkUrl: "/davomat" })
+          .catch((err) => logger.warn({ err }, "Davomat hisobot bildirishnomasi"));
+      }
     }
-
-    if (section.userId) {
-      await db
-        .insert(notificationsTable)
-        .values({ userId: section.userId, text: personalCaption.slice(0, 2000), type: "davomat_coordinator_manual", linkUrl: "/davomat" })
-        .catch((err) => logger.warn({ err }, "Koordinator hisobot bildirishnomasi"));
-    }
-
     if (group) {
       try {
-        const caption = [
-          `${await mentionOf(group.chatId, section)} — sizning xodimlaringiz davomati`,
-          `${escapeHtml(label)}, soat ${now.hm}`,
-          "",
-          ...summaryLines(c).map(escapeHtml),
-        ].join("\n");
+        const caption = `${await mentionOf(group.chatId, to)} — ${groupHead}`;
         await sendDocument(group.chatId, pdf, file, {
           mimeType: "application/pdf",
           caption: caption.slice(0, 1000),
@@ -162,10 +174,111 @@ export async function sendCoordinatorReportsNow(opts: {
         });
         result.group += 1;
       } catch (err) {
-        result.failed.push(`${section.coordinatorName}: guruhga yuborilmadi`);
-        logger.error({ err, coordinator: section.coordinatorName }, "Koordinator hisobot guruhga");
+        result.failed.push(`${to.name}: guruhga yuborilmadi`);
+        logger.error({ err, to: to.name }, "Davomat hisobot guruhga");
       }
     }
+  };
+
+  if (opts.mode === "director") {
+    const directors = await loadDirectors();
+    if (!directors.length) throw new Error("Faol direktor topilmadi");
+    result.recipients = directors.length;
+    const c = countsOf(sections);
+    let pdf: Buffer;
+    try {
+      pdf = await renderDavomatShiftPdf({
+        dateLabel: label,
+        reportHm: now.hm,
+        updated: true,
+        title: "Davomat · to‘liq hisobot",
+        warningText: warning,
+        filterLine: [`Ko‘rsatilgan: ${listsLine}`, `Koordinatorlar: ${sections.length} ta`, opts.filterLine]
+          .filter(Boolean)
+          .join(" · "),
+        sections,
+        lists,
+        summary: true,
+      });
+    } catch (err) {
+      logger.error({ err }, "Direktor hisobot PDF");
+      throw new Error("PDF tayyorlanmadi");
+    }
+    const personalCaption = [
+      "Davomat · to‘liq hisobot",
+      `${label}, soat ${now.hm}`,
+      `Ko‘rsatilgan: ${listsLine}`,
+      `Koordinatorlar: ${sections.length} ta`,
+      "",
+      ...summaryLines(c, lists),
+      "",
+      "To‘liq jadval shu xabar tagidagi PDF da.",
+    ].join("\n");
+    const groupHead = [
+      "to‘liq davomat hisoboti",
+      `${escapeHtml(label)}, soat ${now.hm} · ${escapeHtml(listsLine)}`,
+      "",
+      ...summaryLines(c, lists).map(escapeHtml),
+    ].join("\n");
+    for (const d of directors) await deliver(d, pdf, personalCaption, groupHead);
+    logger.info({ ...result, actor: opts.actorName }, "Direktorga davomat hisoboti yuborildi");
+    return result;
+  }
+
+  result.recipients = sections.length;
+  if (group) {
+    await sendMessage(
+      group.chatId,
+      `📋 <b>Davomat hisoboti</b> · ${escapeHtml(label)}, soat ${now.hm}\nKo‘rsatilgan: ${escapeHtml(listsLine)}\nHar bir koordinatorga faqat o‘z xodimlari jadvali.`,
+      { message_thread_id: group.threadId },
+    ).catch((err) => logger.warn({ err }, "Koordinator guruhiga sarlavha yuborilmadi"));
+  }
+
+  for (const section of sections) {
+    const c = countsOf([section]);
+    let pdf: Buffer;
+    try {
+      pdf = await renderDavomatShiftPdf({
+        dateLabel: label,
+        reportHm: now.hm,
+        updated: true,
+        title: "Davomat · joriy hisobot",
+        warningText: warning,
+        filterLine: [`Koordinator: ${section.coordinatorName}`, `Ko‘rsatilgan: ${listsLine}`, opts.filterLine]
+          .filter(Boolean)
+          .join(" · "),
+        sections: [section],
+        lists,
+      });
+    } catch (err) {
+      result.failed.push(`${section.coordinatorName}: PDF tayyorlanmadi`);
+      logger.error({ err, coordinator: section.coordinatorName }, "Koordinator hisobot PDF");
+      continue;
+    }
+    const personalCaption = [
+      "Davomat · joriy hisobot",
+      `Koordinator: ${section.coordinatorName}`,
+      `${label}, soat ${now.hm}`,
+      `Ko‘rsatilgan: ${listsLine}`,
+      "",
+      "Faqat sizning xodimlaringiz:",
+      ...summaryLines(c, lists),
+      "",
+      "To‘liq jadval shu xabar tagidagi PDF da.",
+      "Kelmagan va kechikkan xodimlarni HR menejerlarga yozib, sababli qildiring.",
+    ].join("\n");
+    const groupHead = [
+      "sizning xodimlaringiz davomati",
+      `${escapeHtml(label)}, soat ${now.hm}`,
+      "",
+      ...summaryLines(c, lists).map(escapeHtml),
+    ].join("\n");
+    await deliver(
+      { name: section.coordinatorName, userId: section.userId, telegramId: section.telegramId },
+      pdf,
+      personalCaption,
+      groupHead,
+    );
   }
 
   logger.info({ ...result, actor: opts.actorName }, "Koordinator hisobotlari qo‘lda yuborildi");

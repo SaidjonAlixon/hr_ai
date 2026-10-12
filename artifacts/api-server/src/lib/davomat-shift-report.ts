@@ -249,6 +249,34 @@ export async function coordinatorsFor(employeeIds: number[]): Promise<Map<number
   return out;
 }
 
+export type ReportCoordinatorOption = { id: number; name: string; hasTelegram: boolean; staff: number };
+
+/** Dorixona koordinatorlari va ularning ishlayotgan xodimlari soni */
+export async function listPharmacyCoordinators(): Promise<{ items: ReportCoordinatorOption[]; withoutCoordinator: number }> {
+  const nodes = await loadNodes();
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const map = new Map<number, ReportCoordinatorOption>();
+  let withoutCoordinator = 0;
+  for (const n of nodes) {
+    if (isGone(n) || !isPharmacyShiftStaff(n.userRole, n.orgRole)) continue;
+    const st = String(n.employmentStatus || "");
+    if (st === "need_hire" || st === "searching" || st === "no_manager") continue;
+    if (!String(n.fullName || "").trim()) continue;
+    const hit = resolveCoordinator(n.id, byId);
+    if (!hit) {
+      withoutCoordinator += 1;
+      continue;
+    }
+    const cur = map.get(hit.id) ?? { id: hit.id, name: hit.name, hasTelegram: !!hit.telegramId, staff: 0 };
+    cur.staff += 1;
+    map.set(hit.id, cur);
+  }
+  return {
+    items: [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "uz")),
+    withoutCoordinator,
+  };
+}
+
 export async function buildCoordinatorShiftReport(opts: {
   ymd: string;
   employeeIds?: number[];

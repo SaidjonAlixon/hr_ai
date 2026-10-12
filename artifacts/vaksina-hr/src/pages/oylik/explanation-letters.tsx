@@ -279,13 +279,14 @@ export function LettersAdminPanel({ month }: { month: string }) {
           <p className="flex gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-emerald-900 dark:bg-emerald-500/10 dark:text-emerald-100">
             <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0" />
             <span>
-              <b>Tasdiqlash</b> — sabab uzrli emas, jarima oylikda qoladi.
+              <b>Tasdiqlash</b> — sabab uzrli emas, jarima oylikda qoladi, keyingi holat keyingi bosqichga o‘tadi.
             </span>
           </p>
           <p className="flex gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 text-slate-700 dark:bg-white/5 dark:text-slate-200">
             <ShieldCheck className="mt-px h-3.5 w-3.5 shrink-0" />
             <span>
-              <b>Bekor qilish</b> — sabab uzrli: holat jarimadan chiqadi, keyingilari bir bosqich pastga tushadi (xatni ochib, izoh bilan).
+              <b>Bekor qilish</b> — sabab uzrli: holat hisobdan chiqadi, bosqich oshmaydi — keyingi holat shu bosqichdan (masalan,
+              1-bosqichdan) boshlanadi (xatni ochib, izoh bilan).
             </span>
           </p>
         </div>

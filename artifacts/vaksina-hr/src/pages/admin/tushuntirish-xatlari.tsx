@@ -243,9 +243,11 @@ export default function TushuntirishXatlariPage() {
         </div>
         <StageLadder counts={stageCounts} value={stage} onChange={setStage} />
         <p className="text-[11px] leading-snug text-slate-500">
-          <b className="text-slate-700 dark:text-slate-200">Tasdiqlash</b> — jarima oylikda qoladi.{" "}
-          <b className="text-slate-700 dark:text-slate-200">Bekor qilish</b> — holat uzrli deb topiladi, jarimadan chiqariladi va
-          keyingi holatlar bir bosqich pastga tushadi. Qaror xatni ochib, o‘ng paneldagi «Rahbariyat qarori» bo‘limida qabul qilinadi.
+          <b className="text-slate-700 dark:text-slate-200">Tasdiqlash</b> — jarima oylikda qoladi, keyingi holat keyingi bosqichga
+          o‘tadi.{" "}
+          <b className="text-slate-700 dark:text-slate-200">Bekor qilish</b> — holat uzrli, hisobdan chiqadi va bosqich oshmaydi:
+          keyingi holat shu bosqichdan (masalan, 1-bosqichdan) boshlanadi. Qaror xatni ochib, o‘ng paneldagi «Rahbariyat qarori»
+          bo‘limida qabul qilinadi.
         </p>
       </section>
 

@@ -90,14 +90,16 @@ export function LetterReviewPanel({ letter: l, compact }: { letter: ExplanationL
               <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0 text-emerald-600" />
               <span>
                 <b className="text-slate-800 dark:text-white">Tasdiqlash</b> — sabab uzrli emas, jarima
-                {amount ? ` (${amount})` : ""} oylikda qoladi{final ? ", oxirgi ogohlantirish kuchga kiradi" : ""}.
+                {amount ? ` (${amount})` : ""} oylikda qoladi{final ? ", oxirgi ogohlantirish kuchga kiradi" : ""}. Keyingi
+                kechikish yoki kelmaslik keyingi bosqichga o‘tadi.
               </span>
             </li>
             <li className="flex gap-1.5">
               <Ban className="mt-px h-3.5 w-3.5 shrink-0 text-slate-500" />
               <span>
-                <b className="text-slate-800 dark:text-white">Bekor qilish</b> — sabab uzrli. Holat jarimadan chiqariladi, keyingi
-                holatlar bir bosqich pastga tushadi. Tasdiqlangan (yopilgan) oylik o‘zgarmaydi.
+                <b className="text-slate-800 dark:text-white">Bekor qilish</b> — sabab uzrli. Holat hisobdan butunlay chiqadi,
+                bosqich oshmaydi: keyingi kechikish yoki kelmaslik shu bosqichdan (masalan, 1-bosqichdan) boshlanadi.
+                Tasdiqlangan (yopilgan) oylik o‘zgarmaydi.
               </span>
             </li>
           </ul>

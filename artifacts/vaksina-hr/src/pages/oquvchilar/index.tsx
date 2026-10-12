@@ -141,7 +141,11 @@ export default function OquvchilarPage() {
   const [exporting, setExporting] = useState(false);
 
   const [addOpen, setAddOpen] = useState(false);
-  const [form, setForm] = useState({ fullName: "", phone: "", groupName: "", login: "", password: "", note: "" });
+  const emptyForm = { lastName: "", firstName: "", phone: "+998 ", groupName: "", login: "", password: "", note: "" };
+  const [form, setForm] = useState(emptyForm);
+  const [customCreds, setCustomCreds] = useState(false);
+  const phoneDigits = form.phone.replace(/\D/g, "");
+  const formValid = form.lastName.trim().length >= 2 && form.firstName.trim().length >= 2 && phoneDigits.length >= 12;
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState("");
   const [bulkGroup, setBulkGroup] = useState("");
@@ -191,19 +195,24 @@ export default function OquvchilarPage() {
   };
 
   const onAdd = () => {
+    if (!formValid) {
+      toast({ title: "Familiya, ism va telefonni to‘liq kiriting", variant: "destructive" });
+      return;
+    }
     create.mutate(
       {
-        fullName: form.fullName,
-        phone: form.phone || undefined,
+        fullName: `${form.lastName.trim()} ${form.firstName.trim()}`,
+        phone: `+${phoneDigits}`,
         groupName: form.groupName || undefined,
-        login: form.login || undefined,
-        password: form.password || undefined,
+        login: customCreds ? form.login || undefined : undefined,
+        password: customCreds ? form.password || undefined : undefined,
         note: form.note || undefined,
       },
       {
         onSuccess: (r) => {
           setAddOpen(false);
-          setForm({ fullName: "", phone: "", groupName: form.groupName, login: "", password: "", note: "" });
+          setForm({ ...emptyForm, groupName: form.groupName });
+          setCustomCreds(false);
           setCreds({ title: "O‘quvchi qo‘shildi", list: [r.student] });
         },
         onError: (err) => errToast(err, "Qo‘shilmadi"),
@@ -554,16 +563,45 @@ export default function OquvchilarPage() {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>O‘quvchi qo‘shish</DialogTitle>
-            <DialogDescription>Login va parol bo‘sh qolsa, avtomatik yaratiladi.</DialogDescription>
+            <DialogDescription>
+              Familiya, ism va telefonni kiriting — login va parol avtomatik yaratilib, darhol ko‘rsatiladi.
+            </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label>Ism-familiya *</Label>
-              <Input autoFocus value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} />
+          <form
+            className="grid gap-3 sm:grid-cols-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              onAdd();
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label>Familiya *</Label>
+              <Input
+                autoFocus
+                value={form.lastName}
+                placeholder="Aliyev"
+                onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+              />
             </div>
             <div className="space-y-1.5">
-              <Label>Telefon</Label>
-              <Input value={form.phone} placeholder="+998" onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              <Label>Ism *</Label>
+              <Input
+                value={form.firstName}
+                placeholder="Sardor"
+                onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Telefon raqam *</Label>
+              <Input
+                inputMode="tel"
+                value={form.phone}
+                placeholder="+998 90 123 45 67"
+                onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/[^\d+\s()-]/g, "") })}
+              />
+              {form.phone.trim() && phoneDigits.length > 3 && phoneDigits.length < 12 ? (
+                <p className="text-[11px] text-red-600">Raqam to‘liq emas (+998 XX XXX XX XX)</p>
+              ) : null}
             </div>
             <div className="space-y-1.5">
               <Label>Guruh</Label>
@@ -574,27 +612,42 @@ export default function OquvchilarPage() {
                 onChange={(e) => setForm({ ...form, groupName: e.target.value })}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label>Login (ixtiyoriy)</Label>
-              <Input value={form.login} onChange={(e) => setForm({ ...form, login: e.target.value })} />
+            <div className="sm:col-span-2">
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 accent-[#0b3a5c]"
+                  checked={customCreds}
+                  onChange={(e) => setCustomCreds(e.target.checked)}
+                />
+                Login va parolni o‘zim beraman
+              </label>
             </div>
-            <div className="space-y-1.5">
-              <Label>Parol (ixtiyoriy)</Label>
-              <Input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-            </div>
+            {customCreds ? (
+              <>
+                <div className="space-y-1.5">
+                  <Label>Login</Label>
+                  <Input value={form.login} onChange={(e) => setForm({ ...form, login: e.target.value })} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Parol</Label>
+                  <Input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+                </div>
+              </>
+            ) : null}
             <div className="space-y-1.5 sm:col-span-2">
               <Label>Izoh</Label>
               <Textarea rows={2} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
             </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddOpen(false)}>
-              Bekor qilish
-            </Button>
-            <Button className="bg-[#0b3a5c] hover:bg-[#0a314d]" disabled={create.isPending || form.fullName.trim().length < 3} onClick={onAdd}>
-              {create.isPending ? "Qo‘shilmoqda…" : "Qo‘shish"}
-            </Button>
-          </DialogFooter>
+            <DialogFooter className="sm:col-span-2">
+              <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>
+                Bekor qilish
+              </Button>
+              <Button type="submit" className="bg-[#0b3a5c] hover:bg-[#0a314d]" disabled={create.isPending || !formValid}>
+                {create.isPending ? "Yaratilmoqda…" : "Yaratish va login-parol olish"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
@@ -646,16 +699,29 @@ export default function OquvchilarPage() {
           </DialogHeader>
           <div className="max-h-[50vh] space-y-2 overflow-y-auto">
             {creds?.list.map((c) => (
-              <div key={c.id} className="flex items-center justify-between gap-2 rounded-xl border border-border bg-muted/50 p-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{c.fullName}</p>
-                  <p className="font-mono text-xs text-muted-foreground">
-                    {c.login} / {c.password}
-                  </p>
+              <div key={c.id} className="rounded-xl border border-border bg-muted/50 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="truncate text-sm font-semibold">{c.fullName}</p>
+                  <Button variant="outline" size="sm" className="h-8 rounded-lg" onClick={() => copyText(credText(c), toast)}>
+                    <Copy className="mr-1 h-3.5 w-3.5" /> Nusxalash
+                  </Button>
                 </div>
-                <Button variant="ghost" size="icon" onClick={() => copyText(credText(c), toast)}>
-                  <Copy className="h-4 w-4" />
-                </Button>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {[
+                    { label: "Login", value: c.login },
+                    { label: "Parol", value: c.password },
+                  ].map((f) => (
+                    <button
+                      key={f.label}
+                      type="button"
+                      className="rounded-lg border border-border bg-card px-3 py-2 text-left hover:border-[#2AABEE]"
+                      onClick={() => copyText(f.value, toast)}
+                    >
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{f.label}</p>
+                      <p className="break-all font-mono text-base font-bold text-foreground">{f.value}</p>
+                    </button>
+                  ))}
+                </div>
               </div>
             ))}
             {creds?.errors?.length ? (

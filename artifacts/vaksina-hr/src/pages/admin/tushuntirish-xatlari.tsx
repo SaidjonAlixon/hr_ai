@@ -696,7 +696,8 @@ function ReportPanel() {
       <div className="min-w-0 flex-1 text-[12px] leading-snug text-slate-600 dark:text-slate-300">
         <p className="text-sm font-bold text-slate-900 dark:text-white">Telegram hisobot — har {s?.everyDays ?? 3} kunda soat {String(s?.hour ?? 10).padStart(2, "0")}:00</p>
         <p>
-          Barcha xatlar Excelda: tasdiqlangan, tasdiqlanmagan, bekor qilingan — ism, filial, sabab, izoh bilan, filtr bilan.
+          Barcha xatlar Excelda (ism, filial, sabab, izoh, filtr bilan) va asl xatlar PDF ko‘rinishida — tasdiqlangan, tasdiqlanmagan,
+          bekor qilingan alohida fayllarda.
         </p>
         <p className="mt-0.5 tabular-nums text-slate-500">
           {sched.isLoading
@@ -717,7 +718,7 @@ function ReportPanel() {
           disabled={send.isPending}
           onClick={() =>
             send.mutate(undefined, {
-              onSuccess: (r) => toast({ title: "Telegramga yuborildi", description: `${r.totals.all} ta xat hisobotda.` }),
+              onSuccess: (r) => toast({ title: "Telegramga yuborildi", description: `Excel yuborildi (${r.totals.all} ta xat). Asl PDF xatlar bir necha daqiqada keladi.` }),
               onError: (e) => toast({ title: "Yuborilmadi", description: (e as Error).message, variant: "destructive" }),
             })
           }

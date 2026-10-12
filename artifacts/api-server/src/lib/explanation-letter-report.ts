@@ -3,10 +3,21 @@
  * (har safar barcha xatlar bilan yangilangan holda).
  */
 import type ExcelJS from "exceljs";
+import { PDFDocument } from "pdf-lib";
 import { pool } from "@workspace/db";
 import { newCredWorkbook, paintCredSheet } from "./cred-excel";
-import { MANUAL_REASON, REASONS, ensureExplanationSchema, lettersForMonth, type ExplanationLetterRow } from "./explanation-letter";
-import { escapeHtml, isTelegramConfigured, sendDocument } from "./telegram";
+import {
+  MANUAL_REASON,
+  REASONS,
+  ensureExplanationSchema,
+  getLetterSettings,
+  letterContent,
+  letterImages,
+  lettersForMonth,
+  type ExplanationLetterRow,
+} from "./explanation-letter";
+import { renderExplanationLetterPdf } from "./explanation-letter-pdf";
+import { escapeHtml, isTelegramConfigured, publicAppUrl, sendDocument } from "./telegram";
 import { logger } from "./logger";
 
 export const REPORT_CHAT_ID = process.env.EXPLANATION_REPORT_CHAT_ID?.trim() || "-1004360169926";
@@ -151,15 +162,19 @@ function lettersSheet(wb: ExcelJS.Workbook, name: string, title: string, items: 
   return sheet;
 }
 
+async function reportLetters(): Promise<ExplanationLetterRow[]> {
+  await ensureExplanationSchema();
+  return (await lettersForMonth(null))
+    .filter((l) => !l.isTest)
+    .sort((a, b) => b.eventDate.localeCompare(a.eventDate) || a.fullName.localeCompare(b.fullName, "uz"));
+}
+
 export async function buildExplanationReport(): Promise<{
   buffer: Buffer;
   filename: string;
   totals: { all: number; approved: number; notApproved: number; cancelled: number; signed: number; unsigned: number; deleted: number };
 }> {
-  await ensureExplanationSchema();
-  const items = (await lettersForMonth(null))
-    .filter((l) => !l.isTest)
-    .sort((a, b) => b.eventDate.localeCompare(a.eventDate) || a.fullName.localeCompare(b.fullName, "uz"));
+  const items = await reportLetters();
   const approved = items.filter((l) => l.reviewStatus === "approved");
   const cancelled = items.filter((l) => l.reviewStatus === "cancelled");
   const notApproved = items.filter((l) => !l.reviewStatus);
@@ -263,6 +278,7 @@ export async function sendExplanationReport(chatId: string = REPORT_CHAT_ID) {
     `✍️ Imzolagan: <b>${t.signed}</b> · imzolamagan: <b>${t.unsigned}</b>`,
     "",
     "Excel ichida har bir varaqda filtr bor: ism, filial, sana, qaror bo‘yicha qidiring.",
+    "Asl xatlar PDF ko‘rinishida quyida — qaror bo‘yicha alohida fayllarda.",
   ].join("\n");
   await sendDocument(chatId, report.buffer, report.filename, {
     caption,
@@ -270,6 +286,73 @@ export async function sendExplanationReport(chatId: string = REPORT_CHAT_ID) {
     mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
   return report.totals;
+}
+
+/** Bitta PDF faylda nechta xat — Telegram 50 MB chegarasidan oshmasligi uchun */
+const PDF_CHUNK = 40;
+const PDF_MAX_BYTES = 45 * 1024 * 1024;
+
+const PDF_GROUPS: Array<{ key: string; title: string; icon: string; pick: (l: ExplanationLetterRow) => boolean }> = [
+  { key: "Tasdiqlangan", title: "Tasdiqlangan", icon: "✅", pick: (l) => l.reviewStatus === "approved" },
+  { key: "Tasdiqlanmagan", title: "Tasdiqlanmagan (qaror kutilmoqda)", icon: "⏳", pick: (l) => !l.reviewStatus },
+  { key: "Bekor_qilingan", title: "Bekor qilingan (uzrli)", icon: "🚫", pick: (l) => l.reviewStatus === "cancelled" },
+];
+
+async function mergeLetterPdfs(items: ExplanationLetterRow[]): Promise<Buffer> {
+  const settings = await getLetterSettings();
+  const origin = publicAppUrl() || null;
+  const merged = await PDFDocument.create();
+  for (const l of items) {
+    const doc = await PDFDocument.load(await renderExplanationLetterPdf(letterContent(l, origin, settings), await letterImages(l.id)));
+    for (const page of await merged.copyPages(doc, doc.getPageIndices())) merged.addPage(page);
+  }
+  return Buffer.from(await merged.save());
+}
+
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Asl tushuntirish xatlari (sayt/yuklab olishdagi PDF bilan bir xil) — qaror bo‘yicha guruhlab yuboriladi */
+export async function sendOriginalLetterPdfs(chatId: string = REPORT_CHAT_ID): Promise<number> {
+  if (!isTelegramConfigured()) throw new Error("Telegram bot sozlanmagan");
+  const items = await reportLetters();
+  const { ymd } = tashkentNow();
+  let files = 0;
+
+  const sendPart = async (group: (typeof PDF_GROUPS)[number], part: ExplanationLetterRow[], from: number, total: number) => {
+    const buffer = await mergeLetterPdfs(part);
+    if (buffer.length > PDF_MAX_BYTES && part.length > 1) {
+      const half = Math.ceil(part.length / 2);
+      await sendPart(group, part.slice(0, half), from, total);
+      await sendPart(group, part.slice(half), from + half, total);
+      return;
+    }
+    const range = total > part.length ? ` · ${from + 1}–${from + part.length} / ${total}` : ` · ${total} ta`;
+    const names = part
+      .slice(0, 12)
+      .map((l) => `• ${escapeHtml(l.fullName)} — ${dmy(l.eventDate)}`)
+      .join("\n");
+    await sendDocument(chatId, buffer, `${group.key}_xatlar_${ymd}${total > part.length ? `_${from + 1}-${from + part.length}` : ""}.pdf`, {
+      caption: [`${group.icon} <b>${escapeHtml(group.title)} — asl xatlar</b>${range}`, names, part.length > 12 ? `… va yana ${part.length - 12} ta` : ""]
+        .filter(Boolean)
+        .join("\n"),
+      parseMode: "HTML",
+      mimeType: "application/pdf",
+    });
+    files += 1;
+    await pause(1500);
+  };
+
+  for (const group of PDF_GROUPS) {
+    const list = items.filter(group.pick).sort((a, b) => a.fullName.localeCompare(b.fullName, "uz") || b.eventDate.localeCompare(a.eventDate));
+    for (let i = 0; i < list.length; i += PDF_CHUNK) {
+      try {
+        await sendPart(group, list.slice(i, i + PDF_CHUNK), i, list.length);
+      } catch (err) {
+        logger.error({ err, group: group.key, from: i }, "Asl tushuntirish xatlari PDF yuborilmadi");
+      }
+    }
+  }
+  return files;
 }
 
 export async function reportSchedule(): Promise<{ lastSentOn: string | null; nextSendOn: string; chatId: string; everyDays: number; hour: number }> {
@@ -304,4 +387,6 @@ export async function explanationReportTick(): Promise<void> {
     await pool.query(`DELETE FROM explanation_report_log WHERE sent_on = $1`, [ymd]).catch(() => undefined);
     throw err;
   }
+  const files = await sendOriginalLetterPdfs();
+  logger.info({ files }, "Asl tushuntirish xatlari PDF yuborildi");
 }

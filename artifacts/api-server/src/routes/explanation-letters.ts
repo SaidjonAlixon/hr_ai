@@ -37,7 +37,7 @@ import {
   type LetterSettings,
 } from "../lib/explanation-letter";
 import { renderExplanationLetterPdf } from "../lib/explanation-letter-pdf";
-import { buildExplanationReport, reportSchedule, sendExplanationReport } from "../lib/explanation-letter-report";
+import { buildExplanationReport, reportSchedule, sendExplanationReport, sendOriginalLetterPdfs } from "../lib/explanation-letter-report";
 import { freshDisciplineScan, runDisciplineScan, todayTashkent } from "../lib/discipline";
 import { isJarimaEnabled } from "../lib/jarima-switch";
 
@@ -299,7 +299,9 @@ router.post("/explanation-letters/report/send", requireAuth, async (req: AuthReq
     return;
   }
   try {
-    res.json({ ok: true, totals: await sendExplanationReport() });
+    const totals = await sendExplanationReport();
+    void sendOriginalLetterPdfs().catch((err) => logLetterError(err, "report-pdfs"));
+    res.json({ ok: true, totals });
   } catch (err) {
     logLetterError(err, "report-send");
     res.status(503).json({ error: err instanceof Error ? err.message : "Telegramga yuborilmadi" });

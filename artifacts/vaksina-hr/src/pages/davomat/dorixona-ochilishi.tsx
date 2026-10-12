@@ -413,7 +413,7 @@ export default function DorixonaOchilishiPage() {
         ) : filtered.length === 0 ? (
           <p className="px-4 py-10 text-sm text-slate-500">Dorixona topilmadi.</p>
         ) : grain === "kun" ? (
-          <div className="overflow-x-auto">
+          <div className="max-h-[calc(100dvh-7rem)] overflow-auto overscroll-contain">
             <table className="w-full min-w-[1180px] table-fixed border-collapse text-left text-[13px]">
               <colgroup>
                 <col className="w-[44px]" />
@@ -428,7 +428,7 @@ export default function DorixonaOchilishiPage() {
                 <col />
                 <col className="w-[168px]" />
               </colgroup>
-              <thead className="bg-[#0b3a5c] text-[11px] font-semibold uppercase tracking-wide text-white">
+              <thead className="sticky top-0 z-20 bg-[#0b3a5c] text-[11px] font-semibold uppercase tracking-wide text-white shadow-[0_4px_10px_-4px_rgba(11,58,92,0.45)]">
                 <tr className="h-11">
                   {["№", "Dorixona", "Koordinator", "Tizim ochildi", "Tizim yopildi", "Tizim vaqt", "SB ochildi", "SB yopildi", "SB vaqt", "Izoh", "Holat"].map((head) => (
                     <th key={head} className="h-11 whitespace-nowrap border-r border-white/10 px-3 text-left align-middle last:border-r-0">{head}</th>
@@ -464,7 +464,7 @@ export default function DorixonaOchilishiPage() {
             </table>
           </div>
         ) : (
-          <div className="max-h-[70vh] overflow-auto">
+          <div className="max-h-[calc(100dvh-7rem)] overflow-auto overscroll-contain">
             <table className="w-max min-w-full border-separate border-spacing-0 text-left text-[12px]">
               <thead className="sticky top-0 z-10 bg-[#0b3a5c] text-white">
                 <tr>

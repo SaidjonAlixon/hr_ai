@@ -6,6 +6,8 @@ export type FiksaExcelRow = {
   branch: string;
   position: string;
   salary: number;
+  coordinator?: string;
+  coordinatorPhone?: string;
 };
 
 export type FiksaExcelRead = {
@@ -14,7 +16,7 @@ export type FiksaExcelRead = {
   salary: number;
 };
 
-const HEADERS = ["ID", "Xodim", "Filial", "Lavozim", "1 oylik fiksa"] as const;
+const HEADERS = ["ID", "Xodim", "Filial", "Lavozim", "1 oylik fiksa", "Koordinator", "Koordinator raqami"] as const;
 
 function xml(s: string) {
   return String(s)
@@ -133,6 +135,8 @@ function sheetXml(title: string, note: string, rows: FiksaExcelRow[]) {
         `<c r="C${r}" s="${zebra}" t="inlineStr"><is><t>${xml(row.branch)}</t></is></c>`,
         `<c r="D${r}" s="${zebra}" t="inlineStr"><is><t>${xml(row.position)}</t></is></c>`,
         `<c r="E${r}" s="${zebra}"><v>${Math.max(0, Math.round(row.salary))}</v></c>`,
+        `<c r="F${r}" s="${zebra}" t="inlineStr"><is><t>${xml(row.coordinator || "—")}</t></is></c>`,
+        `<c r="G${r}" s="${zebra}" t="inlineStr"><is><t>${xml(row.coordinatorPhone || "—")}</t></is></c>`,
       ].join("");
       return `<row r="${r}" ht="20" customHeight="1">${cells}</row>`;
     })
@@ -140,7 +144,7 @@ function sheetXml(title: string, note: string, rows: FiksaExcelRow[]) {
   const last = Math.max(4, 3 + rows.length);
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <dimension ref="A1:E${last}"/>
+  <dimension ref="A1:G${last}"/>
   <sheetViews><sheetView workbookViewId="0"><pane ySplit="3" topLeftCell="A4" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
   <cols>
     <col min="1" max="1" width="12" customWidth="1"/>
@@ -148,9 +152,11 @@ function sheetXml(title: string, note: string, rows: FiksaExcelRow[]) {
     <col min="3" max="3" width="28" customWidth="1"/>
     <col min="4" max="4" width="22" customWidth="1"/>
     <col min="5" max="5" width="18" customWidth="1"/>
+    <col min="6" max="6" width="30" customWidth="1"/>
+    <col min="7" max="7" width="20" customWidth="1"/>
   </cols>
   <sheetData>${titleRow}${noteRow}${headRow}${body}</sheetData>
-  <mergeCells count="2"><mergeCell ref="A1:E1"/><mergeCell ref="A2:E2"/></mergeCells>
+  <mergeCells count="2"><mergeCell ref="A1:G1"/><mergeCell ref="A2:G2"/></mergeCells>
 </worksheet>`;
 }
 

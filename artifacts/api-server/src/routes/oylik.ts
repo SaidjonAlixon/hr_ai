@@ -31,6 +31,7 @@ import {
   workdaysBetween,
 } from "../lib/kpi-payroll";
 import { loadStaffFromUsers } from "../lib/staff-directory";
+import { coordinatorsFor } from "../lib/davomat-shift-report";
 import { isSbRole } from "../lib/roles";
 import { ScopeCalendar, calendarWorkStatus } from "../lib/work-calendar";
 
@@ -612,6 +613,53 @@ router.post("/oylik/fiksa", requireAuth, async (req: AuthRequest, res): Promise<
   } catch (err) {
     console.error("POST /oylik/fiksa", err);
     res.status(503).json({ error: (err as Error).message || "Fiksa saqlanmadi" });
+  }
+});
+
+/** Fiksa Excel uchun: userId → koordinator ismi va telefoni */
+router.post("/oylik/fiksa/coordinators", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManagePayroll(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
+  try {
+    const userIds = (Array.isArray(req.body?.userIds) ? req.body.userIds : [])
+      .map(Number)
+      .filter((id: number) => Number.isInteger(id) && id > 0)
+      .slice(0, 2000);
+    if (!userIds.length) {
+      res.json({ items: [] });
+      return;
+    }
+    const emps = await db
+      .select({ id: employeesTable.id, userId: employeesTable.userId })
+      .from(employeesTable)
+      .where(inArray(employeesTable.userId, userIds));
+    const empByUser = new Map<number, number>();
+    for (const e of emps) if (e.userId != null && !empByUser.has(e.userId)) empByUser.set(e.userId, e.id);
+    const coords = await coordinatorsFor([...empByUser.values()]);
+    const coordUserIds = [...new Set([...coords.values()].map((c) => c.userId).filter((id): id is number => id != null))];
+    const phones = new Map<number, string>();
+    if (coordUserIds.length) {
+      const rows = await db
+        .select({ id: usersTable.id, phone: usersTable.phone })
+        .from(usersTable)
+        .where(inArray(usersTable.id, coordUserIds));
+      for (const r of rows) if (r.phone) phones.set(r.id, r.phone);
+    }
+    const items = userIds.map((userId: number) => {
+      const empId = empByUser.get(userId);
+      const hit = empId != null ? coords.get(empId) : undefined;
+      return {
+        userId,
+        coordinator: hit?.name ?? "",
+        coordinatorPhone: hit?.userId != null ? phones.get(hit.userId) ?? "" : "",
+      };
+    });
+    res.json({ items });
+  } catch (err) {
+    console.error("POST /oylik/fiksa/coordinators", err);
+    res.status(503).json({ error: "Koordinatorlar yuklanmadi" });
   }
 });
 

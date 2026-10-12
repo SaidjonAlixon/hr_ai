@@ -92,7 +92,7 @@ export function FiksaDialog({
 
   const foldName = (value: string) => value.toLowerCase().replace(/['’‘`]/g, "'").replace(/\s+/g, " ").trim();
 
-  const downloadExcel = () => {
+  const downloadExcel = async () => {
     const lines = visible
       .filter((row) => row.userId)
       .map((row) => ({
@@ -106,7 +106,26 @@ export function FiksaDialog({
       toast({ title: "Bu tanlovda xodim yo‘q" });
       return;
     }
-    void downloadFiksaExcel(month, `Fiksa · ${monthLabelUz(month)}`, lines);
+    const coords = new Map<number, { coordinator: string; coordinatorPhone: string }>();
+    try {
+      const res = await fetch("/api/oylik/fiksa/coordinators", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userIds: lines.map((line) => line.userId) }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { items: Array<{ userId: number; coordinator: string; coordinatorPhone: string }> };
+        for (const item of data.items) coords.set(item.userId, item);
+      }
+    } catch {
+      /* koordinatorsiz ham yuklanadi */
+    }
+    void downloadFiksaExcel(
+      month,
+      `Fiksa · ${monthLabelUz(month)}`,
+      lines.map((line) => ({ ...line, ...coords.get(line.userId) })),
+    );
   };
 
   const uploadExcel = async (file: File) => {
@@ -193,7 +212,7 @@ export function FiksaDialog({
             <div className="flex shrink-0 items-center gap-2">
               <button
                 type="button"
-                onClick={downloadExcel}
+                onClick={() => void downloadExcel()}
                 className="inline-flex h-10 items-center gap-2 rounded-lg bg-white/10 px-3 text-sm font-semibold text-white ring-1 ring-white/25 hover:bg-white/20"
               >
                 <Download className="h-4 w-4" />

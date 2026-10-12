@@ -96,6 +96,73 @@ function paragraph(
   return lines.length * opts.leading;
 }
 
+type Word = { text: string; font: PDFFont };
+
+/** Har xil shriftli so‘zlardan iborat, ikki tomonga tekislangan xatboshi */
+function richParagraph(
+  page: PDFPage | null,
+  segments: Array<{ text: string; font: PDFFont }>,
+  size: number,
+  y: number,
+  opts: { indent?: number; leading: number },
+): number {
+  const width = W - ML - MR;
+  const indent = opts.indent ?? 0;
+  const words: Word[] = segments.flatMap((s) =>
+    s.text.split(/\s+/).filter(Boolean).map((text) => ({ text, font: s.font })),
+  );
+  const ww = (w: Word) => w.font.widthOfTextAtSize(w.text, size);
+  const lines: Word[][] = [];
+  let cur: Word[] = [];
+  let curW = 0;
+  for (const w of words) {
+    const space = w.font.widthOfTextAtSize(" ", size);
+    const limit = width - (lines.length === 0 ? indent : 0);
+    if (cur.length && curW + space + ww(w) > limit) {
+      lines.push(cur);
+      cur = [w];
+      curW = ww(w);
+    } else {
+      curW += (cur.length ? space : 0) + ww(w);
+      cur.push(w);
+    }
+  }
+  if (cur.length) lines.push(cur);
+  if (page) {
+    lines.forEach((line, i) => {
+      const lineY = y - i * opts.leading;
+      const startX = ML + (i === 0 ? indent : 0);
+      const avail = width - (i === 0 ? indent : 0);
+      const wordsW = line.reduce((s, w) => s + ww(w), 0);
+      const space = line[0]!.font.widthOfTextAtSize(" ", size);
+      const justify = i < lines.length - 1 && line.length > 1;
+      const gap = justify ? Math.min((avail - wordsW) / (line.length - 1), space * 6) : space;
+      let cx = startX;
+      for (const w of line) {
+        page.drawText(w.text, { x: cx, y: lineY, size, font: w.font, color: INK });
+        cx += ww(w) + gap;
+      }
+    });
+  }
+  return lines.length * opts.leading;
+}
+
+/** «…yuz berdi: <xodim yozgan sabab>» — sabab qismi qalin */
+function reasonParagraph(page: PDFPage | null, text: string, f: Fonts, size: number, y: number, opts: { indent: number; leading: number }) {
+  const cut = text.indexOf(": ");
+  if (cut < 0) return richParagraph(page, [{ text, font: f.bold }], size, y, opts);
+  return richParagraph(
+    page,
+    [
+      { text: text.slice(0, cut + 1), font: f.regular },
+      { text: text.slice(cut + 2), font: f.bold },
+    ],
+    size,
+    y,
+    opts,
+  );
+}
+
 function blankLines(page: PDFPage | null, y: number, count: number, leading: number): number {
   if (page) {
     for (let i = 0; i < count; i += 1) {
@@ -133,7 +200,7 @@ function body(page: PDFPage | null, c: LetterContent, f: Fonts, size: number, st
   let y = startY;
   y -= paragraph(page, c.intro, f.regular, size, y, { indent, leading: lead }) + gap;
   y -= paragraph(page, c.facts, f.regular, size, y, { indent, leading: lead }) + gap;
-  if (c.reason) y -= paragraph(page, c.reason, f.regular, size, y, { indent, leading: lead }) + gap;
+  if (c.reason) y -= reasonParagraph(page, c.reason, f, size, y, { indent, leading: lead }) + gap;
   else y -= blankLines(page, y, 4, lead) + gap;
   y -= paragraph(page, c.commitment, f.regular, size, y, { indent, leading: lead }) + gap;
   if (c.finalConsent) y -= consentBox(page, c.finalConsent, f, size, y) + gap * 1.6;

@@ -121,7 +121,15 @@ export function LetterSheet({ content: c, qrPng, signaturePng, reasonDraft, high
           <Para>{c.intro}</Para>
           <Para>{c.facts}</Para>
           {reason ? (
-            <Para className={c.reason ? undefined : "rounded bg-amber-50 text-amber-900 ring-1 ring-amber-200"}>{reason}</Para>
+            <Para className={c.reason ? undefined : "rounded bg-amber-50 text-amber-900 ring-1 ring-amber-200"}>
+              {reason.includes(": ") ? (
+                <>
+                  {reason.slice(0, reason.indexOf(": ") + 1)} <b>{reason.slice(reason.indexOf(": ") + 2)}</b>
+                </>
+              ) : (
+                <b>{reason}</b>
+              )}
+            </Para>
           ) : (
             <div className="space-y-[18px] pb-1 pt-3" aria-label="Sabab uchun bo‘sh joy">
               {[0, 1, 2, 3].map((i) => (

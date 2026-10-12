@@ -1085,7 +1085,52 @@ export type SendReportOptions = {
   withoutCoordinator: number;
   directors: { name: string; hasTelegram: boolean }[];
   group: { title: string; topic: string } | null;
+  shifts: { key: string; label: string }[];
 };
+
+export type AutoReportSettings = {
+  mode: ReportSendMode;
+  lists: ReportListKind[];
+  coordinatorIds: number[];
+  buckets: string[];
+  toPersonal: boolean;
+  toGroup: boolean;
+};
+
+export type AutoReportConfig = {
+  enabled: boolean;
+  intervalMin: number;
+  fromHm: string;
+  toHm: string;
+  settings: AutoReportSettings;
+  nextAt: string | null;
+  updatedBy: string | null;
+};
+
+export async function fetchAutoReportConfig(): Promise<AutoReportConfig> {
+  const res = await fetch("/api/davomat/auto-report", { credentials: "include" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((body as { error?: string }).error || `Sozlama yuklanmadi (${res.status})`);
+  return body as AutoReportConfig;
+}
+
+export async function saveAutoReportConfig(params: {
+  enabled: boolean;
+  intervalMin: number;
+  fromHm: string;
+  toHm: string;
+  settings: AutoReportSettings;
+}): Promise<AutoReportConfig> {
+  const res = await fetch("/api/davomat/auto-report", {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((body as { error?: string }).error || `Saqlanmadi (${res.status})`);
+  return body as AutoReportConfig;
+}
 
 export async function fetchSendReportOptions(): Promise<SendReportOptions> {
   const res = await fetch("/api/davomat/send-report-options", { credentials: "include" });
@@ -1099,6 +1144,7 @@ export async function sendCoordinatorReports(params: {
   mode: ReportSendMode;
   lists: ReportListKind[];
   coordinatorIds: number[];
+  buckets: string[];
   toPersonal: boolean;
   toGroup: boolean;
 }): Promise<CoordinatorSendResult> {

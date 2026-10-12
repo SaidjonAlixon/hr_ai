@@ -8,7 +8,13 @@
 import { db, notificationsTable, pool } from "@workspace/db";
 import { logger } from "./logger";
 import { escapeHtml, getChatMember, isTelegramConfigured, sendDocument, sendMessage } from "./telegram";
-import { buildCoordinatorShiftReport, dateLabelUz, tashkentNow, type BuiltSection } from "./davomat-shift-report";
+import {
+  buildCoordinatorShiftReport,
+  dateLabelUz,
+  tashkentNow,
+  type BuiltSection,
+  type ShiftBucket,
+} from "./davomat-shift-report";
 import { renderDavomatShiftPdf, type ReportListKind } from "./davomat-shift-report-pdf";
 import { getReportGroup } from "./telegram-report-group";
 
@@ -19,6 +25,8 @@ export type CoordinatorSendOptions = {
   lists: ReportListKind[];
   /** Bo‘sh — barcha koordinatorlar */
   coordinatorIds: number[];
+  /** Bo‘sh — barcha smenalar */
+  buckets?: ShiftBucket[];
   toPersonal: boolean;
   toGroup: boolean;
   employeeIds?: number[];
@@ -47,6 +55,20 @@ const LIST_LABEL: Record<ReportListKind, string> = {
   present: "Kelganlar",
 };
 const ALL_LISTS: ReportListKind[] = ["absent", "late", "present"];
+
+export const PHARMACY_SHIFTS: { key: ShiftBucket; label: string }[] = [
+  { key: "one", label: "1-smena" },
+  { key: "orta", label: "O‘rta smena" },
+  { key: "two", label: "2-smena" },
+  { key: "12", label: "1+2" },
+  { key: "23", label: "2+3" },
+  { key: "three", label: "3-smena" },
+];
+
+export function parseShiftBuckets(raw: unknown): ShiftBucket[] {
+  const keys = new Set(PHARMACY_SHIFTS.map((s) => s.key));
+  return (Array.isArray(raw) ? raw : []).filter((k): k is ShiftBucket => keys.has(k as ShiftBucket));
+}
 
 const HR_NOTICE =
   "Har bir xodim kelmaganligi yoki kechikkanligi sababini alohida izohlab, ushbu holat qayta takrorlanmasligi uchun qanday choralar ko‘rganingizni HR bo‘limiga — @hrvaksina ga ma’lum qilishingiz shart. Aks holda, sizga jarima solishga sabab bo‘ladi.";
@@ -124,6 +146,7 @@ export async function sendCoordinatorReportsNow(opts: CoordinatorSendOptions): P
     ymd: now.ymd,
     employeeIds: opts.employeeIds,
     pharmacyOnly: true,
+    buckets: opts.buckets?.length ? opts.buckets : undefined,
   });
   const withoutCoordinator = peopleOf(built.filter((s) => !s.coordinatorEmployeeId)).length;
   const wantedCoords = new Set(opts.coordinatorIds);
@@ -148,6 +171,11 @@ export async function sendCoordinatorReportsNow(opts: CoordinatorSendOptions): P
   if (!sections.length) return result;
 
   const listsLine = lists.map((k) => LIST_LABEL[k]).join(", ");
+  const pickedShifts = PHARMACY_SHIFTS.filter((s) => opts.buckets?.includes(s.key));
+  const shiftsLine =
+    pickedShifts.length && pickedShifts.length < PHARMACY_SHIFTS.length
+      ? `Smena: ${pickedShifts.map((s) => s.label).join(", ")}`
+      : null;
   const warning = `Bugungi kun: ${label}. Hisobot vaqti: soat ${now.hm} (shu daqiqadagi holat). Kelmagan va kechikkan xodimlarni HR menejerlarga yozib, sababli qildiring. Aks holda bu bir kunlik jarimaga sabab bo‘ladi.`;
   const file = `davomat_${now.ymd}_${now.hm.replace(":", "")}.pdf`;
 
@@ -201,7 +229,7 @@ export async function sendCoordinatorReportsNow(opts: CoordinatorSendOptions): P
         updated: true,
         title: "Davomat · to‘liq hisobot",
         warningText: warning,
-        filterLine: [`Ko‘rsatilgan: ${listsLine}`, `Koordinatorlar: ${sections.length} ta`, opts.filterLine]
+        filterLine: [`Ko‘rsatilgan: ${listsLine}`, `Koordinatorlar: ${sections.length} ta`, shiftsLine, opts.filterLine]
           .filter(Boolean)
           .join(" · "),
         sections,
@@ -252,7 +280,7 @@ export async function sendCoordinatorReportsNow(opts: CoordinatorSendOptions): P
         updated: true,
         title: "Davomat · joriy hisobot",
         warningText: `Bugungi kun: ${label}. Hisobot vaqti: soat ${now.hm} (shu daqiqadagi holat). ${HR_NOTICE}`,
-        filterLine: [`Koordinator: ${section.coordinatorName}`, `Ko‘rsatilgan: ${listsLine}`, opts.filterLine]
+        filterLine: [`Koordinator: ${section.coordinatorName}`, `Ko‘rsatilgan: ${listsLine}`, shiftsLine, opts.filterLine]
           .filter(Boolean)
           .join(" · "),
         sections: [section],

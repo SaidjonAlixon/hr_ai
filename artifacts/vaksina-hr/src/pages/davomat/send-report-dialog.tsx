@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Crown, Loader2, MessagesSquare, Send, UserRound, Users } from "lucide-react";
+import { Clock, Crown, Loader2, MessagesSquare, Send, UserRound, Users } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Checkbox } from "../../components/ui/checkbox";
+import { Switch } from "../../components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -12,8 +13,12 @@ import {
 } from "../../components/ui/dialog";
 import { useToast } from "../../hooks/use-toast";
 import {
+  fetchAutoReportConfig,
   fetchSendReportOptions,
+  saveAutoReportConfig,
   sendCoordinatorReports,
+  type AutoReportConfig,
+  type AutoReportSettings,
   type ReportListKind,
   type ReportSendMode,
   type SendReportOptions,
@@ -27,6 +32,13 @@ const LISTS: { key: ReportListKind; label: string; hint: string; tone: string }[
 ];
 
 type SendTarget = "personal" | "group" | "both";
+
+const INTERVALS = [30, 60, 120, 180, 240, 360];
+
+function intervalLabel(min: number): string {
+  if (min < 60) return `${min} daqiqada`;
+  return min % 60 ? `${Math.floor(min / 60)} soat ${min % 60} daqiqada` : `${min / 60} soatda`;
+}
 
 const TARGETS: { key: SendTarget; icon: typeof Send; title: string; sub: string }[] = [
   { key: "personal", icon: UserRound, title: "Shaxsiyga", sub: "Telegram + platforma" },
@@ -43,6 +55,13 @@ export function SendReportDialog({ open, onOpenChange }: { open: boolean; onOpen
   const [lists, setLists] = useState<ReportListKind[]>(["absent", "late", "present"]);
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const [target, setTarget] = useState<SendTarget>("both");
+  const [shifts, setShifts] = useState<Set<string>>(new Set());
+  const [auto, setAuto] = useState<AutoReportConfig | null>(null);
+  const [autoEnabled, setAutoEnabled] = useState(false);
+  const [intervalMin, setIntervalMin] = useState(60);
+  const [fromHm, setFromHm] = useState("09:00");
+  const [toHm, setToHm] = useState("21:00");
+  const [savingAuto, setSavingAuto] = useState(false);
   const toPersonal = target !== "group";
   const toGroup = target !== "personal";
 
@@ -50,11 +69,17 @@ export function SendReportDialog({ open, onOpenChange }: { open: boolean; onOpen
     if (!open) return;
     let alive = true;
     setLoading(true);
-    fetchSendReportOptions()
-      .then((o) => {
+    Promise.all([fetchSendReportOptions(), fetchAutoReportConfig()])
+      .then(([o, a]) => {
         if (!alive) return;
         setOptions(o);
         setPicked(new Set(o.coordinators.map((c) => c.id)));
+        setShifts(new Set(o.shifts.map((s) => s.key)));
+        setAuto(a);
+        setAutoEnabled(a.enabled);
+        setIntervalMin(a.intervalMin);
+        setFromHm(a.fromHm);
+        setToHm(a.toHm);
       })
       .catch((err) => toast({ title: "Ma’lumot yuklanmadi", description: (err as Error).message, variant: "destructive" }))
       .finally(() => alive && setLoading(false));
@@ -62,6 +87,49 @@ export function SendReportDialog({ open, onOpenChange }: { open: boolean; onOpen
       alive = false;
     };
   }, [open, toast]);
+
+  const shiftOptions = options?.shifts ?? [];
+  const allShifts = shiftOptions.length > 0 && shifts.size === shiftOptions.length;
+  const toggleShift = (key: string) =>
+    setShifts((cur) => {
+      const next = new Set(cur);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const currentSettings = (): AutoReportSettings => ({
+    mode,
+    lists,
+    coordinatorIds: allPicked ? [] : [...picked],
+    buckets: allShifts ? [] : [...shifts],
+    toPersonal,
+    toGroup,
+  });
+
+  const onSaveAuto = async (enabled: boolean) => {
+    if (savingAuto) return;
+    if (enabled && blocker) {
+      toast({ title: "Sozlama to‘liq emas", description: blocker, variant: "destructive" });
+      return;
+    }
+    setSavingAuto(true);
+    try {
+      const a = await saveAutoReportConfig({ enabled, intervalMin, fromHm, toHm, settings: currentSettings() });
+      setAuto(a);
+      setAutoEnabled(a.enabled);
+      toast({
+        title: a.enabled ? "Avtomatik yuborish yoqildi" : "Avtomatik yuborish o‘chirildi",
+        description: a.enabled
+          ? `Har ${intervalLabel(a.intervalMin)}, ${a.fromHm}–${a.toHm}. Keyingisi: ${a.nextAt ?? "—"}.`
+          : undefined,
+      });
+    } catch (err) {
+      toast({ title: "Saqlanmadi", description: (err as Error).message, variant: "destructive" });
+    } finally {
+      setSavingAuto(false);
+    }
+  };
 
   const coordinators = options?.coordinators ?? [];
   const allPicked = coordinators.length > 0 && picked.size === coordinators.length;
@@ -82,7 +150,9 @@ export function SendReportDialog({ open, onOpenChange }: { open: boolean; onOpen
 
   const blocker = !lists.length
     ? "Kamida bitta holatni tanlang"
-    : !picked.size
+    : shiftOptions.length && !shifts.size
+      ? "Kamida bitta smenani tanlang"
+      : !picked.size
       ? "Kamida bitta koordinatorni tanlang"
       : target === "group" && options && !options.group
         ? "Guruh hali belgilanmagan"
@@ -94,13 +164,7 @@ export function SendReportDialog({ open, onOpenChange }: { open: boolean; onOpen
     if (sending || blocker) return;
     setSending(true);
     try {
-      const r = await sendCoordinatorReports({
-        mode,
-        lists,
-        coordinatorIds: allPicked ? [] : [...picked],
-        toPersonal,
-        toGroup,
-      });
+      const r = await sendCoordinatorReports(currentSettings());
       const who = r.mode === "director" ? `Direktor: ${r.recipients} ta` : `Koordinatorlar: ${r.coordinators} ta`;
       const lines = [
         `${who}, xodimlar: ${r.people} ta.`,
@@ -191,6 +255,35 @@ export function SendReportDialog({ open, onOpenChange }: { open: boolean; onOpen
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
+              <div className={section}>Smena {shiftOptions.length ? `· ${shifts.size}/${shiftOptions.length}` : ""}</div>
+              {shiftOptions.length ? (
+                <button
+                  type="button"
+                  className="text-xs font-medium text-sky-600 hover:underline"
+                  onClick={() => setShifts(allShifts ? new Set() : new Set(shiftOptions.map((s) => s.key)))}
+                >
+                  {allShifts ? "Hammasini olib tashlash" : "Hammasini tanlash"}
+                </button>
+              ) : null}
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {shiftOptions.map((s) => (
+                <label
+                  key={s.key}
+                  className={cn(
+                    "flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-sm font-medium",
+                    shifts.has(s.key) ? "bg-muted/40" : "opacity-70",
+                  )}
+                >
+                  <Checkbox checked={shifts.has(s.key)} onCheckedChange={() => toggleShift(s.key)} />
+                  {s.label}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
               <div className={section}>
                 Koordinatorlar {coordinators.length ? `· ${picked.size}/${coordinators.length}` : ""}
               </div>
@@ -261,6 +354,74 @@ export function SendReportDialog({ open, onOpenChange }: { open: boolean; onOpen
                   ? `Guruh: ${options.group.title}${options.group.topic ? ` · ${options.group.topic}` : ""} (har biri nik bilan belgilanadi)`
                   : "Guruh hali belgilanmagan: «Koordinatorlar» mavzusida /hisobot_guruh deb yozing"}
               </p>
+            ) : null}
+          </div>
+
+          <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-1.5 text-sm font-semibold">
+                  <Clock className="h-4 w-4 text-sky-600" /> Avtomatik yuborish
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {auto?.enabled
+                    ? `Yoqilgan: har ${intervalLabel(auto.intervalMin)}, ${auto.fromHm}–${auto.toHm}. Keyingisi: ${auto.nextAt ?? "—"}`
+                    : "O‘chirilgan. Yuqoridagi sozlama bilan belgilangan vaqtda o‘zi yuboradi."}
+                </div>
+              </div>
+              <Switch checked={autoEnabled} onCheckedChange={setAutoEnabled} disabled={savingAuto || loading} />
+            </div>
+            {autoEnabled ? (
+              <>
+                <div className="space-y-1.5">
+                  <div className="text-xs text-muted-foreground">Qancha vaqtda bir</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {INTERVALS.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setIntervalMin(m)}
+                        className={cn(
+                          "rounded-md border px-2.5 py-1 text-xs font-medium transition",
+                          intervalMin === m ? "border-sky-500 bg-sky-50 text-sky-700 dark:bg-sky-950/40" : "hover:bg-muted/50",
+                        )}
+                      >
+                        {intervalLabel(m)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-xs text-muted-foreground">Soat</span>
+                  <input
+                    type="time"
+                    value={fromHm}
+                    onChange={(e) => setFromHm(e.target.value)}
+                    className="h-8 rounded-md border bg-background px-2 text-sm"
+                  />
+                  <span className="text-muted-foreground">—</span>
+                  <input
+                    type="time"
+                    value={toHm}
+                    onChange={(e) => setToHm(e.target.value)}
+                    className="h-8 rounded-md border bg-background px-2 text-sm"
+                  />
+                  <span className="text-xs text-muted-foreground">oralig‘ida</span>
+                </div>
+              </>
+            ) : null}
+            {autoEnabled || auto?.enabled ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full gap-2"
+                disabled={savingAuto || loading}
+                onClick={() => void onSaveAuto(autoEnabled)}
+              >
+                {savingAuto ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clock className="h-4 w-4" />}
+                {autoEnabled ? "Avtomatik yuborishni saqlash" : "Avtomatik yuborishni o‘chirish"}
+              </Button>
             ) : null}
           </div>
         </div>

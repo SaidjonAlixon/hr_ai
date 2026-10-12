@@ -2,7 +2,8 @@ import { Router, type IRouter } from "express";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { canViewDavomat, isHrManager } from "../lib/roles";
 import { pool } from "@workspace/db";
-import { sendCoordinatorReportsNow } from "../lib/davomat-coordinator-send";
+import { PHARMACY_SHIFTS, parseShiftBuckets, sendCoordinatorReportsNow } from "../lib/davomat-coordinator-send";
+import { getAutoReportConfig, saveAutoReportConfig } from "../lib/davomat-auto-report";
 import {
   buildCoordinatorShiftReport,
   dateLabelUz,
@@ -92,6 +93,7 @@ router.get("/davomat/send-report-options", requireAuth, async (req: AuthRequest,
       withoutCoordinator: coords.withoutCoordinator,
       directors: directors.rows.map((r) => ({ name: String(r.full_name || "Direktor"), hasTelegram: Boolean(r.tg) })),
       group: group ? { title: group.chatTitle, topic: group.topicName } : null,
+      shifts: PHARMACY_SHIFTS,
     });
   } catch (err) {
     req.log?.error({ err }, "Hisobot yuborish sozlamalari");
@@ -109,6 +111,7 @@ router.post("/davomat/send-coordinator-reports", requireAuth, async (req: AuthRe
     mode?: string;
     lists?: string[];
     coordinatorIds?: number[];
+    buckets?: string[];
     toPersonal?: boolean;
     toGroup?: boolean;
     employeeIds?: number[];
@@ -124,6 +127,7 @@ router.post("/davomat/send-coordinator-reports", requireAuth, async (req: AuthRe
         mode: body.mode === "director" ? "director" : "coordinators",
         lists,
         coordinatorIds: positiveIds(body.coordinatorIds, 500),
+        buckets: parseShiftBuckets(body.buckets),
         toPersonal: body.toPersonal !== false,
         toGroup: body.toGroup !== false,
         employeeIds: positiveIds(body.employeeIds, 3000),
@@ -134,6 +138,39 @@ router.post("/davomat/send-coordinator-reports", requireAuth, async (req: AuthRe
   } catch (err) {
     req.log?.error({ err }, "Koordinator hisobotlarini yuborish");
     res.status(503).json({ error: (err as Error).message || "Hisobot yuborilmadi" });
+  }
+});
+
+/** Avtomatik yuborish sozlamasi */
+router.get("/davomat/auto-report", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!isHrManager(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin va HR" });
+    return;
+  }
+  try {
+    res.json(await getAutoReportConfig());
+  } catch (err) {
+    req.log?.error({ err }, "Avto-hisobot sozlamasi");
+    res.status(500).json({ error: "Sozlama yuklanmadi" });
+  }
+});
+
+router.put("/davomat/auto-report", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!isHrManager(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin va HR" });
+    return;
+  }
+  const body = (req.body || {}) as Record<string, unknown>;
+  try {
+    const { rows } = await pool.query(`SELECT full_name FROM users WHERE id = $1`, [req.userId]);
+    res.json(
+      await saveAutoReportConfig(
+        { enabled: body.enabled, intervalMin: body.intervalMin, fromHm: body.fromHm, toHm: body.toHm, settings: body.settings },
+        String(rows[0]?.full_name || "Admin"),
+      ),
+    );
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message || "Saqlanmadi" });
   }
 });
 

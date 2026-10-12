@@ -65,6 +65,11 @@ function countsOf(sections: BuiltSection[]) {
   };
 }
 
+/** «1-smena (08:00–17:00): 3 kishi» — har smena alohida qator */
+function shiftLines(section: BuiltSection): string[] {
+  return section.blocks.map((b) => `${b.title} (${b.hours}): ${b.people.length} kishi`);
+}
+
 function summaryLines(c: ReturnType<typeof countsOf>, lists: ReportListKind[]): string[] {
   return [...lists.map((k) => `${LIST_LABEL[k]}: ${c[k]}`), `Jami: ${c.total}`];
 }
@@ -264,6 +269,9 @@ export async function sendCoordinatorReportsNow(opts: CoordinatorSendOptions): P
       `${label}, soat ${now.hm}`,
       `Ko‘rsatilgan: ${listsLine}`,
       "",
+      "Smena:",
+      ...shiftLines(section),
+      "",
       "Faqat sizning xodimlaringiz:",
       ...summaryLines(c, lists),
       "",
@@ -274,6 +282,9 @@ export async function sendCoordinatorReportsNow(opts: CoordinatorSendOptions): P
     const groupHead = [
       "sizning xodimlaringiz davomati",
       `${escapeHtml(label)}, soat ${now.hm}`,
+      "",
+      "<b>Smena:</b>",
+      ...shiftLines(section).map((l) => `🕘 ${escapeHtml(l)}`),
       "",
       ...summaryLines(c, lists).map((l) => `• ${escapeHtml(l)}`),
       "",

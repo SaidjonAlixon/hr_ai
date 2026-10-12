@@ -109,11 +109,21 @@ export async function observeGroupMessage(msg: TelegramMessage): Promise<void> {
 
     const text = String(msg.text || "").trim();
     if (REGISTER_CMD_RE.test(text) && msg.from) {
-      const { rows } = await pool.query(`SELECT role, status FROM users WHERE telegram_id = $1 LIMIT 1`, [String(msg.from.id)]);
-      const groupAdmin = await getChatMember(msg.chat.id, msg.from.id)
-        .then((m) => m.status === "creator" || m.status === "administrator")
-        .catch(() => false);
-      if ((rows[0] && isHrManager(rows[0].role)) || groupAdmin) {
+      const forumGeneral = msg.chat.is_forum && !threadId;
+      let allowed = SILENT_TITLE_RE.test(msg.chat.title || "");
+      if (!allowed) {
+        const { rows } = await pool.query(`SELECT role FROM users WHERE telegram_id = $1 LIMIT 1`, [String(msg.from.id)]);
+        allowed =
+          (rows[0] && isHrManager(rows[0].role)) ||
+          (await getChatMember(msg.chat.id, msg.from.id)
+            .then((m) => m.status === "creator" || m.status === "administrator")
+            .catch(() => false));
+      }
+      logger.info(
+        { chatId, title: msg.chat.title, threadId, from: msg.from.id, allowed, forumGeneral },
+        "telegram-report-group: /hisobot_guruh",
+      );
+      if (allowed && !forumGeneral) {
         await setReportGroup(msg.chat, threadId, name || (threadId ? await knownTopicName(chatId, threadId) : "") || "");
         await deleteMessage(msg.chat.id, msg.message_id).catch(() => {});
       }

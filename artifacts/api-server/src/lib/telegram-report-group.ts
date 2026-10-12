@@ -5,7 +5,7 @@
  */
 import { pool } from "@workspace/db";
 import { logger } from "./logger";
-import { deleteMessage, type TelegramChat, type TelegramMessage } from "./telegram";
+import { deleteMessage, getChatMember, type TelegramChat, type TelegramMessage } from "./telegram";
 import { isHrManager } from "./roles";
 
 export type ReportGroup = { chatId: string; chatTitle: string; threadId: number | null; topicName: string };
@@ -110,7 +110,10 @@ export async function observeGroupMessage(msg: TelegramMessage): Promise<void> {
     const text = String(msg.text || "").trim();
     if (REGISTER_CMD_RE.test(text) && msg.from) {
       const { rows } = await pool.query(`SELECT role, status FROM users WHERE telegram_id = $1 LIMIT 1`, [String(msg.from.id)]);
-      if (rows[0] && isHrManager(rows[0].role)) {
+      const groupAdmin = await getChatMember(msg.chat.id, msg.from.id)
+        .then((m) => m.status === "creator" || m.status === "administrator")
+        .catch(() => false);
+      if ((rows[0] && isHrManager(rows[0].role)) || groupAdmin) {
         await setReportGroup(msg.chat, threadId, name || (threadId ? await knownTopicName(chatId, threadId) : "") || "");
         await deleteMessage(msg.chat.id, msg.message_id).catch(() => {});
       }

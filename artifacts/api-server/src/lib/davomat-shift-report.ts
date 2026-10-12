@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import {
   attendanceRecordsTable,
   db,
@@ -220,10 +220,13 @@ async function loadNodes(): Promise<EmpNode[]> {
       employmentStatus: employeesTable.employmentStatus,
     })
     .from(employeesTable)
-    .leftJoin(usersTable, eq(usersTable.id, employeesTable.userId))
-    .where(
-      sql`coalesce(${employeesTable.employmentStatus}, 'working') not in ('dismissed', 'closed')`,
-    );
+    .leftJoin(usersTable, eq(usersTable.id, employeesTable.userId));
+}
+
+/** Koordinator zanjiri hamma kartochka orqali quriladi, hisobotga esa faqat ishlayotganlar kiradi */
+function isGone(n: EmpNode): boolean {
+  const st = String(n.employmentStatus || "working");
+  return st === "dismissed" || st === "closed";
 }
 
 /** employeeId → koordinator ismi (rahbarlik zanjiri bo‘yicha) */
@@ -249,6 +252,7 @@ export async function coordinatorsFor(employeeIds: number[]): Promise<Map<number
 export async function buildCoordinatorShiftReport(opts: {
   ymd: string;
   employeeIds?: number[];
+  pharmacyOnly?: boolean;
   buckets?: ShiftBucket[];
   coordinatorEmployeeId?: number | null;
   viewerUserId?: number | null;
@@ -272,9 +276,10 @@ export async function buildCoordinatorShiftReport(opts: {
   const wanted = new Set(opts.employeeIds || []);
   const skipStatus = new Set(["need_hire", "searching", "no_manager"]);
   const staff = nodes.filter((n) => {
-    if (skipStatus.has(String(n.employmentStatus || ""))) return false;
+    if (isGone(n) || skipStatus.has(String(n.employmentStatus || ""))) return false;
     if (!String(n.fullName || "").trim()) return false;
     if (wanted.size && !wanted.has(n.id)) return false;
+    if (opts.pharmacyOnly && !isPharmacyShiftStaff(n.userRole, n.orgRole)) return false;
     if (allowedIds && !allowedIds.has(n.id)) return false;
     if (opts.coordinatorEmployeeId && coordOf.get(n.id)?.id !== opts.coordinatorEmployeeId) return false;
     const hired = String(n.hiredAt || "").slice(0, 10);
@@ -529,6 +534,7 @@ export async function coordinatorDispatches(opts: {
   const pharmacyIds: number[] = [];
   const withoutCoordinator: string[] = [];
   for (const n of nodes) {
+    if (isGone(n)) continue;
     if (!isPharmacyShiftStaff(n.userRole, n.orgRole)) continue;
     if (!String(n.fullName || "").trim()) continue;
     const st = String(n.employmentStatus || "");

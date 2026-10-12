@@ -1372,8 +1372,9 @@ export default function DavomatPage() {
 
   const onSendReports = async () => {
     if (sending) return;
-    const ids = filteredEmployees.map((emp) => emp.id);
-    if (!ids.length) {
+    const pharmacyView = viewFilter === "pharmacy";
+    const ids = pharmacyView ? filteredEmployees.map((emp) => emp.id) : [];
+    if (pharmacyView && !ids.length) {
       toast({ title: "Jadvalda xodim yo‘q", variant: "destructive" });
       return;
     }
@@ -1381,13 +1382,15 @@ export default function DavomatPage() {
     try {
       const r = await sendCoordinatorReports({
         employeeIds: ids,
-        filterLine: [
-          staffGroupLabel,
-          selectedPharmacyCoordinator ? `Koordinator: ${selectedPharmacyCoordinator.label}` : null,
-          selectedPharmacyBranch ? `Filial: ${selectedPharmacyBranch.label}` : null,
-        ]
-          .filter(Boolean)
-          .join(" · "),
+        filterLine: pharmacyView
+          ? [
+              staffGroupLabel,
+              selectedPharmacyCoordinator ? `Koordinator: ${selectedPharmacyCoordinator.label}` : null,
+              selectedPharmacyBranch ? `Filial: ${selectedPharmacyBranch.label}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")
+          : undefined,
       });
       const lines = [
         `Koordinatorlar: ${r.coordinators} ta. Shaxsiy chatga: ${r.personal}. Guruhga: ${r.groupReady ? r.group : "guruh hali aniqlanmagan"}.`,
@@ -3774,7 +3777,11 @@ export default function DavomatPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Koordinatorlarga hisobot yuborish</AlertDialogTitle>
             <AlertDialogDescription>
-              Shu daqiqadagi holat ({filteredEmployees.length} xodim, joriy filtr bo‘yicha) har bir koordinatorga faqat o‘z
+              Shu daqiqadagi holat (
+              {viewFilter === "pharmacy"
+                ? `${filteredEmployees.length} xodim, joriy filtr bo‘yicha`
+                : "barcha dorixona xodimlari"}
+              ) har bir koordinatorga faqat o‘z
               xodimlari jadvali bilan yuboriladi: shaxsiy Telegramiga va guruhdagi «Koordinatorlar» mavzusiga (nik bilan
               belgilanadi).
             </AlertDialogDescription>

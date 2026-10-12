@@ -74,10 +74,6 @@ router.post("/davomat/send-coordinator-reports", requireAuth, async (req: AuthRe
     .map((id) => Number(id))
     .filter((id) => Number.isFinite(id) && id > 0)
     .slice(0, 3000);
-  if (!ids.length) {
-    res.status(400).json({ error: "Jadvalda xodim yo‘q" });
-    return;
-  }
   try {
     const { rows } = await pool.query(`SELECT full_name FROM users WHERE id = $1`, [req.userId]);
     res.json(

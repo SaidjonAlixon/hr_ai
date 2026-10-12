@@ -63,7 +63,11 @@ export async function sendCoordinatorReportsNow(opts: {
   if (!isTelegramConfigured()) throw new Error("Telegram bot sozlanmagan");
   const now = tashkentNow();
   const label = dateLabelUz(now.ymd);
-  const sections = await buildCoordinatorShiftReport({ ymd: now.ymd, employeeIds: opts.employeeIds });
+  const sections = await buildCoordinatorShiftReport({
+    ymd: now.ymd,
+    employeeIds: opts.employeeIds,
+    pharmacyOnly: true,
+  });
   const targets = sections.filter((s) => s.coordinatorEmployeeId && s.blocks.some((b) => b.people.length));
   const withoutCoordinator = sections
     .filter((s) => !s.coordinatorEmployeeId)

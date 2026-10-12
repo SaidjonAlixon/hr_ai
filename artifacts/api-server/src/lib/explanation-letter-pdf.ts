@@ -15,6 +15,9 @@ const NAVY = rgb(0.043, 0.227, 0.361);
 const HAIR = rgb(0.85, 0.87, 0.9);
 const DANGER = rgb(0.68, 0.07, 0.12);
 const DANGER_BG = rgb(0.995, 0.94, 0.94);
+const NOTE = rgb(0.52, 0.33, 0.02);
+const NOTE_BG = rgb(1, 0.96, 0.78);
+const NOTE_LINE = rgb(0.96, 0.75, 0.2);
 
 /** Bosqich ranglari: 1 — ko‘k, 2–3 — sariq, 4 — to‘q sariq, 5 — qizil, 6 — to‘q qizil */
 const STAGE_COLORS: Array<[number, number, number]> = [
@@ -193,6 +196,23 @@ function consentBox(page: PDFPage | null, text: string, f: Fonts, size: number, 
   return y - bottom + size * 0.8;
 }
 
+/** Kechikish qanday hisoblangani — sariq ramkada */
+function graceBox(page: PDFPage | null, text: string, f: Fonts, size: number, y: number): number {
+  const pad = 6;
+  const ts = size * 0.85;
+  const lead = ts * 1.38;
+  const inner = W - ML - MR - pad * 2;
+  const lines = wrap(text, f.bold, ts, inner).length;
+  const top = y + size * 0.75;
+  const firstY = top - pad - ts * 0.85;
+  const bottom = firstY - (lines - 1) * lead - ts * 0.3 - pad;
+  if (page) {
+    page.drawRectangle({ x: ML, y: bottom, width: W - ML - MR, height: top - bottom, color: NOTE_BG, borderColor: NOTE_LINE, borderWidth: 0.9 });
+    paragraph(page, text, f.bold, ts, firstY, { leading: lead, x: ML + pad, width: inner, color: NOTE });
+  }
+  return y - bottom + size * 0.75;
+}
+
 function body(page: PDFPage | null, c: LetterContent, f: Fonts, size: number, startY: number): number {
   const lead = size * 1.42;
   const gap = size * 0.55;
@@ -200,6 +220,7 @@ function body(page: PDFPage | null, c: LetterContent, f: Fonts, size: number, st
   let y = startY;
   y -= paragraph(page, c.intro, f.regular, size, y, { indent, leading: lead }) + gap;
   y -= paragraph(page, c.facts, f.regular, size, y, { indent, leading: lead }) + gap;
+  if (c.graceNote) y -= graceBox(page, c.graceNote, f, size, y) + gap;
   if (c.reason) y -= reasonParagraph(page, c.reason, f, size, y, { indent, leading: lead }) + gap;
   else y -= blankLines(page, y, 4, lead) + gap;
   y -= paragraph(page, c.commitment, f.regular, size, y, { indent, leading: lead }) + gap;

@@ -120,6 +120,11 @@ export function LetterSheet({ content: c, qrPng, signaturePng, reasonDraft, high
         <div className="space-y-2.5 text-[14.5px] leading-[1.6]" style={{ textAlign: "justify", hyphens: "auto" }} lang="uz">
           <Para>{c.intro}</Para>
           <Para>{c.facts}</Para>
+          {c.graceNote ? (
+            <p className="rounded border border-amber-300 bg-amber-100 px-3 py-1.5 text-[13px] font-semibold leading-[1.5] text-amber-900">
+              {c.graceNote}
+            </p>
+          ) : null}
           {reason ? (
             <Para className={c.reason ? undefined : "rounded bg-amber-50 text-amber-900 ring-1 ring-amber-200"}>
               {reason.includes(": ") ? (

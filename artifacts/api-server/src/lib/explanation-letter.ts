@@ -735,6 +735,24 @@ function stampTashkent(isoText: string): string {
   return `${g("day")}.${g("month")}.${g("year")} ${g("hour")}:${g("minute")}`;
 }
 
+/** Ish boshlanishidan keyin shu daqiqagacha kelish kechikish hisoblanmaydi (davomat jadvali bilan bir xil) */
+export const LATE_GRACE_MINUTES = 15;
+
+function addMinutesHm(hm: string, add: number): string {
+  const [h, m] = hm.split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return hm;
+  const t = (((h! * 60 + m! + add) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+}
+
+function durationText(mins: number): string {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h && m) return `${h} soat ${m} daqiqa`;
+  if (h) return `${h} soat`;
+  return `${m} daqiqa`;
+}
+
 function minutesText(mins: number): string {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
@@ -802,6 +820,8 @@ export type LetterContent = {
   final: boolean;
   intro: string;
   facts: string;
+  /** Kechikish: imtiyoz vaqti va qanday hisoblangani — sariq ramkada */
+  graceNote: string | null;
   reason: string | null;
   commitment: string;
   /** Faqat oxirgi xatda — ishdan bo‘shatishga rozilik bandi */
@@ -846,11 +866,26 @@ export function letterContent(
 
   const who = `Men, ${l.fullName}, ${company}ning ${branch} filialida ${position.toLocaleLowerCase("uz")} lavozimida faoliyat yuritaman.`;
   let facts: string;
+  let graceNote: string | null = null;
   if (l.kind === "late") {
     const plan = l.planStart ? `soat ${l.planStart} da boshlanishi` : "belgilangan vaqtda boshlanishi";
+    const graceEnd = l.planStart ? addMinutesHm(l.planStart, LATE_GRACE_MINUTES) : null;
+    const counted = l.lateMinutes != null ? l.lateMinutes - LATE_GRACE_MINUTES : null;
     const came = l.checkIn
-      ? `ishga soat ${l.checkIn} da keldim${l.lateMinutes ? `, ya’ni ${minutesText(l.lateMinutes)} kechikdim` : " va kechikdim"}`
+      ? `ishga soat ${l.checkIn} da keldim${
+          graceEnd && counted && counted > 0
+            ? `, ya’ni ${graceEnd} dan keyin ${minutesText(counted)} kechikdim`
+            : l.lateMinutes
+              ? `, ya’ni ${minutesText(l.lateMinutes)} kechikdim`
+              : " va kechikdim"
+        }`
       : "ishga belgilangan vaqtdan kech keldim";
+    if (graceEnd) {
+      graceNote =
+        `Asos: ichki tartib qoidalariga ko‘ra ish ${l.planStart} da boshlanadi, ${graceEnd} gacha kelish kechikish hisoblanmaydi (${LATE_GRACE_MINUTES} daqiqa imtiyoz). ` +
+        `Kechikish ${graceEnd} dan keyingi vaqt bo‘yicha hisoblanadi` +
+        (l.checkIn && counted && counted > 0 ? `: ${l.checkIn} − ${graceEnd} = ${durationText(counted)} kechikish.` : ".");
+    }
     facts =
       `${who} ${date} kuni ${shift} bo‘yicha ish vaqtim ${plan} belgilangan bo‘lishiga qaramay, ${came}. ` +
       `Ushbu holat platformadagi davomat tizimida qayd etilgan hamda joriy oy davomidagi ${n}-qoidabuzarlik hisoblanadi.`;
@@ -894,6 +929,7 @@ export function letterContent(
     final,
     intro,
     facts,
+    graceNote,
     reason: reasonSentence(l.kind, l.reasonCode, l.reasonText),
     commitment,
     finalConsent,

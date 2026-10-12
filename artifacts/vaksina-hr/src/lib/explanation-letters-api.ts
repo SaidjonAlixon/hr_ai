@@ -18,6 +18,7 @@ export type LetterContent = {
   final: boolean;
   intro: string;
   facts: string;
+  graceNote?: string | null;
   reason: string | null;
   commitment: string;
   finalConsent: string | null;

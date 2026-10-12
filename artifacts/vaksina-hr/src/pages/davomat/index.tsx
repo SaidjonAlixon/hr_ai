@@ -50,6 +50,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   RefreshCw,
+  Send,
   X,
 } from "lucide-react";
 import { DavomatJarimaCard, DavomatJarimaPanel } from "../oylik/pay-table";
@@ -102,6 +103,7 @@ import { scriptIncludes } from "../../lib/script-search";
 import {
   downloadDavomatExcel,
   downloadDavomatDayPdf,
+  sendCoordinatorReports,
   fetchDavomat,
   resetDavomatManual,
   type DavomatResetPart,
@@ -130,6 +132,7 @@ import {
   canViewDavomatNotes,
   normalizeUserRole,
   userRoleLabel,
+  isHrManager,
 } from "../../lib/roles";
 import {
   type DavomatStaffFilter,
@@ -748,6 +751,9 @@ export default function DavomatPage() {
   const [report, setReport] = useState<DavomatReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
+  const [sendOpen, setSendOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const canSendReports = isHrManager(user?.role);
   const [edit, setEdit] = useState<EditState | null>(null);
   const [noteView, setNoteView] = useState<{
     fullName: string;
@@ -1361,6 +1367,44 @@ export default function DavomatPage() {
       });
     } finally {
       setExporting(null);
+    }
+  };
+
+  const onSendReports = async () => {
+    if (sending) return;
+    const ids = filteredEmployees.map((emp) => emp.id);
+    if (!ids.length) {
+      toast({ title: "Jadvalda xodim yo‘q", variant: "destructive" });
+      return;
+    }
+    setSending(true);
+    try {
+      const r = await sendCoordinatorReports({
+        employeeIds: ids,
+        filterLine: [
+          staffGroupLabel,
+          selectedPharmacyCoordinator ? `Koordinator: ${selectedPharmacyCoordinator.label}` : null,
+          selectedPharmacyBranch ? `Filial: ${selectedPharmacyBranch.label}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      });
+      const lines = [
+        `Koordinatorlar: ${r.coordinators} ta. Shaxsiy chatga: ${r.personal}. Guruhga: ${r.groupReady ? r.group : "guruh hali aniqlanmagan"}.`,
+        r.notInBot.length ? `Botga kirmagan: ${r.notInBot.join(", ")}.` : null,
+        r.failed.length ? `Xato: ${r.failed.join("; ")}.` : null,
+        r.withoutCoordinator ? `Koordinatori yo‘q xodimlar: ${r.withoutCoordinator} ta.` : null,
+      ].filter(Boolean);
+      toast({
+        title: r.coordinators ? "Hisobot yuborildi" : "Yuboriladigan koordinator topilmadi",
+        description: lines.join("\n"),
+        variant: r.failed.length ? "destructive" : undefined,
+      });
+      setSendOpen(false);
+    } catch (err) {
+      toast({ title: "Hisobot yuborilmadi", description: (err as Error).message, variant: "destructive" });
+    } finally {
+      setSending(false);
     }
   };
 
@@ -2439,6 +2483,17 @@ export default function DavomatPage() {
               {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
               {t("davomat.pdfBtn")}
             </Button>
+            {canSendReports ? (
+              <Button
+                type="button"
+                className="h-11 min-w-[148px] gap-2 rounded-xl bg-gradient-to-b from-sky-500 to-sky-600 px-4 font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_8px_18px_-8px_rgba(14,165,233,0.7)] transition hover:-translate-y-0.5 hover:from-sky-600 hover:to-sky-700"
+                onClick={() => setSendOpen(true)}
+                disabled={sending || (loading && !report)}
+              >
+                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Hisobot yuborish
+              </Button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -3710,6 +3765,26 @@ export default function DavomatPage() {
           ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={Boolean(resetting)}>{t("ui.cancelFull")}</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={sendOpen} onOpenChange={(o) => !sending && setSendOpen(o)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Koordinatorlarga hisobot yuborish</AlertDialogTitle>
+            <AlertDialogDescription>
+              Shu daqiqadagi holat ({filteredEmployees.length} xodim, joriy filtr bo‘yicha) har bir koordinatorga faqat o‘z
+              xodimlari jadvali bilan yuboriladi: shaxsiy Telegramiga va guruhdagi «Koordinatorlar» mavzusiga (nik bilan
+              belgilanadi).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={sending}>{t("ui.cancelFull")}</AlertDialogCancel>
+            <Button type="button" className="gap-2" disabled={sending} onClick={() => void onSendReports()}>
+              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Yuborish
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

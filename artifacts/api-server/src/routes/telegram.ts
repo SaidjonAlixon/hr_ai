@@ -38,6 +38,7 @@ import {
   isGroupChat,
   messageHasImage,
 } from "../lib/telegram-support";
+import { isReportChat, observeGroupMessage } from "../lib/telegram-report-group";
 
 const router: IRouter = Router();
 const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
@@ -569,6 +570,8 @@ async function handleUpdate(update: TelegramUpdate) {
   if (!msg?.from || msg.from.is_bot) return;
 
   if (isGroupChat(msg.chat)) {
+    await observeGroupMessage(msg);
+    if (await isReportChat(msg.chat)) return;
     await runSupportTask(() => handleGroupSupportMessage(msg));
     return;
   }

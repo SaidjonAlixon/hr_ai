@@ -1,6 +1,8 @@
 import { Router, type IRouter } from "express";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
-import { canViewDavomat } from "../lib/roles";
+import { canViewDavomat, isHrManager } from "../lib/roles";
+import { pool } from "@workspace/db";
+import { sendCoordinatorReportsNow } from "../lib/davomat-coordinator-send";
 import {
   buildCoordinatorShiftReport,
   dateLabelUz,
@@ -58,6 +60,36 @@ router.post("/davomat/day-report.pdf", requireAuth, async (req: AuthRequest, res
   } catch (err) {
     req.log?.error({ err }, "Davomat kunlik PDF");
     res.status(500).json({ error: "PDF tayyorlanmadi" });
+  }
+});
+
+/** «Hisobot yuborish»: shu daqiqadagi holat — har koordinatorga o‘z xodimlari (shaxsiy + guruh) */
+router.post("/davomat/send-coordinator-reports", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!isHrManager(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin va HR yubora oladi" });
+    return;
+  }
+  const body = req.body as { employeeIds?: number[]; filterLine?: string | null };
+  const ids = (Array.isArray(body.employeeIds) ? body.employeeIds : [])
+    .map((id) => Number(id))
+    .filter((id) => Number.isFinite(id) && id > 0)
+    .slice(0, 3000);
+  if (!ids.length) {
+    res.status(400).json({ error: "Jadvalda xodim yo‘q" });
+    return;
+  }
+  try {
+    const { rows } = await pool.query(`SELECT full_name FROM users WHERE id = $1`, [req.userId]);
+    res.json(
+      await sendCoordinatorReportsNow({
+        employeeIds: ids,
+        filterLine: typeof body.filterLine === "string" ? body.filterLine.slice(0, 300) : null,
+        actorName: String(rows[0]?.full_name || "Admin"),
+      }),
+    );
+  } catch (err) {
+    req.log?.error({ err }, "Koordinator hisobotlarini yuborish");
+    res.status(503).json({ error: (err as Error).message || "Hisobot yuborilmadi" });
   }
 });
 

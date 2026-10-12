@@ -16,6 +16,7 @@ export type TelegramChat = {
   type: string;
   title?: string;
   username?: string;
+  is_forum?: boolean;
 };
 
 export type TelegramPhotoSize = {
@@ -42,6 +43,10 @@ export type TelegramMessage = {
   photo?: TelegramPhotoSize[];
   document?: { file_id: string; mime_type?: string; file_name?: string; file_size?: number };
   reply_to_message?: TelegramMessage;
+  message_thread_id?: number;
+  is_topic_message?: boolean;
+  forum_topic_created?: { name: string };
+  forum_topic_edited?: { name?: string };
   date: number;
 };
 
@@ -139,10 +144,12 @@ export async function sendMessage(
     reply_markup?: { inline_keyboard: InlineKeyboardButton[][] };
     disable_web_page_preview?: boolean;
     reply_to_message_id?: number;
+    message_thread_id?: number | null;
   },
 ) {
   return tgCall<TelegramMessage>("sendMessage", {
     chat_id: chatId,
+    message_thread_id: opts?.message_thread_id || undefined,
     text,
     parse_mode: opts?.parse_mode ?? "HTML",
     reply_markup: opts?.reply_markup,
@@ -162,7 +169,7 @@ export async function sendDocument(
   chatId: number | string,
   file: Buffer,
   filename: string,
-  opts?: { mimeType?: string; caption?: string },
+  opts?: { mimeType?: string; caption?: string; parseMode?: "HTML"; messageThreadId?: number | null },
 ) {
   if (!botToken()) throw new Error("TELEGRAM_BOT_TOKEN sozlanmagan");
   if (!file?.length) throw new Error("Fayl bo‘sh");
@@ -178,9 +185,15 @@ export async function sendDocument(
     form.append("chat_id", String(chatId));
     form.append("document", blob, safeName);
     if (opts?.caption) form.append("caption", opts.caption.slice(0, 1024));
+    if (opts?.parseMode) form.append("parse_mode", opts.parseMode);
+    if (opts?.messageThreadId) form.append("message_thread_id", String(opts.messageThreadId));
     return { method: "POST", body: form };
   });
   return { ok: true as const, result };
+}
+
+export async function getChatMember(chatId: number | string, userId: number | string) {
+  return tgCall<{ status: string; user: TelegramUser }>("getChatMember", { chat_id: chatId, user_id: Number(userId) });
 }
 
 export async function answerCallbackQuery(id: string, text?: string) {

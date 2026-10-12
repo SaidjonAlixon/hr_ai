@@ -1064,6 +1064,32 @@ export async function downloadDavomatExcel(params: {
   return deliverFile(blob, `davomat_${params.from}_${params.to}.xlsx`);
 }
 
+export type CoordinatorSendResult = {
+  coordinators: number;
+  personal: number;
+  group: number;
+  groupReady: boolean;
+  notInBot: string[];
+  failed: string[];
+  withoutCoordinator: number;
+};
+
+/** Shu daqiqadagi holat — har koordinatorga o‘z xodimlari (Telegram shaxsiy + guruh) */
+export async function sendCoordinatorReports(params: {
+  employeeIds: number[];
+  filterLine?: string;
+}): Promise<CoordinatorSendResult> {
+  const res = await fetch("/api/davomat/send-coordinator-reports", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ employeeIds: params.employeeIds, filterLine: params.filterLine || null }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((body as { error?: string }).error || `Hisobot yuborilmadi (${res.status})`);
+  return body as CoordinatorSendResult;
+}
+
 /** Kunlik hisobot: kelmaganlar, kechikkanlar, kelganlar va oylik sanoq. */
 export async function downloadDavomatDayPdf(params: {
   date: string;

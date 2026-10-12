@@ -215,6 +215,39 @@ export function useMonthLetters(month: string, enabled: boolean) {
   });
 }
 
+// ---------------------------------------------------------------- 3 kunlik hisobot va o‘chirish
+
+export type LetterReportSchedule = { lastSentOn: string | null; nextSendOn: string; chatId: string; everyDays: number; hour: number };
+
+export function canDeleteLetters(role?: string | null) {
+  return hasFullPlatformAccess(role);
+}
+
+export function useLetterReportSchedule(enabled: boolean) {
+  return useQuery({
+    queryKey: ["explanation-letters", "report"],
+    enabled,
+    refetchInterval: 300_000,
+    queryFn: () => getJson<LetterReportSchedule>("/api/explanation-letters/report", "Hisobot holati yuklanmadi"),
+  });
+}
+
+export function useSendLetterReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => postJson<{ ok: true; totals: { all: number } }>("/api/explanation-letters/report/send", {}, "Telegramga yuborilmadi"),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["explanation-letters", "report"] }),
+  });
+}
+
+export function useDeleteLetters() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: number[]) => postJson<{ ok: true; deleted: number }>("/api/explanation-letters/delete", { ids }, "O‘chirilmadi"),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["explanation-letters"], predicate: (q) => q.queryKey[1] !== "reasons" }),
+  });
+}
+
 // ---------------------------------------------------------------- admin test
 
 export function useTestLetters(enabled: boolean) {
@@ -375,9 +408,9 @@ export function useSignLetter() {
   );
 }
 
-async function downloadPdf(url: string, filename: string) {
+async function downloadPdf(url: string, filename: string, fallback = "PDF yuklanmadi") {
   const res = await fetch(url, { credentials: "include" });
-  if (!res.ok) throw await readError(res, "PDF yuklanmadi");
+  if (!res.ok) throw await readError(res, fallback);
   const href = URL.createObjectURL(await res.blob());
   const a = document.createElement("a");
   a.href = href;
@@ -403,6 +436,10 @@ export function downloadLettersBulk(opts: { month: string; status: "signed" | "w
   const qs = new URLSearchParams({ month: opts.month, status: opts.status });
   if (opts.ids?.length) qs.set("ids", opts.ids.join(","));
   return downloadPdf(`/api/explanation-letters/bulk.pdf?${qs}`, `Tushuntirish_xatlari_${opts.month === "all" ? "barchasi" : opts.month}.pdf`);
+}
+
+export function downloadLettersReportExcel() {
+  return downloadPdf("/api/explanation-letters/report.xlsx", `Tushuntirish_xatlari_${new Date().toISOString().slice(0, 10)}.xlsx`, "Excel yuklanmadi");
 }
 
 export function fmtLetterDate(ymd: string) {

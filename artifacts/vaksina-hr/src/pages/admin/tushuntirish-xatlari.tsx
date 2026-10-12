@@ -6,14 +6,28 @@ import {
   Eye,
   FileDown,
   FileSignature,
+  FileSpreadsheet,
   Heading,
   Loader2,
   MapPin,
   Phone,
   Search,
+  Send,
   ShieldCheck,
+  Trash2,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -25,14 +39,19 @@ import { LetterLookupBar } from "@/components/explanation-letter/LetterLookup";
 import {
   FINAL_STRIKE,
   LETTER_STAGES,
+  canDeleteLetters,
   canManageLetters,
   downloadLetterPdf,
   downloadLettersBulk,
+  downloadLettersReportExcel,
   fmtLetterDate,
   fmtLetterStamp,
   fmtSum,
+  useDeleteLetters,
+  useLetterReportSchedule,
   useMonthLetters,
   useReviewLetter,
+  useSendLetterReport,
   type ExplanationLetter,
 } from "@/lib/explanation-letters-api";
 
@@ -78,8 +97,12 @@ export default function TushuntirishXatlariPage() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [headerOpen, setHeaderOpen] = useState(false);
+  const canDelete = canDeleteLetters(user?.role);
+  const [selected, setSelected] = useState<Set<number>>(() => new Set());
+  const [confirmIds, setConfirmIds] = useState<number[] | null>(null);
   const q = useMonthLetters(month, allowed);
   const review = useReviewLetter();
+  const del = useDeleteLetters();
 
   const items = q.data?.items ?? [];
   const months = useMemo(() => {
@@ -130,8 +153,43 @@ export default function TushuntirishXatlariPage() {
   if (limitKey !== filterKey) {
     setLimitKey(filterKey);
     setLimit(PAGE);
+    setSelected(new Set());
   }
   const shown = useMemo(() => list.slice(0, limit), [list, limit]);
+  const allChecked = list.length > 0 && list.every((l) => selected.has(l.id));
+
+  const toggle = (id: number) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleAll = () => setSelected(allChecked ? new Set() : new Set(list.map((l) => l.id)));
+
+  const confirmLetters = useMemo(() => {
+    if (!confirmIds) return [];
+    const ids = new Set(confirmIds);
+    return items.filter((l) => ids.has(l.id));
+  }, [confirmIds, items]);
+
+  const runDelete = () => {
+    if (!confirmIds?.length) return;
+    const ids = confirmIds;
+    del.mutate(ids, {
+      onSuccess: (r) => {
+        toast({ title: "O‘chirildi", description: `${r.deleted} ta tushuntirish xati tizimdan butunlay o‘chirildi.` });
+        setSelected((prev) => {
+          const next = new Set(prev);
+          for (const id of ids) next.delete(id);
+          return next;
+        });
+        if (openId != null && ids.includes(openId)) setOpenId(null);
+        setConfirmIds(null);
+      },
+      onError: (e) => toast({ title: "O‘chirilmadi", description: (e as Error).message, variant: "destructive" }),
+    });
+  };
 
   const approve = (l: ExplanationLetter) =>
     review.mutate(
@@ -226,6 +284,8 @@ export default function TushuntirishXatlariPage() {
         />
       </div>
 
+      <ReportPanel />
+
       <LetterLookupBar onOpenLetter={setOpenId} />
 
       <section className="space-y-2 rounded-2xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-slate-900">
@@ -298,22 +358,77 @@ export default function TushuntirishXatlariPage() {
         </div>
       ) : (
         <>
+          {canDelete ? (
+            <div
+              className={cn(
+                "sticky top-2 z-10 flex flex-wrap items-center gap-2 rounded-2xl border px-3 py-2 text-sm transition",
+                selected.size
+                  ? "border-red-200 bg-red-50 shadow-sm dark:border-red-500/30 dark:bg-red-950/60"
+                  : "border-slate-200 bg-white dark:border-white/10 dark:bg-slate-900",
+              )}
+            >
+              <label className="inline-flex cursor-pointer items-center gap-2 font-semibold text-slate-700 dark:text-slate-200">
+                <input type="checkbox" className="h-4 w-4 accent-red-600" checked={allChecked} onChange={toggleAll} />
+                Filtrdagi hammasini belgilash ({list.length})
+              </label>
+              {selected.size ? (
+                <>
+                  <span className="text-xs text-red-700 dark:text-red-200">
+                    Belgilangan: <b className="tabular-nums">{selected.size}</b>
+                  </span>
+                  <div className="ml-auto flex gap-2">
+                    <Button type="button" variant="ghost" size="sm" className="h-9 gap-1 rounded-xl" onClick={() => setSelected(new Set())}>
+                      <X className="h-4 w-4" /> Bekor
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-9 gap-1.5 rounded-xl bg-red-600 text-white hover:bg-red-700"
+                      onClick={() => setConfirmIds([...selected])}
+                    >
+                      <Trash2 className="h-4 w-4" /> O‘chirish ({selected.size})
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <span className="text-[11px] text-slate-500">Xatlarni belgilab, birdaniga o‘chirishingiz mumkin</span>
+              )}
+            </div>
+          ) : null}
+
           <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white md:block dark:border-white/10 dark:bg-slate-900">
             <table className="w-full table-fixed text-left text-[13px]">
               <thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:bg-white/5 dark:text-slate-400">
                 <tr>
+                  {canDelete ? (
+                    <th className="w-10 px-3 py-2.5">
+                      <input type="checkbox" className="h-4 w-4 accent-red-600" checked={allChecked} onChange={toggleAll} title="Hammasini belgilash" />
+                    </th>
+                  ) : null}
                   <th className="w-[19%] px-3 py-2.5">Xodim</th>
                   <th className="w-[12%] px-3 py-2.5">Filial</th>
                   <th className="w-[14%] px-3 py-2.5">Muammo</th>
                   <th className="w-[13%] px-3 py-2.5">Bosqich · chora</th>
                   <th className="px-3 py-2.5">Sabab (xodim yozgan)</th>
                   <th className="w-[15%] px-3 py-2.5">Holati · qaror</th>
-                  <th className="w-[120px] px-3 py-2.5 text-right">Amallar</th>
+                  <th className={cn("px-3 py-2.5 text-right", canDelete ? "w-[150px]" : "w-[120px]")}>Amallar</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                 {shown.map((l) => (
-                  <tr key={l.id} onClick={() => setOpenId(l.id)} className="cursor-pointer align-top transition hover:bg-sky-50/50 dark:hover:bg-white/5">
+                  <tr
+                    key={l.id}
+                    onClick={() => setOpenId(l.id)}
+                    className={cn(
+                      "cursor-pointer align-top transition hover:bg-sky-50/50 dark:hover:bg-white/5",
+                      selected.has(l.id) && "bg-red-50/70 hover:bg-red-50 dark:bg-red-500/10",
+                    )}
+                  >
+                    {canDelete ? (
+                      <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" className="h-4 w-4 accent-red-600" checked={selected.has(l.id)} onChange={() => toggle(l.id)} />
+                      </td>
+                    ) : null}
                     <td className="px-3 py-2.5">
                       <p className="flex items-center gap-1.5 font-semibold text-slate-900 dark:text-white">
                         <span className="truncate">{l.fullName}</span>
@@ -365,6 +480,11 @@ export default function TushuntirishXatlariPage() {
                         <IconBtn title="PDF yuklab olish" disabled={busyId === l.id} onClick={() => void pdf(l)}>
                           {busyId === l.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
                         </IconBtn>
+                        {canDelete ? (
+                          <IconBtn title="O‘chirish" tone="danger" onClick={() => setConfirmIds([l.id])}>
+                            <Trash2 className="h-4 w-4" />
+                          </IconBtn>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -381,9 +501,19 @@ export default function TushuntirishXatlariPage() {
                 className={cn(
                   "rounded-2xl border bg-white p-3 shadow-sm active:scale-[0.99] dark:bg-slate-900",
                   l.status === "signed" ? "border-slate-200 dark:border-white/10" : "border-amber-200 dark:border-amber-500/30",
+                  selected.has(l.id) && "border-red-300 bg-red-50/70 dark:border-red-500/40 dark:bg-red-500/10",
                 )}
               >
                 <div className="flex items-start gap-2">
+                  {canDelete ? (
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-5 w-5 shrink-0 accent-red-600"
+                      checked={selected.has(l.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={() => toggle(l.id)}
+                    />
+                  ) : null}
                   <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-1.5 text-sm font-bold text-slate-900 dark:text-white">
                       {l.fullName}
@@ -459,6 +589,21 @@ export default function TushuntirishXatlariPage() {
                     {busyId === l.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
                     PDF
                   </Button>
+                  {canDelete ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-9 w-9 shrink-0 rounded-xl border-red-200 p-0 text-red-600 hover:bg-red-50"
+                      title="O‘chirish"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConfirmIds([l.id]);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  ) : null}
                 </div>
               </li>
             ))}
@@ -476,7 +621,112 @@ export default function TushuntirishXatlariPage() {
 
       <ExplanationLetterDialog letterId={openId} mode="admin" onClose={() => setOpenId(null)} />
       <LetterHeaderDialog open={headerOpen} onClose={() => setHeaderOpen(false)} />
+
+      <AlertDialog open={confirmIds != null} onOpenChange={(o) => !o && !del.isPending && setConfirmIds(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmIds?.length === 1 ? "Tushuntirish xatini o‘chirasizmi?" : `${confirmIds?.length ?? 0} ta tushuntirish xatini o‘chirasizmi?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  Xat tizimdan <b>butunlay</b> o‘chiriladi: xodim sababi, imzo va qaror ham yo‘qoladi. Bu holat jarima va bosqich
+                  hisobidan chiqariladi va qayta yaratilmaydi. Amalni ortga qaytarib bo‘lmaydi.
+                </p>
+                {confirmLetters.length ? (
+                  <ul className="max-h-40 space-y-0.5 overflow-y-auto rounded-xl bg-slate-50 p-2 text-[12px] dark:bg-white/5">
+                    {confirmLetters.slice(0, 50).map((l) => (
+                      <li key={l.id} className="flex justify-between gap-2">
+                        <span className="truncate font-semibold text-slate-800 dark:text-slate-100">{l.fullName}</span>
+                        <span className="shrink-0 tabular-nums text-slate-500">
+                          {fmtLetterDate(l.eventDate)} · № {l.letterNo}
+                        </span>
+                      </li>
+                    ))}
+                    {confirmLetters.length > 50 ? <li className="text-slate-500">… va yana {confirmLetters.length - 50} ta</li> : null}
+                  </ul>
+                ) : null}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={del.isPending}>Bekor</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 text-white hover:bg-red-700"
+              disabled={del.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                runDelete();
+              }}
+            >
+              {del.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Trash2 className="mr-1.5 h-4 w-4" />}
+              O‘chirish
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
+  );
+}
+
+function ReportPanel() {
+  const { toast } = useToast();
+  const sched = useLetterReportSchedule(true);
+  const send = useSendLetterReport();
+  const [downloading, setDownloading] = useState(false);
+  const s = sched.data;
+
+  const excel = async () => {
+    setDownloading(true);
+    try {
+      await downloadLettersReportExcel();
+    } catch (e) {
+      toast({ title: "Excel", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <section className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3 sm:flex-row sm:items-center dark:border-emerald-500/30 dark:bg-emerald-500/5">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white">
+        <FileSpreadsheet className="h-5 w-5" />
+      </span>
+      <div className="min-w-0 flex-1 text-[12px] leading-snug text-slate-600 dark:text-slate-300">
+        <p className="text-sm font-bold text-slate-900 dark:text-white">Telegram hisobot — har {s?.everyDays ?? 3} kunda soat {String(s?.hour ?? 10).padStart(2, "0")}:00</p>
+        <p>
+          Barcha xatlar Excelda: tasdiqlangan, tasdiqlanmagan, bekor qilingan — ism, filial, sabab, izoh bilan, filtr bilan.
+        </p>
+        <p className="mt-0.5 tabular-nums text-slate-500">
+          {sched.isLoading
+            ? "Yuklanmoqda…"
+            : s
+              ? `Oxirgi: ${s.lastSentOn ? fmtLetterDate(s.lastSentOn) : "hali yuborilmagan"} · Keyingisi: ${fmtLetterDate(s.nextSendOn)} 10:00 · Guruh ${s.chatId}`
+              : "Holat yuklanmadi"}
+        </p>
+      </div>
+      <div className="flex gap-2">
+        <Button type="button" variant="outline" className="h-10 flex-1 gap-1.5 rounded-xl sm:flex-none" disabled={downloading} onClick={() => void excel()}>
+          {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+          Excel
+        </Button>
+        <Button
+          type="button"
+          className="h-10 flex-1 gap-1.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 sm:flex-none"
+          disabled={send.isPending}
+          onClick={() =>
+            send.mutate(undefined, {
+              onSuccess: (r) => toast({ title: "Telegramga yuborildi", description: `${r.totals.all} ta xat hisobotda.` }),
+              onError: (e) => toast({ title: "Yuborilmadi", description: (e as Error).message, variant: "destructive" }),
+            })
+          }
+        >
+          {send.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          Hozir yuborish
+        </Button>
+      </div>
+    </section>
   );
 }
 
@@ -502,7 +752,7 @@ function IconBtn({
   title: string;
   onClick: () => void;
   disabled?: boolean;
-  tone?: "success";
+  tone?: "success" | "danger";
   children: ReactNode;
 }) {
   return (
@@ -518,7 +768,9 @@ function IconBtn({
         "flex h-8 w-8 items-center justify-center rounded-lg border transition disabled:opacity-50",
         tone === "success"
           ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200"
-          : "border-slate-200 text-slate-600 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-800 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5",
+          : tone === "danger"
+            ? "border-red-200 text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:text-red-300 dark:hover:bg-red-500/10"
+            : "border-slate-200 text-slate-600 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-800 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5",
       )}
     >
       {children}

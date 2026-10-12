@@ -15,6 +15,7 @@ import {
   reasonProblem,
   reviewLetter,
   saveLetterSettings,
+  deleteLetters,
   deleteTestLetters,
   explanationPunchBlock,
   issuedLetterNo,
@@ -36,6 +37,7 @@ import {
   type LetterSettings,
 } from "../lib/explanation-letter";
 import { renderExplanationLetterPdf } from "../lib/explanation-letter-pdf";
+import { buildExplanationReport, reportSchedule, sendExplanationReport } from "../lib/explanation-letter-report";
 import { freshDisciplineScan, runDisciplineScan, todayTashkent } from "../lib/discipline";
 import { isJarimaEnabled } from "../lib/jarima-switch";
 
@@ -260,6 +262,71 @@ router.get("/explanation-letters/bulk.pdf", requireAuth, async (req: AuthRequest
   }
 });
 
+// ---------------------------------------------------------------- 3 kunlik hisobot va o‘chirish
+
+router.get("/explanation-letters/report", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManage(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin va HR uchun" });
+    return;
+  }
+  try {
+    res.json(await reportSchedule());
+  } catch (err) {
+    logLetterError(err, "report-status");
+    res.status(503).json({ error: "Hisobot holati yuklanmadi" });
+  }
+});
+
+router.get("/explanation-letters/report.xlsx", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManage(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin va HR uchun" });
+    return;
+  }
+  try {
+    const report = await buildExplanationReport();
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${report.filename}"`);
+    res.send(report.buffer);
+  } catch (err) {
+    logLetterError(err, "report-xlsx");
+    res.status(503).json({ error: "Excel tayyorlanmadi" });
+  }
+});
+
+router.post("/explanation-letters/report/send", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManage(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin va HR uchun" });
+    return;
+  }
+  try {
+    res.json({ ok: true, totals: await sendExplanationReport() });
+  } catch (err) {
+    logLetterError(err, "report-send");
+    res.status(503).json({ error: err instanceof Error ? err.message : "Telegramga yuborilmadi" });
+  }
+});
+
+/** Admin: bir nechta xatni tizimdan butunlay o‘chirish */
+router.post("/explanation-letters/delete", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!hasFullPlatformAccess(req.userRole)) {
+    res.status(403).json({ error: "Xatlarni faqat admin o‘chiradi" });
+    return;
+  }
+  const ids: number[] = (Array.isArray(req.body?.ids) ? req.body.ids : []).map(Number).slice(0, 2000);
+  if (!ids.length) {
+    res.status(400).json({ error: "O‘chirish uchun xat tanlang" });
+    return;
+  }
+  try {
+    const deleted = await deleteLetters(ids, { id: req.userId!, name: await userName(req.userId!) });
+    void runDisciplineScan();
+    res.json({ ok: true, deleted });
+  } catch (err) {
+    logLetterError(err, "delete-bulk");
+    res.status(503).json({ error: "O‘chirilmadi" });
+  }
+});
+
 // ---------------------------------------------------------------- admin test
 
 router.get("/explanation-letters/test", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -415,6 +482,30 @@ router.get("/explanation-letters/:id/pdf", requireAuth, async (req: AuthRequest,
   } catch (err) {
     logLetterError(err, "pdf");
     res.status(503).json({ error: "PDF tayyorlanmadi" });
+  }
+});
+
+router.delete("/explanation-letters/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!hasFullPlatformAccess(req.userRole)) {
+    res.status(403).json({ error: "Xatlarni faqat admin o‘chiradi" });
+    return;
+  }
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Noto‘g‘ri ID" });
+    return;
+  }
+  try {
+    const deleted = await deleteLetters([id], { id: req.userId!, name: await userName(req.userId!) });
+    if (!deleted) {
+      res.status(404).json({ error: "Tushuntirish xati topilmadi" });
+      return;
+    }
+    void runDisciplineScan();
+    res.json({ ok: true, deleted });
+  } catch (err) {
+    logLetterError(err, "delete");
+    res.status(503).json({ error: "O‘chirilmadi" });
   }
 });
 

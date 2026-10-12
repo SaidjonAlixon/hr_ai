@@ -161,7 +161,24 @@ export function ensureExplanationSchema(): Promise<void> {
            is_test BOOLEAN NOT NULL DEFAULT FALSE,
            issued_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
          );
-         CREATE UNIQUE INDEX IF NOT EXISTS explanation_letters_no_uq ON explanation_letters (letter_no);`,
+         CREATE UNIQUE INDEX IF NOT EXISTS explanation_letters_no_uq ON explanation_letters (letter_no);
+         CREATE TABLE IF NOT EXISTS explanation_letter_deletions (
+           user_id INTEGER NOT NULL,
+           event_date TEXT NOT NULL,
+           kind TEXT NOT NULL,
+           letter_no TEXT,
+           full_name TEXT,
+           deleted_by INTEGER,
+           deleted_by_name TEXT,
+           deleted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+           PRIMARY KEY (user_id, event_date, kind)
+         );
+         CREATE TABLE IF NOT EXISTS explanation_report_log (
+           sent_on TEXT PRIMARY KEY,
+           chat_id TEXT,
+           total INTEGER,
+           sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+         );`,
       )
       .then(() => migrateLetterNumbers())
       .catch((err) => {
@@ -289,8 +306,14 @@ export async function syncExplanationLetters(month: string, people: JarimaPerson
   await ensureExplanationSchema();
   const keep: string[] = [];
   const recentFrom = shiftYmd(today, -2);
+  const { rows: deletedRows } = await pool.query(
+    `SELECT user_id, event_date, kind FROM explanation_letter_deletions WHERE event_date LIKE $1`,
+    [`${month}-%`],
+  );
+  const deleted = new Set(deletedRows.map((r) => `${r.user_id}|${r.event_date}|${r.kind}`));
   for (const p of people) {
     for (const ev of p.events) {
+      if (deleted.has(`${p.userId}|${ev.date}|${ev.kind}`)) continue;
       keep.push(`${p.userId}|${ev.date}|${ev.kind}`);
       const { rows } = await pool.query(
         `INSERT INTO explanation_letters
@@ -583,15 +606,46 @@ export async function reviewLetter(
   return letterById(id);
 }
 
-/** Bekor qilingan xatlar — `user|sana|tur`; jarima hisobidan chiqariladi */
+/** Bekor qilingan va admin o‘chirgan xatlar — `user|sana|tur`; jarima hisobidan chiqariladi */
 export async function cancelledLetterKeys(from: string, to: string): Promise<Set<string>> {
   await ensureExplanationSchema();
   const { rows } = await pool.query(
     `SELECT user_id, event_date, kind FROM explanation_letters
-      WHERE review_status = 'cancelled' AND NOT is_test AND event_date BETWEEN $1 AND $2`,
+      WHERE review_status = 'cancelled' AND NOT is_test AND event_date BETWEEN $1 AND $2
+     UNION
+     SELECT user_id, event_date, kind FROM explanation_letter_deletions WHERE event_date BETWEEN $1 AND $2`,
     [from, to],
   );
   return new Set(rows.map((r) => `${r.user_id}|${r.event_date}|${r.kind}`));
+}
+
+/**
+ * Admin xatlarni tizimdan butunlay o‘chiradi. Haqiqiy xat qayta yaratilmasligi uchun
+ * hodisa o‘chirilganlar ro‘yxatiga yoziladi (jarima hisobidan ham chiqadi).
+ */
+export async function deleteLetters(ids: number[], by: { id: number; name: string }): Promise<number> {
+  await ensureExplanationSchema();
+  const clean = [...new Set(ids.filter((n) => Number.isInteger(n) && n > 0))];
+  if (!clean.length) return 0;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO explanation_letter_deletions (user_id, event_date, kind, letter_no, full_name, deleted_by, deleted_by_name)
+       SELECT user_id, event_date, kind, letter_no, full_name, $2, $3 FROM explanation_letters
+        WHERE id = ANY($1::int[]) AND NOT is_test
+       ON CONFLICT (user_id, event_date, kind) DO NOTHING`,
+      [clean, by.id, by.name],
+    );
+    const { rowCount } = await client.query(`DELETE FROM explanation_letters WHERE id = ANY($1::int[])`, [clean]);
+    await client.query("COMMIT");
+    return rowCount ?? 0;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // ---------------------------------------------------------------- shapka sozlamalari

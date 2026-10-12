@@ -1,22 +1,20 @@
 /**
  * Vazifalar eslatmasi (Telegram):
- *  - har kuni 10:00 va 17:00 — har bir xodimga alohida xabar + PDF: jarayondagi va tasdiqlashi kerak bo‘lgan topshiriqlar.
- *    Shaxsan (Maxfiy bilan) va «Vaksinamed UZ» guruhining General bo‘limiga (Maxfiy topshiriqlarsiz), har kim belgilangan holda;
- *  - har 3 soatda (09, 12, 15, 18) — tekshiruvda qolib ketgan topshiriqlar: har bir rahbarga alohida, tasdiqlang yoki qaytaring.
+ *  - har kuni 10:00 va 17:00 — har bir xodimga faqat shaxsan (platforma + Telegram, PDF bilan) ogohlantirish:
+ *    «sizga topshiriq bor — to‘liq bajaring», «siz qo‘ygan topshiriq bajarildi — tekshiring»;
+ *  - har 3 soatda (09, 12, 15, 18) — tekshiruvda qolib ketgan topshiriqlar: har bir rahbarga shaxsan, tasdiqlang yoki qaytaring.
+ *  Guruhga hech narsa yuborilmaydi.
  */
 import { rgb } from "pdf-lib";
 import { pool } from "@workspace/db";
 import { logger } from "./logger";
 import { notifyUser } from "./notify";
 import { renderTaskDigestPdf, SECTION_TONES, type DigestPdfSection } from "./task-digest-pdf";
-import { escapeHtml, getStickerSet, isTelegramConfigured, publicAppUrl, sendDocument, sendMessage, sendSticker } from "./telegram";
+import { escapeHtml, getStickerSet, isTelegramConfigured, publicAppUrl, sendDocument, sendSticker } from "./telegram";
 
-export const TASK_GROUP_CHAT_ID = process.env.TASK_DIGEST_CHAT_ID?.trim() || "-1004337392139";
 export const DIGEST_HOURS = [10, 17];
 export const REVIEW_HOURS = [9, 12, 15, 18];
 
-/** Telegram: bitta guruhga daqiqasiga ~20 xabar */
-const GROUP_PAUSE_MS = 3_200;
 const DM_PAUSE_MS = 600;
 
 type TaskRow = {
@@ -78,7 +76,9 @@ async function loadOpen(): Promise<{ tasks: TaskRow[]; people: Map<number, Perso
            CASE WHEN t.assignee_kind = 'employee' THEN e.user_id ELSE t.assignee_id END AS assignee_uid
       FROM tasks t
       LEFT JOIN employees e ON t.assignee_kind = 'employee' AND e.id = t.assignee_id
-     WHERE t.status IN ('todo', 'in_progress', 'done')`);
+     WHERE t.status IN ('todo', 'in_progress', 'done')
+       AND t.candidate_id IS NULL AND t.pipeline_stage IS NULL
+       AND t.title !~* '^[0-9]+-qadam'`);
   const tasks: TaskRow[] = rows.map((r) => ({
     id: Number(r.id),
     title: String(r.title || "").replace(/\s+/g, " ").trim().slice(0, 160) || `Vazifa #${r.id}`,
@@ -133,17 +133,7 @@ function bucketize(tasks: TaskRow[]): Map<number, Bucket> {
 
 const bucketSize = (b: Bucket) => b.todo.length + b.doing.length + b.inReview.length + b.toApprove.length;
 
-function withoutPrivate(b: Bucket): Bucket {
-  const f = (l: TaskRow[]) => l.filter((t) => !t.isPrivate);
-  return { todo: f(b.todo), doing: f(b.doing), inReview: f(b.inReview), toApprove: f(b.toApprove) };
-}
-
 // ---------------------------------------------------------------- matn va PDF
-
-function mention(p: Person | undefined, fallbackId: number): string {
-  const name = escapeHtml(p?.name ?? `Foydalanuvchi #${fallbackId}`);
-  return p?.telegramId ? `<a href="tg://user?id=${p.telegramId}">${name}</a>` : `<b>${name}</b>`;
-}
 
 const overdue = (t: TaskRow, now: number) => !!t.dueAt && t.dueAt.getTime() < now;
 
@@ -171,7 +161,7 @@ function waitRow(t: TaskRow, now: number, who: string) {
   };
 }
 
-async function personPdf(p: Person | undefined, b: Bucket, people: Map<number, Person>, now: number, opts: { group: boolean }): Promise<Buffer> {
+async function personPdf(p: Person | undefined, b: Bucket, people: Map<number, Person>, now: number): Promise<Buffer> {
   const nameOf = (id: number | null) => (id != null && people.get(id)?.name) || "—";
   const sections: DigestPdfSection[] = [
     {
@@ -211,7 +201,7 @@ async function personPdf(p: Person | undefined, b: Bucket, people: Map<number, P
   const red = rgb(0.75, 0.1, 0.12);
   return renderTaskDigestPdf({
     heading: `Vazifalar hisoboti — ${p?.name ?? ""}`,
-    subtitle: `${stamp(new Date())} holatiga${opts.group ? " · Maxfiy topshiriqlar kiritilmagan" : ""}`,
+    subtitle: `${stamp(new Date())} holatiga · shaxsiy hisobot`,
     summary: [
       { label: "Jarayonda", value: String(b.doing.length), fg: SECTION_TONES.doing.fg },
       { label: "Qabul qilinmagan", value: String(b.todo.length), fg: SECTION_TONES.todo.fg },
@@ -233,21 +223,27 @@ async function personPdf(p: Person | undefined, b: Bucket, people: Map<number, P
   });
 }
 
-function personCaption(p: Person | undefined, id: number, b: Bucket, now: number, opts: { group: boolean; morning: boolean }): string {
+function personCaption(p: Person | undefined, b: Bucket, now: number, morning: boolean): string {
   const late = [...b.doing, ...b.todo].filter((t) => overdue(t, now)).length;
   const oldest = b.toApprove[0]?.completedAt ? dur(now - b.toApprove[0].completedAt.getTime()) : null;
+  const mine = b.doing.length + b.todo.length;
   const lines = [
-    opts.group ? `👤 ${mention(p, id)}` : `👤 <b>${escapeHtml(p?.name ?? "")}</b>, ${opts.morning ? "xayrli tong" : "xayrli kech"}!`,
+    `🔔 <b>OGOHLANTIRISH</b> · ${escapeHtml(p?.name ?? "")}, ${morning ? "xayrli tong" : "xayrli kech"}!`,
     "",
-    b.doing.length ? `🛠 Jarayonda — bajarishingiz kerak: <b>${b.doing.length} ta</b>` : "",
-    b.todo.length ? `📥 Hali qabul qilinmagan: <b>${b.todo.length} ta</b>` : "",
-    late ? `⚠️ Muddati o‘tgan: <b>${late} ta</b>` : "",
-    b.toApprove.length ? `✅ Tasdiqlashingiz kerak: <b>${b.toApprove.length} ta</b>${oldest ? ` (eng uzoq kutgani ${oldest})` : ""}` : "",
-    b.inReview.length ? `🔎 Tekshiruvda — rahbar tasdig‘ini kutmoqda: <b>${b.inReview.length} ta</b>` : "",
+    mine
+      ? `📌 <b>Sizga topshiriq bor — ${mine} ta.</b> Platformaga kirib, to‘liq bajaring va natijani yuklang.`
+      : "",
+    b.doing.length ? `🛠 Jarayonda: <b>${b.doing.length} ta</b>` : "",
+    b.todo.length ? `📥 Hali qabul qilmagansiz: <b>${b.todo.length} ta</b>` : "",
+    late ? `⚠️ Muddati o‘tgan: <b>${late} ta</b> — zudlik bilan bajaring` : "",
+    "",
+    b.toApprove.length
+      ? `✅ <b>Siz topshiriq qo‘ygansiz — ${b.toApprove.length} tasi bajarildi.</b> Platformaga kirib tekshiring va tasdiqlang yoki izoh bilan qaytaring${oldest ? ` (eng uzoq kutgani ${oldest})` : ""}. Bajargan xodimga minus yozilmasin.`
+      : "",
+    b.inReview.length ? `🔎 Siz bajargan ${b.inReview.length} ta topshiriq rahbar tasdig‘ini kutmoqda.` : "",
     "",
     "📎 To‘liq ro‘yxat (muddat, qolgan vaqt, kim bajargan) — PDF ichida.",
-    b.toApprove.length ? "💡 Bajarilganlarni tasdiqlang yoki izoh bilan qaytaring — bajargan xodimga minus yozilmasin." : "",
-    b.doing.length || b.todo.length ? "💡 Muddatidan oldin bajarib, natijani tizimga yuklang." : "",
+    `🔗 Platforma: ${publicAppUrl() || ""}/vazifalar`,
   ];
   return lines
     .filter((l, i, a) => l !== "" || (a[i - 1] !== "" && i > 0))
@@ -297,7 +293,7 @@ async function docTo(chatId: string, pdf: Buffer, filename: string, caption: str
 
 // ---------------------------------------------------------------- 10:00 / 17:00 jamlanma
 
-export async function sendTaskDigest(): Promise<{ people: number; dms: number; groupPeople: number }> {
+export async function sendTaskDigest(): Promise<{ people: number; dms: number; platform: number }> {
   if (!isTelegramConfigured()) throw new Error("Telegram bot sozlanmagan");
   const { tasks, people } = await loadOpen();
   const buckets = bucketize(tasks);
@@ -309,86 +305,55 @@ export async function sendTaskDigest(): Promise<{ people: number; dms: number; g
     .filter(([id, b]) => people.get(id)?.active !== false && bucketSize(b) > 0)
     .sort((a, b) => bucketSize(b[1]) - bucketSize(a[1]) || (people.get(a[0])?.name ?? "").localeCompare(people.get(b[0])?.name ?? "", "uz"));
 
-  // Shaxsan — har kimga o‘z xabari va PDF (Maxfiy topshiriqlar ham)
+  // Faqat shaxsan — har kimga o‘z ogohlantirishi: platformada va Telegramda (PDF bilan)
   let dms = 0;
+  let platform = 0;
   for (const [id, b] of order) {
     const p = people.get(id);
-    const short = [
-      b.doing.length ? `jarayonda ${b.doing.length}` : "",
-      b.todo.length ? `qabul qilinmagan ${b.todo.length}` : "",
-      b.toApprove.length ? `tasdiqlashingiz kerak ${b.toApprove.length}` : "",
-      b.inReview.length ? `tekshiruvda ${b.inReview.length}` : "",
+    const mine = b.doing.length + b.todo.length;
+    const warn = [
+      mine ? `Sizga ${mine} ta topshiriq bor — kirib to‘liq bajaring.` : "",
+      b.toApprove.length ? `Siz qo‘ygan ${b.toApprove.length} ta topshiriq bajarildi — kirib tekshiring va tasdiqlang.` : "",
+      !mine && !b.toApprove.length && b.inReview.length ? `Siz bajargan ${b.inReview.length} ta topshiriq rahbar tasdig‘ini kutmoqda.` : "",
     ]
       .filter(Boolean)
-      .join(", ");
-    await notifyUser({ userId: id, text: `🔔 Vazifalar: ${short}`, type: "task_digest", linkUrl: "/vazifalar", title: "Vazifalar eslatmasi", telegram: false }).catch(
-      () => undefined,
-    );
+      .join(" ");
+    try {
+      await notifyUser({ userId: id, text: `🔔 ${warn}`, type: "task_digest", linkUrl: "/vazifalar", title: "Topshiriqlar — ogohlantirish", telegram: false });
+      platform += 1;
+    } catch (err) {
+      logger.warn({ err, userId: id }, "Platforma ogohlantirishi yozilmadi");
+    }
     if (!p?.telegramId) continue;
     try {
-      const pdf = await personPdf(p, b, people, now, { group: false });
+      const pdf = await personPdf(p, b, people, now);
       await stickerTo(p.telegramId, sticker);
-      await docTo(p.telegramId, pdf, pdfName(p, "Vazifalarim"), personCaption(p, id, b, now, { group: false, morning }));
+      await docTo(p.telegramId, pdf, pdfName(p, "Vazifalarim"), personCaption(p, b, now, morning));
       dms += 1;
     } catch (err) {
       logger.warn({ err, userId: id }, "Vazifa eslatmasi shaxsan yuborilmadi");
     }
     await pause(DM_PAUSE_MS);
   }
-
-  // Guruhga — umumiy sarlavha, keyin har bir xodimga alohida xabar + PDF (Maxfiysiz)
-  const groupList = order
-    .map(([id, raw]) => {
-      const b = withoutPrivate(raw);
-      b.inReview = [];
-      return [id, b] as const;
-    })
-    .filter(([, b]) => bucketSize(b) > 0);
-  if (groupList.length) {
-    const sum = (k: keyof Bucket) => groupList.reduce((s, [, b]) => s + b[k].length, 0);
-    const late = groupList.reduce((s, [, b]) => s + [...b.doing, ...b.todo].filter((t) => overdue(t, now)).length, 0);
-    await stickerTo(TASK_GROUP_CHAT_ID, sticker);
-    await sendMessage(
-      TASK_GROUP_CHAT_ID,
-      [
-        `🔔 <b>Vazifalar jamlanmasi</b> · ${stamp(new Date())} holatiga`,
-        "",
-        `🛠 Jarayonda: <b>${sum("doing")}</b>`,
-        `📥 Qabul qilinmagan: <b>${sum("todo")}</b>`,
-        `⚠️ Muddati o‘tgan: <b>${late}</b>`,
-        `✅ Tasdiqlash kutilmoqda: <b>${sum("toApprove")}</b>`,
-        "",
-        `👥 Quyida har bir xodimga <b>alohida</b> xabar va to‘liq ro‘yxat PDF (${groupList.length} kishi).`,
-        "🔒 Maxfiy topshiriqlar guruhga chiqarilmaydi — ular faqat shaxsiy xabarda.",
-      ].join("\n"),
-    );
-    await pause(GROUP_PAUSE_MS);
-    for (const [id, b] of groupList) {
-      const p = people.get(id);
-      try {
-        const pdf = await personPdf(p, b, people, now, { group: true });
-        await docTo(TASK_GROUP_CHAT_ID, pdf, pdfName(p, "Vazifalar"), personCaption(p, id, b, now, { group: true, morning }));
-      } catch (err) {
-        logger.warn({ err, userId: id }, "Vazifa eslatmasi guruhga yuborilmadi");
-      }
-      await pause(GROUP_PAUSE_MS);
-    }
-  }
-  return { people: order.length, dms, groupPeople: groupList.length };
+  return { people: order.length, dms, platform };
 }
 
 // ---------------------------------------------------------------- har 3 soatda: tekshiruvda qolganlar
 
-function reviewCaption(p: Person | undefined, id: number, list: TaskRow[], now: number, group: boolean): string {
+function reviewCaption(p: Person | undefined, list: TaskRow[], now: number): string {
   const oldest = list[0]?.completedAt ? dur(now - list[0].completedAt.getTime()) : null;
   const overDay = list.filter((t) => t.completedAt && now - t.completedAt.getTime() > 86_400_000).length;
   return [
-    `⏰ ${group ? mention(p, id) : `<b>${escapeHtml(p?.name ?? "")}</b>`}, tasdiqlashingizni kutayotgan topshiriqlar: <b>${list.length} ta</b>`,
+    `⏰ <b>OGOHLANTIRISH</b> · ${escapeHtml(p?.name ?? "")}`,
+    "",
+    `✅ <b>Siz topshiriq qo‘ygansiz — ${list.length} tasi bajarildi va tekshiruvda turibdi.</b>`,
+    "Platformaga kirib tekshiring: tasdiqlang yoki izoh bilan qaytaring.",
     oldest ? `⌛ Eng uzoq kutgani: <b>${oldest}</b>` : "",
     overDay ? `⚠️ 1 kundan ortiq kutayotgani: <b>${overDay} ta</b>` : "",
     "",
     "📎 Qaysi topshiriq, kim bajargan va qancha kutayotgani — PDF ichida.",
-    "🙏 Iltimos, ko‘rib chiqib <b>tasdiqlang</b> yoki izoh bilan <b>qaytaring</b> — topshiriq qolib ketmasin va bajargan xodimga minus yozilmasin.",
+    "🙏 Topshiriq qolib ketmasin va bajargan xodimga minus yozilmasin.",
+    `🔗 Platforma: ${publicAppUrl() || ""}/vazifalar`,
   ]
     .filter((l, i, a) => l !== "" || a[i - 1] !== "")
     .join("\n");
@@ -407,45 +372,29 @@ export async function sendReviewReminder(): Promise<{ approvers: number; tasks: 
   const only = (list: TaskRow[]): Bucket => ({ todo: [], doing: [], inReview: [], toApprove: list });
 
   let dms = 0;
+  let total = 0;
   for (const [id, list] of order) {
     const p = people.get(id);
-    if (!p?.telegramId || !p.active) continue;
+    if (p?.active === false) continue;
+    total += list.length;
+    await notifyUser({
+      userId: id,
+      text: `⏰ Siz qo‘ygan ${list.length} ta topshiriq bajarildi va tekshiruvda turibdi — kirib tekshiring, tasdiqlang yoki qaytaring.`,
+      type: "task_review_reminder",
+      linkUrl: "/vazifalar",
+      title: "Tasdiqlash kutilmoqda",
+      telegram: false,
+    }).catch((err) => logger.warn({ err, userId: id }, "Platforma ogohlantirishi yozilmadi"));
+    if (!p?.telegramId) continue;
     try {
-      const pdf = await personPdf(p, only(list), people, now, { group: false });
+      const pdf = await personPdf(p, only(list), people, now);
       await stickerTo(p.telegramId, sticker);
-      await docTo(p.telegramId, pdf, pdfName(p, "Tasdiqlash_kutilmoqda"), reviewCaption(p, id, list, now, false));
+      await docTo(p.telegramId, pdf, pdfName(p, "Tasdiqlash_kutilmoqda"), reviewCaption(p, list, now));
       dms += 1;
     } catch (err) {
       logger.warn({ err, userId: id }, "Tasdiqlash eslatmasi shaxsan yuborilmadi");
     }
     await pause(DM_PAUSE_MS);
-  }
-
-  const groupList = order.map(([id, all]) => [id, all.filter((t) => !t.isPrivate)] as const).filter(([, l]) => l.length > 0);
-  const total = groupList.reduce((s, [, l]) => s + l.length, 0);
-  if (groupList.length) {
-    await stickerTo(TASK_GROUP_CHAT_ID, sticker);
-    await sendMessage(
-      TASK_GROUP_CHAT_ID,
-      [
-        `⏰ <b>Tekshiruvda qolib ketgan topshiriqlar: ${total} ta</b> · ${stamp(new Date())}`,
-        "",
-        ...groupList.map(([id, l], i) => `${i + 1}. ${mention(people.get(id), id)} — <b>${l.length} ta</b>`),
-        "",
-        "Tasdiqlang yoki bekor qilib qaytaring. Har bir rahbarga alohida xabar va PDF quyida.",
-      ].join("\n"),
-    );
-    await pause(GROUP_PAUSE_MS);
-    for (const [id, list] of groupList) {
-      const p = people.get(id);
-      try {
-        const pdf = await personPdf(p, only([...list]), people, now, { group: true });
-        await docTo(TASK_GROUP_CHAT_ID, pdf, pdfName(p, "Tasdiqlash_kutilmoqda"), reviewCaption(p, id, [...list], now, true));
-      } catch (err) {
-        logger.warn({ err, userId: id }, "Tasdiqlash eslatmasi guruhga yuborilmadi");
-      }
-      await pause(GROUP_PAUSE_MS);
-    }
   }
   return { approvers: order.length, tasks: total, dms };
 }
@@ -488,8 +437,8 @@ export async function taskDigestTick(): Promise<void> {
   try {
     await ensureSchema();
     const { ymd, hour } = tashkentNow();
-    const { rows } = await pool.query(`SELECT 1 FROM task_digest_log WHERE slot LIKE 'digest:%:pdf%' LIMIT 1`);
-    if (!rows.length) await runSlot(`digest:${ymd}:pdf-start`, sendTaskDigest);
+    const { rows } = await pool.query(`SELECT 1 FROM task_digest_log WHERE slot LIKE 'digest:%:clean%' LIMIT 1`);
+    if (!rows.length) await runSlot(`digest:${ymd}:clean-start`, sendTaskDigest);
     if (DIGEST_HOURS.includes(hour)) await runSlot(`digest:${ymd}:${hour}`, sendTaskDigest);
     if (REVIEW_HOURS.includes(hour)) await runSlot(`review:${ymd}:${hour}`, sendReviewReminder);
   } finally {

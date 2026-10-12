@@ -17,6 +17,7 @@ import { startDisciplineScanJob } from "./jobs/discipline-scan";
 import { startConferenceReminderJob } from "./jobs/conference-reminders";
 import { startDavomatAutoReportJob } from "./jobs/davomat-auto-report";
 import { startExplanationReportJob } from "./jobs/explanation-report";
+import { startTaskDigestJob } from "./jobs/task-digest";
 
 /** Vercel sets VERCEL=1 — serverless uses exported app, no listen. */
 const isVercel = process.env.VERCEL === "1" || process.env.VERCEL === "true";
@@ -64,6 +65,7 @@ if (!isVercel) {
     startConferenceReminderJob();
     startDavomatAutoReportJob();
     startExplanationReportJob();
+    startTaskDigestJob();
   });
 }
 

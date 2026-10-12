@@ -160,6 +160,18 @@ export async function sendMessage(
   });
 }
 
+export async function sendSticker(chatId: number | string, sticker: string, opts?: { message_thread_id?: number | null }) {
+  return tgCall<TelegramMessage>("sendSticker", {
+    chat_id: chatId,
+    message_thread_id: opts?.message_thread_id || undefined,
+    sticker,
+  });
+}
+
+export async function getStickerSet(name: string) {
+  return tgCall<{ name: string; stickers: Array<{ file_id: string; emoji?: string }> }>("getStickerSet", { name });
+}
+
 export async function deleteMessage(chatId: number | string, messageId: number) {
   return tgCall<boolean>("deleteMessage", { chat_id: chatId, message_id: messageId });
 }

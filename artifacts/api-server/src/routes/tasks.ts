@@ -19,6 +19,21 @@ import {
 const router: IRouter = Router();
 
 import { isDirectorRole, hasFullPlatformAccess, canSetPrivateTaskVisibility } from "../lib/roles";
+import { sendReviewReminder, sendTaskDigest } from "../lib/task-digest";
+
+/** Admin: vazifalar eslatmasini hozir yuborish (kind: digest | review) */
+router.post("/tasks/digest/send", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!hasFullPlatformAccess(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin uchun" });
+    return;
+  }
+  try {
+    const result = req.body?.kind === "review" ? await sendReviewReminder() : await sendTaskDigest();
+    res.json({ ok: true, result });
+  } catch (err) {
+    res.status(503).json({ error: err instanceof Error ? err.message : "Yuborilmadi" });
+  }
+});
 
 let pipelineTasksCleaned = false;
 

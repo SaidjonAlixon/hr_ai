@@ -48,6 +48,7 @@ export function paintCredSheet(
     });
   });
   sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: lastCol } };
+  return sheet;
 }
 
 export async function sendWorkbook(res: Response, workbook: ExcelJS.Workbook, filename: string) {

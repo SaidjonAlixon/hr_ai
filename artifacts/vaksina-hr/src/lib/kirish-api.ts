@@ -180,8 +180,17 @@ export type KirishAdminQuestion = {
 
 export type KirishAdminPdf = { id: string; title: string; url: string; driveFileId?: string };
 
+export type KirishAudience = "all" | "students" | "staff";
+
+export const KIRISH_AUDIENCE_LABEL: Record<KirishAudience, string> = {
+  all: "Hamma",
+  students: "Faqat o‘quvchilar",
+  staff: "Faqat xodim/stajyorlar",
+};
+
 export type KirishAdminVideo = {
   stage: number;
+  audience?: KirishAudience;
   title: string;
   subtitle: string;
   isCustom: boolean;
@@ -214,6 +223,7 @@ export function useSaveKirishVideo() {
       stage: number;
       title?: string;
       subtitle?: string;
+      audience?: KirishAudience;
       youtubeUrl: string;
       pdfs: Array<{ id?: string; title: string; url: string }>;
       questions: KirishAdminQuestion[];
@@ -232,7 +242,7 @@ export function useSaveKirishVideo() {
 export function useCreateKirishStage() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { title: string; subtitle?: string }) =>
+    mutationFn: (body: { title: string; subtitle?: string; audience?: KirishAudience }) =>
       apiFetch<{ stage: number }>("/kirish/stages", { method: "POST", body: JSON.stringify(body) }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["kirish"] });

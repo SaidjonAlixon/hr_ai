@@ -26,9 +26,44 @@ import {
   useDeleteKirishStage,
   useKirishAdminVideos,
   useSaveKirishVideo,
+  KIRISH_AUDIENCE_LABEL,
   type KirishAdminQuestion,
   type KirishAdminVideo,
+  type KirishAudience,
 } from "@/lib/kirish-api";
+
+const AUDIENCE_OPTIONS: KirishAudience[] = ["all", "students", "staff"];
+
+const AUDIENCE_DOT: Record<KirishAudience, string> = {
+  all: "bg-transparent",
+  students: "bg-emerald-500",
+  staff: "bg-violet-500",
+};
+
+function AudiencePicker({ value, onChange }: { value: KirishAudience; onChange: (a: KirishAudience) => void }) {
+  return (
+    <div className="grid grid-cols-3 gap-1.5 rounded-xl bg-muted p-1">
+      {AUDIENCE_OPTIONS.map((a) => (
+        <button
+          key={a}
+          type="button"
+          onClick={() => onChange(a)}
+          className={cn(
+            "rounded-lg px-2 py-2 text-xs font-semibold transition",
+            value === a ? "bg-card text-[#0b3a5c] shadow-sm dark:text-sky-300" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {KIRISH_AUDIENCE_LABEL[a]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function initialView(): "all" | "students" | "staff" {
+  const v = new URLSearchParams(window.location.search).get("for");
+  return v === "students" || v === "staff" ? v : "all";
+}
 
 function previewYoutubeId(raw: string): string | null {
   const s = String(raw || "").trim();
@@ -91,6 +126,7 @@ type DraftPdf = { id: string; title: string; url: string };
 type Draft = {
   title: string;
   subtitle: string;
+  audience: KirishAudience;
   youtube: string;
   pdfs: DraftPdf[];
   questions: KirishAdminQuestion[];
@@ -100,6 +136,7 @@ function draftFrom(v: KirishAdminVideo): Draft {
   return {
     title: v.title,
     subtitle: v.subtitle,
+    audience: v.audience ?? "all",
     youtube: v.youtubeUrl || (v.videoDriveFileId ? `https://drive.google.com/file/d/${v.videoDriveFileId}/view` : ""),
     pdfs: v.pdfs?.length
       ? v.pdfs.map((p) => ({ id: p.id, title: p.id === "main" || /^Slayd( \d+)?$/.test(p.title) ? "" : p.title, url: p.url }))
@@ -123,18 +160,30 @@ export default function AdminKirishVideosPage() {
   const [newOpen, setNewOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newSubtitle, setNewSubtitle] = useState("");
+  const [view, setView] = useState(initialView);
+  const [newAudience, setNewAudience] = useState<KirishAudience>(() => {
+    const v = initialView();
+    return v === "all" ? "all" : v;
+  });
   const [deleteTarget, setDeleteTarget] = useState<KirishAdminVideo | null>(null);
+
+  const visibleVideos = (list.data?.videos ?? []).filter(
+    (v) => view === "all" || (v.audience ?? "all") === "all" || v.audience === view,
+  );
 
   useEffect(() => {
     if (!list.data?.videos) return;
     const next: Record<number, Draft> = {};
     for (const v of list.data.videos) next[v.stage] = draftFrom(v);
     setDrafts(next);
-    if (!list.data.videos.some((v) => v.stage === activeStage) && list.data.videos.length) {
-      setActiveStage(list.data.videos[list.data.videos.length - 1]!.stage);
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- faqat yangi ma’lumot kelganda
   }, [list.data]);
+
+  useEffect(() => {
+    if (!visibleVideos.length || visibleVideos.some((v) => v.stage === activeStage)) return;
+    setActiveStage(visibleVideos[visibleVideos.length - 1]!.stage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ro‘yxat yoki filtr o‘zgarganda
+  }, [list.data, view]);
 
   if (!canEdit) {
     return (
@@ -151,7 +200,9 @@ export default function AdminKirishVideosPage() {
   const patch = (stage: number, part: Partial<Draft>) => {
     setDrafts((prev) => {
       const v = videos.find((x) => x.stage === stage);
-      const cur = prev[stage] || (v ? draftFrom(v) : { title: "", subtitle: "", youtube: "", pdfs: [], questions: [] });
+      const cur =
+        prev[stage] ||
+        (v ? draftFrom(v) : { title: "", subtitle: "", audience: "all" as KirishAudience, youtube: "", pdfs: [], questions: [] });
       return { ...prev, [stage]: { ...cur, ...part } };
     });
   };
@@ -186,6 +237,7 @@ export default function AdminKirishVideosPage() {
         stage: v.stage,
         title: draft.title.trim(),
         subtitle: draft.subtitle.trim(),
+        audience: draft.audience,
         youtubeUrl: draft.youtube.trim(),
         pdfs,
         questions,
@@ -212,12 +264,13 @@ export default function AdminKirishVideosPage() {
       return;
     }
     createStage.mutate(
-      { title, subtitle: newSubtitle.trim() },
+      { title, subtitle: newSubtitle.trim(), audience: newAudience },
       {
         onSuccess: (r) => {
           setNewOpen(false);
           setNewTitle("");
           setNewSubtitle("");
+          if (view !== "all" && newAudience !== "all" && newAudience !== view) setView("all");
           setActiveStage(r.stage);
           toast({ title: "Yangi dars qo‘shildi", description: `${r.stage}-dars: video, slayd va test qo‘shing` });
         },
@@ -251,9 +304,40 @@ export default function AdminKirishVideosPage() {
         </Link>
         <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{t("admin.kirishVideos")}</h1>
         <p className="mt-1.5 max-w-xl text-xs leading-relaxed text-sky-100/85 sm:text-sm">
-          Har bir dars: video (YouTube yoki Google Drive) → slaydlar (Drive PDF) → test. Stajyorlar va o‘quvchilar
-          bir xil darslarni ko‘radi. Jami {videos.length} ta dars{customCount ? `, ${customCount} tasi qo‘shilgan` : ""}.
+          Har bir dars: video (YouTube yoki Google Drive) → slaydlar (Drive PDF) → test. Har bir darsga kim ko‘rishini
+          belgilang: hamma, faqat o‘quvchilar yoki faqat xodim/stajyorlar. Jami {videos.length} ta dars
+          {customCount ? `, ${customCount} tasi qo‘shilgan` : ""}.
         </p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-1.5 rounded-2xl border border-border bg-card p-1.5">
+        {(
+          [
+            { id: "all", label: "Barcha darslar", count: videos.length },
+            {
+              id: "students",
+              label: "O‘quvchilar ko‘radi",
+              count: videos.filter((v) => (v.audience ?? "all") !== "staff").length,
+            },
+            {
+              id: "staff",
+              label: "Xodimlar ko‘radi",
+              count: videos.filter((v) => (v.audience ?? "all") !== "students").length,
+            },
+          ] as const
+        ).map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setView(tab.id)}
+            className={cn(
+              "rounded-xl px-2 py-2 text-xs font-semibold transition sm:text-sm",
+              view === tab.id ? "bg-[#0b3a5c] text-white shadow-sm" : "text-muted-foreground hover:bg-muted",
+            )}
+          >
+            {tab.label} <span className="opacity-70">· {tab.count}</span>
+          </button>
+        ))}
       </div>
 
       {list.isLoading ? (
@@ -266,12 +350,12 @@ export default function AdminKirishVideosPage() {
       ) : (
         <div className="space-y-4">
           <div className="flex flex-wrap gap-1.5">
-            {videos.map((item) => (
+            {visibleVideos.map((item) => (
               <button
                 key={item.stage}
                 type="button"
                 onClick={() => setActiveStage(item.stage)}
-                title={item.title}
+                title={`${item.title} — ${KIRISH_AUDIENCE_LABEL[item.audience ?? "all"]}`}
                 className={cn(
                   "relative flex h-12 w-[3.35rem] shrink-0 flex-col items-center justify-center rounded-xl px-2 text-center transition",
                   activeStage === item.stage
@@ -284,20 +368,40 @@ export default function AdminKirishVideosPage() {
                 {item.isCustom ? (
                   <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-background" />
                 ) : null}
+                <span
+                  className={cn(
+                    "absolute bottom-1 left-1/2 h-1 w-5 -translate-x-1/2 rounded-full",
+                    AUDIENCE_DOT[item.audience ?? "all"],
+                  )}
+                />
               </button>
             ))}
             <button
               type="button"
-              onClick={() => setNewOpen(true)}
+              onClick={() => {
+                setNewAudience(view);
+                setNewOpen(true);
+              }}
               className="flex h-12 shrink-0 items-center gap-1.5 rounded-xl border border-dashed border-[#0b3a5c]/40 px-3 text-sm font-semibold text-[#0b3a5c] transition hover:bg-[#0b3a5c]/5 dark:text-sky-300"
             >
               <Plus className="h-4 w-4" />
               Yangi dars
             </button>
           </div>
+          <div className="flex flex-wrap gap-3 text-[11px] text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-1 w-4 rounded-full bg-emerald-500" /> faqat o‘quvchilar
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-1 w-4 rounded-full bg-violet-500" /> faqat xodim/stajyorlar
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-amber-400" /> trener qo‘shgan dars
+            </span>
+          </div>
 
           {(() => {
-            const v = videos.find((item) => item.stage === activeStage);
+            const v = visibleVideos.find((item) => item.stage === activeStage);
             if (!v) return null;
             const draft = drafts[v.stage] ?? draftFrom(v);
             const previewId = previewYoutubeId(draft.youtube);
@@ -348,6 +452,10 @@ export default function AdminKirishVideosPage() {
                         value={draft.subtitle}
                         onChange={(e) => patch(v.stage, { subtitle: e.target.value })}
                       />
+                    </div>
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label>Kim ko‘radi</Label>
+                      <AudiencePicker value={draft.audience} onChange={(a) => patch(v.stage, { audience: a })} />
                     </div>
                   </div>
 
@@ -627,6 +735,10 @@ export default function AdminKirishVideosPage() {
             <div className="space-y-1.5">
               <Label htmlFor="new-sub">Qisqa tavsif (ixtiyoriy)</Label>
               <Input id="new-sub" value={newSubtitle} onChange={(e) => setNewSubtitle(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Kim ko‘radi</Label>
+              <AudiencePicker value={newAudience} onChange={setNewAudience} />
             </div>
           </div>
           <DialogFooter>

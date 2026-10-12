@@ -53,6 +53,8 @@ export const kirishVideosTable = pgTable(
     subtitle: text("subtitle"),
     /** Trener qo‘shgan dars (standart 8 bosqichdan tashqari) */
     isCustom: boolean("is_custom").notNull().default(false),
+    /** Kim ko‘radi: all | students | staff */
+    audience: text("audience").notNull().default("all"),
     /** Qo‘shimcha PDF slaydlar (asosiy pdf_url dan keyin) */
     slidesJson: jsonb("slides_json").$type<KirishSlidePdfRow[]>().notNull().default([]),
     youtubeUrl: text("youtube_url").notNull().default(""),

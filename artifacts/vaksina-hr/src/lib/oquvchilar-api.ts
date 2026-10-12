@@ -133,14 +133,22 @@ export function useDeleteStudent() {
   return useInvalidating((id: number) => api<{ ok: boolean }>(`/oquvchilar/${id}`, { method: "DELETE" }));
 }
 
-export async function downloadStudentsExcel(group?: string) {
+async function downloadExcel(path: string, group: string | undefined, filePrefix: string) {
   const qs = group ? `?group=${encodeURIComponent(group)}` : "";
-  const res = await fetch(`/api/oquvchilar/export${qs}`, { credentials: "include" });
+  const res = await fetch(`/api${path}${qs}`, { credentials: "include" });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error((body as { error?: string }).error || "Excel yuklanmadi");
   }
   const blob = await res.blob();
   const { deliverFile } = await import("./tg-download");
-  return deliverFile(blob, `oquvchilar_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  return deliverFile(blob, `${filePrefix}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+export function downloadStudentsExcel(group?: string) {
+  return downloadExcel("/oquvchilar/export", group, "oquvchilar");
+}
+
+export function downloadStudentResultsExcel(group?: string) {
+  return downloadExcel("/oquvchilar/export-results", group, "oquvchilar_natijalar");
 }

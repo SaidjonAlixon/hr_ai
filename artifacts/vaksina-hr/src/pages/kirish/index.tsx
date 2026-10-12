@@ -262,7 +262,7 @@ export default function KirishPage() {
         {!finished && stageContent && !locked ? (
           <div className="space-y-5">
             <div className="flex flex-wrap gap-1.5">
-              {stageNumbers.map((n) => {
+              {stageNumbers.map((n, idx) => {
                 const passed = stageState(progress?.stages, n).passed;
                 const isCurrent = n === viewStage;
                 const isLocked = n > (progress?.currentStage ?? 1);
@@ -286,7 +286,7 @@ export default function KirishPage() {
                       isLocked && "cursor-not-allowed bg-slate-100 text-muted-foreground",
                     )}
                   >
-                    {n}
+                    {idx + 1}
                   </button>
                 );
               })}
@@ -470,7 +470,9 @@ export default function KirishPage() {
                         viewStage < lastStage && (
                           <Button
                             className="rounded-full bg-[#0B1B2B] hover:bg-muted dark:bg-slate-800"
-                            onClick={() => setViewStage(viewStage + 1)}
+                            onClick={() =>
+                              setViewStage(stageNumbers[stageNumbers.indexOf(viewStage) + 1] ?? viewStage)
+                            }
                           >
                             {t("kirish.nextStage")}
                           </Button>

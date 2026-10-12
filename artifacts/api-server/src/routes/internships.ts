@@ -101,7 +101,7 @@ router.get("/internships/roster", requireAuth, async (req: AuthRequest, res): Pr
       : [];
     const managerById = new Map(managers.map((m) => [m.id, m]));
 
-    const defs = await loadStageDefs();
+    const defs = await loadStageDefs("staff");
     const stageCount = defs.length;
 
     const items = stajyors.map((u) => {

@@ -54,6 +54,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  downloadStudentResultsExcel,
   downloadStudentsExcel,
   useBulkCreateStudents,
   useCreateStudent,
@@ -139,7 +140,7 @@ export default function OquvchilarPage() {
   const [group, setGroup] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [showPasswords, setShowPasswords] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<"creds" | "results" | null>(null);
 
   const [addOpen, setAddOpen] = useState(false);
   const emptyForm = { lastName: "", firstName: "", phone: "+998 ", groupName: "", note: "" };
@@ -179,18 +180,21 @@ export default function OquvchilarPage() {
   const errToast = (err: unknown, fallback: string) =>
     toast({ title: "Xatolik", description: err instanceof Error ? err.message : fallback, variant: "destructive" });
 
-  const onExport = async () => {
-    setExporting(true);
+  const onExport = async (kind: "creds" | "results") => {
+    setExporting(kind);
     try {
-      const r = await downloadStudentsExcel(group || undefined);
+      const r =
+        kind === "creds"
+          ? await downloadStudentsExcel(group || undefined)
+          : await downloadStudentResultsExcel(group || undefined);
       toast({
         title: r.via === "telegram" ? "Telegramga yuborildi" : "Excel yuklandi",
-        description: "Login-parollar va natijalar",
+        description: kind === "creds" ? "Login-parollar" : `Natijalar${group ? ` — ${group}` : ""}`,
       });
     } catch (err) {
       errToast(err, "Excel yuklanmadi");
     } finally {
-      setExporting(false);
+      setExporting(null);
     }
   };
 
@@ -327,18 +331,27 @@ export default function OquvchilarPage() {
             <Button
               variant="outline"
               className="h-10 rounded-xl border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
-              disabled={exporting || !data?.items.length}
-              onClick={() => void onExport()}
+              disabled={exporting != null || !data?.items.length}
+              onClick={() => void onExport("creds")}
             >
               <Download className="mr-1.5 h-4 w-4" />
-              {exporting ? "Tayyorlanmoqda…" : "Excel: login-parol"}
+              {exporting === "creds" ? "Tayyorlanmoqda…" : "Excel: login-parol"}
+            </Button>
+            <Button
+              variant="outline"
+              className="h-10 rounded-xl border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+              disabled={exporting != null || !data?.items.length}
+              onClick={() => void onExport("results")}
+            >
+              <BarChart3 className="mr-1.5 h-4 w-4" />
+              {exporting === "results" ? "Tayyorlanmoqda…" : "Excel: natijalar"}
             </Button>
             {canManageKirishContent(user?.role) ? (
               <Link
-                href="/admin/kirish-videolar"
+                href="/admin/kirish-videolar?for=students"
                 className="inline-flex h-10 items-center rounded-xl border border-white/30 bg-white/10 px-3 text-sm font-medium text-white hover:bg-white/20"
               >
-                Darslarni boshqarish
+                Dars, slayd va test qo‘shish
               </Link>
             ) : null}
           </div>
@@ -372,13 +385,13 @@ export default function OquvchilarPage() {
             <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
               <p className="mb-3 text-sm font-semibold text-foreground">Darslar bo‘yicha o‘tganlar</p>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                {data.stages.map((st) => {
+                {data.stages.map((st, idx) => {
                   const pct = data.summary.total ? Math.round((st.passed / data.summary.total) * 100) : 0;
                   return (
                     <div key={st.stage} className="rounded-xl bg-muted/60 p-2.5">
                       <div className="flex items-baseline justify-between gap-2">
                         <span className="truncate text-xs font-medium text-foreground" title={st.title}>
-                          {st.stage}. {st.title.replace(/^\d+-bosqich:\s*/, "")}
+                          {idx + 1}. {st.title.replace(/^\d+-bosqich:\s*/, "")}
                         </span>
                         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                           {st.passed}/{data.summary.total}
@@ -812,10 +825,10 @@ export default function OquvchilarPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {detail.kirish.stages.map((st) => (
+                    {detail.kirish.stages.map((st, idx) => (
                       <tr key={st.stage} className={cn("border-t border-border/70", st.passed && "bg-emerald-50/50 dark:bg-emerald-900/10")}>
                         <td className="px-2.5 py-2">
-                          <span className="font-semibold">{st.stage}.</span> {st.title.replace(/^\d+-bosqich:\s*/, "")}
+                          <span className="font-semibold">{idx + 1}.</span> {st.title.replace(/^\d+-bosqich:\s*/, "")}
                         </td>
                         <td className="px-2 py-2 text-center">{st.videoDone || st.passed ? "✓" : "—"}</td>
                         <td className="px-2 py-2 text-center">{st.slidesDone || st.passed ? "✓" : "—"}</td>

@@ -114,7 +114,7 @@ async function buildRoster(groupFilter?: string) {
   const [profiles, progressRows, defs] = await Promise.all([
     profilesFor(ids),
     ids.length ? db.select().from(kirishProgressTable).where(inArray(kirishProgressTable.userId, ids)) : Promise.resolve([]),
-    loadStageDefs(),
+    loadStageDefs("students"),
   ]);
   const progressByUser = new Map(progressRows.map((p) => [p.userId, p]));
   const creatorIds = [...new Set([...profiles.values()].map((p) => p.created_by_id).filter((x): x is number => x != null))];
@@ -436,7 +436,7 @@ router.get("/oquvchilar/export", requireAuth, async (req: AuthRequest, res): Pro
     monoCols: [2, 3],
   });
 
-  const stageHeaders = roster.stages.map((s) => `${s.stage}-dars`);
+  const stageHeaders = roster.stages.map((_, idx) => `${idx + 1}-dars`);
   paintCredSheet(wb, {
     name: "Natijalar",
     title: `O‘quvchilar natijalari — o‘tish bali ${roster.passScore}% · ${dateStr}`,
@@ -455,6 +455,197 @@ router.get("/oquvchilar/export", requireAuth, async (req: AuthRequest, res): Pro
   });
 
   await sendWorkbook(res, wb, `oquvchilar_${new Date().toISOString().slice(0, 10)}.xlsx`);
+});
+
+const GREEN = "FFDCFCE7";
+const RED = "FFFEE2E2";
+const AMBER = "FFFEF3C7";
+
+function fmtDateTime(iso: string | null | undefined): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleString("uz-UZ", {
+    timeZone: "Asia/Tashkent",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function tint(cell: import("exceljs").Cell, argb: string) {
+  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb } };
+}
+
+/** Batafsil natijalar Excel: umumiy, o‘quvchilar, darslar, har bir dars bo‘yicha */
+router.get("/oquvchilar/export-results", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!guard(req, res)) return;
+  try {
+    const group = String(req.query.group ?? "").trim() || undefined;
+    const roster = await buildRoster(group);
+    const { items, stages, summary, passScore } = roster;
+    const wb = newCredWorkbook();
+    const dateStr = new Date().toLocaleDateString("uz-UZ", { timeZone: "Asia/Tashkent" });
+    const scope = group ? `«${group}» guruhi` : "Barcha guruhlar";
+
+    paintCredSheet(wb, {
+      name: "Umumiy",
+      title: `O‘quvchilar natijalari — ${scope} · ${dateStr}`,
+      headers: ["Ko‘rsatkich", "Qiymat"],
+      widths: [36, 22],
+      rows: [
+        ["Jami o‘quvchilar", summary.total],
+        ["Faol", summary.active],
+        ["Bloklangan", summary.blocked],
+        ["Kursni yakunlagan", summary.completed],
+        ["O‘qimoqda", summary.inProgress],
+        ["Boshlamagan", summary.notStarted],
+        ["O‘rtacha progress", `${summary.avgProgress}%`],
+        ["O‘rtacha ball", summary.avgScore != null ? `${summary.avgScore}%` : "—"],
+        ["Darslar soni", stages.length],
+        ["O‘tish bali", `${passScore}%`],
+      ],
+      monoCols: [],
+    });
+
+    if (!group) {
+      const byGroup = new Map<string, typeof items>();
+      for (const i of items) {
+        const key = i.groupName || "Guruhsiz";
+        byGroup.set(key, [...(byGroup.get(key) ?? []), i]);
+      }
+      paintCredSheet(wb, {
+        name: "Guruhlar",
+        title: `Guruhlar bo‘yicha · ${dateStr}`,
+        headers: ["Guruh", "O‘quvchilar", "Yakunlagan", "O‘qimoqda", "Boshlamagan", "O‘rtacha progress", "O‘rtacha ball"],
+        widths: [26, 14, 14, 14, 14, 18, 16],
+        rows: [...byGroup.entries()]
+          .sort((a, b) => a[0].localeCompare(b[0], "uz"))
+          .map(([name, list]) => {
+            const scored = list.filter((i) => i.kirish.avgScore != null);
+            return [
+              name,
+              list.length,
+              list.filter((i) => i.kirish.status === "completed").length,
+              list.filter((i) => i.kirish.status === "in_progress").length,
+              list.filter((i) => i.kirish.status === "not_started").length,
+              `${Math.round(list.reduce((s, i) => s + i.kirish.progressPct, 0) / Math.max(1, list.length))}%`,
+              scored.length
+                ? `${Math.round(scored.reduce((s, i) => s + (i.kirish.avgScore ?? 0), 0) / scored.length)}%`
+                : "—",
+            ];
+          }),
+        monoCols: [],
+      });
+    }
+
+    const fixedHeaders = [
+      "№",
+      "F.I.Sh",
+      "Telefon",
+      "Login",
+      "Guruh",
+      "Holat",
+      "O‘tilgan darslar",
+      "Progress",
+      "O‘rtacha ball",
+      "Urinishlar",
+      "Oxirgi faollik",
+      "Yakunlagan sana",
+    ];
+    const stageHeaders = stages.map((s, idx) => `${idx + 1}. ${s.title}`);
+    const resultsSheet = paintCredSheet(wb, {
+      name: "Natijalar",
+      title: `Har bir o‘quvchi natijasi — ${scope} · o‘tish bali ${passScore}%`,
+      headers: [...fixedHeaders, ...stageHeaders],
+      widths: [5, 32, 17, 22, 16, 13, 14, 10, 13, 11, 18, 18, ...stageHeaders.map(() => 16)],
+      rows: items.map((i, idx) => [
+        idx + 1,
+        i.fullName,
+        i.phone ?? "",
+        i.login,
+        i.groupName ?? "",
+        i.status !== "active" ? "Bloklangan" : (STATUS_LABEL[i.kirish.status] ?? i.kirish.status),
+        `${i.kirish.passed}/${i.kirish.stageCount}`,
+        `${i.kirish.progressPct}%`,
+        i.kirish.avgScore != null ? `${i.kirish.avgScore}%` : "—",
+        i.kirish.attempts,
+        fmtDateTime(i.kirish.lastActivityAt),
+        fmtDateTime(i.kirish.completedAt),
+        ...i.kirish.stages.map((s) =>
+          s.score != null ? `${s.score}% · ${s.passed ? "o‘tdi" : "o‘tmadi"} (${s.attempts}x)` : "—",
+        ),
+      ]),
+      monoCols: [4],
+    });
+    items.forEach((i, idx) => {
+      const row = resultsSheet.getRow(idx + 3);
+      i.kirish.stages.forEach((s, si) => {
+        if (s.score == null) return;
+        tint(row.getCell(fixedHeaders.length + si + 1), s.passed ? GREEN : RED);
+      });
+      const statusCell = row.getCell(6);
+      if (i.kirish.status === "completed") tint(statusCell, GREEN);
+      else if (i.kirish.status === "in_progress") tint(statusCell, AMBER);
+    });
+
+    paintCredSheet(wb, {
+      name: "Darslar",
+      title: `Darslar bo‘yicha natija — ${scope}`,
+      headers: ["№", "Dars", "O‘tganlar", "Topshirib o‘tmaganlar", "Boshlamaganlar", "O‘tish foizi", "O‘rtacha ball"],
+      widths: [5, 42, 12, 22, 16, 13, 14],
+      rows: stages.map((s, idx) => {
+        const tried = items.filter((i) => i.kirish.stages.find((x) => x.stage === s.stage)?.attempts).length;
+        return [
+          idx + 1,
+          s.title,
+          s.passed,
+          Math.max(0, tried - s.passed),
+          Math.max(0, items.length - tried),
+          items.length ? `${Math.round((s.passed / items.length) * 100)}%` : "—",
+          s.avgScore != null ? `${s.avgScore}%` : "—",
+        ];
+      }),
+      monoCols: [],
+    });
+
+    const detailRows: Array<Array<string | number>> = [];
+    const detailPassed: boolean[] = [];
+    for (const i of items) {
+      i.kirish.stages.forEach((s, si) => {
+        detailRows.push([
+          i.fullName,
+          i.groupName ?? "",
+          `${si + 1}. ${s.title}`,
+          s.videoDone ? "Ko‘rdi" : "—",
+          s.slidesDone ? "Ko‘rdi" : "—",
+          s.score != null ? `${s.score}%` : "—",
+          s.attempts,
+          s.passed ? "O‘tdi" : s.attempts ? "O‘tmadi" : "Boshlanmagan",
+          fmtDateTime(s.passedAt),
+        ]);
+        detailPassed.push(s.passed);
+      });
+    }
+    const detailSheet = paintCredSheet(wb, {
+      name: "Batafsil",
+      title: `Har bir dars bo‘yicha batafsil — ${scope}`,
+      headers: ["F.I.Sh", "Guruh", "Dars", "Video", "Slayd", "Ball", "Urinish", "Natija", "O‘tgan vaqti"],
+      widths: [32, 16, 40, 10, 10, 9, 9, 14, 18],
+      rows: detailRows,
+      monoCols: [],
+    });
+    detailRows.forEach((r, idx) => {
+      const cell = detailSheet.getRow(idx + 3).getCell(8);
+      if (detailPassed[idx]) tint(cell, GREEN);
+      else if (r[7] === "O‘tmadi") tint(cell, RED);
+    });
+
+    await sendWorkbook(res, wb, `oquvchilar_natijalar_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  } catch (err) {
+    console.error("GET /oquvchilar/export-results error:", err);
+    res.status(500).json({ error: "Natijalar Excel tayyorlanmadi" });
+  }
 });
 
 export default router;

@@ -24,8 +24,15 @@ export type KirishVideoRow = typeof kirishVideosTable.$inferSelect;
 
 export type KirishPdf = { id: string; title: string; driveFileId: string; url: string };
 
+export type KirishAudience = "all" | "students" | "staff";
+
+export function parseAudience(raw: unknown): KirishAudience {
+  return raw === "students" || raw === "staff" ? raw : "all";
+}
+
 export type KirishStageDef = {
   stage: number;
+  audience: KirishAudience;
   title: string;
   subtitle: string;
   videoUrl: string;
@@ -109,8 +116,16 @@ export function stagePdfs(row: KirishVideoRow | null | undefined): KirishPdf[] {
   return out;
 }
 
-/** Standart 8 bosqich + trener qo‘shgan darslar, tartib bo‘yicha */
-export async function loadStageDefs(): Promise<KirishStageDef[]> {
+/**
+ * Standart 8 bosqich + trener qo‘shgan darslar, tartib bo‘yicha.
+ * `viewer` berilsa — faqat shu toifa ko‘radigan darslar (o‘quvchi / xodim).
+ */
+export async function loadStageDefs(viewer?: "students" | "staff"): Promise<KirishStageDef[]> {
+  const defs = await loadAllStageDefs();
+  return viewer ? defs.filter((d) => d.audience === "all" || d.audience === viewer) : defs;
+}
+
+async function loadAllStageDefs(): Promise<KirishStageDef[]> {
   const rows = await db.select().from(kirishVideosTable);
   const byStage = new Map(rows.map((r) => [r.stage, r]));
   const builtinNums = new Set(KIRISH_STAGES.map((s) => s.stage));
@@ -122,6 +137,7 @@ export async function loadStageDefs(): Promise<KirishStageDef[]> {
       row?.videoDriveFileId || (!youtubeId && !row ? DEFAULT_STAGE_VIDEO_DRIVE[s.stage] ?? null : null) || null;
     return {
       stage: s.stage,
+      audience: parseAudience(row?.audience),
       title: row?.title?.trim() || s.title,
       subtitle: row?.subtitle?.trim() || s.subtitle,
       videoUrl: s.videoUrl,
@@ -141,6 +157,7 @@ export async function loadStageDefs(): Promise<KirishStageDef[]> {
     const youtubeId = (row.youtubeId || "").trim() || null;
     defs.push({
       stage: row.stage,
+      audience: parseAudience(row.audience),
       title: row.title?.trim() || `${row.stage}-dars`,
       subtitle: row.subtitle?.trim() || "",
       videoUrl: "",
@@ -162,6 +179,7 @@ export function publicStage(def: KirishStageDef) {
   const videoKind = def.youtubeId ? ("youtube" as const) : def.videoDriveFileId ? ("drive" as const) : ("file" as const);
   return {
     stage: def.stage,
+    audience: def.audience,
     title: def.title,
     subtitle: def.subtitle,
     videoUrl: def.youtubeId
@@ -196,7 +214,10 @@ export function ensureStagesMap(raw: KirishStagesMap | null | undefined, stageNu
   return map;
 }
 
-/** Ochiq bo‘lgan eng katta bosqich: ketma-ket o‘tilganlardan keyingisi */
+/**
+ * Ochiq bo‘lgan eng katta bosqich: ketma-ket o‘tilganlardan keyingisi.
+ * Raqamlar uzluksiz bo‘lmasligi mumkin (boshqa toifa darslari ro‘yxatdan chiqariladi).
+ */
 export function unlockedStage(stages: KirishStagesMap, stageNums: number[], stored: number): number {
   if (stageNums.length === 0) return 1;
   let firstOpen = stageNums[stageNums.length - 1]!;
@@ -206,8 +227,7 @@ export function unlockedStage(stages: KirishStagesMap, stageNums: number[], stor
       break;
     }
   }
-  const max = stageNums[stageNums.length - 1]!;
-  return Math.max(1, Math.min(max, Math.max(stored, firstOpen)));
+  return stageNums.includes(stored) ? Math.max(stored, firstOpen) : firstOpen;
 }
 
 export function allStagesPassed(stages: KirishStagesMap, stageNums: number[]): boolean {

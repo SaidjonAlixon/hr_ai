@@ -17,6 +17,7 @@ import {
   ensureStagesMap,
   loadStageDefs,
   nextCustomStageNumber,
+  parseAudience,
   publicStage,
   removeCustomStage,
   scoreStage,
@@ -153,10 +154,14 @@ function stageNum(req: AuthRequest): number {
   return Number(req.params.n);
 }
 
+function learnerDefs(req: AuthRequest) {
+  return loadStageDefs(isStudentRole(req.userRole) ? "students" : "staff");
+}
+
 router.get("/kirish/me", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireLearner(req, res)) return;
   await ensureDefaultStageVideos();
-  const defs = await loadStageDefs();
+  const defs = await learnerDefs(req);
   const progress = await getProgress(req.userId!, defs, req.userRole);
   res.json({
     progress: serializeProgress(progress, defs),
@@ -172,6 +177,7 @@ router.get("/kirish/videos", requireAuth, async (req: AuthRequest, res): Promise
   res.json({
     videos: defs.map((d) => ({
       stage: d.stage,
+      audience: d.audience,
       title: d.title,
       subtitle: d.subtitle,
       isCustom: d.isCustom,
@@ -207,6 +213,7 @@ router.post("/kirish/stages", requireAuth, async (req: AuthRequest, res): Promis
       title,
       subtitle,
       isCustom: true,
+      audience: parseAudience(req.body?.audience),
       youtubeUrl: "",
       youtubeId: "",
       questionsJson: [],
@@ -280,7 +287,15 @@ router.put("/kirish/videos/:n", requireAuth, async (req: AuthRequest, res): Prom
     res.status(400).json({ error: "Dars nomini yozing" });
     return;
   }
-  if (!def.isCustom && !youtubeId && !videoDriveFileId && pdfs.length === 0 && parsedQs.length === 0 && !title) {
+  if (
+    !def.isCustom &&
+    !youtubeId &&
+    !videoDriveFileId &&
+    pdfs.length === 0 &&
+    parsedQs.length === 0 &&
+    !title &&
+    req.body?.audience == null
+  ) {
     res.status(400).json({ error: "YouTube/Drive video, PDF yoki test savolini yozing" });
     return;
   }
@@ -301,6 +316,7 @@ router.put("/kirish/videos/:n", requireAuth, async (req: AuthRequest, res): Prom
     questionsJson: parsedQs,
     ...(title !== undefined ? { title: title || null } : {}),
     ...(subtitle !== undefined ? { subtitle: subtitle || null } : {}),
+    ...(req.body?.audience != null ? { audience: parseAudience(req.body.audience) } : {}),
     updatedById: req.userId ?? null,
     updatedAt: new Date(),
   };
@@ -354,7 +370,7 @@ router.delete("/kirish/videos/:n", requireAuth, async (req: AuthRequest, res): P
 async function learnerContext(req: AuthRequest, res: import("express").Response) {
   if (!requireLearner(req, res)) return null;
   const n = stageNum(req);
-  const defs = await loadStageDefs();
+  const defs = await learnerDefs(req);
   const def = defs.find((d) => d.stage === n);
   if (!def) {
     res.status(400).json({ error: "Noto‘g‘ri bosqich" });
@@ -453,7 +469,7 @@ router.post(
 
 router.post("/kirish/me/finish", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireLearner(req, res)) return;
-  const defs = await loadStageDefs();
+  const defs = await learnerDefs(req);
   const nums = defs.map((d) => d.stage);
   const progress = await getProgress(req.userId!, defs, req.userRole);
   const stages = ensureStagesMap(progress.stagesJson as KirishStagesMap, nums);

@@ -211,6 +211,7 @@ ALTER TABLE kirish_videos ADD COLUMN IF NOT EXISTS title TEXT;
 ALTER TABLE kirish_videos ADD COLUMN IF NOT EXISTS subtitle TEXT;
 ALTER TABLE kirish_videos ADD COLUMN IF NOT EXISTS is_custom BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE kirish_videos ADD COLUMN IF NOT EXISTS slides_json JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE kirish_videos ADD COLUMN IF NOT EXISTS audience TEXT NOT NULL DEFAULT 'all';
 
 -- O‘quvchilar (faqat Kirish darslari): guruh va izoh
 CREATE TABLE IF NOT EXISTS oquvchi_profiles (

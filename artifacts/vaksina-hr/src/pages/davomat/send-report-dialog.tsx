@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Crown, Loader2, Send, Users } from "lucide-react";
+import { Crown, Loader2, MessagesSquare, Send, UserRound, Users } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Checkbox } from "../../components/ui/checkbox";
 import {
@@ -26,6 +26,14 @@ const LISTS: { key: ReportListKind; label: string; hint: string; tone: string }[
   { key: "present", label: "Kelganlar", hint: "o‘z vaqtida kelgan", tone: "text-emerald-600" },
 ];
 
+type SendTarget = "personal" | "group" | "both";
+
+const TARGETS: { key: SendTarget; icon: typeof Send; title: string; sub: string }[] = [
+  { key: "personal", icon: UserRound, title: "Shaxsiyga", sub: "Telegram + platforma" },
+  { key: "group", icon: MessagesSquare, title: "Guruhga", sub: "nik bilan belgilab" },
+  { key: "both", icon: Send, title: "Ikkalasiga", sub: "shaxsiy va guruh" },
+];
+
 export function SendReportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { toast } = useToast();
   const [options, setOptions] = useState<SendReportOptions | null>(null);
@@ -34,8 +42,9 @@ export function SendReportDialog({ open, onOpenChange }: { open: boolean; onOpen
   const [mode, setMode] = useState<ReportSendMode>("coordinators");
   const [lists, setLists] = useState<ReportListKind[]>(["absent", "late", "present"]);
   const [picked, setPicked] = useState<Set<number>>(new Set());
-  const [toPersonal, setToPersonal] = useState(true);
-  const [toGroup, setToGroup] = useState(true);
+  const [target, setTarget] = useState<SendTarget>("both");
+  const toPersonal = target !== "group";
+  const toGroup = target !== "personal";
 
   useEffect(() => {
     if (!open) return;
@@ -75,8 +84,8 @@ export function SendReportDialog({ open, onOpenChange }: { open: boolean; onOpen
     ? "Kamida bitta holatni tanlang"
     : !picked.size
       ? "Kamida bitta koordinatorni tanlang"
-      : !toPersonal && !toGroup
-        ? "Qayerga yuborishni tanlang"
+      : target === "group" && options && !options.group
+        ? "Guruh hali belgilanmagan"
         : mode === "director" && options && !options.directors.length
           ? "Faol direktor topilmadi"
           : null;
@@ -229,21 +238,30 @@ export function SendReportDialog({ open, onOpenChange }: { open: boolean; onOpen
 
           <div className="space-y-2">
             <div className={section}>Qayerga</div>
-            <label className="flex cursor-pointer items-center gap-2.5 text-sm">
-              <Checkbox checked={toPersonal} onCheckedChange={(v) => setToPersonal(v === true)} />
-              Shaxsiy akkauntiga (Telegram + platforma bildirishnomasi)
-            </label>
-            <label className="flex cursor-pointer items-start gap-2.5 text-sm">
-              <Checkbox checked={toGroup} onCheckedChange={(v) => setToGroup(v === true)} className="mt-0.5" />
-              <span>
-                Guruhga, nik bilan belgilab
-                <span className="block text-xs text-muted-foreground">
-                  {options?.group
-                    ? `${options.group.title}${options.group.topic ? ` · ${options.group.topic}` : ""}`
-                    : "Guruh hali belgilanmagan: «Koordinatorlar» mavzusida /hisobot_guruh deb yozing"}
-                </span>
-              </span>
-            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {TARGETS.map((tg) => (
+                <button
+                  key={tg.key}
+                  type="button"
+                  onClick={() => setTarget(tg.key)}
+                  className={cn(
+                    "flex flex-col items-center gap-1 rounded-lg border p-2.5 text-center transition",
+                    target === tg.key ? "border-sky-500 bg-sky-50 ring-1 ring-sky-500 dark:bg-sky-950/40" : "hover:bg-muted/50",
+                  )}
+                >
+                  <tg.icon className={cn("h-4 w-4", target === tg.key ? "text-sky-600" : "text-muted-foreground")} />
+                  <span className="text-sm font-semibold">{tg.title}</span>
+                  <span className="text-[11px] leading-tight text-muted-foreground">{tg.sub}</span>
+                </button>
+              ))}
+            </div>
+            {toGroup ? (
+              <p className={cn("text-xs", options?.group ? "text-muted-foreground" : "text-amber-600")}>
+                {options?.group
+                  ? `Guruh: ${options.group.title}${options.group.topic ? ` · ${options.group.topic}` : ""} (har biri nik bilan belgilanadi)`
+                  : "Guruh hali belgilanmagan: «Koordinatorlar» mavzusida /hisobot_guruh deb yozing"}
+              </p>
+            ) : null}
           </div>
         </div>
 

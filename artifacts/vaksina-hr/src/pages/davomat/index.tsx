@@ -7,6 +7,7 @@ import React, {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { useGetDepartments } from "@workspace/api-client-react";
 import { useLocation, useSearch } from "wouter";
@@ -2773,49 +2774,46 @@ export default function DavomatPage() {
             calMode === "day" ? (
               <>
               <Card className="border-border shadow-sm overflow-hidden">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">
-                    Kunlik davomat · {selectedDay}
+                <CardHeader className="space-y-3 pb-3">
+                  <CardTitle className="flex flex-wrap items-center gap-2 text-lg font-extrabold tracking-tight">
+                    Kunlik davomat
+                    <span className="rounded-lg bg-[#0b3a5c] px-2.5 py-0.5 text-sm font-bold tabular-nums text-white">
+                      {selectedDay}
+                    </span>
                     {viewFilter !== "all" ? (
-                      <span className="ml-2 text-sm font-medium text-primary">
-                        · {staffGroupLabel}
+                      <span className="rounded-lg bg-primary/10 px-2.5 py-0.5 text-sm font-semibold text-primary">
+                        {staffGroupLabel}
                       </span>
                     ) : null}
                   </CardTitle>
                   {dayInfo ? (
-                    <p className="text-xs text-muted-foreground">
-                      <span className="font-semibold text-foreground">
-                        Ko‘rsatilmoqda: {visibleEmployeesForDay.length}
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                      <DayChip tone="slate" label="Ko‘rsatilmoqda">
+                        {visibleEmployeesForDay.length}
                         {dayStatusFilter !== "all" ? ` / ${filteredDayStats.total}` : ""} xodim
-                        {viewFilter !== "all" && report && report.summary.employees > visibleEmployeesForDay.length ? (
-                          ` · filtr: ${report.summary.employees}`
-                        ) : null}
-                      </span>
+                        {viewFilter !== "all" && report && report.summary.employees > visibleEmployeesForDay.length
+                          ? ` · filtr: ${report.summary.employees}`
+                          : null}
+                      </DayChip>
                       {filteredDayStats.incomplete > 0 ? (
-                        <>
-                          {" · "}
-                          <span className="font-medium stat-sky">
-                            Ketish yo‘q: {filteredDayStats.incomplete}
-                          </span>
-                        </>
+                        <DayChip tone="sky" label="Ketish yo‘q">{filteredDayStats.incomplete}</DayChip>
                       ) : null}
-                      <span className="mt-0.5 block text-muted-foreground">
-                        Kech keldi: {dayTiming.lateArrival} · Erta keldi: {dayTiming.earlyArrival} · Erta
-                        ketdi: {dayTiming.earlyLeave} · Kech ketdi: {dayTiming.overtime}
-                        {!showShiftCol ? (
-                          <>
-                            {" "}
-                            · Reja: {activeWorkHours.start}–{activeWorkHours.end}
-                          </>
-                        ) : null}
-                      </span>
-                    </p>
+                      <DayChip tone="red" label="Kech keldi">{dayTiming.lateArrival}</DayChip>
+                      <DayChip tone="emerald" label="Erta keldi">{dayTiming.earlyArrival}</DayChip>
+                      <DayChip tone="amber" label="Erta ketdi">{dayTiming.earlyLeave}</DayChip>
+                      <DayChip tone="violet" label="Kech ketdi">{dayTiming.overtime}</DayChip>
+                      {!showShiftCol ? (
+                        <DayChip tone="slate" label="Reja">
+                          {activeWorkHours.start}–{activeWorkHours.end}
+                        </DayChip>
+                      ) : null}
+                    </div>
                   ) : null}
                 </CardHeader>
                 <CardContent className="max-h-[calc(100dvh-7rem)] overflow-auto overscroll-contain p-0 sm:px-6 sm:pb-6">
                   <table className="w-full min-w-[1100px] border-separate border-spacing-0 text-sm">
-                    <thead className="sticky top-0 z-20 shadow-[0_2px_6px_-2px_rgba(15,23,42,0.18)]">
-                      <tr className="bg-muted text-left text-xs text-muted-foreground [&>th]:border-b [&>th]:bg-muted">
+                    <thead className="sticky top-0 z-20 shadow-[0_4px_10px_-4px_rgba(11,58,92,0.45)]">
+                      <tr className="text-left text-[11px] font-bold uppercase tracking-wide text-white [&>th]:bg-[#0b3a5c] [&>th]:py-3 [&>th]:align-bottom [&>th:first-child]:rounded-tl-xl [&>th:last-child]:rounded-tr-xl">
                         <th className="w-12 px-2 py-2 text-center">№</th>
                         <th className="px-3 py-2">F.I.Sh.</th>
                         <th className="px-3 py-2">Lavozim</th>
@@ -3734,8 +3732,26 @@ export default function DavomatPage() {
   );
 }
 
+const DAY_CHIP_TONES = {
+  slate: "bg-slate-100 text-slate-700 ring-slate-200 dark:bg-white/5 dark:text-slate-200 dark:ring-white/10",
+  sky: "bg-sky-50 text-sky-800 ring-sky-200 dark:bg-sky-500/10 dark:text-sky-200 dark:ring-sky-500/30",
+  red: "bg-red-50 text-red-700 ring-red-200 dark:bg-red-500/10 dark:text-red-200 dark:ring-red-500/30",
+  emerald: "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-200 dark:ring-emerald-500/30",
+  amber: "bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-200 dark:ring-amber-500/30",
+  violet: "bg-violet-50 text-violet-700 ring-violet-200 dark:bg-violet-500/10 dark:text-violet-200 dark:ring-violet-500/30",
+} as const;
+
+function DayChip({ tone, label, children }: { tone: keyof typeof DAY_CHIP_TONES; label: string; children: ReactNode }) {
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 ring-1", DAY_CHIP_TONES[tone])}>
+      <span className="font-medium opacity-80">{label}:</span>
+      <b className="tabular-nums">{children}</b>
+    </span>
+  );
+}
+
 function TimingHeaderCells({ workStart, workEnd }: { workStart: string; workEnd: string }) {
-  const sub = "block whitespace-nowrap font-normal text-[10px] text-muted-foreground";
+  const sub = "block whitespace-nowrap font-normal normal-case tracking-normal text-[10px] opacity-70";
   return (
     <>
       <th className="whitespace-nowrap px-3 py-2">

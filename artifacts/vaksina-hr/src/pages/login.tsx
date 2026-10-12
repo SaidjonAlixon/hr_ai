@@ -14,7 +14,7 @@ import { LanguageSwitcher } from '../components/language-switcher';
 import { HELP_ASSISTANT_ENABLED, HelpAssistantDialog } from '../components/HelpAssistantDialog';
 import { OperatorHeadsetIcon } from '../components/OperatorHeadsetIcon';
 import { useI18n } from '../i18n/I18nProvider';
-import { isStajyor, isLimitedOfficeStaffRole, isReviziyaRole } from '../lib/roles';
+import { isStajyor, isLimitedOfficeStaffRole, isReviziyaRole, isStudentRole } from '../lib/roles';
 import { loginWithDevice, requestDeviceChange } from '../lib/device-security-api';
 import { takeAfterLogin } from '../lib/conference/api';
 
@@ -42,6 +42,10 @@ export default function Login() {
 
   const goAfterLogin = (user: User) => {
     switchToUser(user);
+    if (isStudentRole(user.role)) {
+      setLocation('/kirish');
+      return;
+    }
     const back = takeAfterLogin();
     if (back) {
       setLocation(back);

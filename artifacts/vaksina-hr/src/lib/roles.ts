@@ -530,9 +530,26 @@ export function canExtendVacancy(role?: string | null): boolean {
   );
 }
 
-/** Kirish o‘quv bo‘limi — faqat stajyor (+ admin/asoschi ko‘rishi mumkin) */
+/** O‘quvchi — faqat Kirish kursi; xodim emas */
+export const STUDENT_ROLE = "oquvchi";
+
+export function isStudentRole(role?: string | null): boolean {
+  return (role ?? "").trim().toLowerCase() === STUDENT_ROLE;
+}
+
+/** O‘quvchilar ro‘yxati, qo‘shish/o‘chirish, statistika */
+export function canManageStudents(role?: string | null): boolean {
+  return canManageSettings(role) || role === "trainer";
+}
+
+/** Kirish darslari kontenti (video, slayd, test, yangi dars) */
+export function canManageKirishContent(role?: string | null): boolean {
+  return canManageOnboardingContent(role) || role === "trainer";
+}
+
+/** Kirish o‘quv bo‘limi — stajyor va o‘quvchi (+ admin/asoschi ko‘rishi mumkin) */
 export function canAccessKirish(role?: string | null): boolean {
-  return role === "stajyor" || hasFullPlatformAccess(role);
+  return role === "stajyor" || isStudentRole(role) || hasFullPlatformAccess(role);
 }
 
 /** Darsliklar — o‘quvchi (har lavozimning alohida kursi) */
@@ -628,6 +645,7 @@ export const USER_ROLE_LABELS: Record<string, string> = {
   sb_boshliq: "SB bo‘limi boshlig‘i",
   farmasevt: "Farmasevt",
   stajyor: "Stajyor",
+  oquvchi: "O‘quvchi",
   moliya: "Moliyachi",
   moliya_rahbar: "Moliya bo‘lim boshlig‘i",
   moliya_xodim: "Moliya xodimi",

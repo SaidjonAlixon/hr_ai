@@ -23,8 +23,11 @@ export type KirishProgress = {
   completedAt: string | null;
   passScore: number;
   stageCount: number;
+  stageNumbers?: number[];
   updatedAt: string;
 };
+
+export type KirishPdfPublic = { id: string; title: string; driveFileId: string };
 
 export type KirishSlide = {
   id: string;
@@ -50,6 +53,9 @@ export type KirishStagePublic = {
   videoDriveFileId?: string | null;
   pdfUrl?: string | null;
   driveFileId?: string | null;
+  pdfs?: KirishPdfPublic[];
+  hasVideo?: boolean;
+  isCustom?: boolean;
   slides: KirishSlide[];
   questions: KirishQuestionPublic[];
 };
@@ -57,6 +63,7 @@ export type KirishStagePublic = {
 export type KirishMeResponse = {
   progress: KirishProgress;
   stages: KirishStagePublic[];
+  isStudent?: boolean;
 };
 
 export type KirishTestResult = {
@@ -171,15 +178,20 @@ export type KirishAdminQuestion = {
   correctIndex: number;
 };
 
+export type KirishAdminPdf = { id: string; title: string; url: string; driveFileId?: string };
+
 export type KirishAdminVideo = {
   stage: number;
   title: string;
   subtitle: string;
+  isCustom: boolean;
   youtubeUrl: string;
   youtubeId: string | null;
   videoDriveFileId?: string | null;
   pdfUrl: string;
   driveFileId: string | null;
+  pdfs: KirishAdminPdf[];
+  textSlides: number;
   questions: KirishAdminQuestion[];
   updatedAt: string | null;
 };
@@ -197,22 +209,44 @@ export function useSaveKirishVideo() {
   return useMutation({
     mutationFn: ({
       stage,
-      youtubeUrl,
-      pdfUrl,
-      questions,
+      ...body
     }: {
       stage: number;
+      title?: string;
+      subtitle?: string;
       youtubeUrl: string;
-      pdfUrl: string;
+      pdfs: Array<{ id?: string; title: string; url: string }>;
       questions: KirishAdminQuestion[];
     }) =>
       apiFetch<{ video: unknown }>(`/kirish/videos/${stage}`, {
         method: "PUT",
-        body: JSON.stringify({ youtubeUrl, pdfUrl, questions }),
+        body: JSON.stringify(body),
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["kirish", "videos"] });
       void qc.invalidateQueries({ queryKey: ["kirish", "me"] });
+    },
+  });
+}
+
+export function useCreateKirishStage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { title: string; subtitle?: string }) =>
+      apiFetch<{ stage: number }>("/kirish/stages", { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["kirish"] });
+    },
+  });
+}
+
+export function useDeleteKirishStage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (stage: number) =>
+      apiFetch<{ ok: boolean }>(`/kirish/stages/${stage}`, { method: "DELETE" }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["kirish"] });
     },
   });
 }

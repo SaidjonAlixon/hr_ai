@@ -6,12 +6,12 @@ import {
   employeesTable,
   usersTable,
   kirishProgressTable,
-  type KirishStagesMap,
 } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { canManageSettings, isHrRole, isDirectorRole } from "../lib/roles";
-import { KIRISH_PASS_SCORE, KIRISH_STAGE_COUNT, KIRISH_STAGES } from "../lib/kirish-content";
+import { KIRISH_PASS_SCORE } from "../lib/kirish-content";
+import { loadStageDefs, progressSummary } from "../lib/kirish-stages";
 
 const router: IRouter = Router();
 
@@ -25,39 +25,6 @@ function canViewStajirovkalar(role?: string | null) {
     role === "trainer" ||
     role === "mentor"
   );
-}
-
-type StageState = {
-  videoDone: boolean;
-  slidesDone: boolean;
-  score: number | null;
-  attempts: number;
-  passed: boolean;
-  passedAt: string | null;
-};
-
-function emptyStage(): StageState {
-  return {
-    videoDone: false,
-    slidesDone: false,
-    score: null,
-    attempts: 0,
-    passed: false,
-    passedAt: null,
-  };
-}
-
-function ensureStagesMap(raw: KirishStagesMap | null | undefined): Record<string, StageState> {
-  const map: Record<string, StageState> = { ...(raw || {}) };
-  for (let i = 1; i <= KIRISH_STAGE_COUNT; i++) {
-    const key = String(i);
-    if (!map[key]) map[key] = emptyStage();
-  }
-  return map;
-}
-
-function stageTitle(n: number) {
-  return KIRISH_STAGES.find((s) => s.stage === n)?.title || `${n}-bosqich`;
 }
 
 /** Stajyorlar + Kirish o‘quv progressi (faqat stajyor roli) */
@@ -134,33 +101,21 @@ router.get("/internships/roster", requireAuth, async (req: AuthRequest, res): Pr
       : [];
     const managerById = new Map(managers.map((m) => [m.id, m]));
 
+    const defs = await loadStageDefs();
+    const stageCount = defs.length;
+
     const items = stajyors.map((u) => {
       const emp = empByUser.get(u.id) ?? null;
       const progress = progressByUser.get(u.id);
-      const stagesMap = ensureStagesMap(progress?.stagesJson as KirishStagesMap | undefined);
-      const stageDetails = Array.from({ length: KIRISH_STAGE_COUNT }, (_, i) => {
-        const n = i + 1;
-        const st = stagesMap[String(n)] || emptyStage();
-        return {
-          stage: n,
-          title: stageTitle(n),
-          score: st.score,
-          attempts: st.attempts,
-          passed: Boolean(st.passed),
-          videoDone: Boolean(st.videoDone),
-          slidesDone: Boolean(st.slidesDone),
-          passedAt: st.passedAt,
-        };
-      });
+      const sum = progressSummary(progress ?? null, defs);
+      const stageDetails = sum.stages;
 
       const testsAttempted = stageDetails.filter((s) => s.attempts > 0 || s.score != null).length;
-      const testsPassed = stageDetails.filter((s) => s.passed).length;
-      const scores = stageDetails.map((s) => s.score).filter((s): s is number => s != null);
-      const avgScore =
-        scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
-      const currentStage = progress?.currentStage ?? 1;
-      const progressPct = Math.round((testsPassed / KIRISH_STAGE_COUNT) * 100);
-      const kirishStatus = progress?.status ?? "not_started";
+      const testsPassed = sum.passed;
+      const avgScore = sum.avgScore;
+      const currentStage = sum.currentStage;
+      const progressPct = sum.progressPct;
+      const kirishStatus = sum.status;
       const internship = emp ? internshipByEmp.get(emp.id) ?? null : null;
       const mgr = emp?.reportsToId != null ? managerById.get(emp.reportsToId) : null;
 
@@ -179,11 +134,11 @@ router.get("/internships/roster", requireAuth, async (req: AuthRequest, res): Pr
         kirish: {
           currentStage,
           status: kirishStatus,
-          stageCount: KIRISH_STAGE_COUNT,
+          stageCount,
           passScore: KIRISH_PASS_SCORE,
           testsAttempted,
           testsPassed,
-          testsTotal: KIRISH_STAGE_COUNT,
+          testsTotal: stageCount,
           avgScore,
           progressPct,
           stages: stageDetails,
@@ -211,7 +166,7 @@ router.get("/internships/roster", requireAuth, async (req: AuthRequest, res): Pr
           : 0,
     };
 
-    res.json({ summary, items, stageCount: KIRISH_STAGE_COUNT, passScore: KIRISH_PASS_SCORE });
+    res.json({ summary, items, stageCount, passScore: KIRISH_PASS_SCORE });
   } catch (err) {
     console.error("GET /internships/roster error:", err);
     res.status(503).json({ error: "Stajyorlar ro‘yxati yuklanmadi" });

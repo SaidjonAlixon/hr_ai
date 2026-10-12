@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, notInArray } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import { db, employeesTable, payrollMonthsTable, usersTable, workCalendarDaysTable } from "@workspace/db";
 import { approvePayrollDays, listPayrollDays, refreshPayrollDays, returnPayrollDays, savePayrollDay } from "../lib/payroll-days";
@@ -32,7 +32,7 @@ import {
 } from "../lib/kpi-payroll";
 import { loadStaffFromUsers } from "../lib/staff-directory";
 import { coordinatorsFor } from "../lib/davomat-shift-report";
-import { isSbRole } from "../lib/roles";
+import { isSbRole, NON_STAFF_ROLES } from "../lib/roles";
 import { ScopeCalendar, calendarWorkStatus } from "../lib/work-calendar";
 
 const router: IRouter = Router();
@@ -405,7 +405,10 @@ router.post("/oylik/approve", requireAuth, async (req: AuthRequest, res): Promis
     }
 
     if (all || !userId) {
-      const users = await db.select({ id: usersTable.id }).from(usersTable);
+      const users = await db
+        .select({ id: usersTable.id })
+        .from(usersTable)
+        .where(notInArray(usersTable.role, [...NON_STAFF_ROLES]));
       const existing = await db
         .select({ userId: payrollMonthsTable.userId })
         .from(payrollMonthsTable)

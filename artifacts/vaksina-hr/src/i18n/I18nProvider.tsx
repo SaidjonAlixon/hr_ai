@@ -114,6 +114,7 @@ export const NAV_PATH_KEYS: Record<string, string> = {
   "/admin/users": "nav.users",
   "/admin/departments": "nav.departments",
   "/admin/kirish-videolar": "nav.kirishVideos",
+  "/oquvchilar": "nav.oquvchilar",
   "/admin/faces": "nav.faces",
   "/admin/davomat-qr": "nav.davomatQrAdmin",
   "/kirish": "nav.kirish",

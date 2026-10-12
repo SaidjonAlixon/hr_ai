@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, jsonb, uniqueIndex, boolean } from "drizzle-orm/pg-core";
 
 export type KirishStageState = {
   videoDone: boolean;
@@ -36,11 +36,25 @@ export type KirishQuestionRow = {
   correctIndex: number;
 };
 
+export type KirishSlidePdfRow = {
+  id: string;
+  title: string;
+  url: string;
+  driveFileId: string;
+};
+
 export const kirishVideosTable = pgTable(
   "kirish_videos",
   {
     id: serial("id").primaryKey(),
     stage: integer("stage").notNull(),
+    /** Bo‘sh bo‘lsa — standart (kod ichidagi) sarlavha */
+    title: text("title"),
+    subtitle: text("subtitle"),
+    /** Trener qo‘shgan dars (standart 8 bosqichdan tashqari) */
+    isCustom: boolean("is_custom").notNull().default(false),
+    /** Qo‘shimcha PDF slaydlar (asosiy pdf_url dan keyin) */
+    slidesJson: jsonb("slides_json").$type<KirishSlidePdfRow[]>().notNull().default([]),
     youtubeUrl: text("youtube_url").notNull().default(""),
     youtubeId: text("youtube_id").notNull().default(""),
     /** Google Drive video (bosqich videosi) */

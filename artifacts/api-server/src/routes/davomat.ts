@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, gte, lte, inArray, desc } from "drizzle-orm";
+import { and, eq, gte, lte, inArray, desc, notInArray } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import { kickDisciplineScan } from "../lib/discipline";
 import {
@@ -44,6 +44,7 @@ import {
   canViewFullDavomatDashboard,
   isReviziyaRole,
   isBoshAdmin,
+  NON_STAFF_ROLES,
 } from "../lib/roles";
 import {
   accessEditors,
@@ -2847,7 +2848,7 @@ async function ensureAllActiveUsersLinked(): Promise<number> {
       departmentId: usersTable.departmentId,
     })
     .from(usersTable)
-    .where(eq(usersTable.status, "active"));
+    .where(and(eq(usersTable.status, "active"), notInArray(usersTable.role, [...NON_STAFF_ROLES])));
   let n = 0;
   for (const u of users) {
     try {

@@ -12,6 +12,7 @@ import {
 } from "@workspace/db";
 import { ensureEmployeeForNewUser } from "./user-employee-sync";
 import { formatPersonName } from "./person-name";
+import { NON_STAFF_ROLES } from "./roles";
 
 export type StaffRow = {
   id: number;
@@ -193,7 +194,7 @@ export async function loadStaffFromUsers(
       createdAt: usersTable.createdAt,
     })
     .from(usersTable)
-    .where(ne(usersTable.role, "admin"))
+    .where(notInArray(usersTable.role, [...NON_STAFF_ROLES]))
     .orderBy(asc(usersTable.fullName));
 
   // «Tugatilgan» — faqat Bo‘shatilganlarda (Xodimlar/Oylik/Davomat hech birida emas)
@@ -208,7 +209,7 @@ export async function loadStaffFromUsers(
       (group === "active" ? isActiveStaffUser(u.status) : !isActiveStaffUser(u.status)),
   );
   // Admin hech qachon xodimlar/davomat ro‘yxatiga kirmaydi
-  const staffUsers = filteredUsers.filter((u) => u.role !== "admin");
+  const staffUsers = filteredUsers.filter((u) => !(NON_STAFF_ROLES as readonly string[]).includes(u.role));
   if (!staffUsers.length) return [];
 
   const userIds = staffUsers.map((u) => u.id);

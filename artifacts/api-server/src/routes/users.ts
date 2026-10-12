@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, asc, desc } from "drizzle-orm";
+import { eq, and, asc, desc, ne } from "drizzle-orm";
 import { scriptIncludes } from "../lib/script-search";
 import ExcelJS from "exceljs";
 import { db, usersTable, departmentsTable, employeesTable, dismissedStaffTable } from "@workspace/db";
@@ -7,7 +7,7 @@ import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { ensureEmployeeForNewUser, removeEmployeesForUser } from "../lib/user-employee-sync";
 import { archiveAndDeleteUser, purgeDismissedArchive, purgeUserCompletely, sweepDismissedUsers } from "../lib/dismiss-user";
-import { canManageUsers, canDeleteUsers, canChangeStaffStatus, isBoshAdmin } from "../lib/roles";
+import { canManageUsers, canDeleteUsers, canChangeStaffStatus, isBoshAdmin, isStudentRole, STUDENT_ROLE } from "../lib/roles";
 import { clientIp, createServerSession, writeLoginAudit } from "../lib/device-security";
 import { formatPersonName } from "../lib/person-name";
 import { resolveDepartmentIdForRole } from "../lib/role-departments";
@@ -261,7 +261,7 @@ router.get("/users", async (req, res): Promise<void> => {
   if (rows.some((r) => r.status === "terminated")) {
     void sweepDismissedUsers().catch(() => 0);
   }
-  const visible = rows.filter((r) => r.status !== "terminated");
+  const visible = rows.filter((r) => r.status !== "terminated" && !isStudentRole(r.role));
   res.json(
     search
       ? visible.filter((r) => scriptIncludes([r.fullName, r.login, r.phone, r.departmentName].filter(Boolean).join(" "), search))
@@ -290,6 +290,7 @@ router.get("/users/export", requireAuth, async (req: AuthRequest, res): Promise<
     })
     .from(usersTable)
     .leftJoin(departmentsTable, eq(usersTable.departmentId, departmentsTable.id))
+    .where(ne(usersTable.role, STUDENT_ROLE))
     .orderBy(asc(usersTable.fullName));
 
   const workbook = new ExcelJS.Workbook();

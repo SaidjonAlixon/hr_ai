@@ -1,7 +1,7 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { db, notificationsTable, usersTable } from "@workspace/db";
 
-import { HR_ROLES } from "../lib/roles";
+import { HR_ROLES, STUDENT_ROLE } from "../lib/roles";
 import {
   davomatMiniAppKeyboard,
   escapeHtml,
@@ -142,7 +142,7 @@ export async function notifyAllActiveUsers(opts: {
   const users = await db
     .select({ id: usersTable.id })
     .from(usersTable)
-    .where(eq(usersTable.status, "active"));
+    .where(and(eq(usersTable.status, "active"), ne(usersTable.role, STUDENT_ROLE)));
 
   const telegram = opts.telegram ?? true;
   for (const u of users) {

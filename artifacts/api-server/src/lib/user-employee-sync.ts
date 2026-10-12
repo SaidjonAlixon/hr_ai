@@ -2,6 +2,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, employeesTable, departmentsTable } from "@workspace/db";
 import { formatPersonName } from "./person-name";
 import { resolveDepartmentIdForRole } from "./role-departments";
+import { NON_STAFF_ROLES } from "./roles";
 
 const ROLE_POSITION: Record<string, string> = {
   admin: "Admin",
@@ -99,8 +100,8 @@ export async function ensureEmployeeForNewUser(user: {
   departmentId: number | null;
   position?: string | null;
 }): Promise<void> {
-  // Admin — faqat Foydalanuvchilar; xodim/davomat/tarmoqda ko‘rinmasin
-  if (user.role === "admin") {
+  // Admin va o‘quvchi — xodim/davomat/tarmoqda ko‘rinmasin
+  if ((NON_STAFF_ROLES as readonly string[]).includes(user.role)) {
     await removeEmployeesForUser(user.id);
     return;
   }

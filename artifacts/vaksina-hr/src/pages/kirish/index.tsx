@@ -90,7 +90,21 @@ export default function KirishPage() {
   const st = stageState(progress?.stages, viewStage);
   const locked = viewStage > (progress?.currentStage ?? 1);
   const canFinish = Boolean(progress?.allPassed);
-  const finished = progress?.status === "ready_for_hire" || progress?.status === "hired";
+  const finished =
+    progress?.status === "ready_for_hire" || progress?.status === "hired" || progress?.status === "completed";
+  const isStudent = Boolean(me.data?.isStudent);
+  const stageNumbers =
+    progress?.stageNumbers ?? Array.from({ length: progress?.stageCount ?? 8 }, (_, i) => i + 1);
+  const lastStage = stageNumbers[stageNumbers.length - 1] ?? 8;
+  const pdfs =
+    stageContent?.pdfs ??
+    (stageContent?.driveFileId ? [{ id: "main", title: "Slayd", driveFileId: stageContent.driveFileId }] : []);
+  const [pdfIndex, setPdfIndex] = useState(0);
+  const activePdf = pdfs[Math.min(pdfIndex, Math.max(0, pdfs.length - 1))];
+
+  useEffect(() => {
+    setPdfIndex(0);
+  }, [viewStage]);
 
   const testVisible = sessionWatched || st.passed;
 
@@ -205,17 +219,19 @@ export default function KirishPage() {
               </div>
               <div>
                 <h2 className="text-xl font-semibold text-foreground">
-                  {(report || { statusLabel: t("kirish.readyHire") }).statusLabel}
+                  {report?.statusLabel || (isStudent ? "Kurs yakunlandi" : t("kirish.readyHire"))}
                 </h2>
                 <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
                   {report?.message ||
-                    t("kirish.readyMsg")}
+                    (isStudent
+                      ? "Tabriklaymiz! Barcha darslarni muvaffaqiyatli yakunladingiz. Yangi dars qo‘shilsa, shu yerda ochiladi."
+                      : t("kirish.readyMsg"))}
                 </p>
               </div>
             </div>
             <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
               {(report?.stages ||
-                Array.from({ length: progress?.stageCount ?? 8 }, (_, i) => i + 1).map((n) => ({
+                stageNumbers.map((n) => ({
                   stage: n,
                   score: stageState(progress?.stages, n).score,
                   attempts: stageState(progress?.stages, n).attempts,
@@ -245,8 +261,8 @@ export default function KirishPage() {
 
         {!finished && stageContent && !locked ? (
           <div className="space-y-5">
-            <div className="grid grid-cols-8 gap-1.5">
-              {Array.from({ length: progress?.stageCount ?? 8 }, (_, i) => i + 1).map((n) => {
+            <div className="flex flex-wrap gap-1.5">
+              {stageNumbers.map((n) => {
                 const passed = stageState(progress?.stages, n).passed;
                 const isCurrent = n === viewStage;
                 const isLocked = n > (progress?.currentStage ?? 1);
@@ -256,8 +272,9 @@ export default function KirishPage() {
                     type="button"
                     disabled={isLocked}
                     onClick={() => setViewStage(n)}
+                    title={stageDefs.find((s) => s.stage === n)?.title}
                     className={cn(
-                      "rounded-xl py-2 text-sm font-semibold tabular-nums transition",
+                      "min-w-[2.6rem] flex-1 rounded-xl py-2 text-sm font-semibold tabular-nums transition sm:max-w-[3.5rem]",
                       isCurrent && "bg-[#2AABEE] text-foreground dark:text-white shadow-sm",
                       !isCurrent &&
                         passed &&
@@ -315,10 +332,23 @@ export default function KirishPage() {
                       <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/10 ring-2 ring-[#2AABEE]/40">
                         <Play className="h-7 w-7 text-[#F1C40F]" />
                       </div>
-                      <p className="font-medium text-foreground dark:text-white">{stageContent.videoPosterHint}</p>
-                      <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-                        {t("kirish.videoMissing")}
+                      <p className="font-medium text-white">{stageContent.videoPosterHint}</p>
+                      <p className="mt-2 max-w-sm text-sm text-slate-300">
+                        Bu darsda video yo‘q — slayd va testga o‘ting.
                       </p>
+                      {!sessionWatched && !st.passed ? (
+                        <Button
+                          className="mt-4 rounded-full bg-[#2AABEE] px-6 hover:bg-[#229ED9]"
+                          disabled={completeVideo.isPending}
+                          onClick={() => {
+                            setSessionWatched(true);
+                            setWatchPercent(100);
+                            void onMarkVideo();
+                          }}
+                        >
+                          Davom etish
+                        </Button>
+                      ) : null}
                     </div>
                   )}
                 </div>
@@ -337,10 +367,46 @@ export default function KirishPage() {
               <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-3">
                 <Presentation className="h-4 w-4 text-[#2AABEE]" />
                 <h3 className="text-sm font-semibold text-foreground">{t("kirish.slides")}</h3>
+                {pdfs.length > 1 ? (
+                  <span className="ml-auto text-xs text-muted-foreground">{pdfs.length} ta</span>
+                ) : null}
               </div>
               <div className="p-4 sm:p-5">
-                {stageContent.driveFileId ? (
-                  <DrivePdfViewer fileId={stageContent.driveFileId} />
+                {pdfs.length > 1 ? (
+                  <div className="mb-3 flex flex-wrap gap-1.5">
+                    {pdfs.map((p, i) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setPdfIndex(i)}
+                        className={cn(
+                          "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                          activePdf?.id === p.id
+                            ? "border-[#2AABEE] bg-[#2AABEE]/10 text-foreground"
+                            : "border-border bg-card text-muted-foreground hover:border-slate-300",
+                        )}
+                      >
+                        {i + 1}. {p.title}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                {activePdf ? (
+                  <DrivePdfViewer key={activePdf.driveFileId} fileId={activePdf.driveFileId} />
+                ) : stageContent.slides.length > 0 ? (
+                  <div className="grid gap-3">
+                    {stageContent.slides.map((s, i) => (
+                      <div
+                        key={s.id}
+                        className="rounded-2xl border border-border bg-card p-4"
+                        style={{ borderLeft: `4px solid ${s.accent}` }}
+                      >
+                        <p className="text-xs font-semibold text-muted-foreground">{i + 1}-slayd</p>
+                        <p className="mt-0.5 font-semibold text-foreground">{s.title}</p>
+                        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{s.body}</p>
+                      </div>
+                    ))}
+                  </div>
                 ) : (
                   <div className="flex min-h-[240px] flex-col items-center justify-center rounded-xl border border-dashed bg-muted px-4 py-8 text-center text-muted-foreground">
                     <Presentation className="mb-2 h-8 w-8 text-muted-foreground" />
@@ -374,7 +440,9 @@ export default function KirishPage() {
                       )}
                     >
                       {lastResult
-                        ? `${lastResult.correct}/${lastResult.total}`
+                        ? lastResult.total
+                          ? `${lastResult.correct}/${lastResult.total}`
+                          : "✓"
                         : `${st.score ?? 0}%`}
                     </div>
                     <p className="mt-3 text-base font-semibold text-foreground">
@@ -392,14 +460,14 @@ export default function KirishPage() {
                     </h3>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {(lastResult?.passed ?? st.passed)
-                        ? viewStage < (progress?.stageCount ?? 8)
+                        ? viewStage < lastStage
                           ? t("kirish.nextOpened")
                           : t("kirish.allReady")
                         : t("kirish.need50ex")}
                     </p>
                     <div className="mt-4 flex flex-wrap justify-center gap-2">
                       {(lastResult?.passed ?? st.passed) &&
-                        viewStage < (progress?.stageCount ?? 8) && (
+                        viewStage < lastStage && (
                           <Button
                             className="rounded-full bg-[#0B1B2B] hover:bg-muted dark:bg-slate-800"
                             onClick={() => setViewStage(viewStage + 1)}
@@ -413,6 +481,11 @@ export default function KirishPage() {
 
                 {(!st.passed || lastResult) && !(lastResult?.passed ?? st.passed) ? (
                   <div className="space-y-4">
+                    {stageContent.questions.length === 0 ? (
+                      <p className="rounded-2xl border border-dashed p-5 text-center text-sm text-muted-foreground">
+                        Bu darsda test yo‘q. Video va slaydlarni ko‘rib bo‘lgach, darsni yakunlang.
+                      </p>
+                    ) : null}
                     {stageContent.questions.map((q, qi) => (
                       <div
                         key={q.id}
@@ -456,7 +529,11 @@ export default function KirishPage() {
                     onClick={() => void onSubmit()}
                     disabled={submitTest.isPending}
                   >
-                    {submitTest.isPending ? t("kirish.checking") : t("kirish.submitAnswers")}
+                    {submitTest.isPending
+                      ? t("kirish.checking")
+                      : stageContent.questions.length === 0
+                        ? "Darsni yakunlash"
+                        : t("kirish.submitAnswers")}
                   </Button>
                 </div>
               ) : null}

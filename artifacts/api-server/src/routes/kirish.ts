@@ -4,139 +4,107 @@ import {
   db,
   kirishProgressTable,
   kirishVideosTable,
-  type KirishStageState,
+  type KirishSlidePdfRow,
   type KirishStagesMap,
 } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
-import { canAccessKirish, canManageOnboardingContent } from "../lib/roles";
+import { canAccessKirish, canManageKirishContent, isStudentRole } from "../lib/roles";
+import { KIRISH_PASS_SCORE, type KirishQuestion } from "../lib/kirish-content";
 import {
-  KIRISH_STAGE_COUNT,
-  getStage,
-  publicStagePayload,
-  scoreAnswers,
-  KIRISH_STAGES,
-  KIRISH_PASS_SCORE,
-  type KirishQuestion,
-} from "../lib/kirish-content";
+  allStagesPassed,
+  ensureDefaultStageVideos,
+  ensureStagesMap,
+  loadStageDefs,
+  nextCustomStageNumber,
+  publicStage,
+  removeCustomStage,
+  scoreStage,
+  unlockedStage,
+  type KirishStageDef,
+} from "../lib/kirish-stages";
 import { parseYoutubeId } from "../lib/youtube-id";
-import { parseDriveFileId, drivePreviewUrl } from "../lib/drive-id";
+import { parseDriveFileId } from "../lib/drive-id";
 
 const router: IRouter = Router();
 
-/** Bosqich videolari (DB bo‘sh bo‘lsa ham stajyor ko‘radi) */
-const DEFAULT_STAGE_VIDEO_DRIVE: Record<number, string> = {
-  5: "1swNC0epB65S9H0tpHeiQHynmB-W9pi2c",
-};
+const DONE_STATUSES = new Set(["ready_for_hire", "hired", "completed"]);
 
-async function ensureDefaultStageVideos() {
-  for (const [stageStr, fileId] of Object.entries(DEFAULT_STAGE_VIDEO_DRIVE)) {
-    const stage = Number(stageStr);
-    const [existing] = await db
-      .select()
-      .from(kirishVideosTable)
-      .where(eq(kirishVideosTable.stage, stage))
-      .limit(1);
-    const driveUrl = `https://drive.google.com/file/d/${fileId}/view`;
-    if (!existing) {
-      await db.insert(kirishVideosTable).values({
-        stage,
-        youtubeUrl: driveUrl,
-        youtubeId: "",
-        videoDriveFileId: fileId,
-        questionsJson: [],
-      });
-      continue;
-    }
-    if (existing.youtubeId) continue;
-    if (existing.videoDriveFileId === fileId) continue;
-    await db
-      .update(kirishVideosTable)
-      .set({
-        videoDriveFileId: fileId,
-        youtubeUrl: existing.youtubeUrl || driveUrl,
-        updatedAt: new Date(),
-      })
-      .where(eq(kirishVideosTable.id, existing.id));
-  }
-}
-
-function emptyStage(): KirishStageState {
-  return {
-    videoDone: false,
-    slidesDone: false,
-    score: null,
-    attempts: 0,
-    passed: false,
-    passedAt: null,
-  };
-}
-
-function ensureStagesMap(raw: KirishStagesMap | null | undefined): KirishStagesMap {
-  const map: KirishStagesMap = { ...(raw || {}) };
-  for (let i = 1; i <= KIRISH_STAGE_COUNT; i++) {
-    const key = String(i);
-    if (!map[key]) map[key] = emptyStage();
-  }
-  return map;
-}
-
-function requireStajyor(req: AuthRequest, res: import("express").Response): boolean {
+function requireLearner(req: AuthRequest, res: import("express").Response): boolean {
   if (!canAccessKirish(req.userRole)) {
-    res.status(403).json({ error: "Faqat stajyor uchun" });
+    res.status(403).json({ error: "Kirish darslari faqat stajyor va o‘quvchilar uchun" });
     return false;
   }
   return true;
 }
 
-async function getOrCreateProgress(userId: number) {
+function requireContentManager(req: AuthRequest, res: import("express").Response): boolean {
+  if (!canManageKirishContent(req.userRole)) {
+    res.status(403).json({ error: "Faqat trener, admin, direktor yoki HR direktor" });
+    return false;
+  }
+  return true;
+}
+
+type ProgressRow = typeof kirishProgressTable.$inferSelect;
+
+/** Progressni joriy darslar soniga moslab oladi (yangi dars qo‘shilsa ham ochiladi) */
+async function getProgress(userId: number, defs: KirishStageDef[], role?: string | null): Promise<ProgressRow> {
+  const nums = defs.map((d) => d.stage);
   const [existing] = await db
     .select()
     .from(kirishProgressTable)
     .where(eq(kirishProgressTable.userId, userId))
     .limit(1);
-  if (existing) {
-    return {
-      ...existing,
-      stagesJson: ensureStagesMap(existing.stagesJson as KirishStagesMap),
-    };
+  if (!existing) {
+    const [created] = await db
+      .insert(kirishProgressTable)
+      .values({ userId, currentStage: 1, status: "in_progress", stagesJson: ensureStagesMap({}, nums) })
+      .returning();
+    return created!;
   }
-  const stages = ensureStagesMap({});
-  const [created] = await db
-    .insert(kirishProgressTable)
-    .values({
-      userId,
-      currentStage: 1,
-      status: "in_progress",
-      stagesJson: stages,
-    })
+  const stages = ensureStagesMap(existing.stagesJson as KirishStagesMap, nums);
+  const currentStage = unlockedStage(stages, nums, existing.currentStage);
+  let status = existing.status;
+  if (isStudentRole(role) && status === "completed" && !allStagesPassed(stages, nums)) {
+    status = "in_progress";
+  }
+  if (currentStage === existing.currentStage && status === existing.status) {
+    return { ...existing, stagesJson: stages };
+  }
+  const [updated] = await db
+    .update(kirishProgressTable)
+    .set({ currentStage, status, stagesJson: stages, updatedAt: new Date() })
+    .where(eq(kirishProgressTable.id, existing.id))
     .returning();
-  return { ...created, stagesJson: stages };
+  return updated!;
 }
 
-function serializeProgress(row: Awaited<ReturnType<typeof getOrCreateProgress>>) {
-  const stages = ensureStagesMap(row.stagesJson);
-  const allPassed = Array.from({ length: KIRISH_STAGE_COUNT }, (_, i) =>
-    Boolean(stages[String(i + 1)]?.passed),
-  ).every(Boolean);
-
+function serializeProgress(row: ProgressRow, defs: KirishStageDef[]) {
+  const nums = defs.map((d) => d.stage);
+  const stages = ensureStagesMap(row.stagesJson as KirishStagesMap, nums);
   return {
     id: row.id,
     userId: row.userId,
-    currentStage: row.currentStage,
+    currentStage: unlockedStage(stages, nums, row.currentStage),
     status: row.status,
     stages,
-    allPassed,
+    allPassed: allStagesPassed(stages, nums),
     completedAt: row.completedAt ? row.completedAt.toISOString() : null,
     passScore: KIRISH_PASS_SCORE,
-    stageCount: KIRISH_STAGE_COUNT,
+    stageCount: nums.length,
+    stageNumbers: nums,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
 
-async function youtubeByStage() {
-  const rows = await db.select().from(kirishVideosTable);
-  return new Map(rows.map((r) => [r.stage, r]));
+async function saveStages(progress: ProgressRow, stages: KirishStagesMap, currentStage = progress.currentStage) {
+  const [updated] = await db
+    .update(kirishProgressTable)
+    .set({ stagesJson: stages, currentStage, updatedAt: new Date() })
+    .where(eq(kirishProgressTable.id, progress.id))
+    .returning();
+  return updated!;
 }
 
 function parseAdminQuestions(raw: unknown): KirishQuestion[] | { error: string } {
@@ -156,246 +124,266 @@ function parseAdminQuestions(raw: unknown): KirishQuestion[] | { error: string }
       return { error: `${i + 1}-savolda to‘g‘ri javobni belgilang` };
     }
     const idRaw = String(q?.id ?? "").trim();
+    out.push({ id: idRaw || `q-${i + 1}-${Date.now()}`, text, options, correctIndex });
+  }
+  return out;
+}
+
+function parseAdminPdfs(raw: unknown): KirishSlidePdfRow[] | { error: string } {
+  if (raw == null) return [];
+  if (!Array.isArray(raw)) return { error: "Slaydlar ro‘yxati noto‘g‘ri" };
+  const out: KirishSlidePdfRow[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const p = raw[i] as Record<string, unknown>;
+    const url = String(p?.url ?? "").trim();
+    if (!url) continue;
+    const driveFileId = parseDriveFileId(url);
+    if (!driveFileId) return { error: `${i + 1}-slayd: Google Drive havolasi noto‘g‘ri` };
     out.push({
-      id: idRaw || `q-${i + 1}-${Date.now()}`,
-      text,
-      options,
-      correctIndex,
+      id: String(p?.id ?? "").trim() || `pdf-${Date.now()}-${i}`,
+      title: String(p?.title ?? "").trim().slice(0, 120),
+      url: `https://drive.google.com/file/d/${driveFileId}/view`,
+      driveFileId,
     });
   }
   return out;
 }
 
-function questionsForStage(
-  stage: (typeof KIRISH_STAGES)[number],
-  ov?: { questionsJson?: KirishQuestion[] | null } | null,
-): KirishQuestion[] {
-  const custom = ov?.questionsJson;
-  if (!Array.isArray(custom) || custom.length === 0) return stage.questions;
-  return custom.map((q, i) => {
-    const expected = Number(q?.correctIndex);
-    return {
-      id: String(q?.id || stage.questions[i]?.id || `q-${i + 1}`),
-      text: String(q?.text || ""),
-      options: Array.isArray(q?.options) ? q.options.map((o) => String(o ?? "")) : [],
-      correctIndex: Number.isInteger(expected)
-        ? expected
-        : Number(stage.questions[i]?.correctIndex ?? 0),
-    };
-  });
-}
-
-function publicStagesWithVideos(
-  byStage: Map<
-    number,
-    {
-      youtubeUrl: string;
-      youtubeId: string;
-      videoDriveFileId?: string | null;
-      pdfUrl: string | null;
-      driveFileId: string | null;
-      questionsJson?: KirishQuestion[] | null;
-    }
-  >,
-) {
-  return KIRISH_STAGES.map((s) => {
-    const ov = byStage.get(s.stage);
-    const questions = questionsForStage(s, ov);
-    const pub = publicStagePayload({ ...s, questions });
-    const youtubeId = (ov?.youtubeId || "").trim() || null;
-    const videoDriveFileId =
-      ov?.videoDriveFileId ||
-      (!youtubeId ? DEFAULT_STAGE_VIDEO_DRIVE[s.stage] ?? null : null) ||
-      null;
-    const driveFileId = ov?.driveFileId || null;
-    const videoKind = youtubeId
-      ? ("youtube" as const)
-      : videoDriveFileId
-        ? ("drive" as const)
-        : ("file" as const);
-    return {
-      ...pub,
-      videoUrl: youtubeId
-        ? ov!.youtubeUrl
-        : videoDriveFileId
-          ? drivePreviewUrl(videoDriveFileId)
-          : pub.videoUrl,
-      videoKind,
-      youtubeId,
-      videoDriveFileId,
-      pdfUrl: ov?.pdfUrl ?? null,
-      driveFileId,
-    };
-  });
-}
-
-function requireAdmin(req: AuthRequest, res: import("express").Response): boolean {
-  if (!canManageOnboardingContent(req.userRole)) {
-    res.status(403).json({ error: "Faqat admin, direktor yoki HR direktor" });
-    return false;
-  }
-  return true;
+function stageNum(req: AuthRequest): number {
+  return Number(req.params.n);
 }
 
 router.get("/kirish/me", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireStajyor(req, res)) return;
+  if (!requireLearner(req, res)) return;
   await ensureDefaultStageVideos();
-  const progress = await getOrCreateProgress(req.userId!);
-  const byStage = await youtubeByStage();
+  const defs = await loadStageDefs();
+  const progress = await getProgress(req.userId!, defs, req.userRole);
   res.json({
-    progress: serializeProgress(progress),
-    stages: publicStagesWithVideos(byStage),
+    progress: serializeProgress(progress, defs),
+    stages: defs.map(publicStage),
+    isStudent: isStudentRole(req.userRole),
   });
 });
 
 router.get("/kirish/videos", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireContentManager(req, res)) return;
   await ensureDefaultStageVideos();
-  const byStage = await youtubeByStage();
+  const defs = await loadStageDefs();
   res.json({
-    videos: KIRISH_STAGES.map((s) => {
-      const ov = byStage.get(s.stage);
-      const videoDriveFileId =
-        ov?.videoDriveFileId ||
-        (!(ov?.youtubeId || "").trim() ? DEFAULT_STAGE_VIDEO_DRIVE[s.stage] ?? null : null) ||
-        null;
-      return {
-        stage: s.stage,
-        title: s.title,
-        subtitle: s.subtitle,
-        youtubeUrl:
-          ov?.youtubeUrl ||
-          (videoDriveFileId ? `https://drive.google.com/file/d/${videoDriveFileId}/view` : ""),
-        youtubeId: ov?.youtubeId || null,
-        videoDriveFileId,
-        pdfUrl: ov?.pdfUrl ?? "",
-        driveFileId: ov?.driveFileId ?? null,
-        questions: questionsForStage(s, ov),
-        updatedAt: ov?.updatedAt ? ov.updatedAt.toISOString() : null,
-      };
-    }),
+    videos: defs.map((d) => ({
+      stage: d.stage,
+      title: d.title,
+      subtitle: d.subtitle,
+      isCustom: d.isCustom,
+      youtubeUrl:
+        d.row?.youtubeUrl ||
+        (d.videoDriveFileId ? `https://drive.google.com/file/d/${d.videoDriveFileId}/view` : ""),
+      youtubeId: d.youtubeId,
+      videoDriveFileId: d.videoDriveFileId,
+      pdfUrl: d.pdfs[0]?.url ?? "",
+      driveFileId: d.pdfs[0]?.driveFileId ?? null,
+      pdfs: d.pdfs.map((p) => ({ id: p.id, title: p.title, url: p.url, driveFileId: p.driveFileId })),
+      textSlides: d.slides.length,
+      questions: d.questions,
+      updatedAt: d.row?.updatedAt ? d.row.updatedAt.toISOString() : null,
+    })),
   });
 });
 
+/** Yangi dars (trener) */
+router.post("/kirish/stages", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireContentManager(req, res)) return;
+  const title = String(req.body?.title ?? "").trim().slice(0, 160);
+  const subtitle = String(req.body?.subtitle ?? "").trim().slice(0, 300);
+  if (!title) {
+    res.status(400).json({ error: "Dars nomini yozing" });
+    return;
+  }
+  const stage = await nextCustomStageNumber();
+  const [created] = await db
+    .insert(kirishVideosTable)
+    .values({
+      stage,
+      title,
+      subtitle,
+      isCustom: true,
+      youtubeUrl: "",
+      youtubeId: "",
+      questionsJson: [],
+      slidesJson: [],
+      updatedById: req.userId ?? null,
+    })
+    .returning();
+  res.status(201).json({ stage: created!.stage });
+});
+
+/** Trener qo‘shgan darsni butunlay o‘chirish */
+router.delete("/kirish/stages/:n", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireContentManager(req, res)) return;
+  const n = stageNum(req);
+  const defs = await loadStageDefs();
+  const def = defs.find((d) => d.stage === n);
+  if (!def) {
+    res.status(404).json({ error: "Dars topilmadi" });
+    return;
+  }
+  if (!def.isCustom) {
+    res.status(400).json({ error: "Standart bosqichni o‘chirib bo‘lmaydi — faqat tozalash mumkin" });
+    return;
+  }
+  await removeCustomStage(n);
+  res.json({ ok: true });
+});
+
 router.put("/kirish/videos/:n", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
-  const n = Number(req.params.n);
-  if (!getStage(n)) {
+  if (!requireContentManager(req, res)) return;
+  const n = stageNum(req);
+  const defs = await loadStageDefs();
+  const def = defs.find((d) => d.stage === n);
+  if (!def) {
     res.status(400).json({ error: "Noto‘g‘ri bosqich" });
     return;
   }
   const rawYoutube = String(req.body?.youtubeUrl ?? "").trim();
-  const rawPdf = String(req.body?.pdfUrl ?? "").trim();
   const videoDriveFileId = rawYoutube ? parseDriveFileId(rawYoutube) : null;
   const youtubeId = rawYoutube && !videoDriveFileId ? parseYoutubeId(rawYoutube) : "";
   if (rawYoutube && !videoDriveFileId && !youtubeId) {
     res.status(400).json({ error: "YouTube yoki Google Drive video havolasi noto‘g‘ri" });
     return;
   }
-  const driveFileId = rawPdf ? parseDriveFileId(rawPdf) : null;
-  if (rawPdf && !driveFileId) {
-    res.status(400).json({ error: "Google Drive PDF havolasi noto‘g‘ri" });
-    return;
+
+  let pdfs: KirishSlidePdfRow[];
+  if (Array.isArray(req.body?.pdfs)) {
+    const parsed = parseAdminPdfs(req.body.pdfs);
+    if (!Array.isArray(parsed)) {
+      res.status(400).json({ error: parsed.error });
+      return;
+    }
+    pdfs = parsed;
+  } else {
+    const parsed = parseAdminPdfs([{ url: req.body?.pdfUrl ?? "" }]);
+    if (!Array.isArray(parsed)) {
+      res.status(400).json({ error: "Google Drive PDF havolasi noto‘g‘ri" });
+      return;
+    }
+    pdfs = parsed;
   }
+
   const parsedQs = parseAdminQuestions(req.body?.questions);
   if (!Array.isArray(parsedQs)) {
     res.status(400).json({ error: parsedQs.error });
     return;
   }
-  if (!youtubeId && !videoDriveFileId && !driveFileId && parsedQs.length === 0) {
+  const title = req.body?.title != null ? String(req.body.title).trim().slice(0, 160) : undefined;
+  const subtitle = req.body?.subtitle != null ? String(req.body.subtitle).trim().slice(0, 300) : undefined;
+  if (def.isCustom && title === "") {
+    res.status(400).json({ error: "Dars nomini yozing" });
+    return;
+  }
+  if (!def.isCustom && !youtubeId && !videoDriveFileId && pdfs.length === 0 && parsedQs.length === 0 && !title) {
     res.status(400).json({ error: "YouTube/Drive video, PDF yoki test savolini yozing" });
     return;
   }
+
   const youtubeUrl = youtubeId
     ? `https://www.youtube.com/watch?v=${youtubeId}`
     : videoDriveFileId
       ? `https://drive.google.com/file/d/${videoDriveFileId}/view`
       : "";
-  const pdfUrl = driveFileId ? `https://drive.google.com/file/d/${driveFileId}/view` : null;
-  const [existing] = await db
-    .select()
-    .from(kirishVideosTable)
-    .where(eq(kirishVideosTable.stage, n))
-    .limit(1);
-  const now = new Date();
-  if (existing) {
+  const main = pdfs[0];
+  const values = {
+    youtubeUrl,
+    youtubeId: youtubeId || "",
+    videoDriveFileId,
+    pdfUrl: main?.url ?? null,
+    driveFileId: main?.driveFileId ?? null,
+    slidesJson: pdfs,
+    questionsJson: parsedQs,
+    ...(title !== undefined ? { title: title || null } : {}),
+    ...(subtitle !== undefined ? { subtitle: subtitle || null } : {}),
+    updatedById: req.userId ?? null,
+    updatedAt: new Date(),
+  };
+  if (def.row) {
     const [updated] = await db
       .update(kirishVideosTable)
-      .set({
-        youtubeUrl,
-        youtubeId: youtubeId || "",
-        videoDriveFileId,
-        pdfUrl,
-        driveFileId,
-        questionsJson: parsedQs,
-        updatedById: req.userId ?? null,
-        updatedAt: now,
-      })
-      .where(eq(kirishVideosTable.id, existing.id))
+      .set(values)
+      .where(eq(kirishVideosTable.id, def.row.id))
       .returning();
     res.json({ video: updated });
     return;
   }
   const [created] = await db
     .insert(kirishVideosTable)
-    .values({
-      stage: n,
-      youtubeUrl,
-      youtubeId: youtubeId || "",
-      videoDriveFileId,
-      pdfUrl,
-      driveFileId,
-      questionsJson: parsedQs,
-      updatedById: req.userId ?? null,
-    })
+    .values({ stage: n, isCustom: false, ...values })
     .returning();
   res.json({ video: created });
 });
 
+/** Materiallarni tozalash: standart bosqich — standartga qaytadi, trener darsi — bo‘sh qoladi */
 router.delete("/kirish/videos/:n", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
-  const n = Number(req.params.n);
-  if (!getStage(n)) {
+  if (!requireContentManager(req, res)) return;
+  const n = stageNum(req);
+  const defs = await loadStageDefs();
+  const def = defs.find((d) => d.stage === n);
+  if (!def) {
     res.status(400).json({ error: "Noto‘g‘ri bosqich" });
     return;
   }
-  await db.delete(kirishVideosTable).where(eq(kirishVideosTable.stage, n));
+  if (def.isCustom && def.row) {
+    await db
+      .update(kirishVideosTable)
+      .set({
+        youtubeUrl: "",
+        youtubeId: "",
+        videoDriveFileId: null,
+        pdfUrl: null,
+        driveFileId: null,
+        slidesJson: [],
+        questionsJson: [],
+        updatedById: req.userId ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(kirishVideosTable.id, def.row.id));
+  } else {
+    await db.delete(kirishVideosTable).where(eq(kirishVideosTable.stage, n));
+  }
   res.json({ ok: true });
 });
+
+async function learnerContext(req: AuthRequest, res: import("express").Response) {
+  if (!requireLearner(req, res)) return null;
+  const n = stageNum(req);
+  const defs = await loadStageDefs();
+  const def = defs.find((d) => d.stage === n);
+  if (!def) {
+    res.status(400).json({ error: "Noto‘g‘ri bosqich" });
+    return null;
+  }
+  const progress = await getProgress(req.userId!, defs, req.userRole);
+  const current = serializeProgress(progress, defs).currentStage;
+  return { n, def, defs, progress, current };
+}
 
 router.post(
   "/kirish/me/stage/:n/complete-video",
   requireAuth,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireStajyor(req, res)) return;
-    const n = Number(req.params.n);
-    if (!getStage(n)) {
-      res.status(400).json({ error: "Noto‘g‘ri bosqich" });
+    const ctx = await learnerContext(req, res);
+    if (!ctx) return;
+    const { n, defs, progress, current } = ctx;
+    if (DONE_STATUSES.has(progress.status)) {
+      res.json({ progress: serializeProgress(progress, defs) });
       return;
     }
-    const progress = await getOrCreateProgress(req.userId!);
-    if (progress.status === "ready_for_hire" || progress.status === "hired") {
-      res.json({ progress: serializeProgress(progress) });
-      return;
-    }
-    if (n > progress.currentStage) {
+    if (n > current) {
       res.status(400).json({ error: "Avval oldingi bosqichni yakunlang" });
       return;
     }
-    const stages = ensureStagesMap(progress.stagesJson);
-    const key = String(n);
-    stages[key] = { ...stages[key]!, videoDone: true };
-    const [updated] = await db
-      .update(kirishProgressTable)
-      .set({ stagesJson: stages, updatedAt: new Date() })
-      .where(eq(kirishProgressTable.id, progress.id))
-      .returning();
-    res.json({
-      progress: serializeProgress({
-        ...updated,
-        stagesJson: ensureStagesMap(updated.stagesJson as KirishStagesMap),
-      }),
-    });
+    const stages = ensureStagesMap(progress.stagesJson as KirishStagesMap, defs.map((d) => d.stage));
+    stages[String(n)] = { ...stages[String(n)]!, videoDone: true };
+    const updated = await saveStages(progress, stages);
+    res.json({ progress: serializeProgress(updated, defs) });
   },
 );
 
@@ -403,40 +391,26 @@ router.post(
   "/kirish/me/stage/:n/complete-slides",
   requireAuth,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireStajyor(req, res)) return;
-    const n = Number(req.params.n);
-    if (!getStage(n)) {
-      res.status(400).json({ error: "Noto‘g‘ri bosqich" });
+    const ctx = await learnerContext(req, res);
+    if (!ctx) return;
+    const { n, defs, progress, current } = ctx;
+    if (DONE_STATUSES.has(progress.status)) {
+      res.json({ progress: serializeProgress(progress, defs) });
       return;
     }
-    const progress = await getOrCreateProgress(req.userId!);
-    if (progress.status === "ready_for_hire" || progress.status === "hired") {
-      res.json({ progress: serializeProgress(progress) });
-      return;
-    }
-    if (n > progress.currentStage) {
+    if (n > current) {
       res.status(400).json({ error: "Avval oldingi bosqichni yakunlang" });
       return;
     }
-    const stages = ensureStagesMap(progress.stagesJson);
-    const key = String(n);
-    const st = stages[key]!;
+    const stages = ensureStagesMap(progress.stagesJson as KirishStagesMap, defs.map((d) => d.stage));
+    const st = stages[String(n)]!;
     if (!st.videoDone) {
       res.status(400).json({ error: "Avval videoni ko‘ring" });
       return;
     }
-    stages[key] = { ...st, slidesDone: true };
-    const [updated] = await db
-      .update(kirishProgressTable)
-      .set({ stagesJson: stages, updatedAt: new Date() })
-      .where(eq(kirishProgressTable.id, progress.id))
-      .returning();
-    res.json({
-      progress: serializeProgress({
-        ...updated,
-        stagesJson: ensureStagesMap(updated.stagesJson as KirishStagesMap),
-      }),
-    });
+    stages[String(n)] = { ...st, slidesDone: true };
+    const updated = await saveStages(progress, stages);
+    res.json({ progress: serializeProgress(updated, defs) });
   },
 );
 
@@ -444,114 +418,76 @@ router.post(
   "/kirish/me/stage/:n/submit-test",
   requireAuth,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireStajyor(req, res)) return;
-    const n = Number(req.params.n);
-    const stage = getStage(n);
-    if (!stage) {
-      res.status(400).json({ error: "Noto‘g‘ri bosqich" });
-      return;
-    }
-    const progress = await getOrCreateProgress(req.userId!);
-    if (progress.status === "ready_for_hire" || progress.status === "hired") {
+    const ctx = await learnerContext(req, res);
+    if (!ctx) return;
+    const { n, def, defs, progress, current } = ctx;
+    if (DONE_STATUSES.has(progress.status)) {
       res.status(400).json({ error: "Kurs allaqachon yakunlangan" });
       return;
     }
-    if (n > progress.currentStage) {
+    if (n > current) {
       res.status(400).json({ error: "Avval oldingi bosqichni yakunlang" });
       return;
     }
-    const stages = ensureStagesMap(progress.stagesJson);
-    const key = String(n);
-    const st = stages[key]!;
+    const nums = defs.map((d) => d.stage);
+    const stages = ensureStagesMap(progress.stagesJson as KirishStagesMap, nums);
+    const st = stages[String(n)]!;
     if (!st.videoDone || !st.slidesDone) {
       res.status(400).json({ error: "Avval video va slaydlarni tugating" });
       return;
     }
-
     const answers = (req.body?.answers || {}) as Record<string, number>;
-    const byStage = await youtubeByStage();
-    const overlayQs = questionsForStage(stage, byStage.get(n));
-    const result = scoreAnswers({ ...stage, questions: overlayQs }, answers);
-    const nowIso = new Date().toISOString();
-    stages[key] = {
+    const result = scoreStage(def.questions, answers);
+    stages[String(n)] = {
       ...st,
       videoDone: result.passed ? st.videoDone : false,
       score: result.score,
       attempts: st.attempts + 1,
       passed: result.passed,
-      passedAt: result.passed ? nowIso : st.passedAt,
+      passedAt: result.passed ? new Date().toISOString() : st.passedAt,
     };
-
-    let currentStage = progress.currentStage;
-    if (result.passed && n === progress.currentStage && n < KIRISH_STAGE_COUNT) {
-      currentStage = n + 1;
-    }
-
-    const [updated] = await db
-      .update(kirishProgressTable)
-      .set({
-        stagesJson: stages,
-        currentStage,
-        updatedAt: new Date(),
-      })
-      .where(eq(kirishProgressTable.id, progress.id))
-      .returning();
-
-    res.json({
-      result,
-      progress: serializeProgress({
-        ...updated,
-        stagesJson: ensureStagesMap(updated.stagesJson as KirishStagesMap),
-      }),
-    });
+    const updated = await saveStages(progress, stages, unlockedStage(stages, nums, progress.currentStage));
+    res.json({ result, progress: serializeProgress(updated, defs) });
   },
 );
 
 router.post("/kirish/me/finish", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireStajyor(req, res)) return;
-  const progress = await getOrCreateProgress(req.userId!);
-  const stages = ensureStagesMap(progress.stagesJson);
-  const allPassed = Array.from({ length: KIRISH_STAGE_COUNT }, (_, i) =>
-    Boolean(stages[String(i + 1)]?.passed),
-  ).every(Boolean);
-
-  if (!allPassed) {
+  if (!requireLearner(req, res)) return;
+  const defs = await loadStageDefs();
+  const nums = defs.map((d) => d.stage);
+  const progress = await getProgress(req.userId!, defs, req.userRole);
+  const stages = ensureStagesMap(progress.stagesJson as KirishStagesMap, nums);
+  if (!allStagesPassed(stages, nums)) {
     res.status(400).json({ error: "Barcha bosqichlarni muvaffaqiyatli yakunlang" });
     return;
   }
 
+  const student = isStudentRole(req.userRole);
+  const status = student ? "completed" : "ready_for_hire";
   const now = new Date();
   const [updated] = await db
     .update(kirishProgressTable)
-    .set({
-      status: "ready_for_hire",
-      completedAt: now,
-      updatedAt: now,
-      stagesJson: stages,
-    })
+    .set({ status, completedAt: now, updatedAt: now, stagesJson: stages })
     .where(eq(kirishProgressTable.id, progress.id))
     .returning();
 
-  const scores = Array.from({ length: KIRISH_STAGE_COUNT }, (_, i) => {
-    const s = stages[String(i + 1)]!;
-    return { stage: i + 1, score: s.score, attempts: s.attempts, passedAt: s.passedAt };
+  const scores = nums.map((n) => {
+    const s = stages[String(n)]!;
+    return { stage: n, score: s.score, attempts: s.attempts, passedAt: s.passedAt };
   });
-  const avg =
-    scores.reduce((a, b) => a + (b.score ?? 0), 0) / Math.max(1, scores.length);
+  const avg = scores.reduce((a, b) => a + (b.score ?? 0), 0) / Math.max(1, scores.length);
 
   res.json({
-    progress: serializeProgress({
-      ...updated,
-      stagesJson: ensureStagesMap(updated.stagesJson as KirishStagesMap),
-    }),
+    progress: serializeProgress(updated!, defs),
     report: {
-      status: "ready_for_hire",
-      statusLabel: "Ishga qabulga tayyor",
+      status,
+      statusLabel: student ? "Kurs yakunlandi" : "Ishga qabulga tayyor",
       averageScore: Math.round(avg),
       stages: scores,
       completedAt: now.toISOString(),
-      message:
-        "Stajor barcha Kirish bosqichlarini muvaffaqiyatli yakunladi. HR/admin ishga olishni tasdiqlashi mumkin.",
+      message: student
+        ? "Tabriklaymiz! Barcha darslarni muvaffaqiyatli yakunladingiz. Natijalaringiz treneringizga ko‘rinadi."
+        : "Stajor barcha Kirish bosqichlarini muvaffaqiyatli yakunladi. HR/admin ishga olishni tasdiqlashi mumkin.",
     },
   });
 });

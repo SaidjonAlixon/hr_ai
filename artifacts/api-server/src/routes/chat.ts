@@ -22,6 +22,7 @@ import {
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { notifyUser } from "../lib/notify";
+import { STUDENT_ROLE } from "../lib/roles";
 
 const router: IRouter = Router();
 
@@ -230,6 +231,7 @@ router.get("/chats/users", requireAuth, async (req: AuthRequest, res): Promise<v
   const conditions = [
     eq(usersTable.status, "active"),
     ne(usersTable.id, me),
+    ne(usersTable.role, STUDENT_ROLE),
   ];
   const found = await db
     .select({

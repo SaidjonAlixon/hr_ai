@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, ne, or, sql } from "drizzle-orm";
+import { STUDENT_ROLE } from "./roles";
 import { randomBytes } from "node:crypto";
 import {
   attendanceRecordsTable,
@@ -540,6 +541,7 @@ export async function searchEmployees(q: string) {
       status: usersTable.status,
     })
     .from(usersTable)
+    .where(ne(usersTable.role, STUDENT_ROLE))
     .orderBy(asc(usersTable.fullName));
   const accounts = accountsAll.filter((u) =>
     scriptIncludes([u.fullName, u.phone, u.login, String(u.id)].filter(Boolean).join(" "), query),

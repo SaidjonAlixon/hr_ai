@@ -75,7 +75,7 @@ router.get("/calls/contacts", requireAuth, async (req: AuthRequest, res): Promis
     const q = String(req.query.q || "").trim().slice(0, 60);
     const onlyOnline = admin && String(req.query.online || "") === "1";
     const params: unknown[] = [req.userId];
-    let where = `u.id <> $1 AND u.status <> 'terminated'`;
+    let where = `u.id <> $1 AND u.status <> 'terminated' AND u.role <> 'oquvchi'`;
     if (!admin) where += ` AND u.role = 'admin'`;
     // Qadalganlar «Onlayn» filtrida ham (oflayn bo‘lsa ham) tepada qoladi
     if (onlyOnline) {

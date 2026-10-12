@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { scriptIncludes } from "../lib/script-search";
-import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, ne, or, sql } from "drizzle-orm";
 import {
   db,
   tasksTable,
@@ -17,7 +17,7 @@ import {
   branchNeedsTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
-import { hasFullPlatformAccess, isHrDirektor, isHrOversight } from "../lib/roles";
+import { hasFullPlatformAccess, isHrDirektor, isHrOversight, STUDENT_ROLE } from "../lib/roles";
 
 const router: IRouter = Router();
 
@@ -717,7 +717,7 @@ router.get("/kuzatuv/people", requireAuth, async (req: AuthRequest, res): Promis
     })
     .from(usersTable)
     .leftJoin(departmentsTable, eq(usersTable.departmentId, departmentsTable.id))
-    .where(eq(usersTable.status, "active"))
+    .where(and(eq(usersTable.status, "active"), ne(usersTable.role, STUDENT_ROLE)))
     .orderBy(asc(usersTable.fullName));
 
   if (roleFilter && roleFilter !== "all") {

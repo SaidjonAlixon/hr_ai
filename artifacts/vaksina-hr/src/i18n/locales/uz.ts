@@ -108,6 +108,7 @@ export const uz: Messages = {
   "nav.users": "Foydalanuvchilar",
   "nav.departments": "Bo‘limlar",
   "nav.kirishVideos": "Kirish materiallari",
+  "nav.oquvchilar": "O‘quvchilar",
   "nav.faces": "Face ID",
   "nav.smenaSettings": "Smena sozlamalari",
   "nav.davomatQrAdmin": "Davomat QR (admin)",

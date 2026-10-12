@@ -513,7 +513,7 @@ export async function letterUserOptions(q: string): Promise<Array<{ id: number; 
                FROM employees e LEFT JOIN employees b ON b.id = e.assigned_branch_id
               WHERE e.user_id = u.id ORDER BY e.id DESC LIMIT 1) AS branch
        FROM users u
-      WHERE u.status = 'active' AND ($1 = '%%' OR LOWER(u.full_name) LIKE $1 OR LOWER(u.login) LIKE $1)
+      WHERE u.status = 'active' AND u.role <> 'oquvchi' AND ($1 = '%%' OR LOWER(u.full_name) LIKE $1 OR LOWER(u.login) LIKE $1)
       ORDER BY (u.role IN ('farmasevt','mudir','stajyor','stajor')) DESC, u.full_name
       LIMIT 30`,
     [needle],

@@ -12,6 +12,7 @@ import {
   deviceChangeRequestsTable,
 } from "@workspace/db";
 import { isProdEnv } from "./session";
+import { isStudentRole } from "./roles";
 
 export const DEVICE_COOKIE = "device_cred";
 export const SECURE_SESSION_COOKIE = "session";
@@ -168,6 +169,7 @@ export async function isDeviceSecurityEnforced(user: {
   role: string;
   deviceSecurityEnforced?: boolean | null;
 }): Promise<boolean> {
+  if (isStudentRole(user.role)) return false;
   const settings = await getDeviceSecuritySettings();
   const mode = settings.enforcementMode;
   if (mode === "off") return false;

@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Response } from "express";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import {
   db,
   usersTable,
@@ -116,7 +116,7 @@ router.get("/titles/admin", requireAuth, async (req: AuthRequest, res): Promise<
     })
     .from(usersTable)
     .leftJoin(departmentsTable, eq(departmentsTable.id, usersTable.departmentId))
-    .where(inArray(usersTable.status, ["active", "on_leave"]));
+    .where(and(inArray(usersTable.status, ["active", "on_leave"]), ne(usersTable.role, "oquvchi")));
 
   const titles = await db.select().from(userTitlesTable);
   const byUser = new Map(titles.map((t) => [t.userId, t]));

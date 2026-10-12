@@ -8,7 +8,10 @@ import {
   withDbRetry,
   isTransientDbError,
 } from "@workspace/db";
-import { canManageUsers } from "../lib/roles";
+import { canManageUsers, isStudentRole } from "../lib/roles";
+
+/** O‘quvchi (oquvchi) roli faqat shu API larga kira oladi */
+const STUDENT_API_RE = /^\/api\/(auth\/|kirish\/me(\/|$))/;
 import {
   clientIp,
   isDeviceSecurityEnforced,
@@ -218,6 +221,10 @@ export async function requireAuth(
     }
     req.userId = user.id;
     req.userRole = user.role;
+    if (isStudentRole(user.role) && !STUDENT_API_RE.test((req.originalUrl || "").split("?")[0] ?? "")) {
+      res.status(403).json({ error: "O‘quvchilar uchun faqat Kirish darslari ochiq" });
+      return;
+    }
     const ok = await enforceDeviceIfNeeded(req, res, user);
     if (!ok) return;
     if (DISCIPLINE_ROLES.has(String(user.role || "").toLowerCase()) && (await activeLockFor(user.id))) {

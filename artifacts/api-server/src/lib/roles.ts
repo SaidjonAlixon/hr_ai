@@ -379,7 +379,27 @@ export function canManageKochmaAdmin(role?: string | null): boolean {
 }
 
 export function canAccessKirish(role?: string | null): boolean {
-  return role === "stajyor" || hasFullPlatformAccess(role);
+  return role === "stajyor" || role === STUDENT_ROLE || hasFullPlatformAccess(role);
+}
+
+/** O‘quvchi — faqat Kirish kursi; xodim emas, hech qaysi ro‘yxat/davomatda ko‘rinmaydi */
+export const STUDENT_ROLE = "oquvchi";
+
+/** Xodimlar, davomat va umumiy ro‘yxatlarga kirmaydigan rollar */
+export const NON_STAFF_ROLES = ["admin", STUDENT_ROLE] as const;
+
+export function isStudentRole(role?: string | null): boolean {
+  return (role ?? "").trim().toLowerCase() === STUDENT_ROLE;
+}
+
+/** O‘quvchilar ro‘yxati, qo‘shish/o‘chirish, statistika — trener va rahbariyat */
+export function canManageStudents(role?: string | null): boolean {
+  return canManageSettings(role) || role === "trainer";
+}
+
+/** Kirish darslari (video, slayd, test, yangi dars) — trener ham */
+export function canManageKirishContent(role?: string | null): boolean {
+  return canManageOnboardingContent(role) || role === "trainer";
 }
 
 /** Darsliklar kursi — o‘quvchi roli → yo‘nalish (stajyor / farmasevt / mudir) */

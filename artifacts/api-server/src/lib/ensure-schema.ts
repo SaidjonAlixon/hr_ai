@@ -207,6 +207,19 @@ ALTER TABLE kirish_videos ADD COLUMN IF NOT EXISTS pdf_url TEXT;
 ALTER TABLE kirish_videos ADD COLUMN IF NOT EXISTS drive_file_id TEXT;
 ALTER TABLE kirish_videos ADD COLUMN IF NOT EXISTS video_drive_file_id TEXT;
 ALTER TABLE kirish_videos ADD COLUMN IF NOT EXISTS questions_json JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE kirish_videos ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE kirish_videos ADD COLUMN IF NOT EXISTS subtitle TEXT;
+ALTER TABLE kirish_videos ADD COLUMN IF NOT EXISTS is_custom BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE kirish_videos ADD COLUMN IF NOT EXISTS slides_json JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+-- O‘quvchilar (faqat Kirish darslari): guruh va izoh
+CREATE TABLE IF NOT EXISTS oquvchi_profiles (
+  user_id INTEGER PRIMARY KEY,
+  group_name TEXT,
+  note TEXT,
+  created_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 -- 5-bosqich: stajyor videosi (Google Drive)
 INSERT INTO kirish_videos (stage, youtube_url, youtube_id, video_drive_file_id, questions_json)

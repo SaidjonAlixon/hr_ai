@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { asc, eq, ne, sql } from "drizzle-orm";
+import { asc, eq, ne, notInArray, sql } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import {
   db,
@@ -10,7 +10,7 @@ import {
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { scriptIncludes } from "../lib/script-search";
-import { canManageSettings } from "../lib/roles";
+import { canManageSettings, NON_STAFF_ROLES } from "../lib/roles";
 import {
   FACE_ENROLL_BLOCK_MAX,
   FACE_MATCH_MAX,
@@ -361,7 +361,7 @@ router.get("/admin/faces", requireAuth, async (req: AuthRequest, res): Promise<v
       .from(usersTable)
       .leftJoin(departmentsTable, eq(usersTable.departmentId, departmentsTable.id))
       .leftJoin(faceProfilesTable, eq(faceProfilesTable.userId, usersTable.id))
-      .where(ne(usersTable.role, "admin"))
+      .where(notInArray(usersTable.role, [...NON_STAFF_ROLES]))
       .orderBy(asc(usersTable.fullName));
 
     const parsed = users.map((row) => ({
@@ -516,7 +516,7 @@ router.get("/admin/faces/export", requireAuth, async (req: AuthRequest, res): Pr
     .from(usersTable)
     .leftJoin(departmentsTable, eq(usersTable.departmentId, departmentsTable.id))
     .leftJoin(faceProfilesTable, eq(faceProfilesTable.userId, usersTable.id))
-    .where(ne(usersTable.role, "admin"))
+    .where(notInArray(usersTable.role, [...NON_STAFF_ROLES]))
     .orderBy(asc(usersTable.fullName));
 
   const withFace = users.filter((u) => u.faceId != null && u.descriptor);

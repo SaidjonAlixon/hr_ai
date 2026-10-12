@@ -1,4 +1,5 @@
-import { asc } from "drizzle-orm";
+import { asc, ne } from "drizzle-orm";
+import { STUDENT_ROLE } from "./roles";
 import { db, employeesTable, usersTable, departmentsTable } from "@workspace/db";
 import { displayBranchName } from "./geo-location";
 import { isVacancyPlaceholder } from "./vacancy-slot";
@@ -313,6 +314,7 @@ export async function buildHolatReport(opts: {
       createdAt: usersTable.createdAt,
     })
     .from(usersTable)
+    .where(ne(usersTable.role, STUDENT_ROLE))
     .orderBy(asc(usersTable.fullName));
 
   const depts = await db

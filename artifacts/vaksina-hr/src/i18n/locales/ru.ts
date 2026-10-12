@@ -108,6 +108,7 @@ export const ru: Messages = {
   "nav.users": "Пользователи",
   "nav.departments": "Отделы",
   "nav.kirishVideos": "Материалы входа",
+  "nav.oquvchilar": "Ученики",
   "nav.faces": "Face ID",
   "nav.smenaSettings": "Настройки смен",
   "nav.davomatQrAdmin": "QR посещаемости (админ)",

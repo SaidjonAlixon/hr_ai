@@ -85,7 +85,7 @@ import { useCall } from '@/lib/calls/engine';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
 import { VerifiedBadge, VerifiedName } from "@/components/VerifiedBadge";
-import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canViewDavomatXatoliklar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome, isSbRole, canManageSmenaFilial } from "@/lib/roles";
+import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canViewDavomatXatoliklar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome, isSbRole, canManageSmenaFilial, canManageStudents } from "@/lib/roles";
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -186,6 +186,7 @@ const NAV_SECTIONS: {
       '/vacancies',
       '/candidates',
       '/internships',
+      '/oquvchilar',
     ],
   },
   {
@@ -308,6 +309,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/davomat')) return '/davomat';
   if (path.startsWith('/checklist-holati')) return '/checklist-holati';
   if (path.startsWith('/internships')) return '/internships';
+  if (path.startsWith('/oquvchilar')) return '/oquvchilar';
   if (path.startsWith('/pharmacy-network')) return '/pharmacy-network';
   if (path.startsWith('/xodim-kerak')) return '/xodim-kerak';
   if (path.startsWith('/it')) return '/it';
@@ -930,6 +932,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (location.startsWith('/admin/test') && !canManageSettings(user.role)) {
       setLocation('/dashboard');
     }
+    if (location.startsWith('/oquvchilar') && !canManageStudents(user.role)) {
+      setLocation('/dashboard');
+    }
     if (isLimitedOfficeStaffRole(user.role)) {
       const allowed =
         location.startsWith('/vazifalar') ||
@@ -986,6 +991,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const reytingNav = { name: 'Reyting', path: '/reyting', icon: Trophy };
   const darsliklarNav = { name: 'Darsliklar', path: '/darsliklar', icon: BookOpen };
   const darslikJoylashNav = { name: 'Darslik joylash', path: '/admin/darsliklar', icon: Library };
+  const oquvchilarNav = { name: 'O‘quvchilar', path: '/oquvchilar', icon: GraduationCap };
   const atestatsiyaNav = { name: 'Atestatsiya', path: '/atestatsiya', icon: BadgeCheck };
   const atestatsiyaJoylashNav = { name: 'Atestatsiya joylash', path: '/admin/atestatsiya', icon: BadgeCheck };
   const reviziyaNav = { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck };
@@ -1341,6 +1347,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Hisobot', path: '/admin/holat', icon: BarChart3 },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
+      oquvchilarNav,
     { name: 'Preboarding', path: '/admin/preboarding', icon: GraduationCap },
       darslikJoylashNav,
       atestatsiyaJoylashNav,
@@ -1380,6 +1387,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Hisobot', path: '/admin/holat', icon: BarChart3 },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
+      oquvchilarNav,
     { name: 'Preboarding', path: '/admin/preboarding', icon: GraduationCap },
       darslikJoylashNav,
       atestatsiyaJoylashNav,
@@ -1423,6 +1431,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Hisobot', path: '/admin/holat', icon: BarChart3 },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
+      oquvchilarNav,
     { name: 'Preboarding', path: '/admin/preboarding', icon: GraduationCap },
       darslikJoylashNav,
       atestatsiyaJoylashNav,
@@ -1445,6 +1454,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
+      oquvchilarNav,
+      { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
       darslikJoylashNav,
       atestatsiyaJoylashNav,
     ],

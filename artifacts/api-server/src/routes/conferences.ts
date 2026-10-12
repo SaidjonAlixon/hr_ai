@@ -275,7 +275,7 @@ router.get("/conferences/people", requireAuth, async (req: AuthRequest, res): Pr
     const q = String(req.query.q || "").trim().slice(0, 60);
     const departmentId = Number(req.query.departmentId) || null;
     const params: unknown[] = [];
-    let where = `u.status <> 'terminated'`;
+    let where = `u.status <> 'terminated' AND u.role <> 'oquvchi'`;
     if (departmentId) {
       params.push(departmentId);
       where += ` AND e.department_id = $${params.length}`;

@@ -1,12 +1,14 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, type ReactNode } from 'react';
 import { ThemeProvider } from './components/theme-provider';
 import { I18nProvider } from './i18n/I18nProvider';
 import { Toaster } from './components/ui/toaster';
 import { TooltipProvider } from './components/ui/tooltip';
 import { Route, Switch, Router as WouterRouter, Redirect, useLocation } from 'wouter';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Layout } from './components/layout/Layout';
+import { StudentShell } from './components/student/StudentShell';
+import { isStudentRole } from './lib/roles';
 import { RealtimeSync } from './lib/realtime-sync';
 import { DeviceSecurityListener } from './components/DeviceSecurityListener';
 import { DisciplineLockOverlay } from './components/DisciplineLockOverlay';
@@ -28,6 +30,7 @@ const CandidatesList = lazy(() => import('./pages/candidates/index'));
 const NewCandidate = lazy(() => import('./pages/candidates/new'));
 const CandidateProfile = lazy(() => import('./pages/candidates/show'));
 const InternshipsPage = lazy(() => import('./pages/internships/index'));
+const OquvchilarPage = lazy(() => import('./pages/oquvchilar/index'));
 const PharmacyNetworkPage = lazy(() => import('./pages/pharmacy-network/index'));
 const TashkiliyTuzilmaPage = lazy(() => import('./pages/tashkiliy-tuzilma/index'));
 const VazifalarPage = lazy(() => import('./pages/vazifalar/index'));
@@ -131,15 +134,39 @@ const queryClient = new QueryClient({
   },
 });
 
+/** O‘quvchi faqat /kirish ni ko‘radi — boshqa yo‘llar unga yo‘naltiriladi */
+function StudentGate({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  const [location] = useLocation();
+  if (!isStudentRole(user?.role)) return <>{children}</>;
+  if (location !== '/kirish') return <Redirect to="/kirish" />;
+  return (
+    <StudentShell>
+      <Suspense fallback={<PageFallback />}>
+        <KirishPage />
+      </Suspense>
+    </StudentShell>
+  );
+}
+
+/** O‘quvchiga xodimlar uchun global qatlamlar (qo‘ng‘iroq, realtime, …) kerak emas */
+function StaffOnly({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  if (isStudentRole(user?.role)) return null;
+  return <>{children}</>;
+}
+
 function ProtectedRoute({ component: Component, ...rest }: any) {
   return (
     <Route {...rest}>
       {params => (
-        <Layout>
-          <Suspense fallback={<PageFallback />}>
-            <Component params={params} />
-          </Suspense>
-        </Layout>
+        <StudentGate>
+          <Layout>
+            <Suspense fallback={<PageFallback />}>
+              <Component params={params} />
+            </Suspense>
+          </Layout>
+        </StudentGate>
       )}
     </Route>
   );
@@ -282,6 +309,7 @@ function Router() {
       <ProtectedRoute path="/omborxona-ish" component={OmborxonaIshPage} />
       <ProtectedRoute path="/tashkiliy-tuzilma" component={TashkiliyTuzilmaPage} />
       <ProtectedRoute path="/internships" component={InternshipsPage} />
+      <ProtectedRoute path="/oquvchilar" component={OquvchilarPage} />
       <ProtectedRoute path="/notifications" component={NotificationsPage} />
       <ProtectedRoute path="/qongiroq" component={QongiroqPage} />
       <ProtectedRoute path="/admin/users" component={AdminUsersPage} />
@@ -317,14 +345,18 @@ function App() {
       <I18nProvider>
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
-            <RealtimeSync />
-            <DeviceSecurityListener />
-            <DisciplineLockOverlay />
+            <StaffOnly>
+              <RealtimeSync />
+              <DeviceSecurityListener />
+              <DisciplineLockOverlay />
+            </StaffOnly>
             <TooltipProvider>
               <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, '') || ''}>
                 <Router />
-                <ExplanationLetterPrompt />
-                <CallLayer />
+                <StaffOnly>
+                  <ExplanationLetterPrompt />
+                  <CallLayer />
+                </StaffOnly>
               </WouterRouter>
               <Toaster />
             </TooltipProvider>

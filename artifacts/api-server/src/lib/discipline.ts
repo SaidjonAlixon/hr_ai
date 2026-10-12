@@ -337,16 +337,27 @@ type Fresh = {
 };
 
 let scanning: Promise<void> | null = null;
+let lastScanAt = 0;
 
 export function runDisciplineScan(): Promise<void> {
   if (!scanning) {
     scanning = scanOnce()
+      .then(() => {
+        lastScanAt = Date.now();
+      })
       .catch((err) => logger.error({ err }, "Intizom tekshiruvi xato"))
       .finally(() => {
         scanning = null;
       });
   }
   return scanning;
+}
+
+/** Sahifa ochilganda — yaqinda tekshirilgan bo‘lsa qayta skan qilinmaydi */
+export function freshDisciplineScan(maxAgeMs = 60_000): Promise<void> {
+  if (scanning) return scanning;
+  if (Date.now() - lastScanAt < maxAgeMs) return Promise.resolve();
+  return runDisciplineScan();
 }
 
 let kickTimer: ReturnType<typeof setTimeout> | null = null;

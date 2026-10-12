@@ -46,6 +46,7 @@ function eventText(l: ExplanationLetter) {
 
 const stageOf = (l: ExplanationLetter) => Math.min(l.strikeN, FINAL_STRIKE);
 const isOpen = (l: ExplanationLetter) => l.status !== "signed" && l.reviewStatus !== "cancelled";
+const PAGE = 100;
 
 function Shell({ title, hint, right, children }: { title: string; hint: string; right?: ReactNode; children: ReactNode }) {
   return (
@@ -220,6 +221,15 @@ export function LettersAdminPanel({ month }: { month: string }) {
     });
   }, [items, tab, stage, query]);
 
+  const [limit, setLimit] = useState(PAGE);
+  const filterKey = `${month}|${tab}|${stage}|${query}`;
+  const [limitKey, setLimitKey] = useState(filterKey);
+  if (limitKey !== filterKey) {
+    setLimitKey(filterKey);
+    setLimit(PAGE);
+  }
+  const shown = useMemo(() => list.slice(0, limit), [list, limit]);
+
   const pdf = async (l: ExplanationLetter) => {
     setBusyId(l.id);
     try {
@@ -340,7 +350,7 @@ export function LettersAdminPanel({ month }: { month: string }) {
         </div>
       ) : (
         <ul className="max-h-[28rem] space-y-1.5 overflow-y-auto overscroll-contain pr-1 [scrollbar-width:thin]">
-          {list.map((l) => (
+          {shown.map((l) => (
             <LetterRow
               key={l.id}
               l={l}
@@ -382,6 +392,13 @@ export function LettersAdminPanel({ month }: { month: string }) {
               }
             />
           ))}
+          {list.length > shown.length ? (
+            <li className="flex justify-center pt-1">
+              <Button type="button" size="sm" variant="outline" className="h-8 rounded-lg text-xs" onClick={() => setLimit((n) => n + PAGE)}>
+                Yana ko‘rsatish ({shown.length} / {list.length})
+              </Button>
+            </li>
+          ) : null}
         </ul>
       )}
       <ExplanationLetterDialog letterId={openId} mode="admin" onClose={() => setOpenId(null)} />

@@ -2,7 +2,7 @@
  * Faol xodimlar — foydalanuvchilar (users) asosida, employee kartasi bilan.
  * Xodimlar, Oylik va Hisob-kitob sahifalari shu yuklovchidan foydalanadi.
  */
-import { and, asc, eq, inArray, isNull, ne, notInArray, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, notInArray, or, sql } from "drizzle-orm";
 import {
   db,
   departmentsTable,
@@ -280,11 +280,16 @@ export async function loadStaffFromUsers(
   const faceSet = new Set<number>();
   if (!opts?.skipFacePhotos) {
     const faces = await db
-      .select({ userId: faceProfilesTable.userId, photoUrl: faceProfilesTable.photoUrl })
+      .select({ userId: faceProfilesTable.userId })
       .from(faceProfilesTable)
-      .where(inArray(faceProfilesTable.userId, userIds));
+      .where(
+        and(
+          inArray(faceProfilesTable.userId, userIds),
+          sql`length(btrim(coalesce(${faceProfilesTable.photoUrl}, ''))) > 0`,
+        ),
+      );
     for (const f of faces) {
-      if (f.photoUrl?.trim() && f.userId != null) faceSet.add(f.userId);
+      if (f.userId != null) faceSet.add(f.userId);
     }
   }
 

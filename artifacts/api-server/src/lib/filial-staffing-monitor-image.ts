@@ -499,16 +499,21 @@ export function renderStaffingMonitorPngPure(report: StaffingMonitorReport): Buf
   return cv.toPng();
 }
 
+let sharpUnavailable = false;
+
 export async function renderStaffingMonitorPng(report: StaffingMonitorReport): Promise<Buffer> {
   // Avvalo sharp+SVG — o‘qiladigan shrift
-  try {
-    const svg = buildStaffingMonitorSvg(report);
-    const mod = await import("sharp");
-    const sharpFn = (mod as { default: (i: Buffer, o?: { density?: number }) => { png: (o?: object) => { toBuffer: () => Promise<Buffer> } } }).default;
-    const buf = await sharpFn(Buffer.from(svg), { density: 160 }).png().toBuffer();
-    if (buf?.length > 1000) return buf;
-  } catch (err) {
-    console.error("[monitor-png] sharp failed, pure fallback", err);
+  if (!sharpUnavailable) {
+    try {
+      const svg = buildStaffingMonitorSvg(report);
+      const mod = await import("sharp");
+      const sharpFn = (mod as { default: (i: Buffer, o?: { density?: number }) => { png: (o?: object) => { toBuffer: () => Promise<Buffer> } } }).default;
+      const buf = await sharpFn(Buffer.from(svg), { density: 160 }).png().toBuffer();
+      if (buf?.length > 1000) return buf;
+    } catch (err) {
+      sharpUnavailable = true;
+      console.error("[monitor-png] sharp failed, pure fallback:", (err as Error)?.message?.split("\n")[0]);
+    }
   }
   return renderStaffingMonitorPngPure(report);
 }

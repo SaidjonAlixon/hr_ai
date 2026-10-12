@@ -6,6 +6,7 @@ import {
   attachLiveCoordinators,
   buildDisciplineReport,
   clearLock,
+  freshDisciplineScan,
   listTodayLocks,
   LOCK_MESSAGE,
   lockDetailsById,
@@ -87,9 +88,8 @@ router.post("/discipline/locks/:id/clear", requireAuth, async (req: AuthRequest,
 router.get("/discipline/report.pdf", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (denyUnlessManager(req, res)) return;
   const month = /^\d{4}-\d{2}$/.test(String(req.query.month || "")) ? String(req.query.month) : todayTashkent().slice(0, 7);
-  if (month === todayTashkent().slice(0, 7)) await runDisciplineScan();
   const isCurrent = month === todayTashkent().slice(0, 7);
-  if (isCurrent) await runDisciplineScan();
+  if (isCurrent) await freshDisciplineScan();
   const report = await buildDisciplineReport(month);
   await attachLiveCoordinators(report);
   const pdf = await renderDisciplinePdf(report, isCurrent ? { todayLocks: await listTodayLocks(), today: todayTashkent() } : {});

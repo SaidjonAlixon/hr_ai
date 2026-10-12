@@ -36,7 +36,7 @@ import {
   type LetterSettings,
 } from "../lib/explanation-letter";
 import { renderExplanationLetterPdf } from "../lib/explanation-letter-pdf";
-import { runDisciplineScan, todayTashkent } from "../lib/discipline";
+import { freshDisciplineScan, runDisciplineScan, todayTashkent } from "../lib/discipline";
 import { isJarimaEnabled } from "../lib/jarima-switch";
 
 const router: IRouter = Router();
@@ -174,7 +174,7 @@ router.get("/explanation-letters", requireAuth, async (req: AuthRequest, res): P
   }
   const month = monthParam(req.query.month);
   try {
-    if (month === todayTashkent().slice(0, 7) || month === null) await runDisciplineScan();
+    if (month === todayTashkent().slice(0, 7) || month === null) await freshDisciplineScan();
     const [items, months] = await Promise.all([lettersForMonth(month), letterMonths()]);
     res.json({
       month: month ?? "all",

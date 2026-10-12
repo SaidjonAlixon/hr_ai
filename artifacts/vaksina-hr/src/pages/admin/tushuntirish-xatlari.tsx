@@ -41,6 +41,7 @@ type KindTab = "all" | "late" | "absent";
 
 const MONTHS_UZ = ["Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun", "Iyul", "Avgust", "Sentabr", "Oktabr", "Noyabr", "Dekabr"];
 const BULK_MAX = 300;
+const PAGE = 100;
 
 function thisMonth() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tashkent", year: "numeric", month: "2-digit" }).format(new Date()).slice(0, 7);
@@ -122,6 +123,15 @@ export default function TushuntirishXatlariPage() {
         .includes(s);
     });
   }, [items, status, kind, stage, query]);
+
+  const [limit, setLimit] = useState(PAGE);
+  const filterKey = `${month}|${status}|${kind}|${stage}|${query}`;
+  const [limitKey, setLimitKey] = useState(filterKey);
+  if (limitKey !== filterKey) {
+    setLimitKey(filterKey);
+    setLimit(PAGE);
+  }
+  const shown = useMemo(() => list.slice(0, limit), [list, limit]);
 
   const approve = (l: ExplanationLetter) =>
     review.mutate(
@@ -300,7 +310,7 @@ export default function TushuntirishXatlariPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                {list.map((l) => (
+                {shown.map((l) => (
                   <tr key={l.id} onClick={() => setOpenId(l.id)} className="cursor-pointer align-top transition hover:bg-sky-50/50 dark:hover:bg-white/5">
                     <td className="px-3 py-2.5">
                       <p className="flex items-center gap-1.5 font-semibold text-slate-900 dark:text-white">
@@ -362,7 +372,7 @@ export default function TushuntirishXatlariPage() {
           </div>
 
           <ul className="space-y-2 md:hidden">
-            {list.map((l) => (
+            {shown.map((l) => (
               <li
                 key={l.id}
                 onClick={() => setOpenId(l.id)}
@@ -451,6 +461,14 @@ export default function TushuntirishXatlariPage() {
               </li>
             ))}
           </ul>
+
+          {list.length > shown.length ? (
+            <div className="flex justify-center">
+              <Button type="button" variant="outline" className="h-10 rounded-xl" onClick={() => setLimit((n) => n + PAGE)}>
+                Yana ko‘rsatish ({shown.length} / {list.length})
+              </Button>
+            </div>
+          ) : null}
         </>
       )}
 

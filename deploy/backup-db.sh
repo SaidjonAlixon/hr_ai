@@ -25,7 +25,8 @@ mkdir -p "$BACKUP_DIR/weekly"
 chmod 700 "$BACKUP_DIR"
 
 echo "[$(date -Is)] DB dump boshlandi"
-pg_dump --format=custom --compress=6 --no-owner --file "$BACKUP_DIR/db-$STAMP.dump.part" "$DUMP_URL"
+# Qo‘lda yaratilgan *_bak_* jadvallar boshqa rolga tegishli — ularga ruxsat yo‘q, dump yiqilmasin
+pg_dump --format=custom --compress=6 --no-owner --exclude-table='public.*_bak_*' --file "$BACKUP_DIR/db-$STAMP.dump.part" "$DUMP_URL"
 # Buzilgan dump saqlanmasin — ro‘yxatini o‘qib ko‘ramiz
 pg_restore --list "$BACKUP_DIR/db-$STAMP.dump.part" >/dev/null
 mv "$BACKUP_DIR/db-$STAMP.dump.part" "$BACKUP_DIR/db-$STAMP.dump"

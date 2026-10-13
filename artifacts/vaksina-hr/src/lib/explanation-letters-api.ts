@@ -110,6 +110,7 @@ export type ExplanationLetter = {
   lateMinutes: number | null;
   amount: number;
   phone: string | null;
+  coordinator?: { name: string; phone: string | null } | null;
   status: LetterStatus;
   reasonCode: string | null;
   reasonText: string | null;

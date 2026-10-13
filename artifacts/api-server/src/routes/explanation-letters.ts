@@ -39,6 +39,7 @@ import {
 import { renderExplanationLetterPdf } from "../lib/explanation-letter-pdf";
 import { buildExplanationReport, reportSchedule, sendExplanationReport, sendOriginalLetterPdfs } from "../lib/explanation-letter-report";
 import { freshDisciplineScan, runDisciplineScan, todayTashkent } from "../lib/discipline";
+import { coordinatorsFor } from "../lib/davomat-shift-report";
 import { isJarimaEnabled } from "../lib/jarima-switch";
 
 const router: IRouter = Router();
@@ -74,18 +75,58 @@ async function sendLetterPdf(req: Request, res: Response, l: ExplanationLetterRo
   res.send(pdf);
 }
 
-function payload(l: ExplanationLetterRow, req: Request, settings: LetterSettings) {
+type CoordinatorContact = { name: string; phone: string | null };
+
+/** letterId → xodimning koordinatori (rahbarlik zanjiri bo‘yicha) va telefoni */
+async function letterCoordinators(items: ExplanationLetterRow[]): Promise<Map<number, CoordinatorContact>> {
+  const out = new Map<number, CoordinatorContact>();
+  if (!items.length) return out;
+  const empOf = new Map<number, number>();
+  const missing = items.filter((l) => l.employeeId == null).map((l) => l.userId);
+  if (missing.length) {
+    const { rows } = await pool.query(
+      `SELECT DISTINCT ON (user_id) user_id, id FROM employees WHERE user_id = ANY($1::int[]) ORDER BY user_id, id DESC`,
+      [missing],
+    );
+    for (const r of rows) empOf.set(Number(r.user_id), Number(r.id));
+  }
+  const empIds = new Map<number, number>();
+  for (const l of items) {
+    const emp = l.employeeId ?? empOf.get(l.userId);
+    if (emp) empIds.set(l.id, emp);
+  }
+  const hits = await coordinatorsFor([...new Set(empIds.values())]);
+  const userIds = [...new Set([...hits.values()].map((h) => h.userId).filter((v): v is number => v != null))];
+  const phones = new Map<number, string>();
+  if (userIds.length) {
+    const { rows } = await pool.query(`SELECT id, phone FROM users WHERE id = ANY($1::int[])`, [userIds]);
+    for (const r of rows) if (r.phone) phones.set(Number(r.id), String(r.phone));
+  }
+  for (const [letterId, emp] of empIds) {
+    const hit = hits.get(emp);
+    if (hit) out.set(letterId, { name: hit.name, phone: hit.userId != null ? phones.get(hit.userId) ?? null : null });
+  }
+  return out;
+}
+
+function payload(l: ExplanationLetterRow, req: Request, settings: LetterSettings, coordinator: CoordinatorContact | null) {
   const { verifyToken: _t, ...rest } = l;
-  return { ...rest, verifyToken: l.status === "pending" ? null : l.verifyToken, content: letterContent(l, originOf(req), settings) };
+  return {
+    ...rest,
+    coordinator,
+    verifyToken: l.status === "pending" ? null : l.verifyToken,
+    content: letterContent(l, originOf(req), settings),
+  };
 }
 
 async function payloads(items: ExplanationLetterRow[], req: Request) {
-  const settings = await getLetterSettings();
-  return items.map((l) => payload(l, req, settings));
+  const [settings, coords] = await Promise.all([getLetterSettings(), letterCoordinators(items)]);
+  return items.map((l) => payload(l, req, settings, coords.get(l.id) ?? null));
 }
 
 async function one(l: ExplanationLetterRow, req: Request) {
-  return payload(l, req, await getLetterSettings());
+  const [settings, coords] = await Promise.all([getLetterSettings(), letterCoordinators([l])]);
+  return payload(l, req, settings, coords.get(l.id) ?? null);
 }
 
 async function userName(id: number): Promise<string> {

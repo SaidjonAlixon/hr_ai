@@ -13,6 +13,7 @@ import {
   Lock,
   MapPin,
   PenLine,
+  Phone,
   QrCode,
   ShieldCheck,
 } from "lucide-react";
@@ -542,6 +543,26 @@ function InfoRows({ l }: { l: ExplanationLetter }) {
           </div>
         ))}
       </dl>
+      <div className="rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-xs dark:border-sky-500/30 dark:bg-sky-500/10">
+        <p className="text-[10px] font-bold uppercase tracking-wide text-sky-700 dark:text-sky-300">Koordinator · bog‘lanish uchun</p>
+        {l.coordinator ? (
+          <div className="mt-1 flex items-center justify-between gap-3">
+            <span className="font-semibold text-slate-800 dark:text-slate-100">{l.coordinator.name}</span>
+            {l.coordinator.phone ? (
+              <a
+                href={`tel:${l.coordinator.phone.replace(/[^\d+]/g, "")}`}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sky-600 px-2.5 py-1 font-bold text-white hover:bg-sky-700"
+              >
+                <Phone className="h-3.5 w-3.5" /> {l.coordinator.phone}
+              </a>
+            ) : (
+              <span className="text-slate-500">Raqam kiritilmagan</span>
+            )}
+          </div>
+        ) : (
+          <p className="mt-1 text-slate-500">Koordinator biriktirilmagan</p>
+        )}
+      </div>
       <p className="rounded-xl bg-slate-50 px-3 py-2 text-[11px] font-semibold leading-snug text-slate-600 dark:bg-white/5 dark:text-slate-300">
         ▶ {l.content.nextStep}
       </p>

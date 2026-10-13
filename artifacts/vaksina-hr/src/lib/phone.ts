@@ -70,6 +70,13 @@ export function formatUzPhoneLocalPart(raw: string): string {
   return out;
 }
 
+/** Ko‘rsatish uchun: "+998 88-494-90-89"; to‘liq bo‘lmasa — asl qiymat */
+export function formatUzPhoneDashed(raw: string): string {
+  const d = parseUzPhoneDigits(raw);
+  if (d.length !== UZ_TOTAL_DIGITS) return raw;
+  return `+998 ${d.slice(3, 5)}-${d.slice(5, 8)}-${d.slice(8, 10)}-${d.slice(10, 12)}`;
+}
+
 export function isCompleteUzPhone(value: string): boolean {
   const d = parseUzPhoneDigits(value);
   return d.length === UZ_TOTAL_DIGITS && d.startsWith(UZ_PREFIX);

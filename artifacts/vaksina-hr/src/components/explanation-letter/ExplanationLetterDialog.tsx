@@ -20,6 +20,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { formatUzPhoneDashed } from "@/lib/phone";
 import { useToast } from "@/hooks/use-toast";
 import { qrPngDataUrl } from "@/lib/qr-render";
 import {
@@ -553,7 +554,7 @@ function InfoRows({ l }: { l: ExplanationLetter }) {
                 href={`tel:${l.coordinator.phone.replace(/[^\d+]/g, "")}`}
                 className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sky-600 px-2.5 py-1 font-bold text-white hover:bg-sky-700"
               >
-                <Phone className="h-3.5 w-3.5" /> {l.coordinator.phone}
+                <Phone className="h-3.5 w-3.5" /> {formatUzPhoneDashed(l.coordinator.phone)}
               </a>
             ) : (
               <span className="text-slate-500">Raqam kiritilmagan</span>

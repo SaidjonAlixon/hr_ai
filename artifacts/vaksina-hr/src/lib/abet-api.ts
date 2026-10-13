@@ -14,6 +14,30 @@ export const CATEGORY_LABEL: Record<DishCategory, string> = {
   boshqa: "Boshqa",
 };
 
+export const CATEGORY_EMOJI: Record<DishCategory, string> = {
+  birinchi: "🥣",
+  ikkinchi: "🍛",
+  salat: "🥗",
+  garnir: "🍚",
+  non: "🫓",
+  ichimlik: "🍵",
+  shirinlik: "🍰",
+  boshqa: "🍽",
+};
+
+export const DISH_SUGGESTIONS: Record<DishCategory, string[]> = {
+  birinchi: ["Mastava", "Sho‘rva", "Mosh xo‘rda", "Chuchvara sho‘rva", "Lag‘mon sho‘rva", "Borsh", "Tovuq sho‘rva", "Kosa sho‘rva"],
+  ikkinchi: ["Palov", "Manti", "Lag‘mon", "Dimlama", "Shavla", "Qovurma lag‘mon", "Kotlet", "Jarkop", "Norin", "Somsa"],
+  salat: ["Achchiq-chuchuk", "Vinegret", "Sezar", "Olivye", "Karam salat", "Sabzi salat", "Bodring-pomidor"],
+  garnir: ["Guruch", "Grechka", "Makaron", "Kartoshka pyure", "Qovurilgan kartoshka"],
+  non: ["Tandir non", "Patir", "Obi non"],
+  ichimlik: ["Ko‘k choy", "Qora choy", "Kompot", "Limonli choy", "Ayron"],
+  shirinlik: ["Mevalar", "Pishiriq", "Halva", "Tort"],
+  boshqa: [],
+};
+
+export const SCORE_EMOJI: Record<number, string> = { 1: "😣", 2: "😕", 3: "😐", 4: "🙂", 5: "😍" };
+
 export const SCORE_LABEL: Record<number, string> = {
   1: "Juda yomon",
   2: "Yomon",
@@ -55,6 +79,7 @@ export type RateWindow = {
   opensAt: string;
   closesAt: string;
   state: "before" | "open" | "closed";
+  menuDeadline: string;
 };
 
 export type AbetToday = {

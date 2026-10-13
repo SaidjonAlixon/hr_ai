@@ -3,7 +3,8 @@ import { pool } from "@workspace/db";
 import { hasFullPlatformAccess, isHrRole } from "./roles";
 import { tashkentNow } from "./davomat-shift-report";
 import { notifyUser } from "./notify";
-import { publicAppUrl } from "./telegram";
+import { escapeHtml, isTelegramConfigured, notificationOpenKeyboard, publicAppUrl, sendMessage } from "./telegram";
+import { loadWorkCalendar, scopeDayStatus } from "./work-calendar";
 import { logger } from "./logger";
 
 /** Dorixona tarmog‘i va o‘quvchilar — abet faqat ofis (ofis, distribyutsiya, ombor, oshxona …) uchun */
@@ -11,6 +12,8 @@ const NON_OFFICE_ROLES = ["mudir", "farmasevt", "stajyor", "koordinator", "oquvc
 
 export const RATE_OPEN_HM = "12:30";
 export const RATE_CLOSE_HM = "15:00";
+/** Oshpazlar bugungi menyuni shu vaqtgacha tasdiqlashi kerak — xodimlar 11:00 gacha xabardor bo‘ladi */
+export const MENU_DEADLINE_HM = "11:00";
 
 export const DISH_CATEGORIES = ["birinchi", "ikkinchi", "salat", "garnir", "non", "ichimlik", "shirinlik", "boshqa"] as const;
 export type DishCategory = (typeof DISH_CATEGORIES)[number];
@@ -127,12 +130,13 @@ export type RateWindow = {
   opensAt: string;
   closesAt: string;
   state: "before" | "open" | "closed";
+  menuDeadline: string;
 };
 
 export function rateWindow(d = new Date()): RateWindow {
   const t = tashkentNow(d);
   const state = t.hm < RATE_OPEN_HM ? "before" : t.hm < RATE_CLOSE_HM ? "open" : "closed";
-  return { day: t.ymd, now: t.hm, opensAt: RATE_OPEN_HM, closesAt: RATE_CLOSE_HM, state };
+  return { day: t.ymd, now: t.hm, opensAt: RATE_OPEN_HM, closesAt: RATE_CLOSE_HM, state, menuDeadline: MENU_DEADLINE_HM };
 }
 
 export function isYmd(v: unknown): v is string {
@@ -227,24 +231,158 @@ const CATEGORY_LABEL: Record<DishCategory, string> = {
   boshqa: "Boshqa",
 };
 
+const CATEGORY_EMOJI: Record<DishCategory, string> = {
+  birinchi: "🥣",
+  ikkinchi: "🍛",
+  salat: "🥗",
+  garnir: "🍚",
+  non: "🫓",
+  ichimlik: "🍵",
+  shirinlik: "🍰",
+  boshqa: "🍽",
+};
+
+const WEEKDAYS_UZ = ["Yakshanba", "Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba"];
+const MONTHS_UZ = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"];
+
+function dayTitle(ymd: string): string {
+  const d = new Date(`${ymd}T12:00:00Z`);
+  return `${d.getUTCDate()}-${MONTHS_UZ[d.getUTCMonth()]}, ${WEEKDAYS_UZ[d.getUTCDay()]}`;
+}
+
+const DIVIDER = "━━━━━━━━━━━━━━━━";
+
+/** Platforma ichidagi xabar va telefon push uchun oddiy matn */
 export function menuMessage(menu: AbetMenu, update: boolean): string {
-  const lines = menu.items.map((it) => `• ${it.name}${it.category !== "boshqa" ? ` (${CATEGORY_LABEL[it.category]})` : ""}`);
+  const lines = menu.items.map(
+    (it) => `${CATEGORY_EMOJI[it.category]} ${it.name}${it.category !== "boshqa" ? ` — ${CATEGORY_LABEL[it.category]}` : ""}`,
+  );
   return [
-    update ? "🍽 Abet menyusi yangilandi. Bugun abetda quyidagilar:" : "🍽 Bugun abetda quyidagilar:",
+    update ? "🔄 Abet menyusi yangilandi! Bugun abetda quyidagilar:" : "🍽 Bugun abetda quyidagilar:",
+    `📅 ${dayTitle(menu.day)}`,
     "",
     ...lines,
     ...(menu.note ? ["", `📝 ${menu.note}`] : []),
     "",
-    `⭐ Abetni ${RATE_OPEN_HM}–${RATE_CLOSE_HM} oralig‘ida baholang: oshxonadagi QR kodni skaner qiling yoki platformada «Abet» bo‘limini oching.`,
+    `⭐ Baholash: bugun ${RATE_OPEN_HM}–${RATE_CLOSE_HM} — oshxonadagi QR kod yoki «Abet» → «Bugun».`,
+    "Yoqimli ishtaha! 😊",
   ].join("\n");
 }
 
-export async function officeUserIds(): Promise<number[]> {
-  const { rows } = await pool.query<{ id: number }>(
-    `SELECT id FROM users WHERE status = 'active' AND NOT (lower(role) = ANY($1::text[]))`,
+/** Telegram (HTML) — frontend `TelegramMenuBubble` bilan bir xil ko‘rinish */
+export function menuTelegramHtml(menu: AbetMenu, update: boolean): string {
+  const lines = menu.items.map(
+    (it) =>
+      `${CATEGORY_EMOJI[it.category]} <b>${escapeHtml(it.name)}</b>${it.category !== "boshqa" ? `  <i>· ${CATEGORY_LABEL[it.category]}</i>` : ""}`,
+  );
+  return [
+    update ? "🔄 <b>ABET MENYUSI YANGILANDI</b>" : "🍽 <b>BUGUN ABETDA QUYIDAGILAR</b>",
+    `📅 <i>${dayTitle(menu.day)}</i>`,
+    DIVIDER,
+    ...lines,
+    DIVIDER,
+    ...(menu.note ? [`📝 ${escapeHtml(menu.note)}`, ""] : []),
+    `⭐ <b>Baholash:</b> bugun <b>${RATE_OPEN_HM}–${RATE_CLOSE_HM}</b>`,
+    "📷 Oshxonadagi QR kodni skaner qiling yoki «Abet» bo‘limida «Bugun»ni tanlang",
+    "",
+    "<i>Yoqimli ishtaha!</i> 😊",
+  ].join("\n");
+}
+
+export async function officeUsers(): Promise<Array<{ id: number; telegramId: string | null }>> {
+  const { rows } = await pool.query<{ id: number; telegram_id: string | null }>(
+    `SELECT id, telegram_id FROM users WHERE status = 'active' AND NOT (lower(role) = ANY($1::text[]))`,
     [NON_OFFICE_ROLES],
   );
-  return rows.map((r) => r.id);
+  return rows.map((r) => ({ id: r.id, telegramId: r.telegram_id }));
+}
+
+export async function officeUserIds(): Promise<number[]> {
+  return (await officeUsers()).map((u) => u.id);
+}
+
+async function sendTelegramHtml(telegramId: string | null, html: string, buttonText: string): Promise<void> {
+  if (!telegramId || !isTelegramConfigured()) return;
+  await sendMessage(telegramId, html, {
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+    reply_markup: notificationOpenKeyboard("/abet", buttonText),
+  });
+}
+
+/** Bir kunda bir marta — bir nechta server nusxasida ham takrorlanmaydi */
+async function claimOnce(key: string): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `INSERT INTO abet_settings (key, value) VALUES ($1, now()::text) ON CONFLICT (key) DO NOTHING`,
+    [key],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+async function cookUsers(): Promise<Array<{ id: number; telegramId: string | null; role: string }>> {
+  const { rows } = await pool.query<{ id: number; telegram_id: string | null; role: string }>(
+    `SELECT id, telegram_id, role FROM users WHERE status = 'active' AND lower(role) IN ('oshpaz', 'oshpaz_rahbar')`,
+  );
+  return rows.map((r) => ({ id: r.id, telegramId: r.telegram_id, role: r.role }));
+}
+
+async function notifyCooks(html: string, plain: string): Promise<void> {
+  for (const c of await cookUsers()) {
+    try {
+      await notifyUser({ userId: c.id, text: plain, type: "abet_deadline", linkUrl: "/abet", telegram: false, title: "Abet menyusi" });
+      await sendTelegramHtml(c.telegramId, html, "📝 Menyuni kiritish");
+    } catch (err) {
+      logger.warn({ err, userId: c.id }, "Oshpazga eslatma yuborilmadi");
+    }
+  }
+}
+
+/** Ish kunlari: 09:00 va 10:30 — oshpazlarga eslatma, 11:00 — kechikish ogohlantirishi */
+export async function remindCooksIfNeeded(): Promise<void> {
+  await ensureAbetSchema();
+  const win = rateWindow();
+  const stage =
+    win.now >= "09:00" && win.now < "10:30"
+      ? "remind1"
+      : win.now >= "10:30" && win.now < MENU_DEADLINE_HM
+        ? "remind2"
+        : win.now >= MENU_DEADLINE_HM && win.now < RATE_OPEN_HM
+          ? "late"
+          : null;
+  if (!stage) return;
+  await loadWorkCalendar();
+  if (scopeDayStatus("ofis", win.day)?.work === false) return;
+  const menu = await menuFor(win.day);
+  if (menu?.status === "approved") return;
+  if (!(await claimOnce(`notice:${win.day}:${stage}`))) return;
+
+  const title = dayTitle(win.day);
+  if (stage === "late") {
+    await notifyCooks(
+      [
+        "❗️ <b>BUGUNGI MENYU KECHIKDI</b>",
+        `📅 <i>${title}</i>`,
+        DIVIDER,
+        `Menyu soat <b>${MENU_DEADLINE_HM}</b> gacha kiritilib tasdiqlanishi kerak edi.`,
+        "Xodimlar bugun nima ovqat bo‘lishini hali bilishmaydi — iltimos, menyuni <b>hoziroq</b> kiriting va tasdiqlang.",
+      ].join("\n"),
+      `❗️ Bugungi abet menyusi ${MENU_DEADLINE_HM} gacha tasdiqlanmadi. Iltimos, hoziroq kiriting va tasdiqlang.`,
+    );
+    return;
+  }
+  const left = stage === "remind1" ? "2 soat" : "30 daqiqa";
+  await notifyCooks(
+    [
+      stage === "remind1" ? "⏰ <b>BUGUNGI ABET MENYUSINI KIRITING</b>" : "⚠️ <b>MENYU UCHUN 30 DAQIQA QOLDI</b>",
+      `📅 <i>${title}</i>`,
+      DIVIDER,
+      `Bugungi menyuni soat <b>${MENU_DEADLINE_HM}</b> gacha kiriting va <b>«Tasdiqlash»</b> tugmasini bosing.`,
+      `⌛ Qolgan vaqt: <b>${left}</b>`,
+      "",
+      "✅ Tasdiqlangach barcha ofis xodimlariga bot orqali «Bugun abetda quyidagilar…» xabari avtomatik boradi.",
+    ].join("\n"),
+    `⏰ Bugungi abet menyusini ${MENU_DEADLINE_HM} gacha kiriting va tasdiqlang (qoldi: ${left}). Tasdiqlangach barcha xodimlarga xabar boradi.`,
+  );
 }
 
 /** Tasdiqlash: menyu bugungi bo‘lsa — darhol barcha ofis xodimlariga yuboriladi; kelajak kun bo‘lsa — o‘sha kuni ertalab job yuboradi */
@@ -263,20 +401,21 @@ export async function approveMenu(day: string, userId: number): Promise<{ menu: 
 }
 
 export async function broadcastMenu(menu: AbetMenu, update: boolean): Promise<number> {
-  const ids = await officeUserIds();
+  const users = await officeUsers();
   await pool.query(`UPDATE abet_menus SET notified_at = now() WHERE day = $1`, [menu.day]);
   const text = menuMessage(menu, update);
-  const linkUrl = "/abet";
+  const html = menuTelegramHtml(menu, update);
   void (async () => {
-    for (const id of ids) {
+    for (const u of users) {
       try {
-        await notifyUser({ userId: id, text, type: "abet_menu", linkUrl, title: "Bugungi abet" });
+        await notifyUser({ userId: u.id, text, type: "abet_menu", linkUrl: "/abet", telegram: false, title: "🍽 Bugungi abet" });
+        await sendTelegramHtml(u.telegramId, html, "🍽 Menyu va baholash");
       } catch (err) {
-        logger.warn({ err, userId: id }, "Abet menyusi yuborilmadi");
+        logger.warn({ err, userId: u.id }, "Abet menyusi yuborilmadi");
       }
     }
   })();
-  return ids.length;
+  return users.length;
 }
 
 /** Ertalab tasdiqlangan, lekin hali yuborilmagan bugungi menyu */

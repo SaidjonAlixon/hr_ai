@@ -15,7 +15,7 @@ export function StarInput({
   disabled?: boolean;
   showLabel?: boolean;
 }) {
-  const px = size === "lg" ? "h-10 w-10" : "h-6 w-6";
+  const px = size === "lg" ? "h-10 w-10" : "h-7 w-7 sm:h-6 sm:w-6";
   return (
     <div className="flex items-center gap-2">
       <div className="flex items-center gap-0.5" role="radiogroup">

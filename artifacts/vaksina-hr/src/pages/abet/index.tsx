@@ -83,7 +83,7 @@ export default function AbetPage() {
           ) : null}
 
           {tab === "rate" ? <RateTab data={d} initialQr={initialQr} /> : null}
-          {tab === "menu" ? <MenuTab today={d.window.day} /> : null}
+          {tab === "menu" ? <MenuTab win={d.window} /> : null}
           {tab === "analytics" ? <AnalyticsTab data={d} /> : null}
           {tab === "qr" ? <QrTab /> : null}
         </>

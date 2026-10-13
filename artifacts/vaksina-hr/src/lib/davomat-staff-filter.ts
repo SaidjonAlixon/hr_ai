@@ -46,7 +46,10 @@ export function isDistribStaff(emp: {
   if (DISTRIB_USER_ROLES.has(String(emp.userRole || "").trim())) return true;
   const d = normDeptName(emp.departmentName);
   if (d === "distribyutsiya" || d === "дистрибуция" || d === "distribution") return true;
-  return normDeptName(emp.position).includes("distribyutsiya");
+  const p = normDeptName(emp.position);
+  if (p.includes("distribyutsiya")) return true;
+  if (p.includes("йигувчи") || p.includes("yiguvchi")) return true;
+  return /(tamojni|таможн).*(boshlig|бошлиғ|бошлиг)/.test(p);
 }
 
 /** Omborxona xodimi — backend `warehouse` belgisi, ombor roli, `wh:` smena yoki bo‘lim nomi */

@@ -950,7 +950,7 @@ export async function computePayrollList(
       shiftLabel: u.shiftLabel ?? null,
       calendarScope,
       fixedSalary,
-      salary: uid != null ? payByUser.get(uid)?.salary ?? 0 : 0,
+      salary: uid != null ? payByUser.get(uid)?.salary || (month >= currentMonthKey() ? fixedSalary : 0) : 0,
       jarima: uid != null ? payByUser.get(uid)?.jarima ?? 0 : 0,
       jarimaNote: uid != null ? payByUser.get(uid)?.note ?? null : null,
       jarimaEvents: [],

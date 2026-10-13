@@ -73,10 +73,25 @@ export function canManageAbetMenu(role?: string | null): boolean {
   return r === "oshpaz" || r === "oshpaz_rahbar" || hasFullPlatformAccess(r);
 }
 
-/** Admin, HR va Bosh oshpaz — tahlil, baholar jadvali va QR boshqaruvi */
+/** Tahlil: admin, direktor, HR va barcha oshpazlar (oshpaz/direktorga — anonim) */
 export function canViewAbetAnalytics(role?: string | null): boolean {
   const r = (role ?? "").trim().toLowerCase();
+  return hasFullPlatformAccess(r) || isHrRole(r) || r === "oshpaz_rahbar" || r === "oshpaz";
+}
+
+/** Kim baho berganini (ism, bo‘lim) faqat admin, asoschi va HR ko‘radi */
+export function canSeeAbetRaters(role?: string | null): boolean {
+  const r = (role ?? "").trim().toLowerCase();
+  return r === "admin" || r === "asoschi" || isHrRole(r);
+}
+
+export function canManageAbetQr(role?: string | null): boolean {
+  const r = (role ?? "").trim().toLowerCase();
   return hasFullPlatformAccess(r) || isHrRole(r) || r === "oshpaz_rahbar";
+}
+
+function anonymize<T extends DayRatingRow>(rows: T[]): DayRatingRow[] {
+  return rows.map((r, i) => ({ ...r, id: i + 1, userId: 0, fullName: "Anonim", role: "", department: null }));
 }
 
 let ready: Promise<void> | null = null;
@@ -593,7 +608,7 @@ async function ratingsWithUsers(from: string, to: string): Promise<DayRatingRow[
   return rows.map((r) => ({ ...toRating(r), fullName: r.full_name, role: r.role, department: r.department }));
 }
 
-export async function dayAnalytics(day: string): Promise<DayAnalytics> {
+export async function dayAnalytics(day: string, anonymous = false): Promise<DayAnalytics> {
   const [menu, ratings, eligibleIds] = await Promise.all([menuFor(day), ratingsWithUsers(day, day), officeUserIds()]);
   const eligible = eligibleIds.length;
   const distribution = [5, 4, 3, 2, 1].map((s) => ({ score: s, count: ratings.filter((r) => r.overall === s).length }));
@@ -631,11 +646,13 @@ export async function dayAnalytics(day: string): Promise<DayAnalytics> {
     dishes,
     tags: [...tagMap.entries()].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count),
     sources: { qr: ratings.filter((r) => r.source === "qr").length, app: ratings.filter((r) => r.source === "app").length },
-    byDepartment: [...deptMap.entries()]
-      .map(([department, xs]) => ({ department, count: xs.length, average: avg(xs) ?? 0 }))
-      .sort((a, b) => b.count - a.count),
+    byDepartment: anonymous
+      ? []
+      : [...deptMap.entries()]
+          .map(([department, xs]) => ({ department, count: xs.length, average: avg(xs) ?? 0 }))
+          .sort((a, b) => b.count - a.count),
     hourly,
-    ratings,
+    ratings: anonymous ? anonymize(ratings) : ratings,
   };
 }
 
@@ -699,9 +716,13 @@ export async function rangeAnalytics(from: string, to: string): Promise<RangeAna
   };
 }
 
-export async function exportRatings(from: string, to: string): Promise<{ menus: AbetMenu[]; ratings: DayRatingRow[] }> {
+export async function exportRatings(
+  from: string,
+  to: string,
+  anonymous = false,
+): Promise<{ menus: AbetMenu[]; ratings: DayRatingRow[] }> {
   const [menus, ratings] = await Promise.all([menusBetween(from, to), ratingsWithUsers(from, to)]);
-  return { menus, ratings };
+  return { menus, ratings: anonymous ? anonymize(ratings) : ratings };
 }
 
 export const CRITERIA_LABEL: Record<Criterion, string> = {

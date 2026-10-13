@@ -89,6 +89,8 @@ export type AbetToday = {
   canRate: boolean;
   canManageMenu: boolean;
   canViewAnalytics: boolean;
+  anonymousAnalytics: boolean;
+  canManageQr: boolean;
   categories: DishCategory[];
   criteria: Array<{ key: Criterion; label: string }>;
   tags: string[];

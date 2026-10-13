@@ -11,6 +11,8 @@ import {
   approveMenu,
   canManageAbetMenu,
   canViewAbetAnalytics,
+  canSeeAbetRaters,
+  canManageAbetQr,
   cleanMenuItems,
   cleanRating,
   dayAnalytics,
@@ -63,6 +65,8 @@ router.get("/abet/today", requireAuth, async (req: AuthRequest, res) => {
       canRate: isOfficeRole(role),
       canManageMenu: canMenu,
       canViewAnalytics: canViewAbetAnalytics(role),
+      anonymousAnalytics: !canSeeAbetRaters(role),
+      canManageQr: canManageAbetQr(role),
       categories: DISH_CATEGORIES,
       criteria: CRITERIA.map((key) => ({ key, label: CRITERIA_LABEL[key] })),
       tags: TAGS,
@@ -191,7 +195,13 @@ router.post("/abet/menu/:day/approve", requireAuth, async (req: AuthRequest, res
 
 function analyticsGuard(req: AuthRequest, res: Response): boolean {
   if (canViewAbetAnalytics(req.userRole)) return true;
-  res.status(403).json({ error: "Abet tahlili faqat admin va HR uchun" });
+  res.status(403).json({ error: "Abet tahlilini ko‘rishga ruxsat yo‘q" });
+  return false;
+}
+
+function qrGuard(req: AuthRequest, res: Response): boolean {
+  if (canManageAbetQr(req.userRole)) return true;
+  res.status(403).json({ error: "QR kodni faqat admin, HR va Bosh oshpaz boshqaradi" });
   return false;
 }
 
@@ -199,7 +209,7 @@ router.get("/abet/analytics/day", requireAuth, async (req: AuthRequest, res) => 
   try {
     if (!analyticsGuard(req, res)) return;
     const day = isYmd(req.query.day) ? req.query.day : rateWindow().day;
-    res.json(await dayAnalytics(day));
+    res.json(await dayAnalytics(day, !canSeeAbetRaters(req.userRole)));
   } catch (err) {
     fail(res, err, "Tahlil olinmadi");
   }
@@ -227,7 +237,8 @@ router.get("/abet/export", requireAuth, async (req: AuthRequest, res) => {
     const today = rateWindow().day;
     const to = isYmd(req.query.to) ? req.query.to : today;
     const from = isYmd(req.query.from) ? req.query.from : to;
-    const { menus, ratings } = await exportRatings(from, to);
+    const anonymous = !canSeeAbetRaters(req.userRole);
+    const { menus, ratings } = await exportRatings(from, to, anonymous);
 
     const wb = new ExcelJS.Workbook();
     const head = (ws: ExcelJS.Worksheet) => {
@@ -269,8 +280,12 @@ router.get("/abet/export", requireAuth, async (req: AuthRequest, res) => {
     detail.columns = [
       { header: "Sana", key: "day", width: 12 },
       { header: "Vaqt", key: "time", width: 8 },
-      { header: "Xodim", key: "name", width: 30 },
-      { header: "Bo‘lim", key: "dept", width: 22 },
+      ...(anonymous
+        ? []
+        : [
+            { header: "Xodim", key: "name", width: 30 },
+            { header: "Bo‘lim", key: "dept", width: 22 },
+          ]),
       { header: "Umumiy", key: "overall", width: 9 },
       ...CRITERIA.map((c) => ({ header: CRITERIA_LABEL[c], key: c, width: 10 })),
       { header: "Taomlar bahosi", key: "dishes", width: 40 },
@@ -303,7 +318,7 @@ router.get("/abet/export", requireAuth, async (req: AuthRequest, res) => {
 
 router.get("/abet/qr", requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!analyticsGuard(req, res)) return;
+    if (!qrGuard(req, res)) return;
     const token = await qrToken();
     res.json({ token, url: qrUrl(token, originOf(req)) });
   } catch (err) {
@@ -313,7 +328,7 @@ router.get("/abet/qr", requireAuth, async (req: AuthRequest, res) => {
 
 router.post("/abet/qr/rotate", requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!analyticsGuard(req, res)) return;
+    if (!qrGuard(req, res)) return;
     const token = await rotateQrToken();
     res.json({ token, url: qrUrl(token, originOf(req)) });
   } catch (err) {

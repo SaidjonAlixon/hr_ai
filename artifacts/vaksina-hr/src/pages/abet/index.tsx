@@ -31,10 +31,8 @@ export default function AbetPage() {
     const list: Array<{ id: TabId; label: string; icon: typeof Star }> = [];
     if (d.canRate || !d.canViewAnalytics) list.push({ id: "rate", label: "Baholash", icon: Star });
     if (d.canManageMenu) list.push({ id: "menu", label: "Menyu kiritish", icon: ChefHat });
-    if (d.canViewAnalytics) {
-      list.push({ id: "analytics", label: "Tahlil", icon: BarChart3 });
-      list.push({ id: "qr", label: "QR kod", icon: QrCode });
-    }
+    if (d.canViewAnalytics) list.push({ id: "analytics", label: "Tahlil", icon: BarChart3 });
+    if (d.canManageQr) list.push({ id: "qr", label: "QR kod", icon: QrCode });
     return list;
   }, [d]);
 

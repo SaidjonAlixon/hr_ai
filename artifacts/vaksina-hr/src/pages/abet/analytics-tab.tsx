@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, FileDown, Loader2, MessageSquareText, QrCode, Smartphone, Star, TrendingDown, TrendingUp, Users } from "lucide-react";
+import { ChevronLeft, ChevronRight, EyeOff, FileDown, Loader2, MessageSquareText, QrCode, Smartphone, Star, TrendingDown, TrendingUp, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -78,7 +78,7 @@ const CRITERIA_LABEL: Record<string, string> = {
   service: "Xizmat",
 };
 
-function DayView({ a }: { a: DayAnalytics }) {
+function DayView({ a, anonymous }: { a: DayAnalytics; anonymous: boolean }) {
   const [scoreFilter, setScoreFilter] = useState<number | null>(null);
   const [q, setQ] = useState("");
   const maxDist = Math.max(1, ...a.distribution.map((d) => d.count));
@@ -187,7 +187,7 @@ function DayView({ a }: { a: DayAnalytics }) {
             ))}
           </div>
         </Panel>
-        <Panel title="Belgilar va bo‘limlar">
+        <Panel title={anonymous ? "Belgilar" : "Belgilar va bo‘limlar"}>
           {a.tags.length ? (
             <div className="mb-4 flex flex-wrap gap-1.5">
               {a.tags.map((t) => (
@@ -212,9 +212,16 @@ function DayView({ a }: { a: DayAnalytics }) {
         </Panel>
       </div>
 
-      <Panel title={`Barcha baholar (${rows.length}${scoreFilter ? ` · ${scoreFilter}★` : ""})`}>
+      <Panel title={`Barcha baholar (${rows.length}${scoreFilter ? ` · ${scoreFilter}★` : ""})${anonymous ? " · anonim" : ""}`}>
+        {anonymous ? (
+          <p className="mb-3 flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-white/5 dark:text-white/60">
+            <EyeOff className="h-4 w-4 shrink-0" /> Baholar anonim — kim baho bergani va bo‘limi ko‘rsatilmaydi.
+          </p>
+        ) : null}
         <div className="mb-3 flex flex-wrap gap-2">
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Xodim yoki bo‘lim bo‘yicha qidirish" className="max-w-xs" />
+          {!anonymous ? (
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Xodim yoki bo‘lim bo‘yicha qidirish" className="max-w-xs" />
+          ) : null}
           {scoreFilter ? (
             <Button variant="ghost" size="sm" onClick={() => setScoreFilter(null)}>
               Filtrni olib tashlash
@@ -226,7 +233,7 @@ function DayView({ a }: { a: DayAnalytics }) {
             <table className="w-full min-w-[820px] text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500 dark:border-white/10">
-                  <th className="py-2 pr-2">Xodim</th>
+                  <th className="py-2 pr-2">{anonymous ? "№" : "Xodim"}</th>
                   <th className="py-2 pr-2">Vaqt</th>
                   <th className="py-2 pr-2">Baho</th>
                   <th className="py-2 pr-2">Mezonlar</th>
@@ -239,8 +246,14 @@ function DayView({ a }: { a: DayAnalytics }) {
                 {rows.map((r) => (
                   <tr key={r.id} className="border-b border-slate-100 align-top last:border-0 dark:border-white/5">
                     <td className="py-2 pr-2">
-                      <p className="font-medium text-slate-900 dark:text-white">{r.fullName}</p>
-                      <p className="text-xs text-slate-500">{r.department ?? "—"}</p>
+                      {anonymous ? (
+                        <p className="font-medium text-slate-500">Anonim #{r.id}</p>
+                      ) : (
+                        <>
+                          <p className="font-medium text-slate-900 dark:text-white">{r.fullName}</p>
+                          <p className="text-xs text-slate-500">{r.department ?? "—"}</p>
+                        </>
+                      )}
                     </td>
                     <td className="py-2 pr-2 text-slate-600 dark:text-white/70">{fmtTime(r.createdAt)}</td>
                     <td className="py-2 pr-2">
@@ -496,7 +509,7 @@ export function AnalyticsTab({ data }: { data: AbetToday }) {
           ) : dayQ.error || !dayQ.data ? (
             <p className="text-sm text-red-600">{(dayQ.error as Error)?.message ?? "Xatolik"}</p>
           ) : (
-            <DayView a={dayQ.data} />
+            <DayView a={dayQ.data} anonymous={data.anonymousAnalytics} />
           )}
         </>
       ) : (

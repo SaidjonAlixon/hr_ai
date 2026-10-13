@@ -1833,12 +1833,13 @@ router.patch("/smena/shift-only/:employeeId", requireAuth, async (req: AuthReque
       (target.orgRole === MANAGER_ORG ? target.id : target.reportsToId) ||
       slots[0]?.branchId ||
       null;
-    if (!branchId) {
+    // Filial faqat matn (location) sifatida yozilgan xodim: smena xodim kartasining o‘zida saqlanadi
+    if (!branchId && !(target.location || "").split("|")[0].trim()) {
       res.status(400).json({ error: "Avval filial biriktirilgan bo‘lishi kerak" });
       return;
     }
 
-    const atBranch = slots.filter((s) => s.branchId === branchId && !s.overrideBase);
+    const atBranch = branchId ? slots.filter((s) => s.branchId === branchId && !s.overrideBase) : [];
     const permanentAtBranch = atBranch.filter((s) => s.mode === "permanent");
     const toUpdate = permanentAtBranch[0] || atBranch[0] || null;
 
@@ -1870,7 +1871,7 @@ router.patch("/smena/shift-only/:employeeId", requireAuth, async (req: AuthReque
         .where(eq(employeesTable.id, employeeId));
     }
 
-    const branch = await empById(branchId);
+    const branch = branchId ? await empById(branchId) : null;
     const branchName =
       displayBranchName(branch?.location) ||
       (branch?.location || "").split("|")[0].trim() ||

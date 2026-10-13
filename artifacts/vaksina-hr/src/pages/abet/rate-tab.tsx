@@ -250,39 +250,42 @@ export function RateTab({ data, initialQr }: { data: AbetToday; initialQr: strin
       ) : null}
 
       {win.state === "open" && !formOpen && !mine ? (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <button
-            type="button"
-            onClick={() => setScanOpen(true)}
-            disabled={qrChecking}
-            className="group relative flex items-center gap-4 overflow-hidden rounded-3xl bg-gradient-to-br from-teal-600 to-emerald-500 p-5 text-left text-white shadow-lg shadow-teal-600/25 transition active:scale-[.98] sm:hover:-translate-y-0.5"
-          >
-            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur">
-              {qrChecking ? <Loader2 className="h-7 w-7 animate-spin" /> : <ScanLine className="h-7 w-7" />}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-lg font-bold">QR skaner</span>
-              <span className="block text-sm text-white/85">Oshxonadagi QR kod orqali</span>
-            </span>
-            <ChevronRight className="h-5 w-5 opacity-70 transition group-hover:translate-x-0.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setQr(null);
-              setFormOpen(true);
-            }}
-            className="group relative flex items-center gap-4 overflow-hidden rounded-3xl bg-gradient-to-br from-orange-500 to-amber-400 p-5 text-left text-white shadow-lg shadow-orange-500/25 transition active:scale-[.98] sm:hover:-translate-y-0.5"
-          >
-            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur">
-              <CalendarCheck2 className="h-7 w-7" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-lg font-bold">Bugun</span>
-              <span className="block text-sm text-white/85">{fmtDay(win.day)} abetini baholash</span>
-            </span>
-            <ChevronRight className="h-5 w-5 opacity-70 transition group-hover:translate-x-0.5" />
-          </button>
+        <div>
+          <p className="mb-2 text-center text-sm font-semibold text-slate-700 dark:text-white/80">Baholash usulini tanlang 👇</p>
+          <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setScanOpen(true)}
+              disabled={qrChecking}
+              className="group flex flex-col items-center gap-2 rounded-2xl bg-gradient-to-br from-teal-600 to-emerald-500 px-2 py-3.5 text-center text-white shadow-md shadow-teal-600/25 transition active:scale-95 sm:flex-row sm:gap-3 sm:px-4 sm:py-4 sm:text-left sm:hover:-translate-y-0.5"
+            >
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20">
+                {qrChecking ? <Loader2 className="h-6 w-6 animate-spin" /> : <ScanLine className="h-6 w-6" />}
+              </span>
+              <span className="min-w-0 sm:flex-1">
+                <span className="block text-[15px] font-bold leading-tight">QR skaner</span>
+                <span className="mt-0.5 block text-[11px] leading-tight text-white/85 sm:text-xs">Oshxonadagi QR</span>
+              </span>
+              <ChevronRight className="hidden h-5 w-5 opacity-70 sm:block" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setQr(null);
+                setFormOpen(true);
+              }}
+              className="group flex flex-col items-center gap-2 rounded-2xl bg-gradient-to-br from-orange-500 to-amber-400 px-2 py-3.5 text-center text-white shadow-md shadow-orange-500/25 transition active:scale-95 sm:flex-row sm:gap-3 sm:px-4 sm:py-4 sm:text-left sm:hover:-translate-y-0.5"
+            >
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20">
+                <CalendarCheck2 className="h-6 w-6" />
+              </span>
+              <span className="min-w-0 sm:flex-1">
+                <span className="block text-[15px] font-bold leading-tight">Bugun baholash</span>
+                <span className="mt-0.5 block text-[11px] leading-tight text-white/85 sm:text-xs">{fmtDay(win.day, false)} abeti</span>
+              </span>
+              <ChevronRight className="hidden h-5 w-5 opacity-70 sm:block" />
+            </button>
+          </div>
         </div>
       ) : null}
 
@@ -421,7 +424,7 @@ export function RateTab({ data, initialQr }: { data: AbetToday; initialQr: strin
             </section>
           </div>
 
-          <div className="sticky bottom-0 z-10 flex flex-col-reverse gap-2 border-t border-slate-100 bg-white/95 px-4 py-3 backdrop-blur sm:flex-row sm:items-center sm:justify-end sm:px-6 dark:border-white/10 dark:bg-slate-900/95">
+          <div className="sticky bottom-[92px] z-10 flex flex-col-reverse gap-2 rounded-b-3xl border-t md:bottom-0 border-slate-100 bg-white/95 px-4 py-3 backdrop-blur sm:flex-row sm:items-center sm:justify-end sm:px-6 dark:border-white/10 dark:bg-slate-900/95">
             <span className="hidden text-xs text-slate-400 sm:mr-auto sm:block">
               {overall ? `${SCORE_EMOJI[overall]} ${SCORE_LABEL[overall]}` : "Umumiy bahoni tanlang"}
               {filledExtras ? ` · +${filledExtras} qo‘shimcha` : ""}

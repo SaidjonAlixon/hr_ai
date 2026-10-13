@@ -44,7 +44,7 @@ export default function AbetPage() {
   }, [tabs, tab, initialQr]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5 p-4 sm:p-6">
+    <div className="mx-auto max-w-6xl space-y-5 p-4 pb-28 sm:p-6 md:pb-6">
       <div className="flex flex-wrap items-center gap-3">
         <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-400 text-white shadow">
           <UtensilsCrossed className="h-6 w-6" />

@@ -264,14 +264,14 @@ CREATE TABLE IF NOT EXISTS shift_day_swaps (
 CREATE UNIQUE INDEX IF NOT EXISTS shift_day_swaps_emp_day_uidx ON shift_day_swaps (employee_id, work_date) WHERE cancelled_at IS NULL;
 CREATE INDEX IF NOT EXISTS shift_day_swaps_date_idx ON shift_day_swaps (work_date);
 `);
-      const today = todayTashkentYmd();
+      const seedFrom = "2000-01-01";
       for (const [scope, rest] of SEED_RULES) {
         const seeded = await pool.query(
           `INSERT INTO work_calendar_rules (scope, rest_weekdays, effective_from, note, updated_by_name)
            SELECT $1::text, $2::int[], $3::text, 'Boshlang‘ich qoida', 'Tizim'
             WHERE NOT EXISTS (SELECT 1 FROM work_calendar_rules WHERE scope = $1::text)
            ON CONFLICT DO NOTHING`,
-          [scope, rest, today],
+          [scope, rest, seedFrom],
         );
         if (scope === "dorixona:orta" && seeded.rowCount) {
           await pool.query(

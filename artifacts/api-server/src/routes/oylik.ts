@@ -34,7 +34,13 @@ import { loadStaffFromUsers } from "../lib/staff-directory";
 import { latestUsdRate, refreshUsdRate, salaryUsdByEmployee, setEmployeeSalaryUsd, usdToSom } from "../lib/usd-salary";
 import { coordinatorsFor } from "../lib/davomat-shift-report";
 import { isSbRole, NON_STAFF_ROLES } from "../lib/roles";
-import { PHARMACY_FIXED_NOTE, ScopeCalendar, calendarWorkStatus, isFixedPharmacyScope } from "../lib/work-calendar";
+import {
+  PHARMACY_FIXED_NOTE,
+  ScopeCalendar,
+  calendarWorkStatus,
+  invalidateWorkCalendar,
+  isFixedPharmacyScope,
+} from "../lib/work-calendar";
 
 const router: IRouter = Router();
 
@@ -147,6 +153,7 @@ router.patch("/oylik/calendar", requireAuth, async (req: AuthRequest, res): Prom
         });
       }
     }
+    invalidateWorkCalendar();
     const { from, to } = monthBounds(day.slice(0, 7));
     const overrides = await loadWorkDayOverrides(scope);
     res.json({ ok: true, day, isWork, scope, workDays: workdaysBetween(from, to, overrides) });

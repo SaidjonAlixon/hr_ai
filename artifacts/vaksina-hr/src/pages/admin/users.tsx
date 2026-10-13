@@ -73,7 +73,7 @@ const ROLES = [
   { value: 'mamuriy', label: 'Ma’muriy-xo‘jalik xodimi' },
   { value: 'gpp_rahbar', label: 'GPP bo‘lim boshlig‘i' },
   { value: 'gpp', label: 'GPP xodimi' },
-  { value: 'oshpaz_rahbar', label: 'Oshpaz bo‘lim boshlig‘i' },
+  { value: 'oshpaz_rahbar', label: 'Bosh oshpaz' },
   { value: 'oshpaz', label: 'Oshpaz' },
   { value: 'marketing_rahbar', label: 'Marketing bo‘lim boshlig‘i' },
   { value: 'marketing', label: 'Marketing xodimi' },

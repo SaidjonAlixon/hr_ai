@@ -103,7 +103,7 @@ const ROLE_LABEL_UZ: Record<string, string> = {
   gpp_rahbar: "GPP bo‘lim boshlig‘i",
   gpp: "GPP xodimi",
   ombor_rahbar: "Omborxona bo‘lim boshlig‘i",
-  oshpaz_rahbar: "Oshpaz bo‘lim boshlig‘i",
+  oshpaz_rahbar: "Bosh oshpaz",
   oshpaz: "Oshpaz",
   marketing_rahbar: "Marketing bo‘lim boshlig‘i",
   marketing: "Marketing xodimi",

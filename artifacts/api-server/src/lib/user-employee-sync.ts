@@ -48,7 +48,7 @@ const ROLE_POSITION: Record<string, string> = {
   mamuriy: "Ma’muriy-xo‘jalik xodimi",
   gpp_rahbar: "GPP bo‘lim boshlig‘i",
   gpp: "GPP xodimi",
-  oshpaz_rahbar: "Oshpaz bo‘lim boshlig‘i",
+  oshpaz_rahbar: "Bosh oshpaz",
   oshpaz: "Oshpaz",
   marketing_rahbar: "Marketing bo‘lim boshlig‘i",
   marketing: "Marketing xodimi",

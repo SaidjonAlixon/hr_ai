@@ -70,8 +70,10 @@ export function canManageAbetMenu(role?: string | null): boolean {
   return r === "oshpaz" || r === "oshpaz_rahbar" || hasFullPlatformAccess(r);
 }
 
+/** Admin, HR va Bosh oshpaz — tahlil, baholar jadvali va QR boshqaruvi */
 export function canViewAbetAnalytics(role?: string | null): boolean {
-  return hasFullPlatformAccess(role) || isHrRole(role);
+  const r = (role ?? "").trim().toLowerCase();
+  return hasFullPlatformAccess(r) || isHrRole(r) || r === "oshpaz_rahbar";
 }
 
 let ready: Promise<void> | null = null;

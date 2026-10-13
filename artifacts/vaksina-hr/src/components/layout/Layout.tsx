@@ -56,6 +56,7 @@ import {
   BadgeCheck,
   FileSignature,
   Headset,
+  UtensilsCrossed,
 } from 'lucide-react';
 import {
   useLogout,
@@ -85,7 +86,7 @@ import { useCall } from '@/lib/calls/engine';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
 import { VerifiedBadge, VerifiedName } from "@/components/VerifiedBadge";
-import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canViewDavomatXatoliklar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome, isSbRole, canManageSmenaFilial, canManageStudents } from "@/lib/roles";
+import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canViewDavomatXatoliklar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome, isSbRole, canManageSmenaFilial, canManageStudents, canSeeAbet } from "@/lib/roles";
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -146,7 +147,7 @@ const NAV_SECTIONS: {
     id: 'main',
     label: 'Asosiy',
     icon: Layers,
-    paths: ['/dashboard', '/kirish', '/preboarding', '/darsliklar', '/atestatsiya', '/javob-olish', '/javob-olish/holat', '/tashkiliy-tuzilma', '/oylik', '/tushuntirish-xatim', '/hisobkitob', '/reyting', '/reviziya', '/it', '/qongiroq'],
+    paths: ['/dashboard', '/kirish', '/preboarding', '/darsliklar', '/atestatsiya', '/javob-olish', '/javob-olish/holat', '/tashkiliy-tuzilma', '/oylik', '/tushuntirish-xatim', '/hisobkitob', '/reyting', '/reviziya', '/abet', '/it', '/qongiroq'],
   },
   {
     id: 'attendance',
@@ -987,6 +988,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const oylikNav = { name: 'Oylik', path: '/oylik', icon: Banknote };
   const txNav = { name: 'Tushuntirish xatlari', path: '/admin/tushuntirish-xatlari', icon: FileSignature };
   const txMyNav = { name: 'Tushuntirish xatim', path: '/tushuntirish-xatim', icon: FileSignature };
+  const abetNav = { name: 'Abet', path: '/abet', icon: UtensilsCrossed };
   const hisobNav = { name: 'Oylik hisob', path: '/hisobkitob', icon: Calculator };
   const reytingNav = { name: 'Reyting', path: '/reyting', icon: Trophy };
   const darsliklarNav = { name: 'Darsliklar', path: '/darsliklar', icon: BookOpen };
@@ -1828,7 +1830,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     // Arizalar — faqat HR rollari; qolganlarga Xodim kerak alohida bo‘lim
     .filter((item) => item.path !== '/requests' || isHrRole(userRole))
     .filter((item) => !isReviziyaRole(userRole) || item.path !== '/dashboard')
-    .concat(canViewLogistika(userRole) ? logistikaNavItems : []);
+    .concat(canViewLogistika(userRole) ? logistikaNavItems : [])
+    .concat(canSeeAbet(userRole) && !withFace.some((i) => i.path === '/abet') ? [abetNav] : []);
 
   const toggleNav = () => {
     if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) {

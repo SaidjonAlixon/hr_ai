@@ -367,6 +367,12 @@ export function isLimitedOfficeStaffRole(role?: string | null): boolean {
   return !!role && (LIMITED_OFFICE_STAFF_ROLES as readonly string[]).includes(role);
 }
 
+/** Abet (oshxona) — ofis, distribyutsiya, ombor va boshqa ofis rollari; dorixona tarmog‘i va o‘quvchilar emas */
+export function canSeeAbet(role?: string | null): boolean {
+  const r = normalizeUserRole(role);
+  return !!r && !["mudir", "farmasevt", "stajyor", "koordinator", "oquvchi"].includes(r);
+}
+
 export function isDistribyutsiyaRole(role?: string | null): boolean {
   return role === "distrib" || role === "distrib_hr" || role === "distrib_rahbar";
 }

@@ -67,12 +67,14 @@ import vaksinamedRouter from "./vaksinamed";
 import publicFilialMapRouter from "./public-filial-map";
 import disciplineRouter from "./discipline";
 import explanationLettersRouter from "./explanation-letters";
+import abetRouter from "./abet";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(disciplineRouter);
 router.use(explanationLettersRouter);
+router.use(abetRouter);
 router.use(publicFilialMapRouter);
 router.use(uploadsRouter);
 router.use(pharmacyNetworkRouter);

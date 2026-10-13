@@ -2813,7 +2813,7 @@ export default function DavomatPage() {
                 <CardContent className="max-h-[calc(100dvh-7rem)] overflow-auto overscroll-contain p-0 sm:px-6 sm:pb-6">
                   <table className="w-full min-w-[1100px] border-separate border-spacing-0 text-sm">
                     <thead className="sticky top-0 z-20 shadow-[0_4px_10px_-4px_rgba(11,58,92,0.45)]">
-                      <tr className="text-left text-[11px] font-bold uppercase tracking-wide text-white [&>th]:bg-[#0b3a5c] [&>th]:py-3 [&>th]:align-bottom [&>th:first-child]:rounded-tl-xl [&>th:last-child]:rounded-tr-xl">
+                      <tr className="text-left text-[11px] font-bold uppercase tracking-wide text-white [&>th]:bg-[#0b3a5c] [&>th]:whitespace-nowrap [&>th]:py-3 [&>th]:align-middle [&>th:first-child]:rounded-tl-xl [&>th:last-child]:rounded-tr-xl">
                         <th className="w-12 px-2 py-2 text-center">№</th>
                         <th className="px-3 py-2">F.I.Sh.</th>
                         <th className="px-3 py-2">Lavozim</th>
@@ -3751,24 +3751,19 @@ function DayChip({ tone, label, children }: { tone: keyof typeof DAY_CHIP_TONES;
 }
 
 function TimingHeaderCells({ workStart, workEnd }: { workStart: string; workEnd: string }) {
-  const sub = "block whitespace-nowrap font-normal normal-case tracking-normal text-[10px] opacity-70";
   return (
     <>
-      <th className="whitespace-nowrap px-3 py-2">
+      <th className="whitespace-nowrap px-3 py-2" title={`${workStart} dan keyin`}>
         Kech keldi
-        <span className={sub}>{workStart} dan keyin</span>
       </th>
-      <th className="whitespace-nowrap px-3 py-2">
+      <th className="whitespace-nowrap px-3 py-2" title={`${workStart} dan oldin`}>
         Erta keldi
-        <span className={sub}>{workStart} dan oldin</span>
       </th>
-      <th className="whitespace-nowrap px-3 py-2">
+      <th className="whitespace-nowrap px-3 py-2" title={`${workEnd} dan oldin`}>
         Erta ketdi
-        <span className={sub}>{workEnd} dan oldin</span>
       </th>
-      <th className="whitespace-nowrap px-3 py-2">
+      <th className="whitespace-nowrap px-3 py-2" title={`${workEnd} dan keyin`}>
         Kech ketdi
-        <span className={sub}>{workEnd} dan keyin</span>
       </th>
     </>
   );

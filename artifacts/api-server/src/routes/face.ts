@@ -19,7 +19,6 @@ import {
   packDescriptors,
   type LivenessProof,
   FACE_SIMILAR_WARN,
-  distanceBetweenDescriptors,
   minDistanceBetweenVectors,
   parseStoredVectors,
   findDuplicateEnrollHits,
@@ -519,7 +518,12 @@ router.get("/admin/faces/export", requireAuth, async (req: AuthRequest, res): Pr
     .where(notInArray(usersTable.role, [...NON_STAFF_ROLES]))
     .orderBy(asc(usersTable.fullName));
 
-  const withFace = users.filter((u) => u.faceId != null && u.descriptor);
+  const vectorsByFace = new Map<number, number[][]>();
+  if (onlyRisk) {
+    for (const u of users) {
+      if (u.faceId != null && u.descriptor) vectorsByFace.set(u.faceId, parseStoredVectors(u.descriptor));
+    }
+  }
 
   type ExportRow = {
     userId: number;
@@ -536,10 +540,11 @@ router.get("/admin/faces/export", requireAuth, async (req: AuthRequest, res): Pr
   const rows: ExportRow[] = users.map((row) => {
     const registered = Boolean(row.faceId && row.descriptor);
     let nearestDist: number | null = null;
-    if (registered && row.descriptor) {
-      for (const other of withFace) {
-        if (other.faceId === row.faceId || !other.descriptor) continue;
-        const dist = distanceBetweenDescriptors(row.descriptor, other.descriptor);
+    const mine = row.faceId != null ? vectorsByFace.get(row.faceId) : undefined;
+    if (registered && mine?.length) {
+      for (const [otherId, other] of vectorsByFace) {
+        if (otherId === row.faceId || !other.length) continue;
+        const dist = minDistanceBetweenVectors(mine, other);
         if (dist == null) continue;
         if (nearestDist == null || dist < nearestDist) nearestDist = dist;
       }

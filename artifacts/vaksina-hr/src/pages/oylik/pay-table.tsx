@@ -557,6 +557,9 @@ function PayLine({
             }}
           />
         )}
+        {row.salaryUsd ? (
+          <span className="mt-0.5 block text-[11px] font-semibold text-emerald-700">${row.salaryUsd.toLocaleString("en-US")} kurs bo‘yicha</span>
+        ) : null}
       </td>
       <td className="px-2 py-2 text-right">
         {!view.editJarima ? (

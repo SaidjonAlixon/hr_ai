@@ -84,6 +84,8 @@ export type PayrollRow = {
     publishedNote: string | null;
   }>;
   fixedSalary: number;
+  /** Fiksa dollarda belgilangan bo‘lsa — so‘m qiymati kurs bo‘yicha */
+  salaryUsd?: number;
   bonusPercent: number;
   kpiPercent: number;
   bonusAmount: number;
@@ -99,6 +101,9 @@ export type PayrollRow = {
   tasksAvailable: boolean;
   checklistAvailable: boolean;
 };
+
+/** Markaziy bank kursi: 1 $ = rate so‘m */
+export type UsdRate = { rate: number; date: string };
 
 export function payrollRowKey(r: { employeeId?: number | null; userId?: number | null }) {
   return r.employeeId || r.userId || 0;
@@ -350,7 +355,10 @@ export function useJarimaSummary(month: string) {
 export function useSaveOylikFiksa() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (p: { month: string; lines: Array<{ userId: number; employeeId?: number; salary: number }> }) =>
+    mutationFn: (p: {
+      month: string;
+      lines: Array<{ userId: number; employeeId?: number; salary: number; salaryUsd?: number | null }>;
+    }) =>
       json<{ ok: boolean; saved: number }>("/api/oylik/fiksa", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -405,7 +413,13 @@ export function useOylikEmployees(month: string, q: string, enabled: boolean) {
   return useQuery({
     queryKey: ["oylik", "employees", month, q],
     queryFn: () =>
-      json<{ month: string; workDays?: string[]; calendars?: Record<string, string[]>; items: PayrollRow[] }>(
+      json<{
+        month: string;
+        workDays?: string[];
+        calendars?: Record<string, string[]>;
+        items: PayrollRow[];
+        usdRate?: UsdRate | null;
+      }>(
         `/api/oylik/employees?${qs}`,
       ),
     enabled,

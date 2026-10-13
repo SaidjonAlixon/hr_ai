@@ -992,6 +992,7 @@ export default function OylikPage() {
           onOpenChange={setFiksaOpen}
           month={month}
           rows={filteredRows}
+          usdRate={list.data?.usdRate ?? null}
           onSaved={(saved) => toast({ title: "Fiksa saqlandi", description: `${saved} xodim. Kunlik summalar shu oylikdan hisoblanadi.` })}
         />
         {canSchedule ? (

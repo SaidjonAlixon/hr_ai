@@ -31,6 +31,7 @@ import {
   workdaysBetween,
 } from "../lib/kpi-payroll";
 import { loadStaffFromUsers } from "../lib/staff-directory";
+import { latestUsdRate, refreshUsdRate, salaryUsdByEmployee, setEmployeeSalaryUsd, usdToSom } from "../lib/usd-salary";
 import { coordinatorsFor } from "../lib/davomat-shift-report";
 import { isSbRole, NON_STAFF_ROLES } from "../lib/roles";
 import { PHARMACY_FIXED_NOTE, ScopeCalendar, calendarWorkStatus, isFixedPharmacyScope } from "../lib/work-calendar";
@@ -180,7 +181,18 @@ router.get("/oylik/employees", requireAuth, async (req: AuthRequest, res): Promi
       if (item.userId == null) continue;
       (item as { daySheets?: typeof sheets }).daySheets = byUser.get(item.userId) ?? [];
     }
-    res.json(payload);
+    let usdRate: Awaited<ReturnType<typeof latestUsdRate>> = null;
+    try {
+      const usd = await salaryUsdByEmployee();
+      for (const item of payload.items) {
+        const v = usd.get(item.employeeId);
+        if (v) (item as { salaryUsd?: number }).salaryUsd = v;
+      }
+      usdRate = await latestUsdRate();
+    } catch (usdErr) {
+      console.error("payroll usd", usdErr);
+    }
+    res.json({ ...payload, usdRate });
   } catch (err) {
     console.error("GET /oylik/employees", err);
     const detail = err instanceof Error ? err.message : String(err);
@@ -239,6 +251,7 @@ router.patch("/oylik/salary/:userId", requireAuth, async (req: AuthRequest, res)
     if (body.bonusPercent != null) patch.bonusPercent = Math.max(0, Math.min(200, Number(body.bonusPercent)));
     if (Object.keys(patch).length) {
       await db.update(employeesTable).set(patch).where(eq(employeesTable.id, emp.id));
+      if (patch.fixedSalary != null) await setEmployeeSalaryUsd(emp.id, null);
     }
     res.json({ ok: true, userId, ...patch });
   } catch (err) {
@@ -293,6 +306,7 @@ router.patch("/oylik/salary-bulk", requireAuth, async (req: AuthRequest, res): P
         .update(employeesTable)
         .set(patch)
         .where(inArray(employeesTable.id, emps.map((e) => e.id)));
+      if (patch.fixedSalary != null) for (const e of emps) await setEmployeeSalaryUsd(e.id, null);
     }
     res.json({ ok: true, position, count: emps.length, ...patch });
   } catch (err) {
@@ -607,16 +621,33 @@ router.post("/oylik/fiksa", requireAuth, async (req: AuthRequest, res): Promise<
   }
   try {
     const month = String(req.body?.month || currentMonthKey()).slice(0, 7);
-    const lines = Array.isArray(req.body?.lines) ? req.body.lines : [];
-    const result = await savePayrollFiksa({
-      month,
-      lines: lines.map((line: { userId?: number; employeeId?: number; salary?: number }) => ({
+    type RawLine = { userId?: number; employeeId?: number; salary?: number; salaryUsd?: number | null };
+    const raw: RawLine[] = Array.isArray(req.body?.lines) ? req.body.lines : [];
+    const needsRate = raw.some((line) => Number(line?.salaryUsd) > 0);
+    const rate = needsRate ? await refreshUsdRate() : null;
+    if (needsRate && !rate) {
+      res.status(503).json({ error: "Dollar kursi olinmadi — keyinroq urinib ko‘ring" });
+      return;
+    }
+    const lines = raw.map((line) => {
+      const usd = Number(line?.salaryUsd) > 0 ? Number(line.salaryUsd) : null;
+      return {
         userId: Number(line?.userId),
         employeeId: Number(line?.employeeId) || null,
-        salary: Number(line?.salary) || 0,
-      })),
+        salary: usd && rate ? usdToSom(usd, rate.rate) : Number(line?.salary) || 0,
+        usd,
+      };
     });
-    res.json({ ok: true, ...result });
+    const result = await savePayrollFiksa({ month, lines });
+    for (const line of lines) {
+      const empId =
+        line.employeeId ??
+        (Number.isFinite(line.userId)
+          ? (await db.select({ id: employeesTable.id }).from(employeesTable).where(eq(employeesTable.userId, line.userId)).limit(1))[0]?.id
+          : undefined);
+      if (empId) await setEmployeeSalaryUsd(empId, line.usd);
+    }
+    res.json({ ok: true, ...result, usdRate: rate });
   } catch (err) {
     console.error("POST /oylik/fiksa", err);
     res.status(503).json({ error: (err as Error).message || "Fiksa saqlanmadi" });

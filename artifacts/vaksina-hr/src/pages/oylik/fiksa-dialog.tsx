@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MoneyInput } from "@/components/MoneyInput";
 import { cn } from "@/lib/utils";
-import { monthLabelUz, useSaveOylikFiksa, type PayrollRow } from "@/lib/oylik-api";
+import { monthLabelUz, useSaveOylikFiksa, type PayrollRow, type UsdRate } from "@/lib/oylik-api";
 import { displayBranchName } from "@/lib/pharmacy-staff-api";
 import { daysInMonth } from "@/lib/oylik-period";
 import { downloadFiksaExcel, readFiksaExcel } from "@/lib/fiksa-excel";
@@ -26,17 +26,21 @@ export function FiksaDialog({
   onOpenChange,
   month,
   rows,
+  usdRate,
   onSaved,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   month: string;
   rows: PayrollRow[];
+  usdRate: UsdRate | null;
   onSaved: (saved: number) => void;
 }) {
   const save = useSaveOylikFiksa();
   const { toast } = useToast();
   const [drafts, setDrafts] = useState<Record<number, number>>({});
+  /** null — fiksa so‘mda; son — dollarda */
+  const [usd, setUsd] = useState<Record<number, number | null>>({});
   const [picked, setPicked] = useState<number[]>([]);
   const [find, setFind] = useState("");
   const [onlyEmpty, setOnlyEmpty] = useState(false);
@@ -47,10 +51,14 @@ export function FiksaDialog({
   useEffect(() => {
     if (!open) return;
     const next: Record<number, number> = {};
+    const nextUsd: Record<number, number | null> = {};
     for (const row of rows) {
-      if (row.userId) next[row.userId] = Math.round(Number(row.salary) || 0);
+      if (!row.userId) continue;
+      next[row.userId] = Math.round(Number(row.salary) || 0);
+      nextUsd[row.userId] = row.salaryUsd ?? null;
     }
     setDrafts(next);
+    setUsd(nextUsd);
     setPicked([]);
     setFind("");
     setOnlyEmpty(false);
@@ -68,19 +76,41 @@ export function FiksaDialog({
     });
   }, [rows, find, onlyEmpty]);
 
-  const changed = useMemo(
-    () =>
-      rows.filter((row) => {
-        if (!row.userId) return false;
-        const next = drafts[row.userId];
-        if (next == null) return false;
-        return next !== Math.round(Number(row.salary) || 0);
-      }),
-    [rows, drafts],
-  );
+  const somOf = (userId: number) => {
+    const d = usd[userId];
+    if (d != null && usdRate) return Math.max(0, Math.round(d * usdRate.rate));
+    return drafts[userId] ?? 0;
+  };
+
+  const isDirty = (row: PayrollRow) => {
+    if (!row.userId) return false;
+    if ((usd[row.userId] ?? null) !== (row.salaryUsd ?? null)) return true;
+    if (usd[row.userId] != null) return false;
+    const next = drafts[row.userId];
+    return next != null && next !== Math.round(Number(row.salary) || 0);
+  };
+
+  const changed = rows.filter(isDirty);
 
   const setOne = (userId: number, salary: number) => {
     setDrafts((cur) => ({ ...cur, [userId]: Math.max(0, Math.round(salary)) }));
+    setUsd((cur) => ({ ...cur, [userId]: null }));
+  };
+
+  const setOneUsd = (userId: number, amount: number) => {
+    setUsd((cur) => ({ ...cur, [userId]: Math.max(0, Math.round(amount)) }));
+  };
+
+  const switchCurrency = (row: PayrollRow, toUsd: boolean) => {
+    const userId = row.userId as number;
+    if (toUsd) {
+      const start = row.salaryUsd ?? (usdRate ? Math.round(somOf(userId) / usdRate.rate) : 0);
+      setUsd((cur) => ({ ...cur, [userId]: start }));
+    } else {
+      const som = somOf(userId);
+      setUsd((cur) => ({ ...cur, [userId]: null }));
+      setDrafts((cur) => ({ ...cur, [userId]: som }));
+    }
   };
 
   const toggle = (userId: number) => {
@@ -100,7 +130,7 @@ export function FiksaDialog({
         fullName: row.fullName,
         branch: displayBranchName(row.branch),
         position: row.position || row.roleLabel,
-        salary: drafts[row.userId as number] ?? 0,
+        salary: somOf(row.userId as number),
       }));
     if (!lines.length) {
       toast({ title: "Bu tanlovda xodim yo‘q" });
@@ -135,6 +165,7 @@ export function FiksaDialog({
       const byId = new Map(rows.filter((row) => row.userId).map((row) => [row.userId as number, row]));
       const byName = new Map(rows.filter((row) => row.userId).map((row) => [foldName(row.fullName), row]));
       const next = { ...drafts };
+      const nextUsd = { ...usd };
       let applied = 0;
       let missed = 0;
       for (const line of lines) {
@@ -144,9 +175,11 @@ export function FiksaDialog({
           continue;
         }
         next[row.userId] = line.salary;
+        nextUsd[row.userId] = null;
         applied += 1;
       }
       setDrafts(next);
+      setUsd(nextUsd);
       toast({
         title: applied ? `${applied} ta fiksa o‘qildi` : "Fiksa topilmadi",
         description: missed ? `${missed} qator shu ro‘yxatda yo‘q. Saqlashni bosing.` : "Tekshirib, Saqlashni bosing.",
@@ -167,6 +200,11 @@ export function FiksaDialog({
       for (const id of picked) next[id] = amount;
       return next;
     });
+    setUsd((cur) => {
+      const next = { ...cur };
+      for (const id of picked) next[id] = null;
+      return next;
+    });
   };
 
   const submit = () => {
@@ -175,7 +213,8 @@ export function FiksaDialog({
       .map((row) => ({
         userId: row.userId as number,
         employeeId: row.employeeId,
-        salary: drafts[row.userId as number] ?? 0,
+        salary: somOf(row.userId as number),
+        salaryUsd: usd[row.userId as number] ?? null,
       }));
     if (!lines.length) return;
     save.mutate(
@@ -314,9 +353,10 @@ export function FiksaDialog({
             <tbody>
               {visible.map((row) => {
                 const userId = row.userId as number;
-                const amount = drafts[userId] ?? 0;
+                const amount = somOf(userId);
+                const usdAmount = usd[userId] ?? null;
                 const share = dayShare(amount, month);
-                const dirty = amount !== Math.round(Number(row.salary) || 0);
+                const dirty = isDirty(row);
                 const selected = picked.includes(userId);
                 return (
                   <tr
@@ -341,16 +381,44 @@ export function FiksaDialog({
                     </td>
                     <td className="px-3 py-3 align-middle text-slate-600">{row.position || row.roleLabel}</td>
                     <td className="px-3 py-3 text-right align-middle">
-                      <div className="ml-auto w-40">
-                        <MoneyInput
-                          className={cn(
-                            "h-10 w-full rounded-lg border px-3 text-right text-sm font-semibold tabular-nums",
-                            dirty ? "border-emerald-500 bg-white ring-2 ring-emerald-100" : "border-slate-200 bg-white",
-                          )}
-                          value={amount}
-                          onLive={(n) => setOne(userId, n)}
-                          onCommit={(n) => setOne(userId, n)}
-                        />
+                      <div className="ml-auto w-56">
+                        <div className="flex items-center gap-1.5">
+                          <div className="flex h-10 shrink-0 overflow-hidden rounded-lg border border-slate-200 text-xs font-bold">
+                            <button
+                              type="button"
+                              onClick={() => usdAmount != null && switchCurrency(row, false)}
+                              className={cn("px-2", usdAmount == null ? "bg-[#0b3a5c] text-white" : "bg-white text-slate-500 hover:bg-slate-50")}
+                            >
+                              so‘m
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!usdRate}
+                              title={usdRate ? undefined : "Dollar kursi hali olinmagan"}
+                              onClick={() => usdAmount == null && switchCurrency(row, true)}
+                              className={cn(
+                                "border-l border-slate-200 px-2 disabled:opacity-40",
+                                usdAmount != null ? "bg-emerald-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50",
+                              )}
+                            >
+                              $
+                            </button>
+                          </div>
+                          <MoneyInput
+                            className={cn(
+                              "h-10 w-full rounded-lg border px-3 text-right text-sm font-semibold tabular-nums",
+                              dirty ? "border-emerald-500 bg-white ring-2 ring-emerald-100" : "border-slate-200 bg-white",
+                            )}
+                            value={usdAmount ?? amount}
+                            onLive={(n) => (usdAmount != null ? setOneUsd(userId, n) : setOne(userId, n))}
+                            onCommit={(n) => (usdAmount != null ? setOneUsd(userId, n) : setOne(userId, n))}
+                          />
+                        </div>
+                        {usdAmount != null && usdRate ? (
+                          <p className="mt-1 text-[11px] font-semibold text-emerald-700">
+                            ≈ {formatMoney(amount)} so‘m · kurs {formatMoney(Math.round(usdRate.rate))} ({usdRate.date.split("-").reverse().join(".")})
+                          </p>
+                        ) : null}
                         <p className={cn("mt-1 text-[11px] font-medium", dirty ? "text-emerald-700" : amount > 0 ? "text-slate-400" : "text-amber-700")}>
                           {dirty ? "O‘zgardi · hali saqlanmagan" : amount > 0 ? "Saqlangan fiksa" : "Fiksa yozilmagan"}
                         </p>

@@ -946,6 +946,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         location.startsWith('/omborxona-ish') ||
         location.startsWith('/it') ||
         location.startsWith('/qongiroq') ||
+        location.startsWith('/abet') ||
         location === '/notifications';
       if (!allowed) {
         setLocation('/vazifalar');

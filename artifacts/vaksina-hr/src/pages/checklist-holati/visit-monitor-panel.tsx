@@ -79,8 +79,8 @@ const HOW_IT_WORKS: Array<{ title: string; text: string; tone: string }> = [
     tone: "bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300",
   },
   {
-    title: "Har 30 daqiqada hudud tasdig‘i",
-    text: "Tasdiqlamasa 10 daqiqa kutiladi, keyin vaqt to‘xtaydi. Ruxsat bersangiz vaqt to‘liq davom etadi.",
+    title: "Har 1 soatda hudud tasdig‘i",
+    text: "1 soat ichida tasdiqlamasa tashrif yopiladi va vaqt to‘xtaydi. Ruxsat bersangiz vaqt to‘liq davom etadi.",
     tone: "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300",
   },
   {

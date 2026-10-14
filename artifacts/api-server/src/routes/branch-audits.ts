@@ -1365,7 +1365,7 @@ router.post("/branch-audits/my-visit/start", requireAuth, async (req: AuthReques
       ok: true,
       visit: serializeVisit(result.visit),
       distanceMeters: zone.distanceMeters,
-      message: `«${branchLabel}» tashrifi ochildi. Endi cheklistni to‘ldiring. Har 30 daqiqada hududni tasdiqlang yoki ish tugasa Ketdim qiling.`,
+      message: `«${branchLabel}» tashrifi ochildi. Endi cheklistni to‘ldiring. Har 1 soatda hududni tasdiqlang yoki ish tugasa Ketdim qiling.`,
     });
   } catch (err) {
     console.error("POST /branch-audits/my-visit/start error:", err);
@@ -1374,7 +1374,7 @@ router.post("/branch-audits/my-visit/start", requireAuth, async (req: AuthReques
 });
 
 /**
- * Har 30 daqiqalik hudud tasdiqlash — faqat yashil zonada.
+ * Har 1 soatlik hudud tasdiqlash — faqat yashil zonada.
  */
 router.post("/branch-audits/my-visit/confirm-presence", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!req.userId) {

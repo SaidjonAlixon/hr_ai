@@ -21,10 +21,12 @@ export const COORD_OFFICE_GEOFENCE_METERS = 100;
 
 /** Cheklist / Keldim / Ketdim / hudud tasdiqlash — yashil zona */
 export const COORD_VISIT_GEOFENCE_METERS = 70;
-/** Har shuncha daqiqada hududni qayta tasdiqlash */
-export const COORD_PRESENCE_INTERVAL_MS = 30 * 60 * 1000;
-/** Eslatmadan keyin shuncha ichida tasdiqlanmasa — blok */
+/** Hududni tasdiqlash muddati: oxirgi tasdiqdan 1 soat ichida, aks holda blok */
+export const COORD_PRESENCE_PERIOD_MS = 60 * 60 * 1000;
+/** Muddat tugashidan shuncha oldin eslatma boradi */
 export const COORD_PRESENCE_GRACE_MS = 10 * 60 * 1000;
+/** Eslatma lahzasi (oxirgi tasdiqdan keyin) */
+export const COORD_PRESENCE_INTERVAL_MS = COORD_PRESENCE_PERIOD_MS - COORD_PRESENCE_GRACE_MS;
 
 let lastBackfillMs = 0;
 const BACKFILL_COOLDOWN_MS = 60_000;
@@ -230,7 +232,7 @@ export function visitPresenceBaseMs(v: {
   return Number.isFinite(ms) ? ms : null;
 }
 
-/** 30 daq muddat o‘tdi (eslatma oynasi) — ofis tashrifida talab qilinmaydi */
+/** Eslatma vaqti keldi (1 soatlik muddatdan 10 daq oldin) — ofis tashrifida talab qilinmaydi */
 export function isVisitPresenceOverdue(v: CoordVisitRow, now = Date.now()): boolean {
   if (v.status !== "open" || v.checkOutAt) return false;
   if (isCoordinatorOfficeVisit(v)) return false;
@@ -240,7 +242,7 @@ export function isVisitPresenceOverdue(v: CoordVisitRow, now = Date.now()): bool
 }
 
 /**
- * Blok: 30 daq + 10 daq grace ichida tasdiqlanmagan,
+ * Blok: oxirgi tasdiqdan 1 soat ichida tasdiqlanmagan,
  * yoki presenceBlockedAt belgilangan va admin ochmagan.
  * Ofisda qolish — presence majburiy emas.
  */
@@ -262,7 +264,7 @@ export function isVisitPresenceBlocked(v: CoordVisitRow, now = Date.now()): bool
   return now - base >= COORD_PRESENCE_INTERVAL_MS + COORD_PRESENCE_GRACE_MS;
 }
 
-/** 30 daq + 10 daq kutish tugaydigan lahza — shu paytgacha tasdiqlanmasa blok */
+/** 1 soatlik muddat tugaydigan lahza — shu paytgacha tasdiqlanmasa blok */
 export function visitPresenceDeadlineMs(v: {
   lastPresenceAt?: Date | string | null;
   checkInAt?: Date | string | null;
@@ -682,7 +684,7 @@ export async function adminForceCloseCoordinatorVisit(opts: {
   return { ok: true, visit: updated };
 }
 
-/** Har 30 daqiqada — yashil zonada ekanligini tasdiqlash */
+/** Har 1 soatda — yashil zonada ekanligini tasdiqlash */
 export async function confirmCoordinatorPresence(opts: {
   userId: number;
   latitude?: number | null;
@@ -859,7 +861,7 @@ export async function approvePresenceUnlock(opts: {
   try {
     await notifyUser({
       userId: visit.coordinatorUserId,
-      text: `✅ Admin ruxsat berdi («${visit.branchLabel || "Filial"}»). Endi cheklistni davom ettirishingiz mumkin. Har 30 daqiqada hududni tasdiqlang.`,
+      text: `✅ Admin ruxsat berdi («${visit.branchLabel || "Filial"}»). Endi cheklistni davom ettirishingiz mumkin. Har 1 soatda hududni tasdiqlang.`,
       type: "coordinator_presence_unlocked",
       linkUrl: "/checklist",
       title: "Ruxsat berildi",
@@ -892,7 +894,7 @@ export async function markPresenceBlockedIfNeeded(
     try {
       await notifyUser({
         userId: visit.coordinatorUserId,
-        text: `⛔ Siz bugun hududda emas deb belgilandi («${visit.branchLabel || "Filial"}»). Sabab: 10 daqiqa ichida hududni tasdiqlamadingiz. Cheklist bloklandi — «Ruxsat olish» orqali adminga so‘rov yuboring.`,
+        text: `⛔ Siz bugun hududda emas deb belgilandi («${visit.branchLabel || "Filial"}»). Sabab: 1 soat ichida hududni tasdiqlamadingiz. Cheklist bloklandi — «Ruxsat olish» orqali adminga so‘rov yuboring.`,
         type: "coordinator_presence_blocked",
         linkUrl: "/checklist",
         title: "Hudud bloki",

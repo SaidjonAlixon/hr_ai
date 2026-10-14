@@ -5613,7 +5613,7 @@ async function completeSitePunch(
       action === "in" && resolved.user.role === "koordinator"
         ? visitIsOffice
           ? "Ofisda «Keldim» qabul qilindi. «Asosiy ofisda qolish» bo‘limida vaqtni kuzating; ketganda «Ketdim» qiling."
-          : "Keldim qabul qilindi. Endi cheklistni to‘ldiring. Har 30 daqiqada hududni tasdiqlang yoki ish tugasa Ketdim qiling."
+          : "Keldim qabul qilindi. Endi cheklistni to‘ldiring. Har 1 soatda hududni tasdiqlang yoki ish tugasa Ketdim qiling."
         : action === "out" && resolved.user.role === "koordinator"
           ? visitIsOffice
             ? "Ofisdan «Ketdim» qabul qilindi — qolgan vaqt yozildi. Keyin filialga yoki qayta ofisga o‘tishingiz mumkin."

@@ -35,7 +35,7 @@ export const PHASE_META: Record<VisitPhase, PhaseMeta> = {
   },
   blocked: {
     label: "Bloklangan",
-    hint: "Qo‘shimcha 10 daqiqada ham hududni tasdiqlamadi — vaqti to‘xtatildi, cheklist yopiq. Ruxsat berilsa vaqt davom etadi",
+    hint: "1 soat ichida hududni tasdiqlamadi — vaqti to‘xtatildi, cheklist yopiq. Ruxsat berilsa vaqt davom etadi",
     icon: Lock,
     badge: "bg-rose-600 text-white",
     dot: "bg-rose-600",
@@ -43,7 +43,7 @@ export const PHASE_META: Record<VisitPhase, PhaseMeta> = {
   },
   presence_due: {
     label: "Tasdiq kutilmoqda",
-    hint: "30 daqiqa o‘tdi — 10 daqiqa ichida hududni tasdiqlamasa vaqti to‘xtaydi va cheklist yopiladi",
+    hint: "1 soatlik muddat tugayapti — tasdiqlamasa vaqti to‘xtaydi va cheklist yopiladi",
     icon: Clock3,
     badge: "bg-orange-100 text-orange-900 ring-1 ring-inset ring-orange-300",
     dot: "bg-orange-500",

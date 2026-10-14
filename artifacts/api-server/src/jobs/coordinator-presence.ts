@@ -5,6 +5,7 @@ import { logger } from "../lib/logger";
 import {
   autoCloseStaleCoordinatorVisits,
   COORD_PRESENCE_INTERVAL_MS,
+  COORD_PRESENCE_PERIOD_MS,
   isCoordinatorOfficeVisit,
   isVisitPresenceBlocked,
   isVisitPresenceOverdue,
@@ -12,11 +13,11 @@ import {
   visitPresenceBaseMs,
 } from "../lib/coordinator-visits";
 
-const FIVE_MIN_MS = 5 * 60 * 1000;
+const TICK_MS = 60 * 1000;
 
 /**
- * 1) 30 daqiqada eslatma
- * 2) +10 daqiqa ichida tasdiqlanmasa — blok + ogohlantirish
+ * 1) Oxirgi tasdiqdan 50 daqiqa o‘tgach eslatma
+ * 2) 1 soat ichida tasdiqlanmasa — blok + ogohlantirish
  */
 export async function sendCoordinatorPresenceReminders(): Promise<{
   reminded: number;
@@ -43,7 +44,7 @@ export async function sendCoordinatorPresenceReminders(): Promise<{
   let blocked = 0;
 
   for (const visit of openVisits) {
-    // Ofisda qolish — 30 daqiqa hudud tasdiqlash talab qilinmaydi
+    // Ofisda qolish — hudud tasdiqlash talab qilinmaydi
     if (isCoordinatorOfficeVisit(visit)) continue;
 
     // Avval blok (grace tugagan)
@@ -67,7 +68,13 @@ export async function sendCoordinatorPresenceReminders(): Promise<{
     }
 
     const branch = visit.branchLabel || "Filial";
-    const text = `📍 «${branch}» — hududingizni tasdiqlang (10 daqiqa ichida). Yoki ishingiz tugasa «Ketdim» qiling. Aks holda cheklist bloklanadi. Cheklist → «Hududni tasdiqlash».`;
+    const deadline = new Date(baseMs + COORD_PRESENCE_PERIOD_MS).toLocaleTimeString("uz-UZ", {
+      timeZone: "Asia/Tashkent",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const text = `📍 «${branch}» — hududingizni ${deadline} gacha tasdiqlang (1 soatlik muddat tugayapti). Yoki ishingiz tugasa «Ketdim» qiling. Aks holda tashrif yopiladi va cheklist bloklanadi. Cheklist → «Hududni tasdiqlash».`;
 
     await notifyUser({
       userId: visit.coordinatorUserId,
@@ -103,8 +110,8 @@ export function startCoordinatorPresenceJob(): void {
     sendCoordinatorPresenceReminders().catch((err) =>
       logger.error({ err }, "Coordinator presence job failed"),
     );
-  }, FIVE_MIN_MS);
+  }, TICK_MS);
   logger.info(
-    "Coordinator presence job started (every 5 min; ping 20m, block after +10m)",
+    "Coordinator presence job started (every 1 min; ping 50m, block at 60m)",
   );
 }

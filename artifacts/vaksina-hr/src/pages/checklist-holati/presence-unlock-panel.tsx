@@ -132,7 +132,7 @@ export function PresenceUnlockPanel({ enabled }: { enabled: boolean }) {
               Ruxsat berish
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Koordinator filialda ekanini har 30 daqiqada telefonidan tasdiqlaydi. Tasdiqlamasa — tizim
+              Koordinator filialda ekanini har 1 soatda telefonidan tasdiqlaydi. Tasdiqlamasa — tizim
               cheklistni yopadi va siz shu yerdan bir bosishda qayta ochasiz.
             </p>
           </div>
@@ -150,8 +150,8 @@ export function PresenceUnlockPanel({ enabled }: { enabled: boolean }) {
         </div>
         <ol className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
           {[
-            { icon: Clock3, t: "30 daqiqa", d: "Koordinatorga «hududni tasdiqlang» xabari boradi" },
-            { icon: Lock, t: "+10 daqiqa", d: "Tasdiqlamasa cheklist bloklanadi, u «Ruxsat olish» bosadi" },
+            { icon: Clock3, t: "50 daqiqa", d: "Koordinatorga «hududni tasdiqlang» xabari boradi" },
+            { icon: Lock, t: "1 soat", d: "Tasdiqlamasa tashrif yopiladi, cheklist bloklanadi, u «Ruxsat olish» bosadi" },
             { icon: Unlock, t: "Siz", d: "«Ruxsat berish» bosasiz — u darhol davom etadi" },
           ].map((s, i) => (
             <li key={i} className="flex items-start gap-2 rounded-xl bg-muted/60 px-3 py-2">

@@ -549,7 +549,7 @@ export default function ChecklistPage() {
         description:
           result.checklistHint ||
           result.message ||
-          "Endi cheklistni to‘ldiring. Har 30 daqiqada hududni tasdiqlang yoki ish tugasa Ketdim qiling.",
+          "Endi cheklistni to‘ldiring. Har 1 soatda hududni tasdiqlang yoki ish tugasa Ketdim qiling.",
       });
       // Cheklist formasiga o‘tish
       window.setTimeout(() => {
@@ -1213,7 +1213,7 @@ export default function ChecklistPage() {
                       {openVisit && String(openVisit.branchId) === managerId
                         ? openVisit.checklistAt
                           ? `«${openVisit.branchLabel || selectedBranch?.location || "Filial"}». Ketdim qilmasangiz boshqa filialga o‘ta olmaysiz. Faqat yashil hududda (${AUDIT_GEOFENCE_METERS} m).`
-                          : `«${openVisit.branchLabel || selectedBranch?.location || "Filial"}». Cheklistni saqlashingiz mumkin. Yoki izoh yozib «Ketdim» qiling — keyin boshqa filialga o‘tasiz. Har 30 daqiqada hududni tasdiqlang.`
+                          : `«${openVisit.branchLabel || selectedBranch?.location || "Filial"}». Cheklistni saqlashingiz mumkin. Yoki izoh yozib «Ketdim» qiling — keyin boshqa filialga o‘tasiz. Har 1 soatda hududni tasdiqlang.`
                         : `«${selectedBranch?.location || selectedBranch?.managerName || "Filial"}». Yashil hududda Face ID (old kamera) bilan Keldim qiling — keyin cheklist ochiladi.`}
                     </p>
                     {openVisit && String(openVisit.branchId) === managerId ? (
@@ -1280,8 +1280,7 @@ export default function ChecklistPage() {
                         Siz bugun hududda emas — cheklist bloklangan
                       </p>
                       <p className="text-[11px] leading-relaxed text-rose-900/80 dark:text-rose-200/80">
-                        Sabab: 30 daqiqalik eslatmadan keyin 10 daqiqa ichida hududingizni
-                        tasdiqlamadingiz. Cheklistni ochish uchun adminga ruxsat so‘rovi yuboring.
+                        Sabab: 1 soat ichida hududingizni tasdiqlamadingiz. Cheklistni ochish uchun adminga ruxsat so‘rovi yuboring.
                       </p>
                       <Button
                         type="button"
@@ -1310,8 +1309,8 @@ export default function ChecklistPage() {
                         <p className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
                           <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
                           {openVisit.presenceOverdue
-                            ? "10 daqiqa ichida tasdiqlang — aks holda blok"
-                            : "Har 30 daqiqada hududni tasdiqlang"}
+                            ? "1 soatlik muddat tugayapti — hozir tasdiqlang, aks holda blok"
+                            : "Har 1 soatda hududni tasdiqlang"}
                         </p>
                         <p className="mt-0.5 text-[11px] text-muted-foreground">
                           Faqat yashil hududda. Tasdiqlab turing yoki ish tugasa «Ketdim» — vaqt yoziladi.

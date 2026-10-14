@@ -21,6 +21,7 @@ import {
   parseShiftKeys,
   hmToMinutes,
 } from "../lib/shift-hours";
+import { hoursWithOverride, resolveScheduleOverride } from "../lib/employee-schedule-override";
 import { getEffectiveShiftDefs } from "../lib/shift-schedule";
 import { displayBranchName } from "../lib/geo-location";
 import { excuseAttendanceFromApprovedJavob } from "../lib/javob-exemptions";
@@ -146,7 +147,18 @@ async function resolveShiftForDate(
   const dayType = await dayShiftTypeFor(emp.id, workDate);
   const shiftType = dayType || emp.shiftType || "one";
   const shiftLabel = dayType ? null : emp.shiftLabel;
-  const hours = hoursForStaff(emp.orgRole, shiftType, userRole, shiftLabel, defs);
+  const override = await resolveScheduleOverride(emp.id, workDate);
+  const hours = hoursWithOverride(hoursForStaff(emp.orgRole, shiftType, userRole, shiftLabel, defs), override);
+  if (override) {
+    return {
+      shiftType: override.shiftKey,
+      shiftLabel: `Shaxsiy vaqt ${hours.start}–${hours.end}`,
+      shiftStartHm: hours.start,
+      shiftEndHm: hours.end,
+      overnight: Boolean(hours.overnight),
+      durationLabel: formatDuration(durationMinutes(hours.start, hours.end)),
+    };
+  }
   const keys = parseShiftKeys(shiftType, shiftLabel);
   return {
     shiftType: keys.length > 1 ? encodeShiftKeys(keys as ("one" | "two" | "three")[]) : hours.shiftKey || "one",

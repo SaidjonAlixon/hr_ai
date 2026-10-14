@@ -36,7 +36,16 @@ type EmpDay = {
   checkIn: string;
   checkOut?: string;
   lateArrivalMin: number;
+  planStart?: string;
+  planEnd?: string;
+  planCustom?: boolean;
 };
+
+/** Xodimga shaxsiy vaqt qo‘yilgan kun — kechikish o‘sha vaqtdan hisoblanadi */
+function withDayPlan(schedule: WorkSchedule, day: EmpDay | undefined): WorkSchedule {
+  if (!day?.planCustom || !day.planStart || !day.planEnd) return schedule;
+  return { ...schedule, start: day.planStart, end: day.planEnd };
+}
 
 type BranchStaffStatus = "on_time" | "late" | "absent" | "leave" | "incomplete";
 
@@ -370,7 +379,7 @@ function filterReport(
       if ((m?.userRole || "") === "admin") continue;
       const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? e.orgRole, m?.shiftType, m?.shiftLabel);
       const day = e.days.find((x) => x.date === date);
-      const st = classifyStaffDay(day, schedule).status;
+      const st = classifyStaffDay(day, withDayPlan(schedule, day)).status;
       if (st === "absent") {
         absent += 1;
       } else if (st === "leave") {
@@ -558,7 +567,7 @@ function buildBranchStaff(
       const m = metaById.get(emp.id);
       const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? emp.orgRole, m?.shiftType, m?.shiftLabel);
       const day = emp.days.find((x) => x.date === targetDate);
-      const cls = classifyStaffDay(day, schedule);
+      const cls = classifyStaffDay(day, withDayPlan(schedule, day));
       const roleKey = m?.userRole || emp.orgRole || "";
       return {
         id: emp.id,
@@ -592,7 +601,7 @@ function buildBranchOpenings(
     const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? e.orgRole, m?.shiftType, m?.shiftLabel);
     const grace = graceMinutesFor(schedule);
     const day = e.days.find((x) => x.date === targetDate);
-    const mudirDay = classifyStaffDay(day, schedule);
+    const mudirDay = classifyStaffDay(day, withDayPlan(schedule, day));
 
     let status: "on_time" | "late" | "absent" | "leave";
     let statusLabel: string;
@@ -655,7 +664,7 @@ function buildOfficeDayBoard(
     const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? e.orgRole, m?.shiftType, m?.shiftLabel);
     const grace = graceMinutesFor(schedule);
     const day = e.days.find((x) => x.date === targetDate);
-    const staffDay = classifyStaffDay(day, schedule);
+    const staffDay = classifyStaffDay(day, withDayPlan(schedule, day));
 
     let status: "on_time" | "late" | "absent" | "leave";
     let statusLabel: string;

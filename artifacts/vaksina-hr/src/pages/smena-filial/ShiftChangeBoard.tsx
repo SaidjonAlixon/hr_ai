@@ -29,8 +29,10 @@ import { cn } from "@/lib/utils";
 import { scriptIncludes } from "@/lib/script-search";
 import {
   changeShiftOnly,
+  clearCustomHours,
   fetchShiftBoard,
   saveAltDays,
+  saveCustomHours,
   saveShiftOverride,
   type ShiftBoardOption,
   type ShiftBoardStaff,
@@ -289,7 +291,40 @@ function AltBadge({ className }: { className?: string }) {
   );
 }
 
-type FilterKey = "all" | SlotShiftKey | "override" | "alt";
+function hmMinutes(hm: string): number {
+  const [h, m] = hm.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+function durationText(start: string, end: string): string {
+  let d = hmMinutes(end) - hmMinutes(start);
+  if (d <= 0) d += 24 * 60;
+  const h = Math.floor(d / 60);
+  const m = d % 60;
+  return m ? `${h} soat ${m} daqiqa` : `${h} soat`;
+}
+
+function CustomHoursBadge({ hours, className }: { hours: NonNullable<ShiftBoardStaff["customHours"]>; className?: string }) {
+  return (
+    <span
+      title={
+        hours.mode === "period"
+          ? `Shaxsiy vaqt ${ymdUz(hours.validFrom)} — ${ymdUz(hours.validTo || hours.validFrom)}`
+          : `Shaxsiy vaqt ${ymdUz(hours.validFrom)} dan doimiy`
+      }
+      className={cn(
+        "inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-cyan-300 bg-cyan-50 px-2 py-0.5 text-[10px] font-semibold text-cyan-800 dark:border-cyan-800 dark:bg-cyan-950/40 dark:text-cyan-200",
+        className,
+      )}
+    >
+      <Clock className="h-3 w-3" />
+      Shaxsiy {hours.start}–{hours.end}
+      {!hours.activeToday ? <span className="font-normal opacity-80">· {ymdUz(hours.validFrom)} dan</span> : null}
+    </span>
+  );
+}
+
+type FilterKey = "all" | SlotShiftKey | "override" | "alt" | "custom";
 
 export default function ShiftChangeBoard() {
   const { toast } = useToast();
@@ -324,15 +359,17 @@ export default function ShiftChangeBoard() {
     if (shiftFilter === "all") return byBranchAndSearch;
     if (shiftFilter === "override") return byBranchAndSearch.filter((s) => s.overrides.length > 0);
     if (shiftFilter === "alt") return byBranchAndSearch.filter((s) => s.altDays);
+    if (shiftFilter === "custom") return byBranchAndSearch.filter((s) => s.customHours);
     return byBranchAndSearch.filter((s) => s.baseShiftKey === shiftFilter);
   }, [byBranchAndSearch, shiftFilter]);
 
   const counts = useMemo(() => {
-    const c: Record<string, number> = { all: byBranchAndSearch.length, override: 0, alt: 0 };
+    const c: Record<string, number> = { all: byBranchAndSearch.length, override: 0, alt: 0, custom: 0 };
     for (const s of byBranchAndSearch) {
       c[s.baseShiftKey] = (c[s.baseShiftKey] || 0) + 1;
       if (s.overrides.length) c.override! += 1;
       if (s.altDays) c.alt! += 1;
+      if (s.customHours) c.custom! += 1;
     }
     return c;
   }, [byBranchAndSearch]);
@@ -382,6 +419,12 @@ export default function ShiftChangeBoard() {
                 <strong>Kunora (cherez den)</strong> — smena o‘sha-o‘sha, xodim bir kun ishlaydi, bir kun dam oladi.
               </span>
             </li>
+            <li className="flex gap-2">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">5</span>
+              <span>
+                <strong>Shaxsiy ish vaqti</strong> — faqat shu xodimga o‘z kelish–ketish soati (masalan 09:30–18:30).
+              </span>
+            </li>
           </ol>
         </CardContent>
       </Card>
@@ -429,7 +472,7 @@ export default function ShiftChangeBoard() {
             </div>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {(["all", ...options.map((o) => o.key), "override", "alt"] as FilterKey[]).map((k) => {
+            {(["all", ...options.map((o) => o.key), "override", "alt", "custom"] as FilterKey[]).map((k) => {
               const active = shiftFilter === k;
               const label =
                 k === "all"
@@ -438,7 +481,9 @@ export default function ShiftChangeBoard() {
                     ? "Haftalik almashtirishi bor"
                     : k === "alt"
                       ? "Kunora (cherez den)"
-                      : optionFor(options, k)?.label || k;
+                      : k === "custom"
+                        ? "Shaxsiy vaqt"
+                        : optionFor(options, k)?.label || k;
               return (
                 <button
                   key={k}
@@ -449,10 +494,11 @@ export default function ShiftChangeBoard() {
                     active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background hover:bg-muted",
                   )}
                 >
-                  {k !== "all" && k !== "override" && k !== "alt" ? (
+                  {k !== "all" && k !== "override" && k !== "alt" && k !== "custom" ? (
                     <span className={cn("h-1.5 w-1.5 rounded-full", SHIFT_TONE[k].dot)} />
                   ) : null}
                   {k === "alt" ? <Repeat className="h-3 w-3" /> : null}
+                  {k === "custom" ? <Clock className="h-3 w-3" /> : null}
                   {label} · {counts[k] || 0}
                 </button>
               );
@@ -499,12 +545,18 @@ export default function ShiftChangeBoard() {
                         <div className="flex flex-col items-start gap-1">
                           <ShiftChip shiftKey={s.baseShiftKey} options={options} />
                           {s.altDays ? <AltBadge /> : null}
+                          {s.customHours ? <CustomHoursBadge hours={s.customHours} /> : null}
                         </div>
                       </td>
                       <td className="px-3 py-3">
                         {s.altDays?.todayWork === false ? (
                           <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-slate-300 bg-slate-50 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
                             Dam kuni (kunora)
+                          </span>
+                        ) : s.customHours?.activeToday ? (
+                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-cyan-300 bg-cyan-50 px-2.5 py-0.5 text-[11px] font-semibold text-cyan-800 dark:border-cyan-800 dark:bg-cyan-950/40 dark:text-cyan-200">
+                            <Clock className="h-3 w-3" />
+                            {s.customHours.start}–{s.customHours.end}
                           </span>
                         ) : (
                           <ShiftChip shiftKey={s.todayShiftKey} options={options} />
@@ -593,6 +645,23 @@ function ShiftEditorDialog({
   const [days, setDays] = useState<number[]>([]);
   const [dayShift, setDayShift] = useState<SlotShiftKey | null>(null);
   const [altAnchor, setAltAnchor] = useState("");
+  const [chStart, setChStart] = useState("");
+  const [chEnd, setChEnd] = useState("");
+  const [chPeriod, setChPeriod] = useState(false);
+  const [chFrom, setChFrom] = useState("");
+  const [chTo, setChTo] = useState("");
+  const [chNote, setChNote] = useState("");
+
+  const resetCustomHours = () => {
+    const ch = person?.customHours;
+    const base = person ? optionFor(options, person.baseShiftKey) : undefined;
+    setChStart(ch?.start ?? base?.start ?? "09:00");
+    setChEnd(ch?.end ?? base?.end ?? "18:00");
+    setChPeriod(ch?.mode === "period");
+    setChFrom(ch?.validFrom && ch.validFrom > today ? ch.validFrom : today);
+    setChTo(ch?.validTo ?? "");
+    setChNote(ch?.note ?? "");
+  };
 
   const personId = person?.employeeId ?? null;
   useEffect(() => {
@@ -600,6 +669,7 @@ function ShiftEditorDialog({
     setDays([]);
     setDayShift(null);
     setAltAnchor(person?.altDays?.anchor ?? today);
+    resetCustomHours();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [personId]);
 
@@ -610,6 +680,36 @@ function ShiftEditorDialog({
   useEffect(() => {
     if (person) setAltAnchor(person.altDays?.anchor ?? today);
   }, [person?.altDays?.anchor]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (person) resetCustomHours();
+  }, [person?.customHours?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const hoursMut = useMutation({
+    mutationFn: () =>
+      saveCustomHours({
+        employeeId: person!.employeeId,
+        start: chStart,
+        end: chEnd,
+        validFrom: chFrom || today,
+        validTo: chPeriod ? chTo : null,
+        note: chNote.trim() || undefined,
+      }),
+    onSuccess: (res) => {
+      notify("Shaxsiy vaqt saqlandi ✓", res.message);
+      onSaved();
+    },
+    onError: (e: Error) => notify("Shaxsiy vaqt saqlanmadi", e.message, true),
+  });
+
+  const clearHoursMut = useMutation({
+    mutationFn: () => clearCustomHours(person!.employeeId),
+    onSuccess: (res) => {
+      notify("Shaxsiy vaqt bekor qilindi ✓", res.message);
+      onSaved();
+    },
+    onError: (e: Error) => notify("Bekor qilinmadi", e.message, true),
+  });
 
   const baseMut = useMutation({
     mutationFn: () => changeShiftOnly(person!.employeeId, baseKey!),
@@ -678,7 +778,26 @@ function ShiftEditorDialog({
   }, [previewWeek]);
 
   if (!person) return null;
-  const busy = baseMut.isPending || overrideMut.isPending || clearOneMut.isPending || altMut.isPending;
+  const busy =
+    baseMut.isPending ||
+    overrideMut.isPending ||
+    clearOneMut.isPending ||
+    altMut.isPending ||
+    hoursMut.isPending ||
+    clearHoursMut.isPending;
+  const chCurrent = person.customHours;
+  const hmOk = (v: string) => /^\d{2}:\d{2}$/.test(v);
+  const chMinFrom = today ? addDays(today, -7) : "";
+  const chError = !hmOk(chStart) || !hmOk(chEnd)
+    ? "Kelish va ketish vaqtini kiriting"
+    : chStart === chEnd
+      ? "Kelish va ketish vaqti bir xil bo‘lmasin"
+      : !chFrom || chFrom < chMinFrom
+        ? `Boshlanish sanasi ${chMinFrom ? ymdUz(chMinFrom) : ""} dan oldin bo‘lmasin`
+        : chPeriod && (!chTo || chTo < chFrom)
+          ? "Muddatli uchun tugash sanasini to‘g‘ri tanlang"
+          : null;
+  const chOvernight = hmOk(chStart) && hmOk(chEnd) && hmMinutes(chEnd) <= hmMinutes(chStart);
   const altCurrent = person.altDays;
   const altChanged = altValid && altAnchor !== altCurrent?.anchor;
   const baseChanged = baseKey != null && baseKey !== person.baseShiftKey;
@@ -701,6 +820,7 @@ function ShiftEditorDialog({
               <ShiftChip shiftKey={person.baseShiftKey} options={options} />
               <span>Bugun:</span>
               <ShiftChip shiftKey={person.todayShiftKey} options={options} />
+              {person.customHours ? <CustomHoursBadge hours={person.customHours} /> : null}
             </div>
           </DialogDescription>
         </DialogHeader>
@@ -716,6 +836,12 @@ function ShiftEditorDialog({
               <p className="mt-1 text-[11px] text-muted-foreground">
                 Xodim haftaning barcha kunlarida shu smenada ishlaydi (almashtirilgan kunlardan tashqari).
               </p>
+              {person.customHours ? (
+                <p className="mt-1.5 rounded-md bg-cyan-50 px-2 py-1 text-[11px] text-cyan-900 dark:bg-cyan-950/30 dark:text-cyan-100">
+                  Diqqat: shaxsiy vaqt ({person.customHours.start}–{person.customHours.end}) qo‘yilgan — davomat shu vaqtdan
+                  hisoblanadi (4-bo‘lim).
+                </p>
+              ) : null}
             </div>
             <ShiftPicker options={options} value={baseKey} current={person.baseShiftKey} onChange={setBaseKey} />
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -925,6 +1051,135 @@ function ShiftEditorDialog({
               >
                 {altMut.isPending ? <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Repeat className="mr-1.5 h-3.5 w-3.5" />}
                 {altCurrent ? "Kunorani yangilash" : "Kunorani yoqish"}
+              </Button>
+            </div>
+          </section>
+
+          {/* 4. Shaxsiy ish vaqti */}
+          <section className="space-y-3 rounded-xl border border-cyan-300/70 p-3.5 dark:border-cyan-800/60">
+            <div>
+              <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-cyan-600 text-[11px] font-bold text-white">4</span>
+                Shaxsiy ish vaqti — faqat shu xodim uchun
+              </h3>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Xodim qachon kelib, qachon ketishini kiriting. Bu vaqt <strong>faqat {person.fullName}</strong> uchun
+                amal qiladi va asosiy smena hamda haftalik almashtirish vaqti o‘rniga ishlaydi. Keldim/Ketdim,
+                kechikish, tushuntirish xati, jarima, eslatmalar va hisobotlar shu vaqtdan hisoblanadi.
+              </p>
+            </div>
+
+            {chCurrent ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-cyan-50 px-2.5 py-2 text-[11px] text-cyan-900 dark:bg-cyan-950/30 dark:text-cyan-100">
+                <span>
+                  Hozir: <strong>{chCurrent.start} – {chCurrent.end}</strong>
+                  {chCurrent.overnight ? " (ertasi kun tugaydi)" : ""} ·{" "}
+                  {chCurrent.mode === "period"
+                    ? `${ymdUz(chCurrent.validFrom)} — ${ymdUz(chCurrent.validTo || chCurrent.validFrom)}`
+                    : `${ymdUz(chCurrent.validFrom)} dan doimiy`}
+                  {chCurrent.note ? ` · ${chCurrent.note}` : ""}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/40"
+                  disabled={busy}
+                  onClick={() => clearHoursMut.mutate()}
+                >
+                  <RotateCcw className="mr-1 h-3 w-3" />
+                  Bekor qilish (smena vaqtiga qaytarish)
+                </Button>
+              </div>
+            ) : null}
+
+            <div className="flex flex-wrap gap-1.5">
+              <span className="self-center text-[11px] text-muted-foreground">Tez tanlash:</span>
+              {options.map((o) => (
+                <button
+                  key={o.key}
+                  type="button"
+                  onClick={() => {
+                    setChStart(o.start);
+                    setChEnd(o.end);
+                  }}
+                  className="rounded-full border border-border bg-card px-2.5 py-0.5 text-[11px] hover:bg-muted"
+                >
+                  {o.start}–{o.end}
+                </button>
+              ))}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1">
+                <span className="block text-[11px] font-semibold text-foreground">Kelish vaqti</span>
+                <Input type="time" value={chStart} onChange={(e) => setChStart(e.target.value)} className="h-9 text-sm" />
+              </label>
+              <label className="space-y-1">
+                <span className="block text-[11px] font-semibold text-foreground">Ketish vaqti</span>
+                <Input type="time" value={chEnd} onChange={(e) => setChEnd(e.target.value)} className="h-9 text-sm" />
+              </label>
+            </div>
+            {hmOk(chStart) && hmOk(chEnd) && chStart !== chEnd ? (
+              <p className="text-[11px] text-muted-foreground">
+                Ish davomiyligi: <strong className="text-foreground">{durationText(chStart, chEnd)}</strong>
+                {chOvernight ? " · tungi (ertasi kun tugaydi)" : ""}
+              </p>
+            ) : null}
+
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { v: false, label: "Doimiy" },
+                { v: true, label: "Muddatli (sanadan–sanagacha)" },
+              ].map((m) => (
+                <button
+                  key={String(m.v)}
+                  type="button"
+                  onClick={() => setChPeriod(m.v)}
+                  className={cn(
+                    "rounded-lg border px-3 py-1.5 text-xs font-medium transition",
+                    chPeriod === m.v ? "border-cyan-600 bg-cyan-600 text-white" : "border-border bg-card hover:bg-muted",
+                  )}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1">
+                <span className="block text-[11px] font-semibold text-foreground">Boshlanish sanasi</span>
+                <Input type="date" value={chFrom} min={chMinFrom} onChange={(e) => setChFrom(e.target.value)} className="h-9 text-xs" />
+              </label>
+              {chPeriod ? (
+                <label className="space-y-1">
+                  <span className="block text-[11px] font-semibold text-foreground">Tugash sanasi</span>
+                  <Input type="date" value={chTo} min={chFrom} onChange={(e) => setChTo(e.target.value)} className="h-9 text-xs" />
+                </label>
+              ) : null}
+            </div>
+
+            <label className="block space-y-1">
+              <span className="block text-[11px] font-semibold text-foreground">Izoh (ixtiyoriy)</span>
+              <Input
+                value={chNote}
+                onChange={(e) => setChNote(e.target.value)}
+                maxLength={160}
+                placeholder="Masalan: o‘qishi sababli"
+                className="h-9 text-xs"
+              />
+            </label>
+
+            {chError ? <p className="text-[11px] text-rose-600">{chError}</p> : null}
+
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                className="bg-cyan-600 text-white hover:bg-cyan-700"
+                disabled={Boolean(chError) || busy}
+                onClick={() => hoursMut.mutate()}
+              >
+                {hoursMut.isPending ? <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Clock className="mr-1.5 h-3.5 w-3.5" />}
+                {chCurrent ? "Shaxsiy vaqtni yangilash" : "Shaxsiy vaqtni saqlash"}
               </Button>
             </div>
           </section>

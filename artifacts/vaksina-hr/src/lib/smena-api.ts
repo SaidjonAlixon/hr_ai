@@ -210,6 +210,18 @@ export type ShiftBoardStaff = {
     todayWork: boolean | null;
     days: Array<{ date: string; work: boolean | null }>;
   } | null;
+  /** Faqat shu xodim uchun shaxsiy kelish–ketish vaqti */
+  customHours: {
+    id: number;
+    start: string;
+    end: string;
+    overnight: boolean;
+    mode: "permanent" | "period";
+    validFrom: string;
+    validTo: string | null;
+    note: string | null;
+    activeToday: boolean;
+  } | null;
 };
 
 export type ShiftBoard = {
@@ -237,6 +249,24 @@ export function saveAltDays(body: { employeeId: number; anchorDate: string | nul
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+export function saveCustomHours(body: {
+  employeeId: number;
+  start: string;
+  end: string;
+  validFrom?: string;
+  validTo?: string | null;
+  note?: string;
+}) {
+  return apiJson<{ ok: boolean; message: string }>("/smena/custom-hours", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function clearCustomHours(employeeId: number) {
+  return apiJson<{ ok: boolean; message: string }>(`/smena/custom-hours/${employeeId}`, { method: "DELETE" });
 }
 
 export function updateWorkSlotShift(slotId: number, shiftKey: SlotShiftKey | string) {
@@ -373,6 +403,7 @@ export type SmenaLogAction =
   | "shift_change"
   | "shift_override"
   | "alt_days"
+  | "custom_hours"
   | "legacy_assign"
   | "legacy_day_rotation"
   | "legacy_day_rotation_cancel"

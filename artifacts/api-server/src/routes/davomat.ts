@@ -89,6 +89,8 @@ import {
   workScheduleFromOverride,
   isScheduleShiftKey,
   normalizeHm,
+  hoursWithOverride,
+  scheduleWithOverride,
   type ScheduleOverride,
 } from "../lib/employee-schedule-override";
 import {
@@ -1929,7 +1931,10 @@ router.post("/davomat/manual", requireAuth, async (req: AuthRequest, res): Promi
     const checkOutAt =
       checkOut && /^\d{1,2}:\d{2}$/.test(checkOut) ? atTashkent(workDate, checkOut) : null;
 
-    const hours = hoursForStaff(emp.orgRole, emp.shiftType, emp.userRole, emp.shiftLabel, await getEffectiveShiftDefs());
+    const hours = hoursWithOverride(
+      hoursForStaff(emp.orgRole, emp.shiftType, emp.userRole, emp.shiftLabel, await getEffectiveShiftDefs()),
+      await resolveScheduleOverride(emp.id, workDate),
+    );
 
     let nextStatus = status || "absent";
     if (!status || status === "auto") {
@@ -2320,12 +2325,9 @@ router.post("/davomat/reset", requireAuth, async (req: AuthRequest, res): Promis
       // Keldim bekor, Ketdim yo‘q — yozuv to‘liq o‘chadi (xodim qayta Keldim qila olishi uchun)
       const wipeWhole = part === "in" && !rec.checkOutAt;
       if (!wipeWhole) {
-        const hours = hoursForStaff(
-          emp.orgRole,
-          emp.shiftType,
-          emp.userRole,
-          emp.shiftLabel,
-          await getEffectiveShiftDefs(),
+        const hours = hoursWithOverride(
+          hoursForStaff(emp.orgRole, emp.shiftType, emp.userRole, emp.shiftLabel, await getEffectiveShiftDefs()),
+          await resolveScheduleOverride(emp.id, workDate),
         );
         const segs = await loadSegments();
         const now = new Date();
@@ -4160,18 +4162,15 @@ async function applyFacePunch(opts: {
 
       // Ketdim: ombor → tugash+2soat; 2-smena → ertasi 02:00; 3-smena → ertalab 10:00; 1/ofis → 23:55
       if (action === "out" && existing?.checkInAt) {
-        const sched = workScheduleForStaff(
-          userRole,
-          emp.orgRole,
-          punchShiftType,
-          punchShiftLabel,
-          defs,
+        const sched = scheduleWithOverride(
+          workScheduleForStaff(userRole, emp.orgRole, punchShiftType, punchShiftLabel, defs),
+          punchOverride,
         );
         const deadlineOpts = {
           shiftKey: sched.key,
           shiftKeys: sched.keys,
           warehouse: Boolean(sched.warehouse),
-          shiftType: punchShiftType,
+          shiftType: punchOverride ? punchOverride.shiftKey : punchShiftType,
           workDateYmd: workDate,
           endHm: sched.end,
           overnight: Boolean(sched.overnight),

@@ -29,6 +29,16 @@ import {
 import { addDaysYmd } from "../lib/attendance-engine";
 import { altDayIsWork, altPeriodOn, loadAltPeriods, setAltDays, type AltDayPeriod } from "../lib/work-calendar";
 import {
+  clearStaffHours,
+  loadScheduleOverrides,
+  normalizeHm,
+  pharmacyOverrideKey,
+  pickScheduleOverride,
+  saveStaffHours,
+  scheduleOvernight,
+  type ScheduleOverride,
+} from "../lib/employee-schedule-override";
+import {
   smenaAccessFor,
   logSmenaChange,
   listCoordAccess,
@@ -1962,6 +1972,27 @@ function altDaysView(periods: AltDayPeriod[] | undefined, today: string) {
   return { anchor: period.anchor, end: period.end, todayWork: days[0]!.work, days };
 }
 
+/** Bugun amaldagi shaxsiy vaqt, bo‘lmasa keyin boshlanadigani */
+function customHoursView(rules: ScheduleOverride[] | undefined, today: string) {
+  if (!rules?.length) return null;
+  const rule =
+    pickScheduleOverride(rules, today) ??
+    [...rules].filter((r) => r.validFrom > today).sort((a, b) => a.validFrom.localeCompare(b.validFrom))[0] ??
+    null;
+  if (!rule) return null;
+  return {
+    id: rule.id,
+    start: rule.startHm,
+    end: rule.endHm,
+    overnight: scheduleOvernight(rule.startHm, rule.endHm),
+    mode: rule.mode,
+    validFrom: rule.validFrom,
+    validTo: rule.validTo,
+    note: rule.note,
+    activeToday: rule.validFrom <= today,
+  };
+}
+
 /**
  * Smena almashtirish taxtasi: farmasevt va stajyorlar, asosiy smena,
  * bugungi smena va haftaning har bir kuni uchun reja.
@@ -1993,6 +2024,7 @@ router.get("/smena/shift-board", requireAuth, async (req: AuthRequest, res): Pro
     const today = todayTashkentYmd();
     const todayWd = isoWeekdayTashkent(today);
     const altPeriods = await loadAltPeriods(ids);
+    const hourRules = await loadScheduleOverrides(ids, today, addDaysYmd(today, 365));
 
     const staff = people.map((p) => {
       const rows = slotsByEmp.get(p.id) || [];
@@ -2033,6 +2065,7 @@ router.get("/smena/shift-board", requireAuth, async (req: AuthRequest, res): Pro
         week,
         otherRotations,
         altDays: altDaysView(altPeriods.get(p.id), today),
+        customHours: customHoursView(hourRules.get(p.id), today),
       };
     });
     staff.sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"));
@@ -2253,6 +2286,126 @@ router.post("/smena/shift-override", requireAuth, async (req: AuthRequest, res):
   } catch (err) {
     console.error("POST /smena/shift-override error:", err);
     res.status(500).json({ error: "Smena saqlanmadi" });
+  }
+});
+
+const HOURS_BACKDATE_DAYS = 7;
+
+/**
+ * Faqat shu xodim uchun shaxsiy kelish–ketish vaqti (doimiy yoki muddatli).
+ * Davomat, kechikish, jarima, tushuntirish xati va eslatmalar shu vaqtdan hisoblanadi.
+ */
+router.put("/smena/custom-hours", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const actor = await requireSmena(req, res, "shift");
+  if (!actor) return;
+  try {
+    const employeeId = Number(req.body?.employeeId);
+    if (!Number.isFinite(employeeId) || employeeId <= 0) {
+      res.status(400).json({ error: "Xodimni tanlang" });
+      return;
+    }
+    const target = await empById(employeeId);
+    if (!target) {
+      res.status(404).json({ error: "Xodim topilmadi" });
+      return;
+    }
+    if (denyOutOfScope(actor, target, res)) return;
+
+    const start = normalizeHm(String(req.body?.start || ""));
+    const end = normalizeHm(String(req.body?.end || ""));
+    if (!start || !end || start === end) {
+      res.status(400).json({ error: "Kelish va ketish vaqtini to‘g‘ri kiriting" });
+      return;
+    }
+    const isYmd = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+    const today = todayTashkentYmd();
+    const validFrom = isYmd(req.body?.validFrom) ? req.body.validFrom : today;
+    const validTo = isYmd(req.body?.validTo) ? req.body.validTo : null;
+    const minFrom = addDaysYmd(today, -HOURS_BACKDATE_DAYS);
+    if (validFrom < minFrom) {
+      res.status(400).json({ error: `Boshlanish sanasi ${ymdUz(minFrom)} dan oldin bo‘lmasin` });
+      return;
+    }
+    if (validTo && validTo < validFrom) {
+      res.status(400).json({ error: "Tugash sanasi boshlanishdan oldin bo‘lmasin" });
+      return;
+    }
+    const note = req.body?.note ? String(req.body.note).trim().slice(0, 160) : null;
+
+    await saveStaffHours({
+      employeeId,
+      shiftKey: pharmacyOverrideKey(start, end),
+      startHm: start,
+      endHm: end,
+      validFrom,
+      validTo,
+      note,
+      createdById: req.userId!,
+    });
+
+    const place = await placementOf(target);
+    const range = `${start}–${end}${scheduleOvernight(start, end) ? " (ertasi kun)" : ""}`;
+    const when = validTo ? `${ymdUz(validFrom)} — ${ymdUz(validTo)}` : `${ymdUz(validFrom)} dan doimiy`;
+    const text =
+      `Sizga shaxsiy ish vaqti belgilandi: kelish ${start}, ketish ${end} (${when}). ` +
+      `Davomat, kechikish va jarima shu vaqt bo‘yicha hisoblanadi. Filial o‘zgarmadi.`;
+
+    await logSmenaChange({
+      ...logBase(actor, target),
+      action: "custom_hours",
+      fromBranch: { id: place.branchId, label: place.branchLabel },
+      toBranch: { id: place.branchId, label: place.branchLabel },
+      fromShift: place.shiftKey,
+      toShift: place.shiftKey,
+      mode: validTo ? "period" : "permanent",
+      validFrom,
+      validTo,
+      note,
+      summary: `Shaxsiy vaqt: ${range}, ${when}`,
+    });
+    if (target.userId) {
+      await notifyUser({ userId: target.userId, text, type: "smena_hours", linkUrl: "/davomat-face" });
+    }
+    res.json({ ok: true, message: text });
+  } catch (err) {
+    console.error("PUT /smena/custom-hours error:", err);
+    res.status(500).json({ error: "Shaxsiy vaqt saqlanmadi" });
+  }
+});
+
+/** Shaxsiy vaqtni olib tashlash — xodim yana smenaning umumiy vaqtida ishlaydi */
+router.delete("/smena/custom-hours/:employeeId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const actor = await requireSmena(req, res, "shift");
+  if (!actor) return;
+  try {
+    const employeeId = Number(req.params.employeeId);
+    const target = Number.isFinite(employeeId) && employeeId > 0 ? await empById(employeeId) : null;
+    if (!target) {
+      res.status(404).json({ error: "Xodim topilmadi" });
+      return;
+    }
+    if (denyOutOfScope(actor, target, res)) return;
+    await clearStaffHours(employeeId);
+    const place = await placementOf(target);
+    const text = `Shaxsiy ish vaqtingiz bekor qilindi. Endi smenaning umumiy vaqtida ishlaysiz (${shiftNameUz(place.shiftKey)}).`;
+    await logSmenaChange({
+      ...logBase(actor, target),
+      action: "custom_hours",
+      fromBranch: { id: place.branchId, label: place.branchLabel },
+      toBranch: { id: place.branchId, label: place.branchLabel },
+      fromShift: place.shiftKey,
+      toShift: place.shiftKey,
+      mode: "cleared",
+      validFrom: todayTashkentYmd(),
+      summary: `Shaxsiy vaqt bekor qilindi — ${shiftNameUz(place.shiftKey)} umumiy vaqti`,
+    });
+    if (target.userId) {
+      await notifyUser({ userId: target.userId, text, type: "smena_hours", linkUrl: "/davomat-face" });
+    }
+    res.json({ ok: true, message: text });
+  } catch (err) {
+    console.error("DELETE /smena/custom-hours error:", err);
+    res.status(500).json({ error: "Shaxsiy vaqt bekor qilinmadi" });
   }
 });
 

@@ -34,6 +34,7 @@ export type SmenaLogAction =
   | "shift_change"
   | "shift_override"
   | "alt_days"
+  | "custom_hours"
   | "legacy_assign"
   | "legacy_day_rotation"
   | "legacy_day_rotation_cancel"
@@ -310,7 +311,7 @@ export async function querySmenaLog(f: {
   if (f.actorUserId) add("actor_user_id = ?", f.actorUserId);
   if (f.employeeId) add("employee_id = ?", f.employeeId);
   if (f.action === "rotation") where.push(`action IN ('rotation_create','rotation_cancel','legacy_assign','legacy_day_rotation','legacy_day_rotation_cancel')`);
-  else if (f.action === "shift") where.push(`action IN ('shift_change','shift_override','slot_shift_change','alt_days')`);
+  else if (f.action === "shift") where.push(`action IN ('shift_change','shift_override','slot_shift_change','alt_days','custom_hours')`);
   else if (f.action) add("action = ?", f.action);
   if (f.fromYmd) add("created_at >= (?::date AT TIME ZONE 'Asia/Tashkent')", f.fromYmd);
   if (f.toYmd) add("created_at < ((?::date + 1) AT TIME ZONE 'Asia/Tashkent')", f.toYmd);

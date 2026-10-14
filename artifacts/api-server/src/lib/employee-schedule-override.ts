@@ -162,6 +162,69 @@ export async function loadScheduleOverrides(
   return out;
 }
 
+/** Shaxsiy vaqt bo‘lsa — o‘sha jadval, aks holda standart */
+export function scheduleWithOverride(base: WorkSchedule, rule: ScheduleOverride | null | undefined): WorkSchedule {
+  return rule ? workScheduleFromOverride(rule, base.graceMinutes) : base;
+}
+
+export function hoursWithOverride(base: StaffHours, rule: ScheduleOverride | null | undefined): StaffHours {
+  return rule ? staffHoursFromOverride(rule, base.graceMinutes) : base;
+}
+
+/** Dorixona smenasi uchun engine kaliti: tunda tugasa 3, 20:00 dan keyin tugasa 2, aks holda 1 */
+export function pharmacyOverrideKey(startHm: string, endHm: string): ScheduleShiftKey {
+  if (scheduleOvernight(startHm, endHm)) return "three";
+  return hmToMinutes(endHm) >= 20 * 60 ? "two" : "one";
+}
+
+/** Doimiy shaxsiy vaqt avvalgisini almashtiradi; muddatli — ustiga qo‘shiladi */
+export async function saveStaffHours(opts: {
+  employeeId: number;
+  shiftKey: ScheduleShiftKey;
+  startHm: string;
+  endHm: string;
+  validFrom: string;
+  validTo: string | null;
+  note: string | null;
+  createdById: number;
+}): Promise<number | null> {
+  if (!opts.validTo) {
+    await db
+      .update(employeeScheduleOverridesTable)
+      .set({ active: false, updatedAt: new Date() })
+      .where(
+        and(
+          eq(employeeScheduleOverridesTable.employeeId, opts.employeeId),
+          eq(employeeScheduleOverridesTable.mode, "permanent"),
+          eq(employeeScheduleOverridesTable.active, true),
+        ),
+      );
+  }
+  const [saved] = await db
+    .insert(employeeScheduleOverridesTable)
+    .values({
+      employeeId: opts.employeeId,
+      mode: opts.validTo ? "period" : "permanent",
+      validFrom: opts.validFrom,
+      validTo: opts.validTo,
+      shiftKey: opts.shiftKey,
+      startHm: opts.startHm,
+      endHm: opts.endHm,
+      note: opts.note,
+      active: true,
+      createdById: opts.createdById,
+    })
+    .returning({ id: employeeScheduleOverridesTable.id });
+  return saved?.id ?? null;
+}
+
+export async function clearStaffHours(employeeId: number): Promise<void> {
+  await db
+    .update(employeeScheduleOverridesTable)
+    .set({ active: false, updatedAt: new Date() })
+    .where(and(eq(employeeScheduleOverridesTable.employeeId, employeeId), eq(employeeScheduleOverridesTable.active, true)));
+}
+
 export async function resolveScheduleOverride(
   employeeId: number,
   workDate: string,

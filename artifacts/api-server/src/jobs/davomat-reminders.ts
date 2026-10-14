@@ -22,6 +22,22 @@ import {
 import { getEffectiveShiftDefs, warnHmBefore } from "../lib/shift-schedule";
 import { isScheduledRestDay } from "../lib/ofis-weekend";
 import { loadWorkCalendar } from "../lib/work-calendar";
+import {
+  loadScheduleOverrides,
+  pickScheduleOverride,
+  scheduleWithOverride,
+  type ScheduleOverride,
+} from "../lib/employee-schedule-override";
+
+async function overridesForRows(rows: Array<{ empId: number; workDate: string }>): Promise<Map<number, ScheduleOverride[]>> {
+  if (!rows.length) return new Map();
+  const dates = rows.map((r) => r.workDate).sort();
+  return loadScheduleOverrides(
+    rows.map((r) => r.empId),
+    dates[0]!,
+    dates[dates.length - 1]!,
+  );
+}
 
 const FIVE_MIN_MS = 5 * 60 * 1000;
 /** Job 5 daqiqada bir — eslatma oynasi (~bir marta ushlash) */
@@ -133,6 +149,7 @@ export async function remindShiftStart15Min(): Promise<number> {
   const roles = await userRoleMap(linked.map((e) => e.userId || 0));
   const defs = await getEffectiveShiftDefs();
   await loadWorkCalendar();
+  const overrides = await overridesForRows(linked.map((e) => ({ empId: e.empId, workDate: ymd })));
   let sent = 0;
 
   for (const e of linked) {
@@ -153,7 +170,10 @@ export async function remindShiftStart15Min(): Promise<number> {
     const planType = await dayPlanShiftType(e.empId, ymd);
     const shiftType = planType || e.shiftType;
     const shiftLabel = planType ? null : e.shiftLabel;
-    const w = workScheduleForStaff(role, e.orgRole, shiftType, shiftLabel, defs);
+    const w = scheduleWithOverride(
+      workScheduleForStaff(role, e.orgRole, shiftType, shiftLabel, defs),
+      pickScheduleOverride(overrides.get(e.empId), ymd),
+    );
     const warnHm = warnHmBefore(w.start, START_WARN_BEFORE_MIN);
     const warnMin = hmToMinutes(warnHm);
     if (mins < warnMin || mins >= warnMin + REMIND_WINDOW_MIN) continue;
@@ -206,6 +226,7 @@ export async function remindCheckoutOneHourBefore(): Promise<number> {
 
   const roles = await userRoleMap(open.map((r) => r.userId || 0));
   const defs = await getEffectiveShiftDefs();
+  const overrides = await overridesForRows(open);
   let sent = 0;
 
   for (const r of open) {
@@ -214,7 +235,10 @@ export async function remindCheckoutOneHourBefore(): Promise<number> {
     const planType = await dayPlanShiftType(r.empId, r.workDate);
     const shiftType = planType || r.shiftType;
     const shiftLabel = planType ? null : r.shiftLabel;
-    const w = workScheduleForStaff(role, r.orgRole, shiftType, shiftLabel, defs);
+    const w = scheduleWithOverride(
+      workScheduleForStaff(role, r.orgRole, shiftType, shiftLabel, defs),
+      pickScheduleOverride(overrides.get(r.empId), r.workDate),
+    );
     const endAt = shiftEndAt(r.workDate, w.end, w.overnight);
     const warnAt = endAt.getTime() - END_WARN_BEFORE_MIN * 60_000;
     if (nowMs < warnAt || nowMs >= warnAt + REMIND_WINDOW_MIN * 60_000) continue;
@@ -295,6 +319,7 @@ export async function autoCloseMissedCheckoutSilent(): Promise<{ closed: number 
 
   const roles = await userRoleMap(open.map((r) => r.userId || 0));
   const defs = await getEffectiveShiftDefs();
+  const overrides = await overridesForRows(open);
   let closed = 0;
 
   for (const r of open) {
@@ -303,13 +328,14 @@ export async function autoCloseMissedCheckoutSilent(): Promise<{ closed: number 
     const planType = await dayPlanShiftType(r.empId, r.workDate);
     const shiftType = planType || r.shiftType;
     const shiftLabel = planType ? null : r.shiftLabel;
-    const w = workScheduleForStaff(role, r.orgRole, shiftType, shiftLabel, defs);
+    const ov = pickScheduleOverride(overrides.get(r.empId), r.workDate);
+    const w = scheduleWithOverride(workScheduleForStaff(role, r.orgRole, shiftType, shiftLabel, defs), ov);
     const deadlineOpts = {
       shiftKey: w.key,
       shiftKeys: w.keys,
       overnight: Boolean(w.overnight),
       warehouse: Boolean(w.warehouse),
-      shiftType,
+      shiftType: ov ? ov.shiftKey : shiftType,
       workDateYmd: r.workDate,
       endHm: w.end,
     };

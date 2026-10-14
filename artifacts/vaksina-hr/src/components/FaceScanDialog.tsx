@@ -324,7 +324,9 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         video.onloadedmetadata = () => {
           if (video.paused) void video.play().catch(() => undefined);
         };
-        // iOS: track «muted» bo‘lib qolsa yoki kadr kelmasa — preview qora; kamerani qayta ochamiz
+        // iOS: track «muted» bo‘lib qolsa yoki kadr kelmasa — preview qora.
+        // Avval oqimni videoga qayta ulaymiz (tez), yordam bermasa kamerani qayta ochamiz.
+        let reattached = false;
         const scheduleFrameCheck = (ms: number) => {
           if (frameWatch != null) window.clearTimeout(frameWatch);
           frameWatch = window.setTimeout(() => {
@@ -334,6 +336,14 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
             const noFrames = video.readyState < 2 || video.videoWidth < 8;
             const dead = !track || track.readyState !== "live" || track.muted;
             if (!noFrames && !dead) return;
+            if (!dead && !reattached) {
+              reattached = true;
+              video.srcObject = null;
+              video.srcObject = stream;
+              void video.play().catch(() => undefined);
+              scheduleFrameCheck(1500);
+              return;
+            }
             if (video.paused && !dead) void video.play().catch(() => undefined);
             if (autoReopenRef.current < 2) {
               autoReopenRef.current += 1;
@@ -343,7 +353,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
             }
           }, ms);
         };
-        scheduleFrameCheck(2500);
+        scheduleFrameCheck(1200);
         stream.getVideoTracks().forEach((track) => {
           track.addEventListener("mute", () => scheduleFrameCheck(1200));
         });

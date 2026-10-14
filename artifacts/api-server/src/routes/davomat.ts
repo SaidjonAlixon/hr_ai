@@ -262,13 +262,21 @@ function redactReportNotes<T extends { employees: Array<{ days: Array<{ notes?: 
   return report;
 }
 
+const TASHKENT_YMD_FMT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Tashkent",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+const TASHKENT_HM_FMT = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Tashkent",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
 function todayTashkent(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Tashkent",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+  return TASHKENT_YMD_FMT.format(new Date());
 }
 
 function addDays(ymd: string, delta: number): string {
@@ -303,12 +311,7 @@ function atTashkent(ymd: string, hm: string): Date {
 
 function formatHm(d: Date | null | undefined): string {
   if (!d) return "—";
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Tashkent",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(d);
+  return TASHKENT_HM_FMT.format(d);
 }
 
 function minutesBetween(a: Date, b: Date): number {

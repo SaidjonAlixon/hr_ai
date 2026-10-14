@@ -1119,47 +1119,71 @@ export default function DavomatFacePage() {
       pharmacyGateRef.current = false;
       return;
     }
-    setMethodsReady(false);
     pharmacyGateRef.current = false;
     let alive = true;
     let first = true;
+    const cacheKey = `vaksina-davomat-methods:${user?.id ?? 0}`;
+    const apply = (m: Awaited<ReturnType<typeof fetchDavomatMethods>>, initial: boolean) => {
+      const faceOk = m.face !== false && m.methods.includes("FACE_ID");
+      const qrOk = m.qr !== false && m.methods.includes("QR");
+      setPharmacyStaff(m.pharmacyStaff);
+      setOfficeStaff(Boolean(m.officeStaff) || (m.methods.includes("QR") && !m.pharmacyStaff && !m.adminQrAnywhere));
+      setAdminQrAnywhere(Boolean(m.adminQrAnywhere));
+      setCanManageQr(m.canManageQr);
+      setQrMethodAllowed(qrOk);
+      setFaceMethodAllowed(faceOk);
+      setSelectedMethod((cur) => {
+        if (cur === "FACE_ID" && faceOk) return cur;
+        if (cur === "QR" && qrOk) return cur;
+        if (cur === "FINGERPRINT" && m.finger) return cur;
+        if (faceOk) return "FACE_ID";
+        if (qrOk) return "QR";
+        return m.finger ? "FINGERPRINT" : cur;
+      });
+      const seq = fingerSeqRef.current;
+      if (m.finger) {
+        void fetchFingerprintStatus()
+          .then((s) => {
+            if (alive && fingerSeqRef.current === seq) setFingerStatus(s);
+          })
+          .catch(() => {
+            if (alive && initial && fingerSeqRef.current === seq) setFingerStatus(null);
+          });
+      } else if (fingerSeqRef.current === seq) {
+        setFingerStatus(null);
+      }
+    };
+
+    // Oxirgi ma’lum usullar bilan darhol ochamiz — server javobi fonda yangilaydi
+    let cached: Awaited<ReturnType<typeof fetchDavomatMethods>> | null = null;
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      cached = raw ? JSON.parse(raw) : null;
+    } catch {
+      cached = null;
+    }
+    if (cached && Array.isArray(cached.methods)) {
+      apply(cached, true);
+      setMethodsReady(true);
+    } else {
+      setMethodsReady(false);
+    }
+
     const load = () => {
       const initial = first;
       first = false;
       void fetchDavomatMethods()
         .then((m) => {
           if (!alive) return;
-          const faceOk = m.face !== false && m.methods.includes("FACE_ID");
-          const qrOk = m.qr !== false && m.methods.includes("QR");
-          setPharmacyStaff(m.pharmacyStaff);
-          setOfficeStaff(Boolean(m.officeStaff) || (m.methods.includes("QR") && !m.pharmacyStaff && !m.adminQrAnywhere));
-          setAdminQrAnywhere(Boolean(m.adminQrAnywhere));
-          setCanManageQr(m.canManageQr);
-          setQrMethodAllowed(qrOk);
-          setFaceMethodAllowed(faceOk);
-          setSelectedMethod((cur) => {
-            if (cur === "FACE_ID" && faceOk) return cur;
-            if (cur === "QR" && qrOk) return cur;
-            if (cur === "FINGERPRINT" && m.finger) return cur;
-            if (faceOk) return "FACE_ID";
-            if (qrOk) return "QR";
-            return m.finger ? "FINGERPRINT" : cur;
-          });
-          const seq = fingerSeqRef.current;
-          if (m.finger) {
-            void fetchFingerprintStatus()
-              .then((s) => {
-                if (alive && fingerSeqRef.current === seq) setFingerStatus(s);
-              })
-              .catch(() => {
-                if (alive && initial && fingerSeqRef.current === seq) setFingerStatus(null);
-              });
-          } else if (fingerSeqRef.current === seq) {
-            setFingerStatus(null);
+          apply(m, initial);
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify(m));
+          } catch {
+            /* ignore */
           }
         })
         .catch(() => {
-          if (!alive || !initial) return;
+          if (!alive || !initial || cached) return;
           setPharmacyStaff(false);
           setOfficeStaff(false);
           setAdminQrAnywhere(false);
@@ -1184,7 +1208,7 @@ export default function DavomatFacePage() {
       window.removeEventListener("focus", onVisible);
       window.clearInterval(poll);
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user?.id]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowTick(Date.now()), 1000);

@@ -1,7 +1,12 @@
 /** Face ID — faqat kamera orqali yuz vektori */
 
-const FACE_API_SRC = "https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js";
-const MODEL_URL = "https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights";
+/** O‘z serverimizda (HTTP/2, uzoq kesh); ochilmasa — CDN */
+const LOCAL_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/assets/face-api-0.22.2`;
+const FACE_API_SOURCES = [
+  `${LOCAL_BASE}/face-api.min.js`,
+  "https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js",
+];
+const MODEL_SOURCES = [LOCAL_BASE, "https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights"];
 
 type Point = { x: number; y: number };
 
@@ -94,16 +99,34 @@ export async function ensureFaceModels(): Promise<FaceApi> {
   if (modelsPromise) return modelsPromise;
 
   modelsPromise = (async () => {
-    await loadScript(FACE_API_SRC);
+    let scriptErr: unknown;
+    for (const src of FACE_API_SOURCES) {
+      try {
+        await loadScript(src);
+        break;
+      } catch (err) {
+        scriptErr = err;
+        document.querySelector(`script[data-face-api="1"]`)?.remove();
+      }
+    }
     const faceapi = window.faceapi;
-    if (!faceapi) throw new Error("Face ID moduli yuklanmadi");
+    if (!faceapi) throw scriptErr instanceof Error ? scriptErr : new Error("Face ID moduli yuklanmadi");
     if (!modelsReady) {
-      await Promise.all([
-        faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-        faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-        faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-      ]);
-      modelsReady = true;
+      let modelErr: unknown;
+      for (const uri of MODEL_SOURCES) {
+        try {
+          await Promise.all([
+            faceapi.nets.tinyFaceDetector.isLoaded ? null : faceapi.nets.tinyFaceDetector.loadFromUri(uri),
+            faceapi.nets.faceLandmark68Net.isLoaded ? null : faceapi.nets.faceLandmark68Net.loadFromUri(uri),
+            faceapi.nets.faceRecognitionNet.isLoaded ? null : faceapi.nets.faceRecognitionNet.loadFromUri(uri),
+          ]);
+          modelsReady = true;
+          break;
+        } catch (err) {
+          modelErr = err;
+        }
+      }
+      if (!modelsReady) throw modelErr instanceof Error ? modelErr : new Error("Face ID modeli yuklanmadi");
     }
     return faceapi;
   })().catch((err) => {

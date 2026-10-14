@@ -50,13 +50,12 @@ const MODE_PRIORITY: Record<WorkSlotMode, number> = {
   permanent: 4,
 };
 
+const WEEKDAY_FMT = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Tashkent", weekday: "short" });
+
 /** ISO: 1=Du … 7=Ya (Asia/Tashkent) */
 export function isoWeekdayTashkent(ymd: string): number {
   const noon = atTashkent(ymd, "12:00");
-  const wd = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Tashkent",
-    weekday: "short",
-  }).format(noon);
+  const wd = WEEKDAY_FMT.format(noon);
   const map: Record<string, number> = {
     Mon: 1,
     Tue: 2,

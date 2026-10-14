@@ -198,13 +198,21 @@ export function warehouseCheckoutDeadlineHm(
   overnight?: boolean,
 ): string {
   const at = warehouseCheckoutDeadlineAt(workDateYmd, endHm, overnight);
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Tashkent",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(at);
+  return HM_FMT.format(at);
 }
+
+const HM_FMT = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Tashkent",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+const YMD_FMT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Tashkent",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
 
 function pharmacyKeys(
   shiftType?: string | null,
@@ -335,12 +343,7 @@ function addYmdDays(ymd: string, days: number): string {
 }
 
 export function ymdInTashkent(d: Date): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Tashkent",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
+  return YMD_FMT.format(d);
 }
 
 /** workDate + endHm → smena tugash vaqti (Toshkent) */

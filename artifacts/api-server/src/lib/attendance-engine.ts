@@ -225,13 +225,16 @@ export function formatDurationUz(mins: number): string {
   return `${m} daqiqa`;
 }
 
+/** Intl formatlagichni yaratish qimmat — hisobotda har katakda chaqiriladi, bir marta yaratamiz */
+let wallFmt: Intl.DateTimeFormat | null = null;
+
 /** YYYY-MM-DD + HH:mm → Date in Asia/Tashkent wall time */
 export function atTashkent(ymd: string, hm: string): Date {
   const [y, mo, d] = ymd.split("-").map(Number);
   const [hh, mm] = hm.split(":").map(Number);
   const asUtc = Date.UTC(y, (mo || 1) - 1, d || 1, hh || 0, mm || 0, 0);
   const probe = new Date(asUtc);
-  const parts = new Intl.DateTimeFormat("en-GB", {
+  wallFmt ??= new Intl.DateTimeFormat("en-GB", {
     timeZone: TZ,
     year: "numeric",
     month: "2-digit",
@@ -239,7 +242,8 @@ export function atTashkent(ymd: string, hm: string): Date {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-  }).formatToParts(probe);
+  });
+  const parts = wallFmt.formatToParts(probe);
   const get = (t: string) => Number(parts.find((p) => p.type === t)?.value || 0);
   const localAsUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"));
   const offset = localAsUtc - asUtc;

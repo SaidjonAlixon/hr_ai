@@ -40,6 +40,8 @@ import { renderExplanationLetterPdf } from "../lib/explanation-letter-pdf";
 import { buildExplanationReport, reportSchedule, sendExplanationReport, sendOriginalLetterPdfs } from "../lib/explanation-letter-report";
 import { freshDisciplineScan, runDisciplineScan, todayTashkent } from "../lib/discipline";
 import { coordinatorsFor } from "../lib/davomat-shift-report";
+import { loadFilialBranches } from "../lib/filial-bot-data";
+import { displayBranchName } from "../lib/geo-location";
 import { isJarimaEnabled } from "../lib/jarima-switch";
 
 const router: IRouter = Router();
@@ -76,6 +78,39 @@ async function sendLetterPdf(req: Request, res: Response, l: ExplanationLetterRo
 }
 
 type CoordinatorContact = { name: string; phone: string | null };
+type LetterContacts = { employeePhone: string | null; branchPhone: string | null; branchName: string | null };
+
+/** letterId → xodimning o‘z telefoni va filialga biriktirilgan telefon (branch_contacts.primary_phone) */
+async function letterContacts(items: ExplanationLetterRow[]): Promise<Map<number, LetterContacts>> {
+  const out = new Map<number, LetterContacts>();
+  if (!items.length) return out;
+  const userIds = [...new Set(items.map((l) => l.userId))];
+  const [{ rows: users }, { rows: emps }, branches] = await Promise.all([
+    pool.query(`SELECT id, phone FROM users WHERE id = ANY($1::int[])`, [userIds]),
+    pool.query(
+      `SELECT DISTINCT ON (user_id) user_id, id, org_role, assigned_branch_id, reports_to_id, location
+         FROM employees WHERE user_id = ANY($1::int[]) ORDER BY user_id, id DESC`,
+      [userIds],
+    ),
+    loadFilialBranches(),
+  ]);
+  const phoneOf = new Map(users.map((r) => [Number(r.id), (String(r.phone ?? "").trim() || null) as string | null]));
+  const empOf = new Map(emps.map((r) => [Number(r.user_id), r]));
+  const byId = new Map(branches.map((b) => [b.id, b]));
+  const byName = new Map(branches.map((b) => [b.name.trim().toLowerCase(), b]));
+  for (const l of items) {
+    const e = empOf.get(l.userId);
+    const branchId = e ? Number(e.assigned_branch_id || (e.org_role === "manager" ? e.id : e.reports_to_id) || 0) : 0;
+    const locName = (displayBranchName(e?.location) || String(e?.location ?? "").split("|")[0] || "").trim().toLowerCase();
+    const card = (branchId && byId.get(branchId)) || (locName && byName.get(locName)) || null;
+    out.set(l.id, {
+      employeePhone: phoneOf.get(l.userId) ?? null,
+      branchPhone: card?.primaryPhone ?? null,
+      branchName: card?.name ?? null,
+    });
+  }
+  return out;
+}
 
 /** letterId → xodimning koordinatori (rahbarlik zanjiri bo‘yicha) va telefoni */
 async function letterCoordinators(items: ExplanationLetterRow[]): Promise<Map<number, CoordinatorContact>> {
@@ -109,24 +144,31 @@ async function letterCoordinators(items: ExplanationLetterRow[]): Promise<Map<nu
   return out;
 }
 
-function payload(l: ExplanationLetterRow, req: Request, settings: LetterSettings, coordinator: CoordinatorContact | null) {
+function payload(
+  l: ExplanationLetterRow,
+  req: Request,
+  settings: LetterSettings,
+  coordinator: CoordinatorContact | null,
+  contacts: LetterContacts | null,
+) {
   const { verifyToken: _t, ...rest } = l;
   return {
     ...rest,
     coordinator,
+    contacts,
     verifyToken: l.status === "pending" ? null : l.verifyToken,
     content: letterContent(l, originOf(req), settings),
   };
 }
 
 async function payloads(items: ExplanationLetterRow[], req: Request) {
-  const [settings, coords] = await Promise.all([getLetterSettings(), letterCoordinators(items)]);
-  return items.map((l) => payload(l, req, settings, coords.get(l.id) ?? null));
+  const [settings, coords, contacts] = await Promise.all([getLetterSettings(), letterCoordinators(items), letterContacts(items)]);
+  return items.map((l) => payload(l, req, settings, coords.get(l.id) ?? null, contacts.get(l.id) ?? null));
 }
 
 async function one(l: ExplanationLetterRow, req: Request) {
-  const [settings, coords] = await Promise.all([getLetterSettings(), letterCoordinators([l])]);
-  return payload(l, req, settings, coords.get(l.id) ?? null);
+  const [settings, coords, contacts] = await Promise.all([getLetterSettings(), letterCoordinators([l]), letterContacts([l])]);
+  return payload(l, req, settings, coords.get(l.id) ?? null, contacts.get(l.id) ?? null);
 }
 
 async function userName(id: number): Promise<string> {

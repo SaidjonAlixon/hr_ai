@@ -534,6 +534,10 @@ function InfoRows({ l }: { l: ExplanationLetter }) {
     ["Chora", l.content.penalty],
   ];
   if (l.finalConsentAt) rows.push(["Ishdan bo‘shatishga rozilik", fmtLetterStamp(l.finalConsentAt)]);
+  const phones: [string, string | null | undefined][] = [
+    ["Xodim telefoni", l.contacts?.employeePhone],
+    ["Filial telefoni", l.contacts?.branchPhone],
+  ];
   return (
     <div className="space-y-3">
       <dl className="divide-y divide-slate-100 rounded-2xl border border-slate-200 text-xs dark:divide-white/5 dark:border-white/10">
@@ -541,6 +545,23 @@ function InfoRows({ l }: { l: ExplanationLetter }) {
           <div key={k} className="flex justify-between gap-3 px-3 py-2">
             <dt className="shrink-0 text-slate-500">{k}</dt>
             <dd className="text-right font-semibold text-slate-800 dark:text-slate-100">{v}</dd>
+          </div>
+        ))}
+        {phones.map(([k, v]) => (
+          <div key={k} className="flex items-center justify-between gap-3 px-3 py-1.5">
+            <dt className="shrink-0 text-slate-500">{k}</dt>
+            <dd className="text-right">
+              {v ? (
+                <a
+                  href={`tel:${v.replace(/[^\d+]/g, "")}`}
+                  className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-1 font-bold text-white hover:bg-emerald-700"
+                >
+                  <Phone className="h-3.5 w-3.5" /> {formatUzPhoneDashed(v)}
+                </a>
+              ) : (
+                <span className="font-medium text-slate-400">Kiritilmagan</span>
+              )}
+            </dd>
           </div>
         ))}
       </dl>

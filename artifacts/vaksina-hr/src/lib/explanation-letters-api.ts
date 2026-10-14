@@ -111,6 +111,7 @@ export type ExplanationLetter = {
   amount: number;
   phone: string | null;
   coordinator?: { name: string; phone: string | null } | null;
+  contacts?: { employeePhone: string | null; branchPhone: string | null; branchName: string | null } | null;
   status: LetterStatus;
   reasonCode: string | null;
   reasonText: string | null;

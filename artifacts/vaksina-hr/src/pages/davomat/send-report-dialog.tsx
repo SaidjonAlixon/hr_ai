@@ -24,6 +24,7 @@ import {
   type SendReportOptions,
 } from "../../lib/davomat-api";
 import { cn } from "../../lib/utils";
+import { ScheduledReports } from "./scheduled-reports";
 
 const LISTS: { key: ReportListKind; label: string; hint: string; tone: string }[] = [
   { key: "absent", label: "Kelmaganlar", hint: "bugun kelmagan", tone: "text-rose-600" },
@@ -356,6 +357,8 @@ export function SendReportDialog({ open, onOpenChange }: { open: boolean; onOpen
               </p>
             ) : null}
           </div>
+
+          <ScheduledReports open={open} shifts={shiftOptions} groupReady={!!options?.group} />
 
           <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
             <div className="flex items-center justify-between gap-3">

@@ -163,8 +163,129 @@ export async function saveAutoReportConfig(
   return getAutoReportConfig();
 }
 
+// ---------------------------------------------------------------- belgilangan soatlar (guruhga)
+
+export type ScheduledRun = { hm: string; buckets: ShiftBucket[] };
+
+export type ScheduleConfig = {
+  enabled: boolean;
+  runs: ScheduledRun[];
+  lists: ReportListKind[];
+  sentToday: string[];
+  updatedBy: string | null;
+};
+
+/** 1-smena va ertalab boshlanadiganlar — 13:00, 2-smena va unga bog‘liqlar — 20:00 */
+const DEFAULT_RUNS: ScheduledRun[] = [
+  { hm: "13:00", buckets: ["one", "orta", "12"] },
+  { hm: "20:00", buckets: ["two", "23"] },
+];
+const SCHEDULE_LISTS: ReportListKind[] = ["absent", "late"];
+/** Server qayta ishga tushsa ham shu daqiqalar ichida yetkaziladi */
+const CATCH_UP_MIN = 20;
+
+let scheduleReady: Promise<void> | null = null;
+
+function ensureScheduleSchema(): Promise<void> {
+  if (!scheduleReady) {
+    scheduleReady = pool
+      .query(`
+CREATE TABLE IF NOT EXISTS davomat_auto_schedule (
+  id INTEGER PRIMARY KEY DEFAULT 1,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  runs JSONB NOT NULL DEFAULT '[]'::jsonb,
+  updated_by TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS davomat_auto_schedule_sent (
+  day TEXT NOT NULL,
+  hm TEXT NOT NULL,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (day, hm)
+);`)
+      .then(() => undefined)
+      .catch((err) => {
+        scheduleReady = null;
+        throw err;
+      });
+  }
+  return scheduleReady;
+}
+
+function normalizeRuns(raw: unknown): ScheduledRun[] {
+  const runs = (Array.isArray(raw) ? raw : [])
+    .map((r) => {
+      const o = (r && typeof r === "object" ? r : {}) as Record<string, unknown>;
+      return { hm: String(o.hm || ""), buckets: parseShiftBuckets(o.buckets) };
+    })
+    .filter((r) => HM_RE.test(r.hm) && r.buckets.length)
+    .slice(0, 6);
+  return runs.sort((a, b) => toMin(a.hm) - toMin(b.hm));
+}
+
+export async function getScheduleConfig(): Promise<ScheduleConfig> {
+  await ensureScheduleSchema();
+  const now = tashkentNow();
+  const [{ rows }, sent] = await Promise.all([
+    pool.query(`SELECT enabled, runs, updated_by FROM davomat_auto_schedule WHERE id = 1`),
+    pool.query(`SELECT hm FROM davomat_auto_schedule_sent WHERE day = $1 ORDER BY hm`, [now.ymd]),
+  ]);
+  const r = rows[0];
+  const runs = r ? normalizeRuns(r.runs) : [];
+  return {
+    enabled: r ? Boolean(r.enabled) : true,
+    runs: runs.length ? runs : DEFAULT_RUNS,
+    lists: SCHEDULE_LISTS,
+    sentToday: sent.rows.map((x) => String(x.hm)),
+    updatedBy: r?.updated_by ?? null,
+  };
+}
+
+export async function saveScheduleConfig(input: { enabled: unknown; runs: unknown }, actor: string): Promise<ScheduleConfig> {
+  await ensureScheduleSchema();
+  const runs = normalizeRuns(input.runs);
+  if (!runs.length) throw new Error("Kamida bitta vaqt va smena tanlang");
+  if (new Set(runs.map((r) => r.hm)).size !== runs.length) throw new Error("Bir xil vaqt ikki marta kiritilgan");
+  await pool.query(
+    `INSERT INTO davomat_auto_schedule (id, enabled, runs, updated_by, updated_at)
+     VALUES (1, $1, $2::jsonb, $3, NOW())
+     ON CONFLICT (id) DO UPDATE SET enabled = EXCLUDED.enabled, runs = EXCLUDED.runs,
+       updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+    [Boolean(input.enabled), JSON.stringify(runs), actor],
+  );
+  logger.info({ enabled: Boolean(input.enabled), runs, actor }, "Davomat belgilangan soatli hisobot sozlandi");
+  return getScheduleConfig();
+}
+
+async function scheduleTick(): Promise<void> {
+  const cfg = await getScheduleConfig();
+  if (!cfg.enabled) return;
+  const now = tashkentNow();
+  const nowMin = now.hour * 60 + now.minute;
+  for (const run of cfg.runs) {
+    const at = toMin(run.hm);
+    if (nowMin < at || nowMin > at + CATCH_UP_MIN) continue;
+    const { rowCount } = await pool.query(
+      `INSERT INTO davomat_auto_schedule_sent (day, hm) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [now.ymd, run.hm],
+    );
+    if (!rowCount) continue;
+    const result = await sendCoordinatorReportsNow({
+      mode: "coordinators",
+      lists: SCHEDULE_LISTS,
+      coordinatorIds: [],
+      buckets: run.buckets,
+      toPersonal: false,
+      toGroup: true,
+      actorName: `Avtomatik (${run.hm})`,
+    });
+    logger.info({ hm: run.hm, buckets: run.buckets, ...result }, "Davomat belgilangan soatli hisobot guruhga yuborildi");
+  }
+}
+
 /** Har daqiqada: joriy slot hali yuborilmagan bo‘lsa — bitta jarayon band qilib yuboradi */
 export async function autoReportTick(): Promise<void> {
+  await scheduleTick().catch((err) => logger.error({ err }, "Davomat belgilangan soatli hisobot"));
   const cfg = await getAutoReportConfig();
   if (!cfg.enabled) return;
   const now = tashkentNow();

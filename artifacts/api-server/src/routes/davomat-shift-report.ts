@@ -3,7 +3,12 @@ import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { canViewDavomat, isHrManager } from "../lib/roles";
 import { pool } from "@workspace/db";
 import { PHARMACY_SHIFTS, parseShiftBuckets, sendCoordinatorReportsNow } from "../lib/davomat-coordinator-send";
-import { getAutoReportConfig, saveAutoReportConfig } from "../lib/davomat-auto-report";
+import {
+  getAutoReportConfig,
+  getScheduleConfig,
+  saveAutoReportConfig,
+  saveScheduleConfig,
+} from "../lib/davomat-auto-report";
 import {
   buildCoordinatorShiftReport,
   dateLabelUz,
@@ -169,6 +174,34 @@ router.put("/davomat/auto-report", requireAuth, async (req: AuthRequest, res): P
         String(rows[0]?.full_name || "Admin"),
       ),
     );
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message || "Saqlanmadi" });
+  }
+});
+
+/** Belgilangan soatlarda guruhga (masalan 13:00 — 1-smena, 20:00 — 2-smena) */
+router.get("/davomat/auto-schedule", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!isHrManager(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin va HR" });
+    return;
+  }
+  try {
+    res.json(await getScheduleConfig());
+  } catch (err) {
+    req.log?.error({ err }, "Belgilangan soatli hisobot sozlamasi");
+    res.status(500).json({ error: "Sozlama yuklanmadi" });
+  }
+});
+
+router.put("/davomat/auto-schedule", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!isHrManager(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin va HR" });
+    return;
+  }
+  const body = (req.body || {}) as Record<string, unknown>;
+  try {
+    const { rows } = await pool.query(`SELECT full_name FROM users WHERE id = $1`, [req.userId]);
+    res.json(await saveScheduleConfig({ enabled: body.enabled, runs: body.runs }, String(rows[0]?.full_name || "Admin")));
   } catch (err) {
     res.status(400).json({ error: (err as Error).message || "Saqlanmadi" });
   }

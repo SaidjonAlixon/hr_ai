@@ -72,6 +72,7 @@ import { fetchSmenaAccess } from '@/lib/smena-api';
 import { useStaffNeeds } from '@/lib/staff-needs-api';
 import { useOpsDash } from '@/lib/ops-dept-api';
 import { cn } from '@/lib/utils';
+import { prefetchRoute, prefetchRoutesWhenIdle } from '@/lib/route-prefetch';
 import { fetchMyMobileAttendance } from '@/lib/mobile-attendance-api';
 import { MobileGpsBackgroundTracker } from '@/components/davomat/MobileGpsBackgroundTracker';
 import { DavomatAttendanceBanner } from '@/components/DavomatAttendanceBanner';
@@ -360,6 +361,12 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   }
   if (path.startsWith('/candidates')) return '/candidates';
 
+  return null;
+}
+
+function NavPrefetcher({ paths }: { paths: string[] }) {
+  const key = paths.join('|');
+  useEffect(() => prefetchRoutesWhenIdle(key.split('|')), [key]);
   return null;
 }
 
@@ -2031,6 +2038,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         <div
           role="link"
           onClick={opts.onNavigate}
+          onMouseEnter={() => prefetchRoute(item.path)}
+          onTouchStart={() => prefetchRoute(item.path)}
+          onFocus={() => prefetchRoute(item.path)}
           className={cn(className, 'cursor-pointer')}
         >
           {body}
@@ -2178,6 +2188,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   return (
     <div className="flex h-[100dvh] bg-background overflow-hidden">
+      <NavPrefetcher paths={navItems.map((i) => i.path)} />
       {/* Mobil: fon (overlay) */}
       {mobileOpen ? (
         <button

@@ -1132,6 +1132,35 @@ export async function saveAutoReportConfig(params: {
   return body as AutoReportConfig;
 }
 
+export type ScheduledRun = { hm: string; buckets: string[] };
+
+export type ScheduleConfig = {
+  enabled: boolean;
+  runs: ScheduledRun[];
+  lists: ReportListKind[];
+  sentToday: string[];
+  updatedBy: string | null;
+};
+
+export async function fetchScheduleConfig(): Promise<ScheduleConfig> {
+  const res = await fetch("/api/davomat/auto-schedule", { credentials: "include" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((body as { error?: string }).error || `Sozlama yuklanmadi (${res.status})`);
+  return body as ScheduleConfig;
+}
+
+export async function saveScheduleConfig(params: { enabled: boolean; runs: ScheduledRun[] }): Promise<ScheduleConfig> {
+  const res = await fetch("/api/davomat/auto-schedule", {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((body as { error?: string }).error || `Saqlanmadi (${res.status})`);
+  return body as ScheduleConfig;
+}
+
 export async function fetchSendReportOptions(): Promise<SendReportOptions> {
   const res = await fetch("/api/davomat/send-report-options", { credentials: "include" });
   const body = await res.json().catch(() => ({}));

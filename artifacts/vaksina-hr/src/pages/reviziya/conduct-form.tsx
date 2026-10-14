@@ -436,8 +436,6 @@ export function ConductDialog({
   if (form.shortageFound === "yes" && shortage <= 0) missing.push({ section: "kamomad", label: "Kamomad summasi" });
   if (form.shortageFound === "yes" && form.collectStatus === "partial" && collectedRaw <= 0)
     missing.push({ section: "kamomad", label: "Undirilgan summa" });
-  if (!form.actUrl) missing.push({ section: "hujjat", label: "Tekshiruv akti (fayl)" });
-  if (collected > 0 && !form.receiptUrl) missing.push({ section: "hujjat", label: "Undirish kvitansiyasi (fayl)" });
   if (!hasResponsible) missing.push({ section: "masul", label: "Mas’ul shaxs" });
   const missingSections = new Set(showMissing ? missing.map((m) => m.section) : []);
 
@@ -826,7 +824,7 @@ export function ConductDialog({
                 <ol className="mt-4 grid gap-2 sm:grid-cols-3">
                   {[
                     ["1", "Ruxsat berasiz", "Filial, sana va xodim — shu yetarli"],
-                    ["2", `${handOffName || "Xodim"} to‘ldiradi`, "Kamomad, akt, kvitansiya, mas’ul — majburiy"],
+                    ["2", `${handOffName || "Xodim"} to‘ldiradi`, "Kamomad va mas’ul — majburiy, akt va kvitansiya — ixtiyoriy"],
                     ["3", "Siz tasdiqlaysiz", "Yoki sababini yozib rad etasiz"],
                   ].map(([n, t, d]) => (
                     <li key={n} className="rounded-xl bg-white/80 px-3 py-2.5 ring-1 ring-violet-100 dark:bg-white/5 dark:ring-white/10">
@@ -951,7 +949,7 @@ export function ConductDialog({
             </section>
 
             <section id="rev-hujjat" className={cn("mb-4 rounded-2xl border border-violet-100 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#101a2e]", sectionRing("hujjat"))}>
-              <SectionHead icon={FileText} tone="text-violet-600 bg-violet-50" title="Hujjatlar" subtitle="Akt va kvitansiya" />
+              <SectionHead icon={FileText} tone="text-violet-600 bg-violet-50" title="Hujjatlar" subtitle="Akt va kvitansiya — ixtiyoriy" />
               <div className="mt-4 space-y-3">
                 <DropSlot
                   label="Tekshiruv akti"
@@ -1367,7 +1365,7 @@ function StateBanner({
                 {meta.createdByName ? `${meta.createdByName} sizga topshirdi` : "Reviziya sizga topshirildi"}
               </p>
               <p className="mt-0.5">
-                Barcha joylarni to‘ldiring: kamomad, akt fayli, kerak bo‘lsa kvitansiya va mas’ul shaxs. Keyin «Tasdiqlashga yuborish»ni bosing — bo‘lim boshlig‘i tasdiqlaydi.
+                Kamomad va mas’ul shaxsni to‘ldiring (akt va kvitansiya ixtiyoriy). Keyin «Tasdiqlashga yuborish»ni bosing — bo‘lim boshlig‘i tasdiqlaydi.
               </p>
             </div>
           </div>

@@ -1686,9 +1686,7 @@ router.post("/reviziya/visits/:id/complete", requireAuth, async (req: AuthReques
   const needsReview = !canReviewReviziya(req.userRole);
   if (needsReview) {
     const missing: string[] = [];
-    if (!actUrl) missing.push("tekshiruv akti fayli");
     if (!responsibleName) missing.push("mas’ul shaxs");
-    if (collected > 0 && !(req.body?.receiptUrl || row.receiptUrl)) missing.push("undirish kvitansiyasi");
     if (missing.length) {
       res.status(400).json({ error: `To‘ldirilmagan: ${missing.join(", ")}` });
       return;

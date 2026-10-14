@@ -6,7 +6,7 @@ const KB_FILES = ["PLATFORM.md", "docs/FACE-ID-IMPLEMENTATION.md", "TELEGRAM.md"
 /** Qo‘shimcha aniq faktlar (hujjatda yangilanmagan bo‘lishi mumkin) */
 const LIVE_FACTS = `
 ## Hozirgi texnik faktlar (kod holati)
-- Filial davomat / Face ID geofence: **70 metr**
+- Filial davomat / Face ID geofence: **30 metr**
 - Ofis geofence: **100 metr**
 - Checklist / audit geofence: **70 metr**
 - Face ID: brauzerda face-api.js embedding + serverda lokal match; OpenAI ixtiyoriy

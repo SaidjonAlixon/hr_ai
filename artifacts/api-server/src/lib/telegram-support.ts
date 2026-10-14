@@ -234,7 +234,7 @@ const ANSWERS = {
   gps: () =>
     compose(
       [
-        "📍 <b>Joylashuv (GPS):</b> davomat uchun GPS yoqilgan va filial yonida (70 m, ofisda 100 m) bo‘lishingiz kerak.",
+        "📍 <b>Joylashuv (GPS):</b> davomat uchun GPS yoqilgan va filial yonida (30 m, ofisda 100 m) bo‘lishingiz kerak.",
         "• iPhone: Sozlamalar → Maxfiylik → Joylashuv xizmatlari → yoqing; Safari (yoki Telegram) → «Ilovadan foydalanganda».",
         "• Android: GPS ni yoqing; Chrome → manzil satridagi qulf belgisi → Ruxsatlar → Joylashuv → Ruxsat.",
         "Keyin 10–20 soniya kuting va sahifani yangilang. «Hududdan tashqarida» chiqsa — binoga yaqinroq keling.",

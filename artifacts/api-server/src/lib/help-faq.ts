@@ -49,7 +49,7 @@ export const HELP_FAQS: HelpFaq[] = [
     titleRu: "Посещаемость GPS / территория",
     keywords: ["davomat", "gps", "hudud", "geofence", "uzoq", "filial", "70", "keldim", "ketdim", "outside", "посещаем", "зона"],
     answerUz:
-      "Davomat Face ID + GPS bilan. Filial atrofida 70 m, ofisda 100 m ichida bo‘lishingiz kerak. Lokatsiya ruxsatini yoqing, «Yashil hudud» paydo bo‘lgach Keldim/Ketdim qiling.",
+      "Davomat Face ID + GPS bilan. Filial atrofida 30 m, ofisda 100 m ichida bo‘lishingiz kerak. Lokatsiya ruxsatini yoqing, «Yashil hudud» paydo bo‘lgach Keldim/Ketdim qiling.",
     answerRu:
       "Посещаемость через Face ID + GPS. Нужно быть в пределах 70 м от филиала или 100 м от офиса. Включите геолокацию; когда появится «Зелёная территория», отметьте Пришёл/Ушёл.",
   },

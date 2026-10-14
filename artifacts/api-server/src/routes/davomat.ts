@@ -201,7 +201,7 @@ const WORK_START = "09:00";
 const WORK_END = "18:00";
 const TZ_OFFSET = "+05:00"; // Asia/Tashkent
 /** Filial davomati Face ID radius (metr) — barcha xodimlar / farmasevtlar */
-export const DAVOMAT_GEOFENCE_METERS = 70;
+export const DAVOMAT_GEOFENCE_METERS = 30;
 /** Asosiy ofis — yashil zona 100 m */
 export const DAVOMAT_OFFICE_GEOFENCE_METERS = 100;
 /** Belgilangan ish joyi: 41°13'09.3"N 69°16'22.9"E */

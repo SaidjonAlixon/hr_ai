@@ -19,14 +19,12 @@ import { canManageDarsliklar, darslikTrackForRole } from "../lib/roles";
 import { resolveUserBranches } from "../lib/employee-branch";
 import { haversineMeters } from "../lib/mobile-attendance";
 import { notifyByRoles, notifyUser } from "../lib/notify";
-import {
-  DAVOMAT_GEOFENCE_METERS,
-  DAVOMAT_OFFICE_GEOFENCE_METERS,
-  DAVOMAT_SITE_LAT,
-  DAVOMAT_SITE_LNG,
-} from "./davomat";
+import { DAVOMAT_OFFICE_GEOFENCE_METERS, DAVOMAT_SITE_LAT, DAVOMAT_SITE_LNG } from "./davomat";
 
 const router: IRouter = Router();
+
+/** Atestatsiya testi filial ichida ochiladi (davomat radiusidan alohida) */
+const ATESTATSIYA_BRANCH_METERS = 70;
 
 const TRACKS = ["stajyor", "farmasevt", "mudir"] as const;
 type Track = (typeof TRACKS)[number];
@@ -315,13 +313,13 @@ async function checkLocation(exam: Exam, userId: number, body: Record<string, un
     };
   }
   const d = Math.round(haversineMeters(lat, lng, br.lat, br.lng));
-  if (d > DAVOMAT_GEOFENCE_METERS + GEO_SLACK_M) {
+  if (d > ATESTATSIYA_BRANCH_METERS + GEO_SLACK_M) {
     return {
       ok: false,
       code: "outside_branch",
-      error: `Test faqat o‘z filialingiz «${br.label || "Filial"}» ichida ochiladi. Siz ${d} m uzoqdasiz (ruxsat ${DAVOMAT_GEOFENCE_METERS} m).`,
+      error: `Test faqat o‘z filialingiz «${br.label || "Filial"}» ichida ochiladi. Siz ${d} m uzoqdasiz (ruxsat ${ATESTATSIYA_BRANCH_METERS} m).`,
       distanceM: d,
-      allowedM: DAVOMAT_GEOFENCE_METERS,
+      allowedM: ATESTATSIYA_BRANCH_METERS,
     };
   }
   return { ok: true, label: br.label || "Filial", branchId: br.branchId, distanceM: d };

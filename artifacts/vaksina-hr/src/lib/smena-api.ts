@@ -203,6 +203,13 @@ export type ShiftBoardStaff = {
   overrides: Array<{ id: number; shiftKey: SlotShiftKey; weekdays: number[] }>;
   week: Array<{ weekday: number; shiftKey: SlotShiftKey; override: boolean }>;
   otherRotations: number;
+  /** Kunora (cherez den): bugun amaldagi yoki keyin boshlanadigan davr */
+  altDays: {
+    anchor: string;
+    end: string | null;
+    todayWork: boolean | null;
+    days: Array<{ date: string; work: boolean | null }>;
+  } | null;
 };
 
 export type ShiftBoard = {
@@ -219,6 +226,14 @@ export function fetchShiftBoard() {
 /** shiftKey = null — tanlangan kunlar asosiy smenaga qaytadi */
 export function saveShiftOverride(body: { employeeId: number; weekdays: number[]; shiftKey: SlotShiftKey | null }) {
   return apiJson<{ ok: boolean; message: string; cleared: boolean }>("/smena/shift-override", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** anchorDate — birinchi ish kuni; null — kunorani fromDate (standart bugun) dan bekor qilish */
+export function saveAltDays(body: { employeeId: number; anchorDate: string | null; fromDate?: string }) {
+  return apiJson<{ ok: boolean; message: string; cleared: boolean }>("/smena/alt-days", {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -357,6 +372,7 @@ export type SmenaLogAction =
   | "slot_shift_change"
   | "shift_change"
   | "shift_override"
+  | "alt_days"
   | "legacy_assign"
   | "legacy_day_rotation"
   | "legacy_day_rotation_cancel"

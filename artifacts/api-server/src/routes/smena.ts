@@ -27,6 +27,7 @@ import {
   type WorkSlotRow,
 } from "../lib/work-slots";
 import { addDaysYmd } from "../lib/attendance-engine";
+import { altDayIsWork, altPeriodOn, loadAltPeriods, setAltDays, type AltDayPeriod } from "../lib/work-calendar";
 import {
   smenaAccessFor,
   logSmenaChange,
@@ -1945,6 +1946,22 @@ function homeBranchIdFor(
   );
 }
 
+const ALT_PREVIEW_DAYS = 14;
+
+/** Bugun amaldagi yoki keyingi boshlanadigan kunora davri + 14 kunlik reja */
+function altDaysView(periods: AltDayPeriod[] | undefined, today: string) {
+  if (!periods?.length) return null;
+  const period =
+    altPeriodOn(periods, today) ?? periods.find((p) => p.anchor > today && (!p.end || p.end >= p.anchor)) ?? null;
+  if (!period) return null;
+  const days = Array.from({ length: ALT_PREVIEW_DAYS }, (_, i) => {
+    const ymd = addDaysYmd(today, i);
+    const on = altPeriodOn(periods, ymd);
+    return { date: ymd, work: on ? altDayIsWork(on.anchor, ymd) : null };
+  });
+  return { anchor: period.anchor, end: period.end, todayWork: days[0]!.work, days };
+}
+
 /**
  * Smena almashtirish taxtasi: farmasevt va stajyorlar, asosiy smena,
  * bugungi smena va haftaning har bir kuni uchun reja.
@@ -1975,6 +1992,7 @@ router.get("/smena/shift-board", requireAuth, async (req: AuthRequest, res): Pro
 
     const today = todayTashkentYmd();
     const todayWd = isoWeekdayTashkent(today);
+    const altPeriods = await loadAltPeriods(ids);
 
     const staff = people.map((p) => {
       const rows = slotsByEmp.get(p.id) || [];
@@ -2014,6 +2032,7 @@ router.get("/smena/shift-board", requireAuth, async (req: AuthRequest, res): Pro
         overrides,
         week,
         otherRotations,
+        altDays: altDaysView(altPeriods.get(p.id), today),
       };
     });
     staff.sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"));
@@ -2234,6 +2253,100 @@ router.post("/smena/shift-override", requireAuth, async (req: AuthRequest, res):
   } catch (err) {
     console.error("POST /smena/shift-override error:", err);
     res.status(500).json({ error: "Smena saqlanmadi" });
+  }
+});
+
+const ALT_BACKDATE_DAYS = 7;
+const ALT_AHEAD_DAYS = 90;
+
+function ymdUz(ymd: string): string {
+  const [y, m, d] = ymd.split("-");
+  return `${d}.${m}.${y}`;
+}
+
+/**
+ * Kunora (cherez den): smena o‘zgarmaydi, xodim bir kun ishlaydi, bir kun dam oladi.
+ * anchorDate — birinchi ish kuni; null — kunorani fromDate (standart — bugun) dan o‘chirish.
+ */
+router.post("/smena/alt-days", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const actor = await requireSmena(req, res, "shift");
+  if (!actor) return;
+  try {
+    const employeeId = Number(req.body?.employeeId);
+    if (!Number.isFinite(employeeId) || employeeId <= 0) {
+      res.status(400).json({ error: "Xodimni tanlang" });
+      return;
+    }
+    const target = await empById(employeeId);
+    if (!target) {
+      res.status(404).json({ error: "Xodim topilmadi" });
+      return;
+    }
+    if (denyOutOfScope(actor, target, res)) return;
+
+    const today = todayTashkentYmd();
+    const minYmd = addDaysYmd(today, -ALT_BACKDATE_DAYS);
+    const maxYmd = addDaysYmd(today, ALT_AHEAD_DAYS);
+    const isYmd = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+    const anchorRaw = req.body?.anchorDate;
+    const anchor = anchorRaw == null || anchorRaw === "" ? null : anchorRaw;
+    if (anchor !== null && !isYmd(anchor)) {
+      res.status(400).json({ error: "Birinchi ish kunini to‘g‘ri tanlang" });
+      return;
+    }
+    const fromDate = isYmd(req.body?.fromDate) ? req.body.fromDate : today;
+    const cut = anchor ?? fromDate;
+    if (cut < minYmd || cut > maxYmd) {
+      res.status(400).json({
+        error: `Sana ${ymdUz(minYmd)} — ${ymdUz(maxYmd)} oralig‘ida bo‘lishi kerak`,
+      });
+      return;
+    }
+
+    const existing = (await loadAltPeriods([employeeId])).get(employeeId) ?? [];
+    const activeNow = altPeriodOn(existing, cut);
+    if (!anchor && !activeNow && !existing.some((p) => p.anchor >= cut)) {
+      res.status(400).json({ error: "Bu xodimda kunora tartibi yo‘q" });
+      return;
+    }
+
+    await setAltDays({ employeeId, anchor, fromDate, actorId: actor.info.id, actorName: actor.info.name });
+
+    const place = await placementOf(target);
+    const shiftTxt = shiftNameUz(place.shiftKey);
+    const nextWork = anchor
+      ? Array.from({ length: 4 }, (_, i) => addDaysYmd(anchor, i * 2))
+          .filter((d) => d >= today)
+          .slice(0, 3)
+          .map(ymdUz)
+      : [];
+    const text = anchor
+      ? `Sizga kunora (cherez den) ish tartibi belgilandi: ${ymdUz(anchor)} dan boshlab bir kun ishlaysiz, bir kun dam olasiz. ` +
+        `Smenangiz o‘zgarmadi (${shiftTxt}).` +
+        (nextWork.length ? ` Yaqin ish kunlari: ${nextWork.join(", ")}.` : "")
+      : `Kunora (cherez den) tartibingiz ${ymdUz(fromDate)} dan bekor qilindi. Endi odatiy jadval bo‘yicha ishlaysiz (${shiftTxt}).`;
+
+    await logSmenaChange({
+      ...logBase(actor, target),
+      action: "alt_days",
+      fromBranch: { id: place.branchId, label: place.branchLabel },
+      toBranch: { id: place.branchId, label: place.branchLabel },
+      fromShift: place.shiftKey,
+      toShift: place.shiftKey,
+      mode: anchor ? "alt" : "alt_off",
+      validFrom: cut,
+      summary: anchor
+        ? `Kunora (cherez den): ${ymdUz(anchor)} dan bir kun ish / bir kun dam, smena ${shiftTxt} o‘zgarmadi`
+        : `Kunora bekor qilindi: ${ymdUz(fromDate)} dan odatiy jadval`,
+    });
+    if (target.userId) {
+      await notifyUser({ userId: target.userId, text, type: "smena_slot", linkUrl: "/davomat-face" });
+    }
+
+    res.json({ ok: true, message: text, cleared: !anchor });
+  } catch (err) {
+    console.error("POST /smena/alt-days error:", err);
+    res.status(500).json({ error: "Kunora saqlanmadi" });
   }
 });
 

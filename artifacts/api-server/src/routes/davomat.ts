@@ -78,7 +78,7 @@ import {
   warehouseShiftKeyOf,
 } from "../lib/davomat-staff-filter";
 import { scheduledRestInfo, isWeekendYmd } from "../lib/ofis-weekend";
-import { loadWorkCalendar } from "../lib/work-calendar";
+import { altDayOn, loadWorkCalendar } from "../lib/work-calendar";
 import {
   loadScheduleOverrides,
   pickScheduleOverride,
@@ -1362,7 +1362,10 @@ function buildReport(
         const phase = employmentPhase(date, e.hiredAt, e.dismissedAt);
         const ov = pickScheduleOverride(rules, date);
         const hours = ov ? staffHoursFromOverride(ov, baseHours.graceMinutes) : baseHours;
-        const restInfo = ov
+        const altOv = ov ? altDayOn(e.id, date) : null;
+        const restInfo = altOv
+          ? { rest: !altOv.work, reason: altOv.work ? null : "Kunora — dam kuni" }
+          : ov
           ? { rest: ov.shiftKey === "office" && isWeekendYmd(date), reason: "Dam kuni" }
           : scheduledRestInfo(date, {
               employeeId: e.id,
@@ -4858,7 +4861,8 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
     });
 
     res.json({
-      restDay: restInfo.rest && !scheduleOverride ? { reason: restInfo.reason || "Dam kuni" } : null,
+      restDay:
+        restInfo.rest && (!scheduleOverride || restInfo.altDay) ? { reason: restInfo.reason || "Dam kuni" } : null,
       swapToday: restInfo.swap ?? null,
       allowedMeters: point.radiusMeters != null ? point.radiusMeters : geofenceMetersForKind(point.kind),
       mobileAnywhere,

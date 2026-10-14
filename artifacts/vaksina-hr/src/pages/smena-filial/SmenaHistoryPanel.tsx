@@ -54,6 +54,11 @@ const ACTION_META: Record<SmenaLogAction, { label: string; tone: string; icon: R
     tone: "border-purple-300 bg-purple-50 text-purple-800 dark:border-purple-800 dark:bg-purple-950/40 dark:text-purple-200",
     icon: CalendarRange,
   },
+  alt_days: {
+    label: "Kunora (cherez den)",
+    tone: "border-teal-300 bg-teal-50 text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-200",
+    icon: CalendarRange,
+  },
   legacy_assign: {
     label: "Filial / smena biriktirildi",
     tone: "border-blue-300 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200",
@@ -81,6 +86,8 @@ const MODE_UZ: Record<string, string> = {
   period: "Muddatli",
   weekly: "Haftalik",
   days: "Kunlik",
+  alt: "Kunora",
+  alt_off: "Kunora bekor",
 };
 
 const WEEKDAY_SHORT = ["", "Du", "Se", "Ch", "Pa", "Ju", "Sh", "Ya"];
@@ -204,7 +211,7 @@ export default function SmenaHistoryPanel({
   const stats = useMemo(() => {
     const rot = items.filter((i) => ["rotation_create", "legacy_assign", "legacy_day_rotation"].includes(i.action)).length;
     const cancel = items.filter((i) => i.action.endsWith("cancel")).length;
-    const shift = items.filter((i) => ["shift_change", "shift_override", "slot_shift_change"].includes(i.action)).length;
+    const shift = items.filter((i) => ["shift_change", "shift_override", "slot_shift_change", "alt_days"].includes(i.action)).length;
     const people = new Set(items.filter((i) => i.employeeId).map((i) => i.employeeId)).size;
     return { total: items.length, rot, cancel, shift, people };
   }, [items]);

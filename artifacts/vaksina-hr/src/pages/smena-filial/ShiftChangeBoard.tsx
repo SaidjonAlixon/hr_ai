@@ -8,6 +8,7 @@ import {
   Clock,
   Info,
   RefreshCw,
+  Repeat,
   RotateCcw,
   Search,
   SlidersHorizontal,
@@ -29,6 +30,7 @@ import { scriptIncludes } from "@/lib/script-search";
 import {
   changeShiftOnly,
   fetchShiftBoard,
+  saveAltDays,
   saveShiftOverride,
   type ShiftBoardOption,
   type ShiftBoardStaff,
@@ -213,7 +215,81 @@ function ShiftPicker({
   );
 }
 
-type FilterKey = "all" | SlotShiftKey | "override";
+const ALT_BACKDATE_DAYS = 7;
+const ALT_AHEAD_DAYS = 90;
+
+function ymdDays(ymd: string): number {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return Math.floor(Date.UTC(y!, m! - 1, d!) / 86_400_000);
+}
+
+function addDays(ymd: string, n: number): string {
+  return new Date((ymdDays(ymd) + n) * 86_400_000).toISOString().slice(0, 10);
+}
+
+function ymdUz(ymd: string): string {
+  const [y, m, d] = ymd.split("-");
+  return `${d}.${m}.${y}`;
+}
+
+/** 0=Du … 6=Ya */
+function weekdayIdx(ymd: string): number {
+  return (ymdDays(ymd) + 3) % 7;
+}
+
+function altPreview(anchor: string, from: string, count: number): Array<{ date: string; work: boolean | null }> {
+  return Array.from({ length: count }, (_, i) => {
+    const date = addDays(from, i);
+    return { date, work: date < anchor ? null : (ymdDays(date) - ymdDays(anchor)) % 2 === 0 };
+  });
+}
+
+function AltStrip({ days, today }: { days: Array<{ date: string; work: boolean | null }>; today?: string }) {
+  return (
+    <div className="flex gap-1">
+      {days.map((d) => {
+        const wd = WEEKDAYS[weekdayIdx(d.date)]!;
+        const isToday = d.date === today;
+        return (
+          <div
+            key={d.date}
+            title={`${wd.full}, ${ymdUz(d.date)}: ${d.work == null ? "kunora boshlanmagan" : d.work ? "ish kuni" : "dam kuni"}`}
+            className={cn(
+              "flex w-9 flex-col items-center rounded-md py-1 text-[10px] leading-tight",
+              d.work == null
+                ? "bg-muted text-muted-foreground"
+                : d.work
+                  ? "bg-teal-100 text-teal-900 dark:bg-teal-900/50 dark:text-teal-100"
+                  : "bg-slate-100 text-slate-500 dark:bg-slate-800/60 dark:text-slate-400",
+              isToday && "ring-2 ring-offset-1 ring-teal-500 ring-offset-background",
+            )}
+          >
+            <span className={cn("font-medium opacity-70", isToday && "font-bold underline opacity-100")}>
+              {wd.short} {d.date.slice(8)}
+            </span>
+            <span className="font-bold">{d.work == null ? "·" : d.work ? "Ish" : "Dam"}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AltBadge({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-teal-300 bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-200",
+        className,
+      )}
+    >
+      <Repeat className="h-3 w-3" />
+      Kunora
+    </span>
+  );
+}
+
+type FilterKey = "all" | SlotShiftKey | "override" | "alt";
 
 export default function ShiftChangeBoard() {
   const { toast } = useToast();
@@ -247,14 +323,16 @@ export default function ShiftChangeBoard() {
   const filtered = useMemo(() => {
     if (shiftFilter === "all") return byBranchAndSearch;
     if (shiftFilter === "override") return byBranchAndSearch.filter((s) => s.overrides.length > 0);
+    if (shiftFilter === "alt") return byBranchAndSearch.filter((s) => s.altDays);
     return byBranchAndSearch.filter((s) => s.baseShiftKey === shiftFilter);
   }, [byBranchAndSearch, shiftFilter]);
 
   const counts = useMemo(() => {
-    const c: Record<string, number> = { all: byBranchAndSearch.length, override: 0 };
+    const c: Record<string, number> = { all: byBranchAndSearch.length, override: 0, alt: 0 };
     for (const s of byBranchAndSearch) {
       c[s.baseShiftKey] = (c[s.baseShiftKey] || 0) + 1;
       if (s.overrides.length) c.override! += 1;
+      if (s.altDays) c.alt! += 1;
     }
     return c;
   }, [byBranchAndSearch]);
@@ -296,6 +374,12 @@ export default function ShiftChangeBoard() {
               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">3</span>
               <span>
                 <strong>Haftalik almashtirish</strong> — masalan faqat Shanba kuni 2-smena, qolgan kunlar asosiy smena.
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">4</span>
+              <span>
+                <strong>Kunora (cherez den)</strong> — smena o‘sha-o‘sha, xodim bir kun ishlaydi, bir kun dam oladi.
               </span>
             </li>
           </ol>
@@ -345,10 +429,16 @@ export default function ShiftChangeBoard() {
             </div>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {(["all", ...options.map((o) => o.key), "override"] as FilterKey[]).map((k) => {
+            {(["all", ...options.map((o) => o.key), "override", "alt"] as FilterKey[]).map((k) => {
               const active = shiftFilter === k;
               const label =
-                k === "all" ? "Hammasi" : k === "override" ? "Haftalik almashtirishi bor" : optionFor(options, k)?.label || k;
+                k === "all"
+                  ? "Hammasi"
+                  : k === "override"
+                    ? "Haftalik almashtirishi bor"
+                    : k === "alt"
+                      ? "Kunora (cherez den)"
+                      : optionFor(options, k)?.label || k;
               return (
                 <button
                   key={k}
@@ -359,9 +449,10 @@ export default function ShiftChangeBoard() {
                     active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background hover:bg-muted",
                   )}
                 >
-                  {k !== "all" && k !== "override" ? (
+                  {k !== "all" && k !== "override" && k !== "alt" ? (
                     <span className={cn("h-1.5 w-1.5 rounded-full", SHIFT_TONE[k].dot)} />
                   ) : null}
+                  {k === "alt" ? <Repeat className="h-3 w-3" /> : null}
                   {label} · {counts[k] || 0}
                 </button>
               );
@@ -405,13 +496,31 @@ export default function ShiftChangeBoard() {
                         ) : null}
                       </td>
                       <td className="px-3 py-3">
-                        <ShiftChip shiftKey={s.baseShiftKey} options={options} />
+                        <div className="flex flex-col items-start gap-1">
+                          <ShiftChip shiftKey={s.baseShiftKey} options={options} />
+                          {s.altDays ? <AltBadge /> : null}
+                        </div>
                       </td>
                       <td className="px-3 py-3">
-                        <ShiftChip shiftKey={s.todayShiftKey} options={options} />
+                        {s.altDays?.todayWork === false ? (
+                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-slate-300 bg-slate-50 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+                            Dam kuni (kunora)
+                          </span>
+                        ) : (
+                          <ShiftChip shiftKey={s.todayShiftKey} options={options} />
+                        )}
                       </td>
                       <td className="px-3 py-3">
-                        <WeekStrip week={s.week} todayWeekday={todayWeekday} />
+                        {s.altDays ? (
+                          <div className="space-y-1">
+                            <AltStrip days={s.altDays.days.slice(0, 7)} today={boardQ.data?.today} />
+                            {s.altDays.anchor > (boardQ.data?.today ?? "") ? (
+                              <p className="text-[10px] text-muted-foreground">{ymdUz(s.altDays.anchor)} dan boshlanadi</p>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <WeekStrip week={s.week} todayWeekday={todayWeekday} />
+                        )}
                       </td>
                       <td className="px-3 py-3 text-right">
                         <Button size="sm" className="h-8 text-xs" onClick={() => setSelectedId(s.employeeId)}>
@@ -436,6 +545,14 @@ export default function ShiftChangeBoard() {
               <span className="h-2.5 w-2.5 rounded ring-2 ring-rose-400" />
               Almashtirilgan kun
             </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded bg-teal-400" />
+              Kunora — ish kuni
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded bg-slate-300 dark:bg-slate-600" />
+              Kunora — dam kuni
+            </span>
           </div>
         </CardContent>
       </Card>
@@ -444,6 +561,7 @@ export default function ShiftChangeBoard() {
         person={selected}
         options={options}
         todayWeekday={todayWeekday}
+        today={boardQ.data?.today ?? ""}
         onClose={() => setSelectedId(null)}
         onSaved={invalidate}
         notify={(title, description, destructive) =>
@@ -458,6 +576,7 @@ function ShiftEditorDialog({
   person,
   options,
   todayWeekday,
+  today,
   onClose,
   onSaved,
   notify,
@@ -465,6 +584,7 @@ function ShiftEditorDialog({
   person: ShiftBoardStaff | null;
   options: ShiftBoardOption[];
   todayWeekday?: number;
+  today: string;
   onClose: () => void;
   onSaved: () => void;
   notify: (title: string, description?: string, destructive?: boolean) => void;
@@ -472,18 +592,24 @@ function ShiftEditorDialog({
   const [baseKey, setBaseKey] = useState<SlotShiftKey | null>(null);
   const [days, setDays] = useState<number[]>([]);
   const [dayShift, setDayShift] = useState<SlotShiftKey | null>(null);
+  const [altAnchor, setAltAnchor] = useState("");
 
   const personId = person?.employeeId ?? null;
   useEffect(() => {
     setBaseKey(person?.baseShiftKey ?? null);
     setDays([]);
     setDayShift(null);
+    setAltAnchor(person?.altDays?.anchor ?? today);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [personId]);
 
   useEffect(() => {
     if (person) setBaseKey(person.baseShiftKey);
   }, [person?.baseShiftKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (person) setAltAnchor(person.altDays?.anchor ?? today);
+  }, [person?.altDays?.anchor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const baseMut = useMutation({
     mutationFn: () => changeShiftOnly(person!.employeeId, baseKey!),
@@ -515,6 +641,23 @@ function ShiftEditorDialog({
     onError: (e: Error) => notify("Saqlanmadi", e.message, true),
   });
 
+  const altMut = useMutation({
+    mutationFn: (anchorDate: string | null) => saveAltDays({ employeeId: person!.employeeId, anchorDate }),
+    onSuccess: (res) => {
+      notify(res.cleared ? "Kunora bekor qilindi ✓" : "Kunora saqlandi ✓", res.message);
+      onSaved();
+    },
+    onError: (e: Error) => notify("Kunora saqlanmadi", e.message, true),
+  });
+
+  const altMin = today ? addDays(today, -ALT_BACKDATE_DAYS) : "";
+  const altMax = today ? addDays(today, ALT_AHEAD_DAYS) : "";
+  const altValid = /^\d{4}-\d{2}-\d{2}$/.test(altAnchor) && altAnchor >= altMin && altAnchor <= altMax;
+  const altDaysPreview = useMemo(
+    () => (altValid && today ? altPreview(altAnchor, today, 14) : []),
+    [altAnchor, altValid, today],
+  );
+
   const previewWeek = useMemo(() => {
     if (!person) return [];
     return person.week.map((d) =>
@@ -535,7 +678,9 @@ function ShiftEditorDialog({
   }, [previewWeek]);
 
   if (!person) return null;
-  const busy = baseMut.isPending || overrideMut.isPending || clearOneMut.isPending;
+  const busy = baseMut.isPending || overrideMut.isPending || clearOneMut.isPending || altMut.isPending;
+  const altCurrent = person.altDays;
+  const altChanged = altValid && altAnchor !== altCurrent?.anchor;
   const baseChanged = baseKey != null && baseKey !== person.baseShiftKey;
 
   const toggleDay = (d: number) =>
@@ -686,6 +831,102 @@ function ShiftEditorDialog({
                 ))}
               </div>
             ) : null}
+          </section>
+
+          {/* 3. Kunora */}
+          <section className="space-y-3 rounded-xl border border-teal-300/70 p-3.5 dark:border-teal-800/60">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-teal-600 text-[11px] font-bold text-white">3</span>
+                  Kunora (cherez den) — bir kun ish, bir kun dam
+                </h3>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Smena o‘zgarmaydi ({shiftText(options, person.baseShiftKey)}). Faqat ish kunlari o‘zgaradi: birinchi ish
+                  kunini tanlang — undan keyin har ikkinchi kun ish kuni bo‘ladi. Dam kunlari davomatda «dam» hisoblanadi
+                  (kelmagan / jarima yo‘q), ish kunlari esa majburiy.
+                </p>
+              </div>
+              {altCurrent ? <AltBadge className="mt-0.5" /> : null}
+            </div>
+
+            {altCurrent ? (
+              <p className="rounded-lg bg-teal-50 px-2.5 py-1.5 text-[11px] text-teal-900 dark:bg-teal-950/30 dark:text-teal-100">
+                Hozir: <strong>{ymdUz(altCurrent.anchor)}</strong> dan kunora
+                {altCurrent.todayWork === true ? " · bugun ish kuni" : altCurrent.todayWork === false ? " · bugun dam kuni" : ""}.
+              </p>
+            ) : null}
+
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="space-y-1">
+                <span className="block text-[11px] font-semibold text-foreground">Birinchi ish kuni</span>
+                <Input
+                  type="date"
+                  value={altAnchor}
+                  min={altMin}
+                  max={altMax}
+                  onChange={(e) => setAltAnchor(e.target.value)}
+                  className="h-9 w-[170px] text-xs"
+                />
+              </label>
+              <div className="flex gap-1.5">
+                <Button size="sm" variant="outline" className="h-9 text-xs" onClick={() => setAltAnchor(today)}>
+                  Bugundan
+                </Button>
+                <Button size="sm" variant="outline" className="h-9 text-xs" onClick={() => setAltAnchor(addDays(today, 1))}>
+                  Ertadan
+                </Button>
+              </div>
+            </div>
+            {!altValid && altAnchor ? (
+              <p className="text-[11px] text-rose-600">
+                Sana {ymdUz(altMin)} — {ymdUz(altMax)} oralig‘ida bo‘lishi kerak.
+              </p>
+            ) : null}
+
+            {altDaysPreview.length ? (
+              <div className="rounded-xl bg-muted/50 p-3">
+                <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-foreground">
+                  <CalendarRange className="h-3.5 w-3.5 text-teal-600" />
+                  Keyingi 14 kun (saqlangandan keyin):
+                </p>
+                <div className="space-y-1 overflow-x-auto">
+                  <AltStrip days={altDaysPreview.slice(0, 7)} today={today} />
+                  <AltStrip days={altDaysPreview.slice(7)} today={today} />
+                </div>
+                {altAnchor < today ? (
+                  <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">
+                    Diqqat: o‘tgan kundan boshlanadi — {ymdUz(altAnchor)} dan bugungacha bo‘lgan davomat ham kunora bo‘yicha
+                    qayta hisoblanadi.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="flex flex-wrap justify-end gap-2">
+              {altCurrent ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/40"
+                  disabled={busy}
+                  onClick={() => altMut.mutate(null)}
+                  title="Bugundan boshlab odatiy jadvalga qaytarish (oldingi kunlar o‘zgarmaydi)"
+                >
+                  <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                  Kunorani bekor qilish
+                </Button>
+              ) : null}
+              <Button
+                size="sm"
+                className="bg-teal-600 text-white hover:bg-teal-700"
+                disabled={!altChanged || busy}
+                onClick={() => altMut.mutate(altAnchor)}
+              >
+                {altMut.isPending ? <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Repeat className="mr-1.5 h-3.5 w-3.5" />}
+                {altCurrent ? "Kunorani yangilash" : "Kunorani yoqish"}
+              </Button>
+            </div>
           </section>
 
           <div className="space-y-1 rounded-xl border border-emerald-300/60 bg-emerald-50/70 p-3 text-[11px] text-emerald-900 dark:border-emerald-800/40 dark:bg-emerald-950/20 dark:text-emerald-200">

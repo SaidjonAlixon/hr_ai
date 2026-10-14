@@ -3,7 +3,7 @@
  * Xavfsizlik (SB) — o‘z jadvali (security-shifts).
  */
 import { isSecurityRestDay, securityShiftFor, SECURITY_USER_ROLES } from "./security-shifts";
-import { payrollCalendarScope, scopeDayStatus, swapOn } from "./work-calendar";
+import { altDayOn, payrollCalendarScope, scopeDayStatus, swapOn } from "./work-calendar";
 
 const SHIFT_PHARMACY_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor"]);
 const SHIFT_PHARMACY_ORG_ROLES = new Set([
@@ -105,10 +105,12 @@ export type RestInfo = {
   reason: string | null;
   /** Almashuv: dam oluvchi yoki o‘rniga chiquvchi */
   swap?: { kind: "rest" | "work"; with: string; id: number } | null;
+  /** Kunora (cherez den) jadvali bo‘yicha aniqlangan */
+  altDay?: boolean;
 };
 
 /**
- * Jadval bo‘yicha dam kuni. Tartib: xavfsizlik grafigi → almashuv → smena kalendari
+ * Jadval bo‘yicha dam kuni. Tartib: xavfsizlik grafigi → almashuv → kunora → smena kalendari
  * (haftalik qoida + sana o‘zgartirishi) → eski tartib (ofis shanba–yakshanba).
  * Davomat hisobotlari chaqirishdan oldin loadWorkCalendar() ni kutadi.
  */
@@ -129,6 +131,8 @@ export function scheduledRestInfo(ymd: string, emp: ScheduleStaff): RestInfo {
     }
     return { rest: false, reason: null, swap: { kind: "work", with: swap.swap.employeeName, id: swap.swap.id } };
   }
+  const alt = altDayOn(emp.employeeId, ymd);
+  if (alt) return { rest: !alt.work, reason: alt.work ? null : "Kunora — dam kuni", altDay: true };
   const office = isOfisStaffEmp(emp);
   if (office || isShiftPharmacyEmp(emp)) {
     const scope = office ? "ofis" : payrollCalendarScope(emp);

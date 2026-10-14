@@ -263,6 +263,17 @@ CREATE TABLE IF NOT EXISTS shift_day_swaps (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS shift_day_swaps_emp_day_uidx ON shift_day_swaps (employee_id, work_date) WHERE cancelled_at IS NULL;
 CREATE INDEX IF NOT EXISTS shift_day_swaps_date_idx ON shift_day_swaps (work_date);
+CREATE TABLE IF NOT EXISTS employee_alt_day_periods (
+  id SERIAL PRIMARY KEY,
+  employee_id INTEGER NOT NULL,
+  anchor_date TEXT NOT NULL,
+  end_date TEXT,
+  created_by_id INTEGER,
+  created_by_name TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS employee_alt_day_periods_emp_idx ON employee_alt_day_periods (employee_id);
 `);
       const seedFrom = "2000-01-01";
       for (const [scope, rest] of SEED_RULES) {
@@ -292,16 +303,27 @@ CREATE INDEX IF NOT EXISTS shift_day_swaps_date_idx ON shift_day_swaps (work_dat
 
 /* ───────── Xotiradagi nusxa (30 soniya) ───────── */
 
+export type AltDayPeriod = { id: number; anchor: string; end: string | null };
+
 type Snapshot = {
   calendars: Map<string, ScopeCalendar>;
   restSwaps: Map<string, ShiftSwap>;
   workSwaps: Map<string, ShiftSwap>;
   swaps: ShiftSwap[];
+  /** Kunora (cherez den): employeeId → davrlar (anchor — birinchi ish kuni) */
+  altDays: Map<number, AltDayPeriod[]>;
   at: number;
 };
 
 const SNAPSHOT_TTL_MS = 30_000;
-let snapshot: Snapshot = { calendars: new Map(), restSwaps: new Map(), workSwaps: new Map(), swaps: [], at: 0 };
+let snapshot: Snapshot = {
+  calendars: new Map(),
+  restSwaps: new Map(),
+  workSwaps: new Map(),
+  swaps: [],
+  altDays: new Map(),
+  at: 0,
+};
 let loading: Promise<Snapshot> | null = null;
 let generation = 0;
 
@@ -345,11 +367,22 @@ export const SWAP_SELECT = `
 
 async function readSnapshot(): Promise<Snapshot> {
   await ensureWorkCalendarSchema();
-  const [rules, days, swaps] = await Promise.all([
+  const [rules, days, swaps, alt] = await Promise.all([
     pool.query(`SELECT * FROM work_calendar_rules ORDER BY scope, effective_from`),
     pool.query(`SELECT day, is_work FROM work_calendar_days`),
     pool.query(`${SWAP_SELECT} WHERE s.cancelled_at IS NULL ORDER BY s.work_date`),
+    pool.query(`SELECT id, employee_id, anchor_date, end_date FROM employee_alt_day_periods ORDER BY anchor_date`),
   ]);
+  const altDays = new Map<number, AltDayPeriod[]>();
+  for (const row of alt.rows) {
+    const empId = Number(row.employee_id);
+    const period: AltDayPeriod = {
+      id: Number(row.id),
+      anchor: String(row.anchor_date),
+      end: row.end_date ? String(row.end_date) : null,
+    };
+    altDays.set(empId, [...(altDays.get(empId) ?? []), period]);
+  }
   const rulesByScope = new Map<string, RestRule[]>();
   for (const row of rules.rows) {
     const rule = rowToRule(row);
@@ -376,7 +409,7 @@ async function readSnapshot(): Promise<Snapshot> {
     restSwaps.set(`${swap.employeeId}|${swap.workDate}`, swap);
     workSwaps.set(`${swap.replacementEmployeeId}|${swap.workDate}`, swap);
   }
-  return { calendars, restSwaps, workSwaps, swaps: list, at: Date.now() };
+  return { calendars, restSwaps, workSwaps, swaps: list, altDays, at: Date.now() };
 }
 
 export async function loadWorkCalendar(force = false): Promise<Snapshot> {
@@ -416,6 +449,93 @@ export function swapOn(employeeId: number | null | undefined, ymd: string): { ki
   const work = snapshot.workSwaps.get(`${employeeId}|${ymd}`);
   if (work) return { kind: "work", swap: work };
   return null;
+}
+
+function ymdUtcDays(ymd: string): number {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return Math.floor(Date.UTC(y!, m! - 1, d!) / 86_400_000);
+}
+
+export function altDayIsWork(anchor: string, ymd: string): boolean {
+  return (ymdUtcDays(ymd) - ymdUtcDays(anchor)) % 2 === 0;
+}
+
+export function altPeriodOn(periods: AltDayPeriod[] | undefined, ymd: string): AltDayPeriod | null {
+  return periods?.find((p) => p.anchor <= ymd && (!p.end || ymd <= p.end)) ?? null;
+}
+
+function ymdMinusOne(ymd: string): string {
+  return new Date((ymdUtcDays(ymd) - 1) * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Xodimlarning kunora davrlari (bazadan, keshsiz) */
+export async function loadAltPeriods(employeeIds: number[]): Promise<Map<number, AltDayPeriod[]>> {
+  const out = new Map<number, AltDayPeriod[]>();
+  if (!employeeIds.length) return out;
+  await ensureWorkCalendarSchema();
+  const { rows } = await pool.query(
+    `SELECT id, employee_id, anchor_date, end_date FROM employee_alt_day_periods
+      WHERE employee_id = ANY($1::int[]) ORDER BY anchor_date`,
+    [employeeIds],
+  );
+  for (const row of rows) {
+    const empId = Number(row.employee_id);
+    out.set(empId, [
+      ...(out.get(empId) ?? []),
+      { id: Number(row.id), anchor: String(row.anchor_date), end: row.end_date ? String(row.end_date) : null },
+    ]);
+  }
+  return out;
+}
+
+/**
+ * Kunorani yoqish (anchor — birinchi ish kuni) yoki o‘chirish (anchor = null, fromDate dan boshlab).
+ * Oldingi kunlar tarixi saqlanadi: eski davr yangi sanadan bir kun oldin yopiladi.
+ */
+export async function setAltDays(opts: {
+  employeeId: number;
+  anchor: string | null;
+  fromDate: string;
+  actorId: number | null;
+  actorName: string | null;
+}): Promise<void> {
+  await ensureWorkCalendarSchema();
+  const cut = opts.anchor ?? opts.fromDate;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`DELETE FROM employee_alt_day_periods WHERE employee_id = $1 AND anchor_date >= $2`, [
+      opts.employeeId,
+      cut,
+    ]);
+    await client.query(
+      `UPDATE employee_alt_day_periods SET end_date = $3, updated_at = NOW()
+        WHERE employee_id = $1 AND (end_date IS NULL OR end_date >= $2)`,
+      [opts.employeeId, cut, ymdMinusOne(cut)],
+    );
+    if (opts.anchor) {
+      await client.query(
+        `INSERT INTO employee_alt_day_periods (employee_id, anchor_date, created_by_id, created_by_name)
+         VALUES ($1, $2, $3, $4)`,
+        [opts.employeeId, opts.anchor, opts.actorId, opts.actorName],
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+  invalidateWorkCalendar();
+}
+
+/** Kunora: anchor sanasidan boshlab juft kunlar — ish, toq kunlar — dam. Davrdan tashqari kunlarga ta’sir qilmaydi. */
+export function altDayOn(employeeId: number | null | undefined, ymd: string): { work: boolean; anchor: string } | null {
+  if (!employeeId || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+  const period = altPeriodOn(snapshot.altDays.get(employeeId), ymd);
+  if (!period) return null;
+  return { work: altDayIsWork(period.anchor, ymd), anchor: period.anchor };
 }
 
 /** Smena kalendari bo‘yicha: { work, reason } yoki qoida yo‘q bo‘lsa null */

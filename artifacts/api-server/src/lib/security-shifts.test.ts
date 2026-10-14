@@ -33,11 +33,15 @@ describe("Xavfsizlik 24 soatlik smena", () => {
   });
 
   it("Kod yo‘q SB roli — standart du–sha", () => {
-    const sb = securityShiftFor({ userRole: "sb_boshliq", shiftType: "one" })!;
+    const sb = securityShiftFor({ userRole: "sb", shiftType: "one" })!;
     assert.equal(sb.pattern.kind, "mon-sat");
     assert.equal(sb.start, "09:00");
     assert.equal(sb.end, "09:00");
     assert.equal(securityShiftFor({ userRole: "farmasevt", shiftType: "one" }), null);
+  });
+
+  it("SB boshlig‘i — ofis xodimi kabi, SB grafigi yo‘q", () => {
+    assert.equal(securityShiftFor({ userRole: "sb_boshliq", shiftType: "office" }), null);
   });
 
   it("encode ↔ parse", () => {

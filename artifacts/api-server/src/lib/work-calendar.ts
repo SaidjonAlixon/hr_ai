@@ -192,7 +192,7 @@ export function payrollCalendarScope(input: {
   const role = norm(input.userRole);
   const org = norm(input.orgRole);
   const pos = norm(input.position);
-  if (role === "sb" || role === "sb_boshliq" || /xavfsiz/.test(role) || /xavfsiz/.test(pos)) {
+  if (role === "sb" || /xavfsiz/.test(role) || /xavfsiz/.test(pos)) {
     return "xavfsizlik";
   }
   if (isPharmacyStaffRow({ userRole: role, orgRole: org, position: pos })) {

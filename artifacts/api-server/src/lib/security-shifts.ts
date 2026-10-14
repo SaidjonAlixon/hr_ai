@@ -3,12 +3,14 @@
  * Ketdim: smena tugashidan +2 soat (ertasi 11:00) gacha.
  *
  * `employees.shift_type` kodlari:
- * - `sb:09:00-09:00:mon-sat`          — dushanba–shanba har kuni, yakshanba dam (SB boshlig‘i)
+ * - `sb:09:00-09:00:mon-sat`          — dushanba–shanba har kuni, yakshanba dam
  * - `sb:09:00-09:00:alt:2026-09-28`   — kun ora: anchor sanasi ish kuni, ertasi dam (SB operatori)
  * - `sb:09:00-09:00:daily`            — har kuni, dam kunisiz
+ *
+ * SB boshlig‘i (sb_boshliq) — ofis xodimi kabi: ofis vaqti va ofis dam kunlari.
  */
 
-export const SECURITY_USER_ROLES = new Set(["sb", "sb_boshliq"]);
+export const SECURITY_USER_ROLES = new Set(["sb"]);
 
 export const SECURITY_DEFAULT_START = "09:00";
 export const SECURITY_DEFAULT_END = "09:00";

@@ -15,6 +15,7 @@ import {
   Send,
   ShieldCheck,
   Trash2,
+  UserRound,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -79,6 +80,17 @@ function penaltyLabel(n: number) {
 
 const stageOf = (l: ExplanationLetter) => Math.min(l.strikeN, FINAL_STRIKE);
 
+const NO_COORD = "Koordinatorsiz";
+const NO_BRANCH = "Filialsiz";
+const coordOf = (l: ExplanationLetter) => l.coordinator?.name?.trim() || NO_COORD;
+const branchOf = (l: ExplanationLetter) => l.branch.trim() || l.contacts?.branchName?.trim() || NO_BRANCH;
+
+function countOptions(values: string[]): [string, number][] {
+  const m = new Map<string, number>();
+  for (const v of values) m.set(v, (m.get(v) ?? 0) + 1);
+  return [...m].sort((a, b) => a[0].localeCompare(b[0], "uz"));
+}
+
 function eventDetail(l: ExplanationLetter) {
   if (l.kind === "absent") return l.planStart && l.planEnd ? `Ish vaqti ${l.planStart}–${l.planEnd}` : "Ishga kelmagan";
   const parts = [l.planStart ? `Reja ${l.planStart}` : null, l.checkIn ? `keldi ${l.checkIn}` : null].filter(Boolean);
@@ -105,14 +117,30 @@ export default function TushuntirishXatlariPage() {
   const review = useReviewLetter();
   const del = useDeleteLetters();
 
-  const [group, setGroup] = useState<StaffGroup>("pharmacy");
+  const [group, setGroupRaw] = useState<StaffGroup>("pharmacy");
+  const [branch, setBranch] = useState("");
+  const [coord, setCoord] = useState("");
+  const setGroup = (g: StaffGroup) => {
+    setGroupRaw(g);
+    setBranch("");
+    setCoord("");
+  };
   const allItems = q.data?.items ?? [];
   const groupCounts = useMemo(() => {
     const out: Record<StaffGroup, number> = { pharmacy: 0, office: 0 };
     for (const l of allItems) out[staffGroupOf(l)] += 1;
     return out;
   }, [allItems]);
-  const items = useMemo(() => allItems.filter((l) => staffGroupOf(l) === group), [allItems, group]);
+  const groupItems = useMemo(() => allItems.filter((l) => staffGroupOf(l) === group), [allItems, group]);
+  const coordOptions = useMemo(() => countOptions(groupItems.map(coordOf)), [groupItems]);
+  const branchOptions = useMemo(
+    () => countOptions(groupItems.filter((l) => !coord || coordOf(l) === coord).map(branchOf)),
+    [groupItems, coord],
+  );
+  const items = useMemo(
+    () => groupItems.filter((l) => (!coord || coordOf(l) === coord) && (!branch || branchOf(l) === branch)),
+    [groupItems, coord, branch],
+  );
   const office = group === "office";
   const months = useMemo(() => {
     const set = new Set([thisMonth(), ...(q.data?.months ?? [])]);
@@ -157,7 +185,7 @@ export default function TushuntirishXatlariPage() {
   }, [items, status, kind, stage, query]);
 
   const [limit, setLimit] = useState(PAGE);
-  const filterKey = `${month}|${group}|${status}|${kind}|${stage}|${query}`;
+  const filterKey = `${month}|${group}|${coord}|${branch}|${status}|${kind}|${stage}|${query}`;
   const [limitKey, setLimitKey] = useState(filterKey);
   if (limitKey !== filterKey) {
     setLimitKey(filterKey);
@@ -280,7 +308,45 @@ export default function TushuntirishXatlariPage() {
         </div>
       </header>
 
-      <StaffGroupTabs value={group} onChange={setGroup} counts={q.isLoading ? undefined : groupCounts} className="sm:max-w-xl" />
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+        <StaffGroupTabs value={group} onChange={setGroup} counts={q.isLoading ? undefined : groupCounts} className="lg:max-w-xl lg:flex-1" />
+        <div className="flex flex-col gap-2 sm:flex-row lg:ml-auto">
+          {!office ? (
+            <FilterSelect
+              icon={<UserRound className="h-4 w-4" />}
+              label="Koordinator"
+              allLabel="Barcha koordinatorlar"
+              value={coord}
+              onChange={(v) => {
+                setCoord(v);
+                setBranch("");
+              }}
+              options={coordOptions}
+            />
+          ) : null}
+          <FilterSelect
+            icon={<MapPin className="h-4 w-4" />}
+            label={office ? "Bo‘lim" : "Filial"}
+            allLabel={office ? "Barcha bo‘limlar" : "Barcha filiallar"}
+            value={branch}
+            onChange={setBranch}
+            options={branchOptions}
+          />
+          {coord || branch ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-10 shrink-0 gap-1 rounded-xl text-slate-600"
+              onClick={() => {
+                setCoord("");
+                setBranch("");
+              }}
+            >
+              <X className="h-4 w-4" /> Tozalash
+            </Button>
+          ) : null}
+        </div>
+      </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         <Stat label="Jami" value={stats.all} loading={q.isLoading} tone="bg-slate-50 text-slate-800 ring-slate-200 dark:bg-white/5 dark:text-white dark:ring-white/10" />
@@ -365,7 +431,7 @@ export default function TushuntirishXatlariPage() {
       ) : !list.length ? (
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-slate-200 py-12 text-center text-sm text-slate-500 dark:border-white/10">
           <ShieldCheck className="h-8 w-8 text-emerald-500" />
-          {items.length
+          {items.length || coord || branch
             ? "Filtr bo‘yicha xat topilmadi."
             : `${monthLabel(month)} — ${office ? "ofis" : "dorixona"} xodimlarida tushuntirish xati talab qilingan holat yo‘q.`}
         </div>
@@ -829,5 +895,48 @@ function Stat({ label, value, loading, tone }: { label: string; value: number; l
       <p className="text-[11px] font-bold uppercase tracking-wide">{label}</p>
       <span className="text-xl font-extrabold tabular-nums">{loading ? "…" : value}</span>
     </div>
+  );
+}
+
+function FilterSelect({
+  icon,
+  label,
+  allLabel,
+  value,
+  onChange,
+  options,
+}: {
+  icon: ReactNode;
+  label: string;
+  allLabel: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: [string, number][];
+}) {
+  return (
+    <label
+      className={cn(
+        "relative flex h-10 min-w-0 items-center rounded-xl border bg-white transition sm:w-60 dark:bg-slate-900",
+        value
+          ? "border-sky-300 ring-2 ring-sky-100 dark:border-sky-500/50 dark:ring-sky-500/20"
+          : "border-slate-200 dark:border-white/10",
+      )}
+      title={label}
+    >
+      <span className={cn("pointer-events-none absolute left-3", value ? "text-sky-600" : "text-slate-400")}>{icon}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={label}
+        className="h-full w-full min-w-0 truncate rounded-xl bg-transparent pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none dark:text-white"
+      >
+        <option value="">{allLabel}</option>
+        {options.map(([name, n]) => (
+          <option key={name} value={name}>
+            {name} ({n})
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

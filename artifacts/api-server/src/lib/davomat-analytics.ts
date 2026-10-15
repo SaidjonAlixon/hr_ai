@@ -1,5 +1,6 @@
 import {
   hmToMinutes,
+  lateArrivalMinutes,
   onTimeUntilHm,
   workScheduleForStaff,
   type WorkSchedule,
@@ -465,10 +466,9 @@ function classifyCheckIn(
 ): { status: "on_time" | "late"; lateMinutes: number } {
   if (!checkInHm || checkInHm === "—") return { status: "on_time", lateMinutes: 0 };
   const grace = graceMinutesFor(schedule);
-  const checkMin = hmToMinutes(checkInHm);
-  const graceEndMin = hmToMinutes(schedule.start) + grace;
-  if (checkMin <= graceEndMin) return { status: "on_time", lateMinutes: 0 };
-  return { status: "late", lateMinutes: checkMin - hmToMinutes(schedule.start) };
+  const late = lateArrivalMinutes(checkInHm, schedule);
+  if (late <= grace) return { status: "on_time", lateMinutes: 0 };
+  return { status: "late", lateMinutes: late };
 }
 
 function classifyStaffDay(

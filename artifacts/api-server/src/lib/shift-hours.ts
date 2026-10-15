@@ -320,6 +320,25 @@ export function hmToMinutes(hm: string): number {
   return (h || 0) * 60 + (m || 0);
 }
 
+/**
+ * Kelish smena boshlanishidan necha daqiqa kech (erta kelsa 0).
+ * Tungi smenada boshlanishdan oldingi vaqt faqat smena tugashigacha (yarim tundan keyin) bo‘lsa
+ * kechikish: 2+3 (17:00–07:00) uchun 01:00 — 8 soat kech, 16:26 — erta keldi.
+ */
+export function lateArrivalMinutes(
+  checkInHm: string,
+  schedule: { start: string; end: string; overnight?: boolean },
+): number {
+  const arrived = hmToMinutes(checkInHm);
+  const start = hmToMinutes(schedule.start);
+  const end = hmToMinutes(schedule.end);
+  if (![arrived, start, end].every(Number.isFinite)) return 0;
+  if (arrived >= start) return arrived - start;
+  const overnight = Boolean(schedule.overnight) || end <= start;
+  if (overnight && arrived < end) return arrived + 24 * 60 - start;
+  return 0;
+}
+
 export function minutesToHm(total: number): string {
   const h = Math.floor(total / 60);
   const m = total % 60;

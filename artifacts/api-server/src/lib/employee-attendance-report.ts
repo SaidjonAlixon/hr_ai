@@ -13,7 +13,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { addDaysYmd, type ShiftKey } from "./attendance-engine";
-import { hmToMinutes, workScheduleForStaff, type WorkSchedule } from "./shift-hours";
+import { hmToMinutes, lateArrivalMinutes, workScheduleForStaff, type WorkSchedule } from "./shift-hours";
 import { getEffectiveShiftDefs } from "./shift-schedule";
 import { isScheduledRestDay, isWeekendYmd, type ScheduleStaff } from "./ofis-weekend";
 import { loadWorkCalendar } from "./work-calendar";
@@ -398,11 +398,7 @@ const ATTEMPT_STATUS: Record<string, string> = {
 /** Kelish smena boshlanishi + ruxsat daqiqasidan keyin bo‘lsa kechikkan. */
 function lateMinutesOf(checkInHm: string | null, schedule: WorkSchedule): number {
   if (!checkInHm) return 0;
-  let arrived = hmToMinutes(checkInHm);
-  const start = hmToMinutes(schedule.start);
-  if (!Number.isFinite(arrived) || !Number.isFinite(start)) return 0;
-  if (schedule.overnight && arrived < start) arrived += 24 * 60;
-  return Math.max(0, arrived - start);
+  return lateArrivalMinutes(checkInHm, schedule);
 }
 
 function earlyMinutesOf(checkInHm: string | null, checkOutHm: string | null, schedule: WorkSchedule): number {
@@ -422,11 +418,7 @@ function earlyMinutesOf(checkInHm: string | null, checkOutHm: string | null, sch
 
 function cameStatus(checkInHm: string, schedule: WorkSchedule): "present" | "late" {
   const grace = schedule.graceMinutes > 0 ? schedule.graceMinutes : 15;
-  let arrived = hmToMinutes(checkInHm);
-  const start = hmToMinutes(schedule.start);
-  if (!Number.isFinite(arrived) || !Number.isFinite(start)) return "present";
-  if (schedule.overnight && arrived < start) arrived += 24 * 60;
-  return arrived - start > grace ? "late" : "present";
+  return lateArrivalMinutes(checkInHm, schedule) > grace ? "late" : "present";
 }
 
 function scheduleForDay(

@@ -310,6 +310,9 @@ export function useReturnOylik() {
   });
 }
 
+/** Jarima va tushuntirish xatlarida xodim guruhi */
+export type StaffGroup = "pharmacy" | "office";
+
 export type JarimaEvent = {
   date: string;
   kind: "late" | "absent";
@@ -318,6 +321,7 @@ export type JarimaEvent = {
 };
 
 export type JarimaSelf = {
+  group?: StaffGroup;
   fullName: string;
   position?: string | null;
   branch?: string | null;

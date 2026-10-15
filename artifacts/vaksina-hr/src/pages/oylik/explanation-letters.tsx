@@ -20,6 +20,7 @@ import { ExplanationLetterDialog, StatusChip, TestChip } from "@/components/expl
 import { ReviewChip, StageBadge } from "@/components/explanation-letter/LetterReviewPanel";
 import { StageLadder } from "@/components/explanation-letter/StageLadder";
 import { LetterLookupBar } from "@/components/explanation-letter/LetterLookup";
+import { StaffGroupTabs, staffGroupOf, type StaffGroup } from "@/components/explanation-letter/StaffGroupTabs";
 import {
   FINAL_STRIKE,
   currentStage,
@@ -186,11 +187,18 @@ export function LettersAdminPanel({ month }: { month: string }) {
   const q = useMonthLetters(month, true);
   const review = useReviewLetter();
   const [tab, setTab] = useState<Tab>("waiting");
+  const [group, setGroup] = useState<StaffGroup>("pharmacy");
   const [stage, setStage] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
-  const items = q.data?.items ?? [];
+  const allItems = q.data?.items ?? [];
+  const groupCounts = useMemo(() => {
+    const out: Record<StaffGroup, number> = { pharmacy: 0, office: 0 };
+    for (const l of allItems) out[staffGroupOf(l)] += 1;
+    return out;
+  }, [allItems]);
+  const items = useMemo(() => allItems.filter((l) => staffGroupOf(l) === group), [allItems, group]);
 
   const counts = useMemo(
     () => ({
@@ -222,7 +230,7 @@ export function LettersAdminPanel({ month }: { month: string }) {
   }, [items, tab, stage, query]);
 
   const [limit, setLimit] = useState(PAGE);
-  const filterKey = `${month}|${tab}|${stage}|${query}`;
+  const filterKey = `${month}|${group}|${tab}|${stage}|${query}`;
   const [limitKey, setLimitKey] = useState(filterKey);
   if (limitKey !== filterKey) {
     setLimitKey(filterKey);
@@ -264,6 +272,8 @@ export function LettersAdminPanel({ month }: { month: string }) {
       }
     >
       <LetterLookupBar onOpenLetter={setOpenId} />
+
+      <StaffGroupTabs value={group} onChange={setGroup} counts={q.isLoading ? undefined : groupCounts} />
 
       <div className="space-y-2">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
@@ -342,7 +352,7 @@ export function LettersAdminPanel({ month }: { month: string }) {
           {query.trim() || stage
             ? "Filtr bo‘yicha hech narsa topilmadi."
             : !items.length
-              ? "Bu oyda tushuntirish xati talab qilingan holat yo‘q."
+              ? `Bu oyda ${group === "office" ? "ofis" : "dorixona"} xodimlarida tushuntirish xati talab qilingan holat yo‘q.`
               : tab === "waiting"
                 ? "Barcha xatlar imzolangan."
                 : tab === "decide"

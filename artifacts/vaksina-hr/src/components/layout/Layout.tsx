@@ -57,6 +57,7 @@ import {
   FileSignature,
   Headset,
   UtensilsCrossed,
+  Receipt,
 } from 'lucide-react';
 import {
   useLogout,
@@ -154,7 +155,7 @@ const NAV_SECTIONS: {
     id: 'attendance',
     label: 'Davomat',
     icon: AlarmClock,
-    paths: ['/davomat/analytics', '/davomat/xatoliklar', '/davomat/bloklash', '/davomat/dorixona-ochilishi', '/davomat/ofisda', '/davomat-face', '/davomat', '/davomat-qr', '/smena-filial', '/checklist-holati', '/admin/tushuntirish-xatlari'],
+    paths: ['/davomat/analytics', '/davomat/xatoliklar', '/davomat/bloklash', '/davomat/dorixona-ochilishi', '/davomat/ofisda', '/davomat-face', '/davomat', '/davomat-qr', '/smena-filial', '/checklist-holati', '/admin/tushuntirish-xatlari', '/admin/jarimalar'],
   },
   {
     id: 'work',
@@ -995,6 +996,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const davomatQrNav = { name: 'Davomat QR', path: '/davomat-qr', icon: ScanFace };
   const oylikNav = { name: 'Oylik', path: '/oylik', icon: Banknote };
   const txNav = { name: 'Tushuntirish xatlari', path: '/admin/tushuntirish-xatlari', icon: FileSignature };
+  const jarimaNav = { name: 'Jarimalar', path: '/admin/jarimalar', icon: Receipt };
   const txMyNav = { name: 'Tushuntirish xatim', path: '/tushuntirish-xatim', icon: FileSignature };
   const abetNav = { name: 'Abet', path: '/abet', icon: UtensilsCrossed };
   const hisobNav = { name: 'Oylik hisob', path: '/hisobkitob', icon: Calculator };
@@ -1273,6 +1275,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       txNav,
+      jarimaNav,
       davomatFaceNav,
       smenaNav,
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
@@ -1289,6 +1292,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     orgNav,
     oylikNav,
     txNav,
+    jarimaNav,
     hisobNav,
     reviziyaNav,
     { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
@@ -1328,6 +1332,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Xodimlar', path: '/employees', icon: Users },
       oylikNav,
       txNav,
+      jarimaNav,
       hisobNav,
       itNav,
       reviziyaNav,
@@ -1375,6 +1380,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Xodimlar', path: '/employees', icon: Users },
       oylikNav,
       txNav,
+      jarimaNav,
       hisobNav,
       itNav,
       reviziyaNav,
@@ -1431,6 +1437,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Xodimlar', path: '/employees', icon: Users },
       hisobNav,
       txNav,
+      jarimaNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatAnalyticsNav,
     davomatXatoliklarNav,

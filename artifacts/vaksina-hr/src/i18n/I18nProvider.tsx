@@ -104,6 +104,7 @@ export const NAV_PATH_KEYS: Record<string, string> = {
   "/oylik": "nav.oylik",
   "/hisobkitob": "nav.hisobkitob",
   "/admin/tushuntirish-xatlari": "nav.tushuntirishXatlari",
+  "/admin/jarimalar": "nav.jarimalar",
   "/tushuntirish-xatim": "nav.tushuntirishXatim",
   "/reyting": "nav.reyting",
   "/reviziya": "nav.reviziya",

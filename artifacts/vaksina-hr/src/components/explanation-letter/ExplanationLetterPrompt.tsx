@@ -66,6 +66,7 @@ export function ExplanationLetterPrompt() {
     location.startsWith("/tx/") ||
     location.startsWith("/login") ||
     location.startsWith("/admin/tushuntirish-xatlari") ||
+    location.startsWith("/admin/jarimalar") ||
     location.startsWith("/tushuntirish-xatim") ||
     location.startsWith("/admin/test");
 

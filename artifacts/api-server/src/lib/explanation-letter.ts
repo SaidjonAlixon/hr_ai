@@ -13,6 +13,14 @@ import { isJarimaEnabled } from "./jarima-switch";
 /** Oxirgi ogohlantirish (ishdan bo‘shatishga rozilik) xati shu martadan */
 export const FINAL_STRIKE = 6;
 
+export type JarimaGroup = "pharmacy" | "office";
+
+const PHARMACY_STAFF_ROLES = new Set(["mudir", "farmasevt", "stajyor", "stajor"]);
+
+export function jarimaGroupForRole(role: string | null | undefined): JarimaGroup {
+  return PHARMACY_STAFF_ROLES.has(String(role || "").toLowerCase()) ? "pharmacy" : "office";
+}
+
 export type LetterKind = "late" | "absent";
 export type LetterStatus = "pending" | "confirmed" | "signed";
 
@@ -20,6 +28,8 @@ export type ExplanationLetterRow = {
   id: number;
   userId: number;
   employeeId: number | null;
+  /** Xodim guruhi: dorixona yoki ofis */
+  group: JarimaGroup;
   month: string;
   eventDate: string;
   kind: LetterKind;
@@ -193,7 +203,7 @@ const SELECT_COLS = `l.id, l.user_id, l.employee_id, l.month, l.event_date, l.ki
   l.branch, l.shift, l.plan_start, l.plan_end, l.check_in, l.late_minutes, l.amount, l.status, l.reason_code,
   l.reason_text, l.letter_no, l.verify_token, l.confirmed_at, l.signed_at, l.created_at,
   (l.signature_png IS NOT NULL) AS has_signature, (l.qr_png IS NOT NULL) AS has_qr, l.is_test,
-  l.review_status, l.review_note, l.reviewed_by_name, l.reviewed_at, l.final_consent_at, u.phone`;
+  l.review_status, l.review_note, l.reviewed_by_name, l.reviewed_at, l.final_consent_at, u.phone, u.role AS user_role`;
 
 const iso = (v: unknown): string | null => (v instanceof Date ? v.toISOString() : v ? String(v) : null);
 
@@ -202,6 +212,7 @@ function toRow(r: Record<string, unknown>): ExplanationLetterRow {
     id: Number(r.id),
     userId: Number(r.user_id),
     employeeId: r.employee_id == null ? null : Number(r.employee_id),
+    group: jarimaGroupForRole(r.user_role as string | null),
     month: String(r.month),
     eventDate: String(r.event_date),
     kind: r.kind === "late" ? "late" : "absent",
@@ -851,11 +862,14 @@ export function letterContent(
   origin: string | null,
   settings: LetterSettings = DEFAULT_LETTER_SETTINGS,
 ): LetterContent {
-  const position = l.position || "Farmasevt";
+  const office = l.group === "office";
+  const position = l.position || (office ? "Ofis xodimi" : "Farmasevt");
   const branch = l.branch || "—";
+  const company = settings.companyName;
+  const workplace = office ? `${company}ning ofisida` : `${company}ning ${branch} filialida`;
+  const bosses = office ? "bevosita rahbarim" : "filial mudiri va hududiy koordinator";
   const shift = l.shift || "belgilangan ish jadvali";
   const date = longDate(l.eventDate);
-  const company = settings.companyName;
   const n = l.strikeN;
   const final = n >= FINAL_STRIKE;
   const amountText = l.amount > 0 ? fmtSum(l.amount) : null;
@@ -864,7 +878,7 @@ export function letterContent(
   const intro =
     "Men mazkur tushuntirish xatini yozishdan oldin yolg‘on ma’lumot bermaslik va vaziyat (holat) haqida to‘g‘ri ma’lumot berish lozimligi haqida ogohlantirildim hamda faqat to‘g‘ri ma’lumot beraman.";
 
-  const who = `Men, ${l.fullName}, ${company}ning ${branch} filialida ${position.toLocaleLowerCase("uz")} lavozimida faoliyat yuritaman.`;
+  const who = `Men, ${l.fullName}, ${workplace} ${position.toLocaleLowerCase("uz")} lavozimida faoliyat yuritaman.`;
   let facts: string;
   let graceNote: string | null = null;
   if (l.kind === "late") {
@@ -899,8 +913,8 @@ export function letterContent(
 
   const duty =
     l.kind === "late"
-      ? "bundan buyon ichki mehnat tartibi qoidalariga qat’iy rioya qilishga, ish joyimga belgilangan vaqtdan kamida 10–15 daqiqa oldin yetib kelishga, kechikish ehtimoli tug‘ilganda esa bu haqda filial mudiri va hududiy koordinatorni oldindan xabardor qilishga majburiyat olaman."
-      : "bundan buyon ish jadvalimga to‘liq amal qilishga, uzrli sabab bilan ishga chiqa olmaydigan bo‘lsam, bu haqda ish boshlanishidan oldin filial mudiri, hududiy koordinator va HR bo‘limini xabardor qilishga hamda tasdiqlovchi hujjatni o‘z vaqtida taqdim etishga majburiyat olaman.";
+      ? `bundan buyon ichki mehnat tartibi qoidalariga qat’iy rioya qilishga, ish joyimga belgilangan vaqtdan kamida 10–15 daqiqa oldin yetib kelishga, kechikish ehtimoli tug‘ilganda esa bu haqda ${office ? "bevosita rahbarimni" : "filial mudiri va hududiy koordinatorni"} oldindan xabardor qilishga majburiyat olaman.`
+      : `bundan buyon ish jadvalimga to‘liq amal qilishga, uzrli sabab bilan ishga chiqa olmaydigan bo‘lsam, bu haqda ish boshlanishidan oldin ${bosses} hamda HR bo‘limini xabardor qilishga hamda tasdiqlovchi hujjatni o‘z vaqtida taqdim etishga majburiyat olaman.`;
 
   const commitment = final
     ? `Ushbu tushuntirish xati joriy oy davomida ${n}-marta sodir etilgan qoidabuzarlik bo‘yicha OXIRGI tushuntirish xatim ekanligi, menga nisbatan oxirgi (yakuniy) ogohlantirish berilgani hamda 1 oylik ish haqimning 50% miqdorida${amountText ? ` — ${amountText}` : ""} jarima ushlab qolinishi bilan tanishdim. Shuningdek, ${duty}`
@@ -919,7 +933,7 @@ export function letterContent(
       position,
       fullName: l.fullName,
       fromLine: withDan(l.fullName),
-      branch: `${branch} filiali`,
+      branch: office ? (l.branch && l.branch !== "—" ? l.branch : "Ofis") : `${branch} filiali`,
       phone: l.phone || "",
     },
     title: "TUSHUNTIRISH XATI",

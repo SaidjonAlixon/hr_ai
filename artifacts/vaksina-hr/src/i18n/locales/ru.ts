@@ -97,6 +97,7 @@ export const ru: Messages = {
   "nav.oylik": "Зарплата",
   "nav.hisobkitob": "Расчёт зарплаты",
   "nav.tushuntirishXatlari": "Объяснительные",
+  "nav.jarimalar": "Штрафы",
   "nav.tushuntirishXatim": "Мои объяснительные",
   "nav.reyting": "Рейтинг",
   "nav.reviziya": "Ревизия",

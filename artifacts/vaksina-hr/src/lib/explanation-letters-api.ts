@@ -96,6 +96,7 @@ export function reasonWords(text: string) {
 export type ExplanationLetter = {
   id: number;
   userId: number;
+  group?: "pharmacy" | "office";
   month: string;
   eventDate: string;
   kind: LetterKind;

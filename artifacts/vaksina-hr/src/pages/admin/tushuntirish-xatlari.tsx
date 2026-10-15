@@ -36,6 +36,7 @@ import { ReviewChip, StageBadge } from "@/components/explanation-letter/LetterRe
 import { StageLadder } from "@/components/explanation-letter/StageLadder";
 import { LetterHeaderDialog } from "@/components/explanation-letter/LetterHeaderDialog";
 import { LetterLookupBar } from "@/components/explanation-letter/LetterLookup";
+import { StaffGroupTabs, staffGroupOf, type StaffGroup } from "@/components/explanation-letter/StaffGroupTabs";
 import {
   FINAL_STRIKE,
   LETTER_STAGES,
@@ -104,7 +105,15 @@ export default function TushuntirishXatlariPage() {
   const review = useReviewLetter();
   const del = useDeleteLetters();
 
-  const items = q.data?.items ?? [];
+  const [group, setGroup] = useState<StaffGroup>("pharmacy");
+  const allItems = q.data?.items ?? [];
+  const groupCounts = useMemo(() => {
+    const out: Record<StaffGroup, number> = { pharmacy: 0, office: 0 };
+    for (const l of allItems) out[staffGroupOf(l)] += 1;
+    return out;
+  }, [allItems]);
+  const items = useMemo(() => allItems.filter((l) => staffGroupOf(l) === group), [allItems, group]);
+  const office = group === "office";
   const months = useMemo(() => {
     const set = new Set([thisMonth(), ...(q.data?.months ?? [])]);
     if (month !== "all") set.add(month);
@@ -148,7 +157,7 @@ export default function TushuntirishXatlariPage() {
   }, [items, status, kind, stage, query]);
 
   const [limit, setLimit] = useState(PAGE);
-  const filterKey = `${month}|${status}|${kind}|${stage}|${query}`;
+  const filterKey = `${month}|${group}|${status}|${kind}|${stage}|${query}`;
   const [limitKey, setLimitKey] = useState(filterKey);
   if (limitKey !== filterKey) {
     setLimitKey(filterKey);
@@ -170,8 +179,8 @@ export default function TushuntirishXatlariPage() {
   const confirmLetters = useMemo(() => {
     if (!confirmIds) return [];
     const ids = new Set(confirmIds);
-    return items.filter((l) => ids.has(l.id));
-  }, [confirmIds, items]);
+    return allItems.filter((l) => ids.has(l.id));
+  }, [confirmIds, allItems]);
 
   const runDelete = () => {
     if (!confirmIds?.length) return;
@@ -271,6 +280,8 @@ export default function TushuntirishXatlariPage() {
         </div>
       </header>
 
+      <StaffGroupTabs value={group} onChange={setGroup} counts={q.isLoading ? undefined : groupCounts} className="sm:max-w-xl" />
+
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         <Stat label="Jami" value={stats.all} loading={q.isLoading} tone="bg-slate-50 text-slate-800 ring-slate-200 dark:bg-white/5 dark:text-white dark:ring-white/10" />
         <Stat label="Imzo kutilmoqda" value={stats.waiting} loading={q.isLoading} tone="bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-200 dark:ring-amber-500/30" />
@@ -354,7 +365,9 @@ export default function TushuntirishXatlariPage() {
       ) : !list.length ? (
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-slate-200 py-12 text-center text-sm text-slate-500 dark:border-white/10">
           <ShieldCheck className="h-8 w-8 text-emerald-500" />
-          {items.length ? "Filtr bo‘yicha xat topilmadi." : `${monthLabel(month)} — tushuntirish xati talab qilingan holat yo‘q.`}
+          {items.length
+            ? "Filtr bo‘yicha xat topilmadi."
+            : `${monthLabel(month)} — ${office ? "ofis" : "dorixona"} xodimlarida tushuntirish xati talab qilingan holat yo‘q.`}
         </div>
       ) : (
         <>
@@ -406,7 +419,7 @@ export default function TushuntirishXatlariPage() {
                     </th>
                   ) : null}
                   <th className="w-[19%] px-3 py-2.5">Xodim</th>
-                  <th className="w-[12%] px-3 py-2.5">Filial</th>
+                  <th className="w-[12%] px-3 py-2.5">{office ? "Bo‘lim" : "Filial"}</th>
                   <th className="w-[14%] px-3 py-2.5">Muammo</th>
                   <th className="w-[13%] px-3 py-2.5">Bosqich · chora</th>
                   <th className="px-3 py-2.5">Sabab (xodim yozgan)</th>

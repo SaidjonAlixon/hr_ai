@@ -1,8 +1,8 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { db, employeesTable, payrollMonthsTable, usersTable } from "@workspace/db";
+import { db, employeesTable, payrollMonthsTable, pool, usersTable } from "@workspace/db";
 import { buildStaffAttendanceDays } from "./employee-attendance-report";
 import { displayBranchName } from "./geo-location";
-import { FINAL_STRIKE, cancelledLetterKeys } from "./explanation-letter";
+import { FINAL_STRIKE, cancelledLetterKeys, jarimaGroupForRole, type JarimaGroup } from "./explanation-letter";
 import { getJarimaSwitch, isJarimaOffDay } from "./jarima-switch";
 
 /** Jarima shu kundan boshlanadi. Undan oldingi kechikish va kelmaslik hisobga kirmaydi. */
@@ -29,14 +29,20 @@ export function strikePenalty(n: number): string {
   return "1 oylik ish haqining 50% jarima va oxirgi ogohlantirish";
 }
 
-const PHARMACY_ROLES = new Set(["mudir", "farmasevt", "stajyor", "stajor"]);
+/** Ofis xodimlari uchun jarima shu kundan boshlanadi */
+export const OFFICE_JARIMA_START = "2026-10-16";
+
+/** Davomat jarimasi qo‘llanmaydigan rollar: rahbariyat, dala koordinatorlari, SB navbatchilari */
+const JARIMA_EXEMPT_ROLES = new Set(["admin", "asoschi", "director", "koordinator", "sb", "oquvchi"]);
+/** Ofis xodimi shu muddat ichida kamida bir marta «Keldim» qilgan bo‘lsagina jarima hisoblanadi */
+const OFFICE_ACTIVE_DAYS = 30;
 
 function roleTitle(role: string | null | undefined): string {
   const key = String(role || "").toLowerCase();
   if (key === "mudir") return "Filial mudiri";
   if (key === "farmasevt") return "Farmasevt";
   if (key === "stajyor" || key === "stajor") return "Stajyor";
-  return "";
+  return key ? "Ofis xodimi" : "";
 }
 const AUTO_NOTE = "Davomat jarimasi";
 
@@ -70,6 +76,7 @@ function shiftTitle(shiftType?: string | null, shiftLabel?: string | null): stri
 export type JarimaPerson = {
   userId: number;
   employeeId: number;
+  group: JarimaGroup;
   fullName: string;
   position: string;
   branch: string;
@@ -197,17 +204,28 @@ export async function applyAttendanceJarima(
       status: employeesTable.employmentStatus,
     })
     .from(employeesTable)
-    .innerJoin(usersTable, eq(usersTable.id, employeesTable.userId))
-    .where(inArray(usersTable.role, ["mudir", "farmasevt", "stajyor", "stajor"]));
+    .innerJoin(usersTable, eq(usersTable.id, employeesTable.userId));
 
-  const people = staff.filter((row) => {
+  const candidates = staff.filter((row) => {
     const role = String(row.role || "").toLowerCase();
     const status = String(row.status || "").toLowerCase();
-    if (!PHARMACY_ROLES.has(role) || row.userId == null) return false;
+    if (!role || JARIMA_EXEMPT_ROLES.has(role) || row.userId == null) return false;
     if (status === "need_hire" || status === "no_manager" || status === "closed" || status === "dismissed") return false;
     if (/xodim kerak/i.test(row.fullName || "")) return false;
     return true;
   });
+  const officeIds = candidates.filter((row) => jarimaGroupForRole(row.role) === "office").map((row) => row.employeeId);
+  const activeOffice = new Set<number>();
+  if (officeIds.length && to >= OFFICE_JARIMA_START) {
+    const since = new Date(Date.now() - OFFICE_ACTIVE_DAYS * 86_400_000).toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
+    const { rows } = await pool.query<{ employee_id: number }>(
+      `SELECT DISTINCT employee_id FROM attendance_records
+        WHERE employee_id = ANY($1::int[]) AND check_in_at IS NOT NULL AND work_date >= $2`,
+      [officeIds, since],
+    );
+    for (const r of rows) activeOffice.add(Number(r.employee_id));
+  }
+  const people = candidates.filter((row) => jarimaGroupForRole(row.role) === "pharmacy" || activeOffice.has(row.employeeId));
   if (!people.length) return { month, active: true, people: [] };
 
   const userIds = people.map((row) => row.userId as number);
@@ -239,11 +257,13 @@ export async function applyAttendanceJarima(
     const userId = person.userId as number;
     const saved = savedByUser.get(userId);
     const salary = Math.max(0, Math.round(Number(saved?.salary || person.fixedSalary || 0)));
+    const group = jarimaGroupForRole(person.role);
+    const startDay = group === "office" ? OFFICE_JARIMA_START : JARIMA_START;
     const days = daysByEmp.get(person.employeeId) ?? [];
     const counted = days
       .filter((day) => {
         if (!sw.enabled || isJarimaOffDay(sw, day.date)) return false;
-        if (day.date < JARIMA_START) return false;
+        if (day.date < startDay) return false;
         if (day.excused) return false;
         if (day.status === "prehire" || day.status === "outside") return false;
         if (day.status === "rest" || day.status === "leave" || day.status === "planned") return false;
@@ -280,6 +300,7 @@ export async function applyAttendanceJarima(
     out.push({
       userId,
       employeeId: person.employeeId,
+      group,
       fullName: person.fullName,
       position: person.position || roleTitle(person.role),
       branch: displayBranchName(person.location).trim() || "—",

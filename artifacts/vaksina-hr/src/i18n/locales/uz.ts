@@ -97,6 +97,7 @@ export const uz: Messages = {
   "nav.oylik": "Oylik",
   "nav.hisobkitob": "Oylik hisob",
   "nav.tushuntirishXatlari": "Tushuntirish xatlari",
+  "nav.jarimalar": "Jarimalar",
   "nav.tushuntirishXatim": "Tushuntirish xatim",
   "nav.reyting": "Reyting",
   "nav.reviziya": "Reviziya",

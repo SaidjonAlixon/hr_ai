@@ -73,6 +73,7 @@ import { fetchSmenaAccess } from '@/lib/smena-api';
 import { useStaffNeeds } from '@/lib/staff-needs-api';
 import { useOpsDash } from '@/lib/ops-dept-api';
 import { cn } from '@/lib/utils';
+import { APP_VERSION, APP_VERSION_TITLE } from '@/lib/app-version';
 import { prefetchRoute, prefetchRoutesWhenIdle } from '@/lib/route-prefetch';
 import { fetchMyMobileAttendance } from '@/lib/mobile-attendance-api';
 import { MobileGpsBackgroundTracker } from '@/components/davomat/MobileGpsBackgroundTracker';
@@ -2427,18 +2428,23 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             </div>
           ) : null}
 
-          <button
-            type="button"
-            onClick={toggleNav}
-            className={cn(
-              'app-sidebar-collapse-btn flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-semibold transition-colors',
-              desktopCollapsed && 'md:hidden',
-            )}
-            aria-label={t('common.collapseMenu')}
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-            <span>{t('common.collapseMenu')}</span>
-          </button>
+          <div className={cn('flex items-center gap-1.5', desktopCollapsed && 'md:hidden')}>
+            <button
+              type="button"
+              onClick={toggleNav}
+              className="app-sidebar-collapse-btn flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-semibold transition-colors"
+              aria-label={t('common.collapseMenu')}
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+              <span className="truncate">{t('common.collapseMenu')}</span>
+            </button>
+            <span
+              className="shrink-0 cursor-default select-none rounded-md px-1.5 py-1 font-mono text-[10px] font-semibold tabular-nums text-slate-400 ring-1 ring-slate-900/[0.06] dark:text-white/35 dark:ring-white/10"
+              title={APP_VERSION_TITLE}
+            >
+              {APP_VERSION}
+            </span>
+          </div>
         </div>
       </aside>
 

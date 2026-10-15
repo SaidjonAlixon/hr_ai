@@ -1,4 +1,6 @@
 import path from 'path';
+import { execSync } from 'child_process';
+import { readFileSync } from 'fs';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
@@ -16,8 +18,28 @@ if (Number.isNaN(port) || port <= 0) {
 
 const basePath = process.env.BASE_PATH ?? '/';
 
+function git(cmd: string): string {
+  try {
+    return execSync(`git ${cmd}`, { cwd: import.meta.dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  } catch {
+    return '';
+  }
+}
+
+const pkg = JSON.parse(readFileSync(path.resolve(import.meta.dirname, 'package.json'), 'utf8')) as { version?: string };
+
+/** Versiya qo‘lda: katta o‘zgarishda package.json → "version" ni oshiring (1.4.0 → 1.5.0) */
+const appBuild = {
+  version: (pkg.version ?? '').replace(/\.0$/, ''),
+  commit: git('rev-parse --short HEAD'),
+  builtAt: new Date().toISOString(),
+};
+
 export default defineConfig({
   base: basePath,
+  define: {
+    __APP_BUILD__: JSON.stringify(appBuild),
+  },
   plugins: [
     react(),
     tailwindcss(),

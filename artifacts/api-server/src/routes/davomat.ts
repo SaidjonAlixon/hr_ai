@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, gte, lte, inArray, desc, notInArray } from "drizzle-orm";
+import { and, eq, gte, lte, inArray, desc, notInArray, isNull } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import { kickDisciplineScan } from "../lib/discipline";
 import {
@@ -3777,6 +3777,46 @@ function punchMethodLabel(method: "FACE_ID" | "QR" | "FINGERPRINT") {
   return method === "QR" ? "QR" : method === "FINGERPRINT" ? "Barmoq izi" : "Face ID";
 }
 
+/**
+ * Kechagi ochiq yozuv Ketdim muddatidan o‘tgan bo‘lsa (2-smena: ertasi 02:00) — darhol «kelmagan» qilib yopadi.
+ * Fon job (5 daqiqa) kutilmaydi: muddatdan keyin Ketdim kechagi kunga yozilmaydi, Keldim bugungi yangi kunni ochadi.
+ */
+async function closeExpiredOvernightRecord<
+  R extends { id: number; checkInAt: Date | null; checkOutAt: Date | null; status: string | null },
+>(
+  emp: { id: number; orgRole: string | null; shiftType: string | null; shiftLabel: string | null },
+  userRole: string | null | undefined,
+  yesterday: string,
+  rec: R | undefined,
+): Promise<R | undefined> {
+  if (!rec?.checkInAt || rec.checkOutAt || rec.status === "absent" || rec.status === "leave") return rec;
+  const defs = await getEffectiveShiftDefs();
+  const plan = await dayShiftTypeFor(emp.id, yesterday);
+  const shiftType = plan || emp.shiftType;
+  const override = await resolveScheduleOverride(emp.id, yesterday);
+  const sched = scheduleWithOverride(
+    workScheduleForStaff(userRole || "", emp.orgRole, shiftType, plan ? null : emp.shiftLabel, defs),
+    override,
+  );
+  const deadlineOpts = {
+    shiftKey: sched.key,
+    shiftKeys: sched.keys,
+    warehouse: Boolean(sched.warehouse),
+    shiftType: override ? override.shiftKey : shiftType,
+    workDateYmd: yesterday,
+    endHm: sched.end,
+    overnight: Boolean(sched.overnight),
+  };
+  const deadlineAt = checkoutDeadlineAt(yesterday, sched.end, sched.overnight, deadlineOpts);
+  if (Date.now() <= deadlineAt.getTime()) return rec;
+  const notes = `auto_absent_no_checkout: ${checkoutDeadlineHmFor(deadlineOpts)} gacha Ketdim yo‘q (smena ${sched.end}, ${sched.label})`;
+  await db
+    .update(attendanceRecordsTable)
+    .set({ status: "absent", notes, updatedAt: new Date() })
+    .where(and(eq(attendanceRecordsTable.id, rec.id), isNull(attendanceRecordsTable.checkOutAt)));
+  return { ...rec, status: "absent", notes };
+}
+
 async function applyFacePunch(opts: {
   emp: WorkplaceEmp;
   userRole: string;
@@ -3829,7 +3869,7 @@ async function applyFacePunch(opts: {
       and(eq(attendanceRecordsTable.employeeId, emp.id), eq(attendanceRecordsTable.workDate, today)),
     )
     .limit(1);
-  const [yesterdayRec] = await db
+  const [yesterdayRaw] = await db
     .select()
     .from(attendanceRecordsTable)
     .where(
@@ -3839,6 +3879,9 @@ async function applyFacePunch(opts: {
       ),
     )
     .limit(1);
+  // Ketdim: kechagi yozuv qoladi — muddat o‘tgan bo‘lsa pastda «checkout_window_closed» xabari beriladi
+  const yesterdayRec =
+    action === "in" ? await closeExpiredOvernightRecord(emp, userRole, yesterday, yesterdayRaw) : yesterdayRaw;
   const resolvedWd = resolveAttendanceWorkDate({
     todayYmd: today,
     yesterdayYmd: yesterday,
@@ -4201,8 +4244,8 @@ async function applyFacePunch(opts: {
             status: 400,
             body: {
               error:
-                `${deadlineHm} gacha «Ketdim» bosilmadi — bugun «kelmagan» deb yopildi. ` +
-                `Kelish vaqti jadvalda saqlanadi. ${ruleNote} Ertaga «Keldim» dan boshlang.`,
+                `${deadlineHm} gacha «Ketdim» bosilmadi — ${workDate} smenasi «kelmagan» deb yopildi. ` +
+                `Kelish vaqti jadvalda saqlanadi. ${ruleNote} Keyingi smenada «Keldim» dan boshlang.`,
               code: "checkout_window_closed",
               fullName: emp.fullName,
               checkIn: formatHm(existing.checkInAt),
@@ -4751,7 +4794,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
             kind: "office" as const,
           };
     const todayRec = todayRecEarly;
-    const [yesterdayRec] = await db
+    const [yesterdayRaw] = await db
       .select()
       .from(attendanceRecordsTable)
       .where(
@@ -4761,6 +4804,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
         ),
       )
       .limit(1);
+    const yesterdayRec = await closeExpiredOvernightRecord(emp, user.role, yesterday, yesterdayRaw);
     const planToday =
       (await dayShiftTypeFor(emp.id, today)) || (await dayShiftTypeFor(emp.id, yesterday));
     const shiftType = planToday || emp.shiftType;
@@ -5073,7 +5117,7 @@ router.get("/davomat/me/status", requireAuth, async (req: AuthRequest, res): Pro
           and(eq(attendanceRecordsTable.employeeId, emp.id), eq(attendanceRecordsTable.workDate, today)),
         )
         .limit(1);
-      const [yesterdayRec] = await db
+      const [yesterdayRaw] = await db
         .select()
         .from(attendanceRecordsTable)
         .where(
@@ -5083,6 +5127,7 @@ router.get("/davomat/me/status", requireAuth, async (req: AuthRequest, res): Pro
           ),
         )
         .limit(1);
+      const yesterdayRec = await closeExpiredOvernightRecord(emp, user?.role, yesterday, yesterdayRaw);
       const planToday =
         (await dayShiftTypeFor(emp.id, today)) || (await dayShiftTypeFor(emp.id, yesterday));
       workDate = resolveAttendanceWorkDate({

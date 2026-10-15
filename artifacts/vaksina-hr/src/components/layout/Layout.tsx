@@ -2449,7 +2449,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                   {APP_VERSION}
                 </button>
               </PopoverTrigger>
-              <PopoverContent side="top" align="end" className="w-auto rounded-xl px-3 py-2">
+              <PopoverContent side="top" align="end" className="z-[90] w-auto rounded-xl px-3 py-2">
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-white/50">
                   Oxirgi yangilanish
                 </p>

@@ -73,7 +73,8 @@ import { fetchSmenaAccess } from '@/lib/smena-api';
 import { useStaffNeeds } from '@/lib/staff-needs-api';
 import { useOpsDash } from '@/lib/ops-dept-api';
 import { cn } from '@/lib/utils';
-import { APP_VERSION, APP_VERSION_TITLE } from '@/lib/app-version';
+import { APP_UPDATED_DATE, APP_UPDATED_TIME, APP_VERSION } from '@/lib/app-version';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { prefetchRoute, prefetchRoutesWhenIdle } from '@/lib/route-prefetch';
 import { fetchMyMobileAttendance } from '@/lib/mobile-attendance-api';
 import { MobileGpsBackgroundTracker } from '@/components/davomat/MobileGpsBackgroundTracker';
@@ -2438,12 +2439,25 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               <ChevronLeft className="h-3.5 w-3.5" />
               <span className="truncate">{t('common.collapseMenu')}</span>
             </button>
-            <span
-              className="shrink-0 cursor-default select-none rounded-md px-1.5 py-1 font-mono text-[10px] font-semibold tabular-nums text-slate-400 ring-1 ring-slate-900/[0.06] dark:text-white/35 dark:ring-white/10"
-              title={APP_VERSION_TITLE}
-            >
-              {APP_VERSION}
-            </span>
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-lg bg-[#0b3a5c]/[0.07] px-2 py-1 text-[11px] font-extrabold tabular-nums tracking-tight text-[#0b3a5c] ring-1 ring-[#0b3a5c]/15 transition-colors hover:bg-[#0b3a5c]/[0.12] dark:bg-white/[0.08] dark:text-white/85 dark:ring-white/15 dark:hover:bg-white/[0.14]"
+                  aria-label={`Versiya ${APP_VERSION}`}
+                >
+                  {APP_VERSION}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent side="top" align="end" className="w-auto rounded-xl px-3 py-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-white/50">
+                  Oxirgi yangilanish
+                </p>
+                <p className="mt-0.5 whitespace-nowrap text-sm font-bold tabular-nums text-slate-900 dark:text-white">
+                  {APP_UPDATED_DATE || '—'} · {APP_UPDATED_TIME || '—'}
+                </p>
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
       </aside>

@@ -3480,7 +3480,7 @@ export default function DavomatPage() {
                           : [
                               { key: "office", label: "Ofis", start: "09:00", end: "18:00" },
                               { key: "one", label: "1-smena", start: "08:00", end: "17:00" },
-                              { key: "two", label: "2-smena", start: "17:00", end: "23:45" },
+                              { key: "two", label: "2-smena", start: "17:00", end: "24:00" },
                               { key: "three", label: "3-smena", start: "23:00", end: "07:00" },
                             ]
                         ).map((item) => (

@@ -137,6 +137,7 @@ import { employmentOverlaps, employmentPhase, tashkentYmd } from "../lib/employm
 import { dedupeBranchesWithGps } from "../lib/branch-dedupe";
 import {
   computeDayAttendance,
+  earlyLeaveGraceMin,
   resolveBranchForDay,
   type BranchAssignment,
   type ShiftKey,
@@ -389,7 +390,7 @@ function computeMetrics(
     settings: cachedPaySettings(),
   });
 
-  // Legacy path: OT / erta ketish — to‘liq combo oynasi (1+2 → 08:00…23:45)
+  // Legacy path: OT / erta ketish — to‘liq combo oynasi (1+2 → 08:00…24:00)
   const start = atTashkent(workDate, hours?.start ?? WORK_START);
   let end = atTashkent(
     hours?.overnight ? addDaysYmd(workDate, 1) : workDate,
@@ -422,7 +423,7 @@ function computeMetrics(
   if (checkInAt && checkOutAt && !engine.missingCheckout) {
     const outDiff = minutesBetween(end, checkOutAt);
     if (outDiff < 0) {
-      earlyLeaveMin = -outDiff;
+      earlyLeaveMin = -outDiff <= earlyLeaveGraceMin(hours?.end ?? WORK_END) ? 0 : -outDiff;
       overtimeMin = 0;
     } else if (outDiff > 0) {
       overtimeMin = outDiff;
@@ -6165,7 +6166,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
 
     const guideRows: [string, string][] = [
       ["Ustun: Smena", "1-smena · 2-smena · 3-smena · 1+2 · 2+3 · Asosiy ofis"],
-      ["Ustun: Ish vaqti", "Har xodimning reja bo'yicha kelish/ketish vaqti (masalan 08:00–17:00 yoki 17:00–23:45)"],
+      ["Ustun: Ish vaqti", "Har xodimning reja bo'yicha kelish/ketish vaqti (masalan 08:00–17:00 yoki 17:00–24:00)"],
       ["Ustun: F.I.Sh.", "Ism-familiya, tagida telefon raqami"],
       ["Ish vaqtidan keyin", "Kelgan kun va tagida vaqtida ishlagan soat. Kechikkan kun va tagida kechikish soati. Ish soati — faqat vaqtida kelib to‘liq ishlagan soat. Kechikkan va kelmagan kun soati qo‘shilmaydi."],
       ["Katak: Keldi", "Face ID orqali belgilangan kelish vaqti (qavsda reja vaqti)"],

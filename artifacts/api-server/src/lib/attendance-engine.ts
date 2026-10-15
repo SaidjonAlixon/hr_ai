@@ -33,7 +33,7 @@ export const DEFAULT_SHIFT_DEFS: Record<ShiftKey, ShiftDefinition> = {
     key: "two",
     label: "2-smena",
     startHm: "17:00",
-    endHm: "23:45",
+    endHm: "24:00",
     overnight: false,
     defaultUnpaidBreakMin: 0,
     graceMinutes: 15,
@@ -207,6 +207,13 @@ const TZ = "Asia/Tashkent";
 export function hmToMinutes(hm: string): number {
   const [h, m] = String(hm || "0:0").split(":").map((x) => Number(x) || 0);
   return h * 60 + m;
+}
+
+/** Yarim tunda (24:00) tugaydigan smenada oxirgi shuncha daqiqa ichida ketish erta ketish emas */
+export const MIDNIGHT_END_LEAVE_GRACE_MIN = 15;
+
+export function earlyLeaveGraceMin(endHm: string | null | undefined): number {
+  return endHm && hmToMinutes(endHm) >= 24 * 60 ? MIDNIGHT_END_LEAVE_GRACE_MIN : 0;
 }
 
 export function minutesToHm(total: number): string {
@@ -537,6 +544,9 @@ export function computeDayAttendance(input: {
       }
     }
   }
+
+  const lastDef = defs[shiftKeys[shiftKeys.length - 1] as ShiftKey];
+  if (earlyLeaveMin > 0 && earlyLeaveMin <= earlyLeaveGraceMin(lastDef?.endHm)) earlyLeaveMin = 0;
 
   const merged = mergeIntervals(rawIntervals);
   const rawWorkedMinutes = intervalsDurationMin(merged);

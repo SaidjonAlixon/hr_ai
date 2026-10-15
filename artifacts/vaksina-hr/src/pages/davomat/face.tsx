@@ -258,7 +258,8 @@ function checkoutDeadlineMs(
   opts?: { shiftType?: string | null; shiftKeys?: string[] | null },
 ): number {
   const endMs = shiftEndMs(workDateYmd, endHm, overnight);
-  const endDayYmd = ymdInTashkent(endMs);
+  // 24:00 — shu kun oxiri (ertasi 00:00 emas)
+  const endDayYmd = ymdInTashkent(endMs - 60_000);
   const merged = { ...opts, overnight };
   if (usesShiftThreeDeadline(merged)) {
     return new Date(`${endDayYmd}T${CHECKOUT_DEADLINE_SHIFT_THREE_HM}:00+05:00`).getTime();
@@ -1675,7 +1676,7 @@ export default function DavomatFacePage() {
   const shiftOvernight =
     workplace?.shift?.overnight ??
     (user?.role ? Boolean(workShiftForUserRole(user.role).overnight) : false);
-  /** Smena tugaganmi — workDate + end (yarim tun o‘tsa ham to‘g‘ri; 2-smena 23:45 → 00:10 OK) */
+  /** Smena tugaganmi — workDate + end (yarim tun o‘tsa ham to‘g‘ri; 2-smena 24:00 → 00:10 OK) */
   const shiftEndAtMs = (() => {
     let endMs = shiftEndMs(workDateYmd, shiftEndHm, shiftOvernight);
     const startHm = /^\d{1,2}:\d{2}$/.test(shiftStartHm) ? shiftStartHm : "08:00";

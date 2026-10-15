@@ -226,7 +226,7 @@ function pharmacyKeySet(shiftType?: string | null, shiftLabel?: string | null): 
   return keys;
 }
 
-/** 1, 2, 3, 1+2 (08:00–23:45), 2+3 (17:00–07:00). Juftlik bitta smenaga yig‘ilmaydi. */
+/** 1, 2, 3, 1+2 (08:00–24:00), 2+3 (17:00–07:00). Juftlik bitta smenaga yig‘ilmaydi. */
 export function pharmacyShiftBucket(emp: {
   shiftType?: string | null;
   shiftLabel?: string | null;
@@ -239,12 +239,12 @@ export function pharmacyShiftBucket(emp: {
   if (keys.size === 1 && keys.has("three")) return "shift_three";
   if (keys.size === 1 && keys.has("two")) return "shift_two";
   if (keys.size === 1 && keys.has("one")) return "shift_one";
-  if (emp.workStart === "08:00" && emp.workEnd === "23:45") return "shift_12";
+  if (emp.workStart === "08:00" && (emp.workEnd === "24:00" || emp.workEnd === "23:45")) return "shift_12";
   if ((emp.workStart === "17:00" || emp.workStart === "18:00") && emp.workEnd === "07:00") return "shift_23";
   if (normalizeShiftType(emp.shiftType, emp.shiftLabel) === "two") return "shift_two";
   if (
     (emp.workStart === "17:00" || emp.workStart === "18:00") &&
-    emp.workEnd === "23:45"
+    (emp.workEnd === "24:00" || emp.workEnd === "23:45")
   ) {
     return "shift_two";
   }
@@ -339,7 +339,7 @@ export function workHoursForStaffFilter(filter: DavomatStaffFilter): { start: st
     case "shift_one":
       return { start: "08:00", end: "17:00" };
     case "shift_two":
-      return { start: "17:00", end: "23:45" };
+      return { start: "17:00", end: "24:00" };
     case "security":
       return SECURITY_WORK_HOURS;
     case "office":
@@ -426,9 +426,9 @@ export type PharmacyShiftOption = {
 export const PHARMACY_SHIFT_OPTIONS: PharmacyShiftOption[] = [
   { key: "shift_one", label: "1-smena", hours: "08:00 – 17:00", start: "08:00", end: "17:00" },
   { key: "shift_orta", label: "O‘rta smena", hours: "08:00 – 17:00", start: "08:00", end: "17:00" },
-  { key: "shift_two", label: "2-smena", hours: "17:00 – 23:45", start: "17:00", end: "23:45" },
+  { key: "shift_two", label: "2-smena", hours: "17:00 – 24:00", start: "17:00", end: "24:00" },
   { key: "shift_three", label: "3-smena", hours: "23:00 – 07:00", start: "23:00", end: "07:00" },
-  { key: "shift_12", label: "1+2", hours: "08:00 – 23:45", start: "08:00", end: "23:45" },
+  { key: "shift_12", label: "1+2", hours: "08:00 – 24:00", start: "08:00", end: "24:00" },
   { key: "shift_23", label: "2+3", hours: "17:00 – 07:00", start: "17:00", end: "07:00" },
 ];
 

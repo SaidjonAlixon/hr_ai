@@ -20,7 +20,7 @@ const SLOTS: Array<{
   { hour: 10, hm: "10:00", buckets: ["one"], updated: false, nextWhen: "bugun soat 13:00" },
   { hour: 13, hm: "13:00", buckets: ["one", "orta"], updated: true, nextWhen: "bugun soat 17:00 (1-smena tugashi)" },
   { hour: 19, hm: "19:00", buckets: ["two", "12"], updated: false, nextWhen: "bugun soat 22:00" },
-  { hour: 22, hm: "22:00", buckets: ["two", "12", "orta"], updated: true, nextWhen: "bugun soat 23:45 (smena tugashi)" },
+  { hour: 22, hm: "22:00", buckets: ["two", "12", "orta"], updated: true, nextWhen: "bugun soat 24:00 (smena tugashi)" },
 ];
 
 /**

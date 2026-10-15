@@ -168,7 +168,7 @@ export function pharmacyShiftBucket(emp: {
   if (keys.size === 1 && keys.has("two")) return "shift_two";
   if (keys.size === 1 && keys.has("one")) return "shift_one";
   if (normalizeShiftType(emp.shiftType, emp.shiftLabel) === "two") return "shift_two";
-  if ((emp.workStart === "17:00" || emp.workStart === "18:00") && emp.workEnd === "23:45") return "shift_two";
+  if ((emp.workStart === "17:00" || emp.workStart === "18:00") && (emp.workEnd === "24:00" || emp.workEnd === "23:45")) return "shift_two";
   return "shift_one";
 }
 

@@ -1265,7 +1265,7 @@ CREATE TABLE IF NOT EXISTS attendance_pay_settings (
   shift_one_start_hm TEXT NOT NULL DEFAULT '08:00',
   shift_one_end_hm TEXT NOT NULL DEFAULT '17:00',
   shift_two_start_hm TEXT NOT NULL DEFAULT '17:00',
-  shift_two_end_hm TEXT NOT NULL DEFAULT '23:45',
+  shift_two_end_hm TEXT NOT NULL DEFAULT '24:00',
   shift_three_start_hm TEXT NOT NULL DEFAULT '23:00',
   shift_three_end_hm TEXT NOT NULL DEFAULT '07:00',
   shift_three_overnight BOOLEAN NOT NULL DEFAULT TRUE,
@@ -1290,7 +1290,7 @@ ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS max_shifts_per_day 
 ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_one_start_hm TEXT NOT NULL DEFAULT '08:00';
 ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_one_end_hm TEXT NOT NULL DEFAULT '17:00';
 ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_two_start_hm TEXT NOT NULL DEFAULT '17:00';
-ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_two_end_hm TEXT NOT NULL DEFAULT '23:45';
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_two_end_hm TEXT NOT NULL DEFAULT '24:00';
 ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_three_start_hm TEXT NOT NULL DEFAULT '23:00';
 ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_three_end_hm TEXT NOT NULL DEFAULT '07:00';
 ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_three_overnight BOOLEAN NOT NULL DEFAULT TRUE;

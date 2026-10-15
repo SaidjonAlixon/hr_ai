@@ -27,12 +27,35 @@ describe("shift definitions", () => {
     assert.equal(plannedShiftMinutes(SHIFT_DEFS.one), 9 * 60);
   });
 
-  it("2) 2-smena 17:00–23:45 = 6s 45d", () => {
-    assert.equal(plannedShiftMinutes(SHIFT_DEFS.two), 6 * 60 + 45);
+  it("2) 2-smena 17:00–24:00 = 7 soat", () => {
+    assert.equal(plannedShiftMinutes(SHIFT_DEFS.two), 7 * 60);
   });
 
   it("3) 3-smena overnight 23:00–07:00 = 8 soat", () => {
     assert.equal(plannedShiftMinutes(SHIFT_DEFS.three), 8 * 60);
+  });
+});
+
+describe("2-smena 24:00 — erta ketish", () => {
+  const d = "2026-10-15";
+  const leave = (outYmd: string, outHm: string) =>
+    computeDayAttendance({
+      workDate: d,
+      shiftKeys: ["two"],
+      segments: [{ shiftKey: "two", checkInAt: atTashkent(d, "16:55"), checkOutAt: atTashkent(outYmd, outHm) }],
+    });
+
+  it("23:50 da ketdi — 15 daqiqa ichida, erta ketish emas", () => {
+    assert.equal(leave(d, "23:50").earlyLeaveMin, 0);
+  });
+  it("23:45 da ketdi — erta ketish emas", () => {
+    assert.equal(leave(d, "23:45").earlyLeaveMin, 0);
+  });
+  it("23:40 da ketdi — 20 daqiqa erta", () => {
+    assert.equal(leave(d, "23:40").earlyLeaveMin, 20);
+  });
+  it("ertasi 00:30 da ketdi — erta ketish yo‘q", () => {
+    assert.equal(leave(addDaysYmd(d, 1), "00:30").earlyLeaveMin, 0);
   });
 });
 
@@ -58,7 +81,7 @@ describe("shift combination rules", () => {
 });
 
 describe("planned overlap 2+3", () => {
-  it("9) 2+3 planned merge = 14 soat (overlap 45m once)", () => {
+  it("9) 2+3 planned merge = 14 soat (overlap 60m once)", () => {
     const d = "2026-09-06";
     const a = plannedInterval(d, "two");
     const b = plannedInterval(d, "three");
@@ -66,7 +89,7 @@ describe("planned overlap 2+3", () => {
     const mins = intervalsDurationMin(merged);
     assert.equal(mins, 14 * 60);
     const sum = Math.round((a.endMs - a.startMs) / 60_000) + Math.round((b.endMs - b.startMs) / 60_000);
-    assert.equal(sum - mins, 45);
+    assert.equal(sum - mins, 60);
   });
 });
 
@@ -177,7 +200,7 @@ describe("real punches", () => {
       ],
     });
     assert.equal(r.rawWorkedMinutes, 14 * 60);
-    assert.equal(r.overlapMinutes, 45);
+    assert.equal(r.overlapMinutes, 60);
     assert.equal(r.paidWorkedMinutes, 14 * 60); // no unpaid on 2/3
   });
 

@@ -225,7 +225,7 @@ function pharmacyKeys(
 
 /**
  * Bitta yoki kombinatsiya smena oynasi.
- * 1+2 → ertalab 1-smena boshlanishi … 2-smena tugashi (08:00–23:45).
+ * 1+2 → ertalab 1-smena boshlanishi … 2-smena tugashi (08:00–24:00).
  * 2+3 → 2 boshlanishi … 3 tugashi (overnight).
  */
 export function shiftWindow(
@@ -454,7 +454,8 @@ export function checkoutDeadlineAt(
     return warehouseCheckoutDeadlineAt(workDateYmd, endHm, overnight);
   }
   const endAt = shiftEndAt(workDateYmd, endHm, overnight);
-  const endDayYmd = ymdInTashkent(endAt);
+  // 24:00 — shu kun oxiri (ertasi 00:00 emas)
+  const endDayYmd = ymdInTashkent(new Date(endAt.getTime() - 60_000));
   const merged = { ...opts, overnight };
 
   if (usesShiftThreeCheckoutDeadline(merged)) {

@@ -139,7 +139,7 @@ router.get("/attendance-settings", requireAuth, async (_req, res): Promise<void>
           pharmacyRoles: ["mudir", "farmasevt", "stajyor"],
           officeNote: "Ofis xodimlarida smena yo‘q — faqat belgilangan ish vaqti",
           one: { start: "08:00", end: "17:00", overnight: false, unpaidBreakMin: 60, plannedMinutes: 540 },
-          two: { start: "17:00", end: "23:45", overnight: false, unpaidBreakMin: 0, plannedMinutes: 405 },
+          two: { start: "17:00", end: "24:00", overnight: false, unpaidBreakMin: 0, plannedMinutes: 420 },
           three: { start: "23:00", end: "07:00", overnight: true, unpaidBreakMin: 0, plannedMinutes: 480 },
           office: { start: "09:00", end: "18:00", overnight: false, unpaidBreakMin: 60, plannedMinutes: 540 },
         },
@@ -180,7 +180,7 @@ router.patch("/attendance-settings", requireAuth, async (req: AuthRequest, res):
     shiftOneStartHm: isHm(shiftOne.start ?? shiftOne.startHm) || existing?.shiftOneStartHm || "08:00",
     shiftOneEndHm: isHm(shiftOne.end ?? shiftOne.endHm) || existing?.shiftOneEndHm || "17:00",
     shiftTwoStartHm: isHm(shiftTwo.start ?? shiftTwo.startHm) || existing?.shiftTwoStartHm || "17:00",
-    shiftTwoEndHm: isHm(shiftTwo.end ?? shiftTwo.endHm) || existing?.shiftTwoEndHm || "23:45",
+    shiftTwoEndHm: isHm(shiftTwo.end ?? shiftTwo.endHm) || existing?.shiftTwoEndHm || "24:00",
     shiftThreeStartHm: isHm(shiftThree.start ?? shiftThree.startHm) || existing?.shiftThreeStartHm || "23:00",
     shiftThreeEndHm: isHm(shiftThree.end ?? shiftThree.endHm) || existing?.shiftThreeEndHm || "07:00",
     shiftThreeOvernight: Boolean(

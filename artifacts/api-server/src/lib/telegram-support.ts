@@ -187,7 +187,7 @@ const ANSWERS = {
       [
         "🕒 <b>Smena vaqtlari (apteka):</b>",
         "• 1-smena: 08:00–17:00",
-        "• 2-smena: 17:00–23:45",
+        "• 2-smena: 17:00–24:00",
         "• 3-smena: 23:00–07:00",
         "Ofis: odatda 09:00–18:00.",
         "",

@@ -79,7 +79,7 @@ export const SHIFT_CONFIG: Record<
   two: {
     label: "2-smena",
     badge: "Kechki",
-    hours: "17:00 – 23:45",
+    hours: "17:00 – 24:00",
     duration: "6 soat 45 daq",
     checkoutHint: "Chiqish (Ketdim): ertasi 02:00 gacha",
     borderTone: "border-amber-300 dark:border-amber-700",
@@ -88,7 +88,7 @@ export const SHIFT_CONFIG: Record<
   "one+two": {
     label: "1+2 smena",
     badge: "Kun bo‘yi / To‘liq",
-    hours: "08:00 – 23:45",
+    hours: "08:00 – 24:00",
     duration: "15 soat 45 daq",
     checkoutHint: "Chiqish (Ketdim): ertasi 02:00 gacha",
     borderTone: "border-emerald-300 dark:border-emerald-700",

@@ -12,7 +12,7 @@ import {
   tasksTable,
   usersTable,
 } from "@workspace/db";
-import { addDaysYmd, type ShiftKey } from "./attendance-engine";
+import { addDaysYmd, earlyLeaveGraceMin, type ShiftKey } from "./attendance-engine";
 import { hmToMinutes, lateArrivalMinutes, workScheduleForStaff, type WorkSchedule } from "./shift-hours";
 import { getEffectiveShiftDefs } from "./shift-schedule";
 import { isScheduledRestDay, isWeekendYmd, type ScheduleStaff } from "./ofis-weekend";
@@ -408,11 +408,10 @@ function earlyMinutesOf(checkInHm: string | null, checkOutHm: string | null, sch
   let left = hmToMinutes(checkOutHm);
   const arrived = hmToMinutes(checkInHm);
   if (![start, end, left, arrived].every(Number.isFinite)) return 0;
-  if (schedule.overnight || end <= start) {
-    end += 24 * 60;
-    if (left < arrived) left += 24 * 60;
-  }
+  if (schedule.overnight || end <= start) end += 24 * 60;
+  if (left < arrived) left += 24 * 60;
   const diff = end - left;
+  if (diff <= earlyLeaveGraceMin(schedule.end)) return 0;
   return diff > 0 && diff < 16 * 60 ? diff : 0;
 }
 

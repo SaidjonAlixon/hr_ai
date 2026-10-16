@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "crypto";
 import type { Request, Response } from "express";
-import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, ne } from "drizzle-orm";
 import {
   db,
   usersTable,

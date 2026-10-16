@@ -371,12 +371,16 @@ export function kickDisciplineScan() {
   }, 15_000);
 }
 
-async function scanOnce(): Promise<void> {
+/** Oy bo‘yicha intizom + tushuntirish xatlari bosqichini qayta hisoblash */
+async function syncDisciplineMonth(month: string, opts?: { manageLocks?: boolean }): Promise<void> {
   const today = todayTashkent();
   const yesterday = shiftYmd(today, -1);
-  const month = today.slice(0, 7);
   const snap = await loadJarimaSnapshot(month);
-  if (!snap?.active) return;
+  if (!snap?.active) {
+    // Jarima o‘chiq bo‘lsa ham o‘chirilgan xatlar qayta yaratilmasin / bosqich tozalansin
+    await syncExplanationLetters(month, [], today).catch((err) => logLetterError(err, "sinxronlash"));
+    return;
+  }
 
   const people = snap.people.filter((p) => p.strikes > 0);
   const coords = await coordinatorNamesFor(people.map((p) => p.employeeId));
@@ -431,6 +435,8 @@ async function scanOnce(): Promise<void> {
   ]);
   await syncExplanationLetters(month, people, today).catch((err) => logLetterError(err, "sinxronlash"));
 
+  if (opts?.manageLocks === false) return;
+
   const belowLock = snap.people.filter((p) => p.strikes < LOCK_FROM).map((p) => p.userId);
   const { rows: released } = await pool.query(
     `UPDATE discipline_locks SET cleared_at = NOW(), cleared_by_name = 'Jarima bekor qilindi'
@@ -449,6 +455,24 @@ async function scanOnce(): Promise<void> {
     );
     if (rowCount) invalidateLockCache(f.userId);
   }
+}
+
+async function scanOnce(): Promise<void> {
+  await syncDisciplineMonth(todayTashkent().slice(0, 7), { manageLocks: true });
+}
+
+/**
+ * Xat o‘chirilgandan keyin: o‘sha oylarning jarima/bosqichini darhol
+ * «bo‘lmagandek» qilib qayta hisoblash (imzolangan xatlar ham qayta tartiblanadi).
+ */
+export async function resyncAfterLetterDelete(months: string[]): Promise<void> {
+  const uniq = [...new Set(months.map((m) => String(m || "").slice(0, 7)).filter((m) => /^\d{4}-\d{2}$/.test(m)))];
+  const current = todayTashkent().slice(0, 7);
+  if (!uniq.includes(current)) uniq.push(current);
+  for (const month of uniq) {
+    await syncDisciplineMonth(month, { manageLocks: month === current });
+  }
+  lastScanAt = Date.now();
 }
 
 /** Intizom hisoboti shu soatlarda (Toshkent vaqti) yuboriladi — har 4 soatda */

@@ -215,7 +215,10 @@ export default function TushuntirishXatlariPage() {
     const ids = confirmIds;
     del.mutate(ids, {
       onSuccess: (r) => {
-        toast({ title: "O‘chirildi", description: `${r.deleted} ta tushuntirish xati tizimdan butunlay o‘chirildi.` });
+        toast({
+          title: "O‘chirildi — holat yo‘qolidi",
+          description: `${r.deleted} ta xat o‘chirildi. Shu holatlar bo‘lmagandek: jarima/bosqichdan chiqdi, qolgan xatlar qayta tartiblandi. Keyingi kechikish 1-holatdan boshlanadi.`,
+        });
         setSelected((prev) => {
           const next = new Set(prev);
           for (const id of ids) next.delete(id);
@@ -710,8 +713,9 @@ export default function TushuntirishXatlariPage() {
             <AlertDialogDescription asChild>
               <div className="space-y-2 text-sm">
                 <p>
-                  Xat tizimdan <b>butunlay</b> o‘chiriladi: xodim sababi, imzo va qaror ham yo‘qoladi. Bu holat jarima va bosqich
-                  hisobidan chiqariladi va qayta yaratilmaydi. Amalni ortga qaytarib bo‘lmaydi.
+                  Xat tizimdan <b>butunlay</b> o‘chiriladi — xodimda ham, ro‘yxatda ham shu holat yo‘qoladi (sabab, imzo, qaror).
+                  Jarima va bosqich hisobidan chiqadi, qayta yaratilmaydi. Qolgan xatlarning bosqichi qayta tartiblanadi;
+                  keyingi kechikish/kelmaslik yana <b>1-holat</b>dan boshlanadi. Amalni ortga qaytarib bo‘lmaydi.
                 </p>
                 {confirmLetters.length ? (
                   <ul className="max-h-40 space-y-0.5 overflow-y-auto rounded-xl bg-slate-50 p-2 text-[12px] dark:bg-white/5">

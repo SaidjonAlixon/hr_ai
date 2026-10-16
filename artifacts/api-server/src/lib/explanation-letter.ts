@@ -345,7 +345,6 @@ export async function syncExplanationLetters(month: string, people: JarimaPerson
            amount = EXCLUDED.amount,
            is_test = FALSE,
            updated_at = NOW()
-         WHERE explanation_letters.status <> 'signed'
          RETURNING id, letter_no, (xmax = 0) AS inserted`,
         [
           p.userId,
@@ -381,11 +380,21 @@ export async function syncExplanationLetters(month: string, people: JarimaPerson
     }
   }
   const { rows: stale } = await pool.query(
-    `SELECT id, user_id, event_date, kind FROM explanation_letters WHERE month = $1 AND status <> 'signed' AND NOT is_test AND review_status IS NULL`,
+    `SELECT id, user_id, event_date, kind, status, review_status FROM explanation_letters
+      WHERE month = $1 AND NOT is_test`,
     [month],
   );
   const keepSet = new Set(keep);
-  const drop = stale.filter((r) => !keepSet.has(`${r.user_id}|${r.event_date}|${r.kind}`)).map((r) => r.id as number);
+  // O‘chirilgan / hisobdan chiqqan holatlar — imzolangan bo‘lsa ham qayta yaratilmasin va qolmasin
+  const drop = stale
+    .filter((r) => {
+      const key = `${r.user_id}|${r.event_date}|${r.kind}`;
+      if (deleted.has(key)) return true;
+      if (keepSet.has(key)) return false;
+      // Hali hisobda yo‘q, imzolanmagan va qaror yo‘q — eskirgan
+      return r.status !== "signed" && r.review_status == null;
+    })
+    .map((r) => r.id as number);
   if (drop.length) await pool.query(`DELETE FROM explanation_letters WHERE id = ANY($1::int[])`, [drop]);
 }
 
@@ -631,16 +640,38 @@ export async function cancelledLetterKeys(from: string, to: string): Promise<Set
 }
 
 /**
- * Admin xatlarni tizimdan butunlay o‘chiradi. Haqiqiy xat qayta yaratilmasligi uchun
- * hodisa o‘chirilganlar ro‘yxatiga yoziladi (jarima hisobidan ham chiqadi).
+ * Admin xatlarni tizimdan butunlay o‘chiradi.
+ * Holat «bo‘lmagandek»: jarima hisobidan chiqadi, qayta yaratilmaydi,
+ * qolgan xatlarning bosqichi 1-dan qayta tartiblanadi.
  */
-export async function deleteLetters(ids: number[], by: { id: number; name: string }): Promise<number> {
+export async function deleteLetters(
+  ids: number[],
+  by: { id: number; name: string },
+): Promise<{ deleted: number; months: string[]; userIds: number[] }> {
   await ensureExplanationSchema();
   const clean = [...new Set(ids.filter((n) => Number.isInteger(n) && n > 0))];
-  if (!clean.length) return 0;
+  if (!clean.length) return { deleted: 0, months: [], userIds: [] };
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const { rows: victims } = await client.query<{
+      id: number;
+      user_id: number;
+      month: string;
+      event_date: string;
+      kind: string;
+      letter_no: string | null;
+      full_name: string | null;
+      is_test: boolean;
+    }>(
+      `SELECT id, user_id, month, event_date, kind, letter_no, full_name, is_test
+         FROM explanation_letters WHERE id = ANY($1::int[]) FOR UPDATE`,
+      [clean],
+    );
+    if (!victims.length) {
+      await client.query("ROLLBACK");
+      return { deleted: 0, months: [], userIds: [] };
+    }
     await client.query(
       `INSERT INTO explanation_letter_deletions (user_id, event_date, kind, letter_no, full_name, deleted_by, deleted_by_name)
        SELECT user_id, event_date, kind, letter_no, full_name, $2, $3 FROM explanation_letters
@@ -649,8 +680,18 @@ export async function deleteLetters(ids: number[], by: { id: number; name: strin
       [clean, by.id, by.name],
     );
     const { rowCount } = await client.query(`DELETE FROM explanation_letters WHERE id = ANY($1::int[])`, [clean]);
+    // Xodimdagi «tushuntirish xati» bildirishnomalarini ham tozalash (shu oy)
+    const userIds = [...new Set(victims.map((v) => Number(v.user_id)))];
+    const months = [...new Set(victims.map((v) => String(v.month)))];
+    if (userIds.length) {
+      await client.query(
+        `DELETE FROM notifications
+          WHERE user_id = ANY($1::int[]) AND type = 'explanation_letter'`,
+        [userIds],
+      ).catch(() => undefined);
+    }
     await client.query("COMMIT");
-    return rowCount ?? 0;
+    return { deleted: rowCount ?? 0, months, userIds };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw err;

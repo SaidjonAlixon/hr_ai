@@ -38,7 +38,7 @@ import {
 } from "../lib/explanation-letter";
 import { renderExplanationLetterPdf } from "../lib/explanation-letter-pdf";
 import { buildExplanationReport, reportSchedule, sendExplanationReport, sendOriginalLetterPdfs } from "../lib/explanation-letter-report";
-import { freshDisciplineScan, runDisciplineScan, todayTashkent } from "../lib/discipline";
+import { freshDisciplineScan, resyncAfterLetterDelete, runDisciplineScan, todayTashkent } from "../lib/discipline";
 import { coordinatorsFor } from "../lib/davomat-shift-report";
 import { loadFilialBranches } from "../lib/filial-bot-data";
 import { displayBranchName } from "../lib/geo-location";
@@ -403,9 +403,9 @@ router.post("/explanation-letters/delete", requireAuth, async (req: AuthRequest,
     return;
   }
   try {
-    const deleted = await deleteLetters(ids, { id: req.userId!, name: await userName(req.userId!) });
-    void runDisciplineScan();
-    res.json({ ok: true, deleted });
+    const result = await deleteLetters(ids, { id: req.userId!, name: await userName(req.userId!) });
+    await resyncAfterLetterDelete(result.months).catch((err) => logLetterError(err, "delete-resync"));
+    res.json({ ok: true, deleted: result.deleted });
   } catch (err) {
     logLetterError(err, "delete-bulk");
     res.status(503).json({ error: "O‘chirilmadi" });
@@ -581,13 +581,13 @@ router.delete("/explanation-letters/:id", requireAuth, async (req: AuthRequest, 
     return;
   }
   try {
-    const deleted = await deleteLetters([id], { id: req.userId!, name: await userName(req.userId!) });
-    if (!deleted) {
+    const result = await deleteLetters([id], { id: req.userId!, name: await userName(req.userId!) });
+    if (!result.deleted) {
       res.status(404).json({ error: "Tushuntirish xati topilmadi" });
       return;
     }
-    void runDisciplineScan();
-    res.json({ ok: true, deleted });
+    await resyncAfterLetterDelete(result.months).catch((err) => logLetterError(err, "delete-resync"));
+    res.json({ ok: true, deleted: result.deleted });
   } catch (err) {
     logLetterError(err, "delete");
     res.status(503).json({ error: "O‘chirilmadi" });

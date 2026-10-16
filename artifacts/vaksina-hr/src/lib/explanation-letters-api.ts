@@ -248,7 +248,12 @@ export function useDeleteLetters() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (ids: number[]) => postJson<{ ok: true; deleted: number }>("/api/explanation-letters/delete", { ids }, "O‘chirilmadi"),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["explanation-letters"], predicate: (q) => q.queryKey[1] !== "reasons" }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["explanation-letters"], predicate: (q) => q.queryKey[1] !== "reasons" });
+      void qc.invalidateQueries({ queryKey: ["oylik"] });
+      void qc.invalidateQueries({ queryKey: ["jarima"] });
+      void qc.invalidateQueries({ queryKey: ["discipline"] });
+    },
   });
 }
 

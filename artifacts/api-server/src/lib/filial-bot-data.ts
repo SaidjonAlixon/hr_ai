@@ -184,7 +184,7 @@ export async function loadFilialBranches(force = false): Promise<FilialBranchCar
       return {
         id: m.id,
         name: branchName(m.location, m.fullName),
-        district: districtFromGps(gps?.lat, gps?.lng),
+        district: districtFromGps(gps?.lat, gps?.lng, m.location),
         mudirName: m.fullName,
         mudirPhone: m.userId != null ? phoneByUser.get(m.userId) ?? null : null,
         coordinatorName: coord?.fullName ?? null,

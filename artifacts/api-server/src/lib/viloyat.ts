@@ -15,10 +15,10 @@ function slugifyViloyatLabel(name: string): string {
     .replace(/_+/g, "_");
 }
 
-/** Tanlash uchun to‘liq ro‘yxat (UI + validatsiya) */
+/** Tanlash uchun to‘liq ro‘yxat (UI + validatsiya) — REGION_CENTERS dublikatlari olib tashlanadi */
 export const VILOYAT_OPTIONS: ViloyatOption[] = [
   { slug: "toshkent_shahar", label: "Toshkent shahar" },
-  ...REGION_CENTERS.map((r) => ({
+  ...[...new Map(REGION_CENTERS.map((r) => [r.name, r])).values()].map((r) => ({
     slug: slugifyViloyatLabel(r.name),
     label: r.name,
   })),
@@ -50,7 +50,16 @@ export function districtToViloyatSlug(district?: string | null): string | null {
   return null;
 }
 
-export function branchViloyatSlug(lat?: number | null, lng?: number | null): string | null {
-  if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  return districtToViloyatSlug(districtFromGps(lat, lng));
+export function branchViloyatSlug(
+  lat?: number | null,
+  lng?: number | null,
+  locationHint?: string | null,
+): string | null {
+  if (
+    (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) &&
+    !locationHint
+  ) {
+    return null;
+  }
+  return districtToViloyatSlug(districtFromGps(lat, lng, locationHint));
 }

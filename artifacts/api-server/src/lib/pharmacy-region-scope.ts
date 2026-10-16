@@ -29,6 +29,7 @@ type EmpLite = {
   assignedBranchId: number | null;
   latitude: number | null;
   longitude: number | null;
+  location: string | null;
   employmentStatus: string | null;
 };
 
@@ -42,19 +43,20 @@ async function loadEmployees(): Promise<EmpLite[]> {
       assignedBranchId: employeesTable.assignedBranchId,
       latitude: employeesTable.latitude,
       longitude: employeesTable.longitude,
+      location: employeesTable.location,
       employmentStatus: employeesTable.employmentStatus,
     })
     .from(employeesTable);
 }
 
-/** Viloyatdagi mudir (filial) id lari — GPS bo‘yicha */
+/** Viloyatdagi mudir (filial) id lari — GPS + joy nomi bo‘yicha */
 export async function managerIdsInViloyat(viloyatSlug: string): Promise<Set<number>> {
   const rows = await loadEmployees();
   const out = new Set<number>();
   for (const r of rows) {
     if (String(r.orgRole || "") !== "manager") continue;
     if (r.employmentStatus === "dismissed") continue;
-    const slug = branchViloyatSlug(r.latitude, r.longitude);
+    const slug = branchViloyatSlug(r.latitude, r.longitude, r.location);
     if (slug === viloyatSlug) out.add(r.id);
   }
   return out;

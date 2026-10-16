@@ -25,22 +25,64 @@ export const TASHKENT_DISTRICTS: DistrictCenter[] = [
   { name: "Yangihayot", lat: 41.205, lng: 69.195 },
 ];
 
-/** Toshkentdan tashqari — viloyat / shahar markazlari */
+/**
+ * Toshkentdan tashqari — viloyat markazlari + muhim shahar/tuman nuqtalari.
+ * Bir viloyat uchun bir nechta nuqta bo‘lishi mumkin (nom bir xil) —
+ * aks holda Shahrisabz kabi joylar eng yaqin bo‘yicha noto‘g‘ri viloyatga (Samarqand) tushadi.
+ */
 export const REGION_CENTERS: DistrictCenter[] = [
   { name: "Toshkent viloyati", lat: 41.12, lng: 69.55 },
+  { name: "Toshkent viloyati", lat: 41.0, lng: 69.0 }, // Chirchiq / Olmaliq tomon
   { name: "Samarqand", lat: 39.655, lng: 66.96 },
+  { name: "Samarqand", lat: 39.4, lng: 67.25 }, // Urgut
+  { name: "Samarqand", lat: 39.9, lng: 66.25 }, // Kattaqo‘rg‘on
   { name: "Buxoro", lat: 39.775, lng: 64.43 },
   { name: "Andijon", lat: 40.78, lng: 72.34 },
   { name: "Farg‘ona", lat: 40.39, lng: 71.79 },
   { name: "Namangan", lat: 40.998, lng: 71.67 },
-  { name: "Qashqadaryo", lat: 38.86, lng: 65.8 },
-  { name: "Surxondaryo", lat: 37.94, lng: 67.57 },
+  // Qashqadaryo — Qarshi + Sharqiy/g‘arbiy tumanlar (Shahrisabz Samarqandga yaqin, lekin Qashqadaryo)
+  { name: "Qashqadaryo", lat: 38.86, lng: 65.8 }, // Qarshi
+  { name: "Qashqadaryo", lat: 39.0578, lng: 66.834 }, // Shahrisabz
+  { name: "Qashqadaryo", lat: 39.12, lng: 66.88 }, // Kitob
+  { name: "Qashqadaryo", lat: 39.035, lng: 65.585 }, // Koson
+  { name: "Qashqadaryo", lat: 38.69, lng: 65.69 }, // Nishon
+  { name: "Qashqadaryo", lat: 38.62, lng: 66.25 }, // G‘uzor
+  { name: "Qashqadaryo", lat: 38.98, lng: 66.68 }, // Yakkabog‘
+  { name: "Qashqadaryo", lat: 39.03, lng: 66.57 }, // Chiroqchi
+  { name: "Qashqadaryo", lat: 39.255, lng: 65.15 }, // Muborak
+  { name: "Surxondaryo", lat: 37.94, lng: 67.57 }, // Termiz
+  { name: "Surxondaryo", lat: 38.27, lng: 67.9 }, // Denov
   { name: "Xorazm", lat: 41.55, lng: 60.63 },
   { name: "Navoiy", lat: 40.1, lng: 65.37 },
   { name: "Jizzax", lat: 40.12, lng: 67.84 },
   { name: "Sirdaryo", lat: 40.5, lng: 68.78 },
   { name: "Qoraqalpog‘iston", lat: 42.46, lng: 59.61 },
 ];
+
+/** Joy nomi (location) bo‘yicha viloyat — GPS chalkashganda ustuvor */
+const LOCATION_REGION_HINTS: Array<{ re: RegExp; name: string }> = [
+  {
+    re: /qashqadaryo|qarshi|shahrisabz|shaxrisabz|nishon|koson|kitob|g[‘']?uzor|yakkabog|chiroqchi|muborak|dehqonobod|mirishkor|kasbi|baxoriston/i,
+    name: "Qashqadaryo",
+  },
+  {
+    re: /surxondaryo|termiz|denov|sherobod|boysun|jarqo[‘']rgon|sariosiyo|uzun|qiziriq/i,
+    name: "Surxondaryo",
+  },
+  {
+    re: /samarqand|urgut|kattaqo[‘']rgon|ishtixon|payariq|jomboy|nurobod|oqdaryo/i,
+    name: "Samarqand",
+  },
+];
+
+export function regionHintFromLocation(location?: string | null): string | null {
+  const raw = String(location || "").trim();
+  if (!raw) return null;
+  for (const h of LOCATION_REGION_HINTS) {
+    if (h.re.test(raw)) return h.name;
+  }
+  return null;
+}
 
 const TASHKENT_BBOX = {
   minLat: 41.18,
@@ -88,8 +130,14 @@ function inTashkent(lat: number, lng: number): boolean {
 /**
  * GPS nuqtadan tuman/hudud nomi.
  * Toshkent ichida → shahar tumani; tashqarida → viloyat/shahar.
+ * `locationHint` — filial nomida «Shaxrisabz» bo‘lsa GPS chalkashsa ham to‘g‘ri viloyat.
  */
-export function districtFromGps(lat: number | null | undefined, lng: number | null | undefined): string {
+export function districtFromGps(
+  lat: number | null | undefined,
+  lng: number | null | undefined,
+  locationHint?: string | null,
+): string {
+  const fromName = regionHintFromLocation(locationHint);
   if (
     lat == null ||
     lng == null ||
@@ -98,7 +146,7 @@ export function districtFromGps(lat: number | null | undefined, lng: number | nu
     Math.abs(lat) > 90 ||
     Math.abs(lng) > 180
   ) {
-    return DISTRICT_NO_GPS;
+    return fromName || DISTRICT_NO_GPS;
   }
 
   if (inTashkent(lat, lng)) {
@@ -108,7 +156,9 @@ export function districtFromGps(lat: number | null | undefined, lng: number | nu
   const region = nearestCenter(lat, lng, REGION_CENTERS);
   // Juda uzoq bo‘lsa (masalan xato GPS)
   const d = haversineKm(lat, lng, region.lat, region.lng);
-  if (d > 250) return DISTRICT_UNKNOWN;
+  if (d > 250) return fromName || DISTRICT_UNKNOWN;
+  // Joy nomi aniq viloyatni aytadi va GPS boshqa viloyatga tortsa — nom ustuvor
+  if (fromName && fromName !== region.name) return fromName;
   return region.name;
 }
 

@@ -23,7 +23,25 @@ export function DeviceSecurityListener() {
         description: detail.message,
         variant: "destructive",
       });
-      if (detail.code === "DEVICE_NOT_AUTHORIZED" || detail.code === "SESSION_REVOKED") {
+      if (
+        detail.code === "DEVICE_NOT_AUTHORIZED" ||
+        detail.code === "DEVICE_PENDING" ||
+        detail.code === "SESSION_REVOKED"
+      ) {
+        try {
+          if (detail.code === "DEVICE_NOT_AUTHORIZED" || detail.code === "DEVICE_PENDING") {
+            sessionStorage.setItem(
+              "vhr_device_gate",
+              JSON.stringify({
+                code: detail.code,
+                message: detail.message,
+                canRequestChange: true,
+              }),
+            );
+          }
+        } catch {
+          /* ignore */
+        }
         setUser(null);
         setLocation("/login");
       }

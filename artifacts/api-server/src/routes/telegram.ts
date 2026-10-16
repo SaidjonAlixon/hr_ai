@@ -12,6 +12,8 @@ import { setTelegramSessionCookie } from "../lib/session";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { canManageSettings } from "../lib/roles";
 import { formatPersonName } from "../lib/person-name";
+import { completeEnforcedDeviceLogin, shouldEnforceDeviceLogin } from "../lib/device-login";
+import { clientIp, writeLoginAudit } from "../lib/device-security";
 import {
   answerCallbackQuery,
   getMe,
@@ -102,6 +104,7 @@ async function getUserWithDept(userId: number) {
       phone: usersTable.phone,
       status: usersTable.status,
       telegramId: usersTable.telegramId,
+      deviceSecurityEnforced: usersTable.deviceSecurityEnforced,
       createdAt: usersTable.createdAt,
     })
     .from(usersTable)
@@ -672,6 +675,47 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
 });
 
 /** Mini App: Telegram initData yoki (eski) token → session cookie */
+async function finishTelegramLogin(
+  req: import("express").Request,
+  res: import("express").Response,
+  user: NonNullable<Awaited<ReturnType<typeof getUserWithDept>>> & { telegramId?: string | null },
+): Promise<void> {
+  const { telegramId: _tg, ...safe } = user;
+  const ua = "telegram-mini-app";
+  const ip = clientIp(req);
+  const enforced = await shouldEnforceDeviceLogin(user);
+
+  if (!enforced) {
+    await setTelegramSessionCookie(res, user.id, { ipAddress: ip, userAgent: ua });
+    await writeLoginAudit({
+      userId: user.id,
+      ipAddress: ip,
+      userAgent: ua,
+      action: "login",
+      status: "success",
+      failureReason: null,
+      meta: { mode: "telegram-legacy" },
+    });
+    res.json({ user: safe, ok: true, deviceSecurity: { enforced: false } });
+    return;
+  }
+
+  const result = await completeEnforcedDeviceLogin({
+    req,
+    res,
+    user,
+    fullUser: safe,
+    deviceBody: req.body?.device,
+    siteMode: "telegram",
+    userAgentOverride: ua,
+  });
+  if (result.kind === "ok") {
+    res.json(result.payload);
+    return;
+  }
+  res.status(result.status).json(result.payload);
+}
+
 router.post("/telegram/mini-auth", async (req, res): Promise<void> => {
   const initData = String(req.body?.initData || "").trim();
   const token = String(req.body?.token || "").trim();
@@ -698,9 +742,7 @@ router.post("/telegram/mini-auth", async (req, res): Promise<void> => {
         return;
       }
 
-      await setTelegramSessionCookie(res, linked.id, { userAgent: "telegram-mini-app" });
-      const { telegramId: _tg, ...safe } = linked as typeof linked & { telegramId?: string | null };
-      res.json({ user: safe, ok: true });
+      await finishTelegramLogin(req, res, linked);
       return;
     }
 
@@ -746,9 +788,12 @@ router.post("/telegram/mini-auth", async (req, res): Promise<void> => {
       await linkTelegram(user.id, row.telegramUserId);
     }
 
-    await setTelegramSessionCookie(res, user.id, { userAgent: "telegram-mini-app" });
-    const { telegramId: _tg, ...safe } = user as typeof user & { telegramId?: string | null };
-    res.json({ user: safe, ok: true });
+    const full = await getUserWithDept(user.id);
+    if (!full) {
+      res.status(403).json({ error: statusBlockMessage(user.status) });
+      return;
+    }
+    await finishTelegramLogin(req, res, full);
   } catch (err) {
     console.error("telegram mini-auth:", err);
     res.status(503).json({ error: "Kirish muvaffaqiyatsiz — qayta urinib ko‘ring" });

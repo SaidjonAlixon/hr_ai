@@ -24,6 +24,9 @@ import {
   staffGroupForRole,
   writeSecurityEvent,
   readDeviceCookie,
+  parseDeviceBindRaw,
+  findDeviceByClientKey,
+  sha256,
 } from "../lib/device-security";
 import { notifyUser } from "../lib/notify";
 
@@ -602,38 +605,57 @@ router.post("/devices/me/request-change", async (req: AuthRequest, res): Promise
     });
 
     let userId = req.userId;
+    const bodyBind = parseDeviceBindRaw(String(req.body?.deviceBind || ""));
+    const clientKey = String(req.body?.clientKey || "").trim().slice(0, 120);
+
     if (!userId) {
       const compact = (v: unknown) => String(v ?? "").replace(/[\s\u00a0\u200b\uFEFF]+/g, "");
       const login = compact(req.body?.login);
       const password = compact(req.body?.password);
-      if (!login || !password) {
+      if (login && password) {
+        const [u] = await db
+          .select({ id: usersTable.id, password: usersTable.password, status: usersTable.status })
+          .from(usersTable)
+          .where(sql`lower(${usersTable.login}) = lower(${login})`)
+          .limit(1);
+        if (!u || compact(u.password) !== password || (u.status !== "active" && u.status !== "on_leave")) {
+          res.status(401).json({ error: "Login yoki parol noto‘g‘ri" });
+          return;
+        }
+        userId = u.id;
+      } else if (bodyBind) {
+        // Telegram/login gate: sessiya yo‘q, lekin hozirgina berilgan deviceBind bor
+        const [byBind] = await db
+          .select()
+          .from(userDevicesTable)
+          .where(eq(userDevicesTable.deviceId, bodyBind.deviceId))
+          .limit(1);
+        if (byBind && byBind.deviceTokenHash === sha256(bodyBind.token)) {
+          userId = byBind.userId;
+        }
+      }
+      if (!userId) {
         res.status(401).json({ error: "Avtorizatsiya kerak yoki login/parol yuboring" });
         return;
       }
-      const [u] = await db
-        .select({ id: usersTable.id, password: usersTable.password, status: usersTable.status })
-        .from(usersTable)
-        .where(sql`lower(${usersTable.login}) = lower(${login})`)
-        .limit(1);
-      if (!u || compact(u.password) !== password || (u.status !== "active" && u.status !== "on_leave")) {
-        res.status(401).json({ error: "Login yoki parol noto‘g‘ri" });
-        return;
-      }
-      userId = u.id;
     }
 
-    const cred = readDeviceCookie(req);
-    if (!cred) {
-      res.status(400).json({ error: "Qurilma cookie topilmadi — qayta login urinib ko‘ring" });
-      return;
+    const cred = readDeviceCookie(req) || bodyBind;
+    let device =
+      cred
+        ? (
+            await db
+              .select()
+              .from(userDevicesTable)
+              .where(and(eq(userDevicesTable.userId, userId), eq(userDevicesTable.deviceId, cred.deviceId)))
+              .limit(1)
+          )[0]
+        : null;
+    if (!device && clientKey) {
+      device = await findDeviceByClientKey(userId, clientKey);
     }
-    let [device] = await db
-      .select()
-      .from(userDevicesTable)
-      .where(and(eq(userDevicesTable.userId, userId), eq(userDevicesTable.deviceId, cred.deviceId)))
-      .limit(1);
     if (!device) {
-      res.status(400).json({ error: "Qurilma topilmadi" });
+      res.status(400).json({ error: "Qurilma topilmadi — Telegram/brauzerdan qayta kirib so‘rang" });
       return;
     }
     // Bloklangan bo‘lsa — qayta ochib so‘rovga qo‘yamiz

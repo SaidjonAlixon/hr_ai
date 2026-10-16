@@ -3,9 +3,18 @@ import { useLocation } from "wouter";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../hooks/use-toast";
 import type { User } from "@workspace/api-client-react";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Loader2, RefreshCw, ShieldAlert, ShieldQuestion } from "lucide-react";
 import { useI18n } from "../i18n/I18nProvider";
-import { isReviziyaRole } from "../lib/roles";
+import { isPharmacyDeviceStaff, isReviziyaRole } from "../lib/roles";
+import {
+  getOrCreateClientDeviceKey,
+  readDeviceBind,
+  requestDeviceChange,
+  saveDeviceBind,
+} from "../lib/device-security-api";
+import { SupportContacts } from "../components/SupportContacts";
+import { fetchFaceIdStatus } from "../lib/face-id";
+import { Button } from "../components/ui/button";
 
 declare global {
   interface Window {
@@ -29,6 +38,13 @@ declare global {
     };
   }
 }
+
+type DeviceGate = {
+  code: "DEVICE_PENDING" | "DEVICE_NOT_AUTHORIZED";
+  message: string;
+  deviceName?: string;
+  canRequestChange?: boolean;
+};
 
 function readTokenFromUrl(): string | null {
   try {
@@ -66,6 +82,17 @@ function prepareTelegramUi() {
   return true;
 }
 
+function devicePayload() {
+  return {
+    userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "telegram-mini-app",
+    clientKey: getOrCreateClientDeviceKey(),
+    deviceBind: readDeviceBind() || undefined,
+    deviceName: "Telegram Mini App",
+    deviceType: "mobile",
+    browser: "Telegram",
+  };
+}
+
 async function miniAuth(
   payload: { initData?: string; token?: string },
   authFailMsg: string,
@@ -74,25 +101,41 @@ async function miniAuth(
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, device: devicePayload() }),
   });
   const body = await res.json().catch(() => ({}));
+  const bind = (body as { deviceBind?: { deviceId?: string; token?: string } }).deviceBind;
+  if (bind) saveDeviceBind(bind);
   if (!res.ok) {
-    const err = new Error(body?.error || authFailMsg) as Error & {
-      code?: string;
-    };
-    err.code = body?.code;
+    const err = new Error(
+      (body as { error?: string; message?: string }).message ||
+        (body as { error?: string }).error ||
+        authFailMsg,
+    ) as Error & { code?: string; data?: Record<string, unknown> };
+    err.code = (body as { code?: string }).code;
+    err.data = body as Record<string, unknown>;
     throw err;
   }
   return { user: body.user as User, ok: true };
 }
 
-function redirectAfterLogin(user: User, next: string | null, setLocation: (path: string) => void) {
+async function redirectAfterLogin(
+  user: User,
+  next: string | null,
+  setLocation: (path: string) => void,
+) {
   let clean: string;
   if (next === "davomat-face" || next === "davomat-face?tg=1") {
     clean = "/davomat-face?tg=1";
   } else if (next && /^[a-zA-Z0-9/_?=&.%-]+$/.test(next) && !next.includes("..")) {
     clean = next.startsWith("/") ? next : `/${next}`;
+  } else if (isPharmacyDeviceStaff(user.role)) {
+    try {
+      const face = await fetchFaceIdStatus();
+      clean = face.registered ? "/davomat-face?tg=1" : "/davomat-face?enroll=1&tg=1";
+    } catch {
+      clean = "/davomat-face?enroll=1&tg=1";
+    }
   } else if (user.role === "stajyor") {
     clean = "/kirish";
   } else if (isReviziyaRole(user.role)) {
@@ -106,23 +149,23 @@ function redirectAfterLogin(user: User, next: string | null, setLocation: (path:
 
 /**
  * Telegram Mini App kirish.
- * 1) Token (yangi akkaunt) — muddat ichida qayta ochish ham OK
- * 2) Token ishlamasa → initData (Telegram bog‘lanish) — asosiy doimiy kirish
- * 3) Cookie sessiya
+ * Dorixona: qurilma bog‘lash + admin ruxsati + Face ID — brauzer bilan bir xil.
  */
 export default function TgEntryPage() {
   const { t } = useI18n();
   const { switchToUser } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [phase, setPhase] = useState<"boot" | "auth" | "error">("boot");
+  const [phase, setPhase] = useState<"boot" | "auth" | "error" | "gate">("boot");
   const [error, setError] = useState<string | null>(null);
+  const [gate, setGate] = useState<DeviceGate | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [requesting, setRequesting] = useState(false);
 
   const finish = useCallback(
-    (u: User, label: string) => {
+    async (u: User, label: string) => {
       switchToUser(u);
-      redirectAfterLogin(u, readNextFromUrl(), setLocation);
+      await redirectAfterLogin(u, readNextFromUrl(), setLocation);
       toast({
         title: t("tg.welcome"),
         description: `${u.fullName} · ${label}`,
@@ -131,7 +174,21 @@ export default function TgEntryPage() {
     [switchToUser, setLocation, toast, t],
   );
 
-  const tryEnter = useCallback(async () => {
+  const parseDeviceError = (
+    e: Error & { code?: string; data?: Record<string, unknown> },
+  ): DeviceGate | null => {
+    const code = String(e.code || e.data?.code || "");
+    if (code !== "DEVICE_PENDING" && code !== "DEVICE_NOT_AUTHORIZED") return null;
+    const data = e.data || {};
+    return {
+      code: code as DeviceGate["code"],
+      message: String(data.message || data.error || e.message),
+      deviceName: (data.device as { name?: string } | undefined)?.name,
+      canRequestChange: Boolean(data.canRequestChange) || code === "DEVICE_NOT_AUTHORIZED",
+    };
+  };
+
+  const tryEnter = useCallback(async (): Promise<"ok" | "gate" | "error"> => {
     prepareTelegramUi();
     const token = readTokenFromUrl();
     const initData = window.Telegram?.WebApp?.initData?.trim() || "";
@@ -140,9 +197,14 @@ export default function TgEntryPage() {
     if (token) {
       try {
         const { user } = await miniAuth({ token }, authFail);
-        finish(user, t("tg.label.telegram"));
-        return true;
-      } catch {
+        await finish(user, t("tg.label.telegram"));
+        return "ok";
+      } catch (e) {
+        const g = parseDeviceError(e as Error & { code?: string; data?: Record<string, unknown> });
+        if (g) {
+          setGate(g);
+          return "gate";
+        }
         // Token eskirgan — initData ga o‘tamiz
       }
     }
@@ -150,11 +212,16 @@ export default function TgEntryPage() {
     if (initData) {
       try {
         const { user } = await miniAuth({ initData }, authFail);
-        finish(user, t("tg.label.mini"));
-        return true;
+        await finish(user, t("tg.label.mini"));
+        return "ok";
       } catch (e) {
+        const g = parseDeviceError(e as Error & { code?: string; data?: Record<string, unknown> });
+        if (g) {
+          setGate(g);
+          return "gate";
+        }
         setError((e as Error).message || t("tg.initFail"));
-        return false;
+        return "error";
       }
     }
 
@@ -166,8 +233,19 @@ export default function TgEntryPage() {
       if (res.ok) {
         const existing = (await res.json()) as User;
         if (existing?.id) {
-          finish(existing, t("tg.label.session"));
-          return true;
+          await finish(existing, t("tg.label.session"));
+          return "ok";
+        }
+      } else if (res.status === 403) {
+        const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        const code = String(body.code || "");
+        if (code === "DEVICE_PENDING" || code === "DEVICE_NOT_AUTHORIZED") {
+          setGate({
+            code: code as DeviceGate["code"],
+            message: String(body.message || body.error || "Qurilma ruxsati yo‘q"),
+            canRequestChange: true,
+          });
+          return "gate";
         }
       }
     } catch {
@@ -175,16 +253,18 @@ export default function TgEntryPage() {
     }
 
     setError(t("tg.noSession"));
-    return false;
+    return "error";
   }, [finish, t]);
 
   useEffect(() => {
     let cancelled = false;
     async function run() {
       setPhase("auth");
-      const ok = await tryEnter();
+      const result = await tryEnter();
       if (cancelled) return;
-      setPhase(ok ? "auth" : "error");
+      if (result === "ok") setPhase("auth");
+      else if (result === "gate") setPhase("gate");
+      else setPhase("error");
     }
     void run();
     return () => {
@@ -196,6 +276,7 @@ export default function TgEntryPage() {
     setRetrying(true);
     setPhase("auth");
     setError(null);
+    setGate(null);
     try {
       const initData = window.Telegram?.WebApp?.initData?.trim() || "";
       if (!initData) {
@@ -204,12 +285,46 @@ export default function TgEntryPage() {
         return;
       }
       const { user } = await miniAuth({ initData }, t("tg.authFail"));
-      finish(user, t("tg.label.retry"));
+      await finish(user, t("tg.label.retry"));
     } catch (e) {
+      const g = parseDeviceError(e as Error & { code?: string; data?: Record<string, unknown> });
+      if (g) {
+        setGate(g);
+        setPhase("gate");
+        return;
+      }
       setPhase("error");
       setError((e as Error).message || t("tg.retryFail"));
     } finally {
       setRetrying(false);
+    }
+  };
+
+  const onRequestChange = async () => {
+    setRequesting(true);
+    try {
+      await requestDeviceChange("Telegram Mini App orqali so‘rov");
+      toast({
+        title: "So‘rov yuborildi",
+        description: "Administrator tasdig‘ini kuting. Tasdiqlansa shu Telegram qurilmasi asosiy bo‘ladi.",
+      });
+      setGate((g) =>
+        g
+          ? {
+              ...g,
+              code: "DEVICE_PENDING",
+              message: "So‘rov adminga yuborildi. Tasdiqlansa Telegram orqali kira olasiz.",
+            }
+          : g,
+      );
+    } catch (err) {
+      toast({
+        title: "Yuborilmadi",
+        description: (err as Error).message,
+        variant: "destructive",
+      });
+    } finally {
+      setRequesting(false);
     }
   };
 
@@ -221,6 +336,62 @@ export default function TgEntryPage() {
       window.open("https://t.me/vaksinahrbot", "_blank");
     }
   };
+
+  if (phase === "gate" && gate) {
+    const pendingGate = gate.code === "DEVICE_PENDING";
+    return (
+      <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 px-4 py-8 dark:from-slate-950 dark:to-slate-900">
+        <div className="w-full max-w-md space-y-4 rounded-2xl border bg-card p-5 shadow-lg">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <div
+              className={`flex h-14 w-14 items-center justify-center rounded-full ${
+                pendingGate ? "bg-amber-100 text-amber-800" : "bg-rose-100 text-rose-800"
+              }`}
+            >
+              {pendingGate ? <ShieldQuestion className="h-7 w-7" /> : <ShieldAlert className="h-7 w-7" />}
+            </div>
+            <h1 className="text-xl font-semibold">
+              {pendingGate ? "Yangi qurilma" : "Qurilma tasdiqlanmagan"}
+            </h1>
+            <p className="text-sm leading-relaxed text-muted-foreground">{gate.message}</p>
+          </div>
+          {gate.deviceName ? (
+            <div className="rounded-lg border bg-muted/40 px-3 py-2 text-left">
+              <div className="text-xs text-muted-foreground">Qurilma</div>
+              <div className="font-medium">{gate.deviceName}</div>
+            </div>
+          ) : null}
+          <p className="text-center text-xs text-muted-foreground">
+            {pendingGate
+              ? "Admin tasdiqlasa Telegram bot orqali shu telefonda ishlay olasiz."
+              : "Faqat asosiy telefongizdan kiring. Boshqa joydan — admin ruxsati kerak."}
+          </p>
+          <SupportContacts />
+          <div className="flex flex-col gap-2">
+            {gate.canRequestChange ? (
+              <Button
+                className="w-full"
+                variant="secondary"
+                disabled={requesting}
+                onClick={() => void onRequestChange()}
+              >
+                {requesting ? "Yuborilmoqda…" : "Qurilmani almashtirish so‘rash"}
+              </Button>
+            ) : null}
+            <Button
+              className="w-full"
+              variant="outline"
+              disabled={retrying}
+              onClick={() => void onRetryInitData()}
+            >
+              {retrying ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              <span className="ml-2">Tasdiqdan keyin qayta urinish</span>
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[100dvh] flex flex-col items-center justify-center bg-muted px-6 text-center">
@@ -263,6 +434,9 @@ export default function TgEntryPage() {
             >
               {t("tg.plainLogin")}
             </a>
+          </div>
+          <div className="mt-6 w-full max-w-xs">
+            <SupportContacts />
           </div>
           <p className="mt-4 max-w-xs text-[11px] text-muted-foreground">
             {t("tg.botHint")}

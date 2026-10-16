@@ -16,7 +16,12 @@ export function PharmacyFaceGate() {
   useEffect(() => {
     if (!isAuthenticated || !user || !isPharmacyDeviceStaff(user.role)) return;
     const path = location.split("?")[0] || location;
-    if (path === "/login" || path.startsWith("/davomat-face") || path.startsWith("/davomat/face")) {
+    if (
+      path === "/login" ||
+      path === "/tg" ||
+      path.startsWith("/davomat-face") ||
+      path.startsWith("/davomat/face")
+    ) {
       return;
     }
     if (checking.current) return;

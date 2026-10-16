@@ -210,11 +210,25 @@ export function readDeviceCookie(req: Request): { deviceId: string; token: strin
   return { deviceId, token };
 }
 
-export function setDeviceCookie(res: Response, deviceId: string, token: string) {
+export type CookieSiteMode = "lax" | "telegram";
+
+function cookieSameSite(mode: CookieSiteMode = "lax"): "lax" | "none" {
+  // Telegram Mini App WebView — SameSite=None + Secure
+  if (mode === "telegram" && isProdEnv()) return "none";
+  return "lax";
+}
+
+export function setDeviceCookie(
+  res: Response,
+  deviceId: string,
+  token: string,
+  opts?: { siteMode?: CookieSiteMode },
+) {
+  const sameSite = cookieSameSite(opts?.siteMode);
   res.cookie(DEVICE_COOKIE, `${deviceId}.${token}`, {
     httpOnly: true,
     maxAge: 400 * 24 * 60 * 60 * 1000,
-    sameSite: "lax",
+    sameSite,
     secure: isProdEnv(),
     path: "/",
   });
@@ -222,13 +236,21 @@ export function setDeviceCookie(res: Response, deviceId: string, token: string) 
 
 export function clearDeviceCookie(res: Response) {
   res.clearCookie(DEVICE_COOKIE, { path: "/", sameSite: "lax", secure: isProdEnv() });
+  if (isProdEnv()) {
+    res.clearCookie(DEVICE_COOKIE, { path: "/", sameSite: "none", secure: true });
+  }
 }
 
-export function setSecureSessionCookie(res: Response, sessionToken: string) {
+export function setSecureSessionCookie(
+  res: Response,
+  sessionToken: string,
+  opts?: { siteMode?: CookieSiteMode },
+) {
+  const sameSite = cookieSameSite(opts?.siteMode);
   res.cookie(SECURE_SESSION_COOKIE, `sec.${sessionToken}`, {
     httpOnly: true,
     maxAge: 7 * 24 * 60 * 60 * 1000,
-    sameSite: "lax",
+    sameSite,
     secure: isProdEnv(),
     path: "/",
   });
@@ -313,6 +335,8 @@ export async function createServerSession(opts: {
   ipAddress?: string | null;
   userAgent?: string | null;
   res: Response;
+  /** Telegram Mini App — SameSite=None cookie */
+  siteMode?: CookieSiteMode;
 }) {
   const token = randomToken(32);
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -324,7 +348,7 @@ export async function createServerSession(opts: {
     ipAddress: opts.ipAddress ?? null,
     userAgent: opts.userAgent ?? null,
   });
-  setSecureSessionCookie(opts.res, token);
+  setSecureSessionCookie(opts.res, token, { siteMode: opts.siteMode });
   return token;
 }
 

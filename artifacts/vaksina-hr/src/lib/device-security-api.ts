@@ -199,6 +199,8 @@ export function requestDeviceChange(
       reason: reason || "",
       login: credentials?.login || undefined,
       password: credentials?.password || undefined,
+      clientKey: getOrCreateClientDeviceKey(),
+      deviceBind: readDeviceBind() || undefined,
     }),
   });
 }

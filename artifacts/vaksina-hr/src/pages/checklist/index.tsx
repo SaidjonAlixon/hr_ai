@@ -58,6 +58,7 @@ import {
   confirmCoordinatorPresence,
   requestPresenceUnlock,
   AUDIT_GEOFENCE_METERS,
+  AUDIT_GPS_ACCURACY_SLACK_CAP_M,
   haversineMeters,
   type AuditAnswer,
   type AuditCategory,
@@ -450,8 +451,13 @@ export default function ChecklistPage() {
         )
       : null;
 
+  const gpsAccuracySlack =
+    gps?.accuracy != null && Number.isFinite(gps.accuracy) && gps.accuracy > 0
+      ? Math.min(gps.accuracy, AUDIT_GPS_ACCURACY_SLACK_CAP_M)
+      : 0;
+  const effectiveGeofenceMeters = AUDIT_GEOFENCE_METERS + gpsAccuracySlack;
   const withinGeofence =
-    distanceMeters != null && distanceMeters <= AUDIT_GEOFENCE_METERS;
+    distanceMeters != null && distanceMeters <= effectiveGeofenceMeters;
 
   const canFillChecklist =
     !monthFull &&
@@ -477,7 +483,7 @@ export default function ChecklistPage() {
     if (!withinGeofence || !gps) {
       toast({
         title: "Yashil hudud kerak",
-        description: `Filialga ${AUDIT_GEOFENCE_METERS} m ichida kiring, keyin Face ID bilan Keldim qiling.`,
+        description: `Filialga ${effectiveGeofenceMeters} m ichida kiring, keyin Face ID bilan Keldim qiling.`,
         variant: "destructive",
       });
       return;
@@ -521,12 +527,17 @@ export default function ChecklistPage() {
       }
       const lat = live.coords.latitude;
       const lng = live.coords.longitude;
+      const liveAccSlack =
+        Number.isFinite(live.coords.accuracy) && live.coords.accuracy > 0
+          ? Math.min(live.coords.accuracy, AUDIT_GPS_ACCURACY_SLACK_CAP_M)
+          : 0;
+      const liveLimit = AUDIT_GEOFENCE_METERS + liveAccSlack;
       if (
         selectedBranch?.latitude != null &&
         selectedBranch.longitude != null &&
-        (haversineMeters(lat, lng, selectedBranch.latitude, selectedBranch.longitude) ?? 1e9) > AUDIT_GEOFENCE_METERS
+        (haversineMeters(lat, lng, selectedBranch.latitude, selectedBranch.longitude) ?? 1e9) > liveLimit
       ) {
-        throw new Error(`Yashil hududdan tashqaridasiz — ${AUDIT_GEOFENCE_METERS} m ichiga kiring`);
+        throw new Error(`Yashil hududdan tashqaridasiz — ${liveLimit} m ichiga kiring`);
       }
       const list = (Array.isArray(descriptor[0]) ? descriptor : [descriptor]) as number[][];
       const vec = list[0]!;
@@ -580,10 +591,15 @@ export default function ChecklistPage() {
         selectedBranch?.latitude != null && selectedBranch?.longitude != null
           ? haversineMeters(pos.lat, pos.lng, selectedBranch.latitude, selectedBranch.longitude)
           : null;
-      if (dist != null && dist > AUDIT_GEOFENCE_METERS) {
+      const presenceLimit =
+        AUDIT_GEOFENCE_METERS +
+        (Number.isFinite(pos.accuracy) && pos.accuracy > 0
+          ? Math.min(pos.accuracy, AUDIT_GPS_ACCURACY_SLACK_CAP_M)
+          : 0);
+      if (dist != null && dist > presenceLimit) {
         toast({
           title: "Yashil hududdan tashqarida",
-          description: `Hozir ${dist} m uzoqdasiz. ${AUDIT_GEOFENCE_METERS} m ichida tasdiqlang.`,
+          description: `Hozir ${dist} m uzoqdasiz. ${presenceLimit} m ichida tasdiqlang.`,
           variant: "destructive",
         });
         return;
@@ -631,7 +647,7 @@ export default function ChecklistPage() {
 
   const remainMeters =
     distanceMeters != null
-      ? Math.max(0, distanceMeters - AUDIT_GEOFENCE_METERS)
+      ? Math.max(0, distanceMeters - effectiveGeofenceMeters)
       : null;
 
   const applyGps = useCallback((pos: GeolocationPosition) => {
@@ -944,12 +960,17 @@ export default function ChecklistPage() {
           selectedBranch!.latitude!,
           selectedBranch!.longitude!,
         );
-        if (dist > AUDIT_GEOFENCE_METERS) {
+        const saveLimit =
+          AUDIT_GEOFENCE_METERS +
+          (Number.isFinite(saveGps.accuracy) && (saveGps.accuracy ?? 0) > 0
+            ? Math.min(saveGps.accuracy!, AUDIT_GPS_ACCURACY_SLACK_CAP_M)
+            : 0);
+        if (dist > saveLimit) {
           toast({
             title: t("checklist.tooFar"),
             description: tf(t, "checklist.gateFar", {
               dist: formatDistance(dist),
-              m: AUDIT_GEOFENCE_METERS,
+              m: saveLimit,
             }),
             variant: "destructive",
           });
@@ -1561,9 +1582,9 @@ export default function ChecklistPage() {
                       : distanceMeters != null
                         ? tf(t, "checklist.gateFar", {
                             dist: formatDistance(distanceMeters),
-                            m: AUDIT_GEOFENCE_METERS,
+                            m: effectiveGeofenceMeters,
                           })
-                        : tf(t, "checklist.gateGo", { m: AUDIT_GEOFENCE_METERS })}
+                        : tf(t, "checklist.gateGo", { m: effectiveGeofenceMeters })}
             </div>
           )}
 

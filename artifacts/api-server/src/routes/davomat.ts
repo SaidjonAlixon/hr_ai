@@ -107,6 +107,8 @@ import {
   serializeVisit,
   COORD_OFFICE_BRANCH_ID,
   COORD_OFFICE_LABEL,
+  COORD_VISIT_GEOFENCE_METERS,
+  COORD_VISIT_GPS_ACCURACY_SLACK_CAP_M,
   isCoordinatorOfficeVisit,
   normalizeCoordinatorPunchBranchId,
   coordinatorOfficeDay,
@@ -3002,7 +3004,7 @@ async function loadAllBranchCoords(): Promise<
   return out;
 }
 
-/** Koordinator o‘z tarmog‘idagi mudir-filiallar GPS */
+/** Koordinator o‘z tarmog‘idagi mudir-filiallar GPS (working + no_manager va boshqa faol) */
 async function loadCoordinatorOwnBranchCoords(
   coordinatorEmployeeId: number,
 ): Promise<Array<{ branchId: number; lat: number; lng: number; label: string }>> {
@@ -3013,17 +3015,19 @@ async function loadCoordinatorOwnBranchCoords(
       longitude: employeesTable.longitude,
       location: employeesTable.location,
       fullName: employeesTable.fullName,
+      employmentStatus: employeesTable.employmentStatus,
     })
     .from(employeesTable)
     .where(
       and(
         eq(employeesTable.orgRole, "manager"),
         eq(employeesTable.reportsToId, coordinatorEmployeeId),
-        eq(employeesTable.employmentStatus, "working"),
       ),
     );
   const out: Array<{ branchId: number; lat: number; lng: number; label: string }> = [];
   for (const r of rows) {
+    const st = String(r.employmentStatus || "working");
+    if (st === "dismissed" || st === "closed") continue;
     const c = coordsFromEmp(r);
     if (!c) continue;
     out.push({
@@ -3046,10 +3050,15 @@ async function resolveCoordinatorGeoGate(opts: {
   longitude: number;
   mobileAnywhere: boolean;
   preferredBranchId?: number | null;
+  accuracyMeters?: number | null;
 }): Promise<GeoGateOk | { ok: false; status: number; body: Record<string, unknown> }> {
   const { emp, latitude, longitude, mobileAnywhere, preferredBranchId } = opts;
   const GEOFENCE_SLACK_M = 8;
-  const branchR = geofenceMetersForKind("branch");
+  const acc = Number(opts.accuracyMeters);
+  const accuracySlack =
+    Number.isFinite(acc) && acc > 0 ? Math.min(acc, COORD_VISIT_GPS_ACCURACY_SLACK_CAP_M) : 0;
+  // Cheklist Keldim: filial 30 m emas — visit geofence (120 m) + GPS accuracy slack
+  const branchR = COORD_VISIT_GEOFENCE_METERS + accuracySlack;
   const officeR = geofenceMetersForKind("office");
 
   const own = await loadCoordinatorOwnBranchCoords(emp.id);
@@ -3127,10 +3136,39 @@ async function resolveCoordinatorGeoGate(opts: {
       };
     }
     const coords = await branchCoordsById(preferredBranchId);
-    if (coords) {
-      const hit = tryBranch(preferredBranchId, coords.lat, coords.lng, coords.label);
-      if (hit) return hit;
+    if (!coords) {
+      return {
+        ok: false,
+        status: 403,
+        body: {
+          error: "Filial GPS yo‘q. Koordinator filial lokatsiyasini kiritsin.",
+          code: "branch_gps_missing",
+          fullName: emp.fullName,
+        },
+      };
     }
+    const hit = tryBranch(preferredBranchId, coords.lat, coords.lng, coords.label);
+    if (hit) return hit;
+    const distanceMeters = haversineMeters(latitude, longitude, coords.lat, coords.lng);
+    const remainMeters = Math.max(0, distanceMeters - branchR);
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        error: `Yashil hududdan tashqaridasiz (${coords.label}): ${distanceMeters} m. Ruxsat ${branchR} m. Yana ${remainMeters} m yaqinlashingiz kerak.`,
+        code: "outside_geofence",
+        distanceMeters,
+        remainMeters,
+        allowedMeters: branchR,
+        workplace: {
+          location: coords.label,
+          latitude: coords.lat,
+          longitude: coords.lng,
+          kind: "branch",
+        },
+        fullName: emp.fullName,
+      },
+    };
   }
 
   let best: { branchId: number; lat: number; lng: number; label: string; d: number } | null =
@@ -3474,6 +3512,7 @@ async function geoGate(
         longitude,
         mobileAnywhere,
         preferredBranchId,
+        accuracyMeters: _accuracyMeters,
       });
     }
 
@@ -4691,6 +4730,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
         longitude: qLng,
         mobileAnywhere: mobileAnywherePreview,
         preferredBranchId: Number(req.query.branchId) || null,
+        accuracyMeters: Number(req.query.accuracy) || null,
       });
       if (coordGate.ok) {
         resolved = { ok: true, point: coordGate.point };

@@ -20,7 +20,9 @@ export const COORD_OFFICE_LNG = 69 + 16 / 60 + 22.9 / 3600;
 export const COORD_OFFICE_GEOFENCE_METERS = 100;
 
 /** Cheklist / Keldim / Ketdim / hudud tasdiqlash — yashil zona */
-export const COORD_VISIT_GEOFENCE_METERS = 70;
+export const COORD_VISIT_GEOFENCE_METERS = 120;
+/** Coarse GPS (Android network) uchun qo‘shimcha ruxsat — accuracy dan olinadi, max shu */
+export const COORD_VISIT_GPS_ACCURACY_SLACK_CAP_M = 120;
 /** Hududni tasdiqlash muddati: oxirgi tasdiqdan 1 soat ichida, aks holda blok */
 export const COORD_PRESENCE_PERIOD_MS = 60 * 60 * 1000;
 /** Muddat tugashidan shuncha oldin eslatma boradi */
@@ -151,19 +153,38 @@ export function normalizeCoordinatorPunchBranchId(
   return COORD_OFFICE_BRANCH_ID;
 }
 
+export function visitGeofenceLimitMeters(opts?: {
+  maxMeters?: number;
+  accuracyMeters?: number | null;
+  isOffice?: boolean;
+}): number {
+  const base =
+    opts?.maxMeters ??
+    (opts?.isOffice ? COORD_OFFICE_GEOFENCE_METERS : COORD_VISIT_GEOFENCE_METERS);
+  const acc = Number(opts?.accuracyMeters);
+  const slack =
+    Number.isFinite(acc) && acc > 0
+      ? Math.min(acc, COORD_VISIT_GPS_ACCURACY_SLACK_CAP_M)
+      : 0;
+  return Math.round(base + slack);
+}
+
 export async function assertInBranchGeofence(opts: {
   branchId: number;
   latitude: number | null | undefined;
   longitude: number | null | undefined;
   maxMeters?: number;
+  accuracyMeters?: number | null;
 }): Promise<
   | { ok: true; distanceMeters: number; branchLabel: string }
   | { ok: false; status: number; error: string; code: string; distanceMeters?: number }
 > {
   const isOffice = Number(opts.branchId) === COORD_OFFICE_BRANCH_ID;
-  const max =
-    opts.maxMeters ??
-    (isOffice ? COORD_OFFICE_GEOFENCE_METERS : COORD_VISIT_GEOFENCE_METERS);
+  const max = visitGeofenceLimitMeters({
+    maxMeters: opts.maxMeters,
+    accuracyMeters: opts.accuracyMeters,
+    isOffice,
+  });
   if (
     opts.latitude == null ||
     opts.longitude == null ||

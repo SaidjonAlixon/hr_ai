@@ -34,6 +34,7 @@ import {
   COORD_OFFICE_BRANCH_ID,
   COORD_OFFICE_LABEL,
   COORD_VISIT_GEOFENCE_METERS,
+  visitGeofenceLimitMeters,
   finishCoordinatorVisitWithNote,
   adminForceCloseCoordinatorVisit,
   getOpenCoordinatorVisit,
@@ -69,8 +70,8 @@ const VIEW_ROLES = new Set([
 ]);
 const WRITE_ROLES = new Set(["koordinator", "regional_menejer", "admin"]);
 
-/** Koordinator filialga 70 m dan yaqin bo‘lishi shart */
-export const AUDIT_GEOFENCE_METERS = 70;
+/** Koordinator filialga yaqin bo‘lishi shart (visit geofence bilan bir xil) */
+export const AUDIT_GEOFENCE_METERS = 120;
 
 function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -1324,12 +1325,17 @@ router.post("/branch-audits/my-visit/start", requireAuth, async (req: AuthReques
       req.body?.longitude != null && Number.isFinite(Number(req.body.longitude))
         ? Number(req.body.longitude)
         : null;
+    const accuracyMeters =
+      req.body?.accuracy != null && Number.isFinite(Number(req.body.accuracy))
+        ? Number(req.body.accuracy)
+        : null;
 
     const zone = await assertInBranchGeofence({
       branchId,
       latitude,
       longitude,
       maxMeters: COORD_VISIT_GEOFENCE_METERS,
+      accuracyMeters,
     });
     if (!zone.ok) {
       res.status(zone.status).json({
@@ -1907,13 +1913,23 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
         return;
       }
       distanceMeters = haversineMeters(checkLat, checkLng, branchLat, branchLng);
-      if (distanceMeters > AUDIT_GEOFENCE_METERS) {
-        const remain = distanceMeters - AUDIT_GEOFENCE_METERS;
+      const accuracyMeters =
+        req.body?.accuracy != null && Number.isFinite(Number(req.body.accuracy))
+          ? Number(req.body.accuracy)
+          : req.body?.checkAccuracy != null && Number.isFinite(Number(req.body.checkAccuracy))
+            ? Number(req.body.checkAccuracy)
+            : null;
+      const allowed = visitGeofenceLimitMeters({
+        maxMeters: AUDIT_GEOFENCE_METERS,
+        accuracyMeters,
+      });
+      if (distanceMeters > allowed) {
+        const remain = distanceMeters - allowed;
         res.status(403).json({
-          error: `Filialdan uzoqdasiz: ${distanceMeters} m. Yana ${remain} m yaqinlashishingiz kerak (ruxsat: ${AUDIT_GEOFENCE_METERS} m).`,
+          error: `Filialdan uzoqdasiz: ${distanceMeters} m. Yana ${remain} m yaqinlashishingiz kerak (ruxsat: ${allowed} m).`,
           distanceMeters,
           remainMeters: remain,
-          allowedMeters: AUDIT_GEOFENCE_METERS,
+          allowedMeters: allowed,
         });
         return;
       }

@@ -636,12 +636,19 @@ function applyHomography(H: number[], x: number, y: number): Point {
 
 function sampleBilinear(data: ImageData, x: number, y: number): [number, number, number] {
   const { width: w, height: h, data: d } = data;
-  const x0 = clamp(Math.floor(x), 0, w - 1);
-  const y0 = clamp(Math.floor(y), 0, h - 1);
+  // Chegaradan tashqari — engx yakin piksel (oq fon emas)
+  if (x < 0 || y < 0 || x >= w || y >= h) {
+    const xx = clamp(Math.round(x), 0, w - 1);
+    const yy = clamp(Math.round(y), 0, h - 1);
+    const i = (yy * w + xx) * 4;
+    return [d[i]!, d[i + 1]!, d[i + 2]!];
+  }
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
   const x1 = clamp(x0 + 1, 0, w - 1);
   const y1 = clamp(y0 + 1, 0, h - 1);
-  const fx = x - x0;
-  const fy = y - y0;
+  const fx = clamp(x - x0, 0, 1);
+  const fy = clamp(y - y0, 0, 1);
   const idx = (xx: number, yy: number) => (yy * w + xx) * 4;
   const i00 = idx(x0, y0);
   const i10 = idx(x1, y0);
@@ -710,22 +717,22 @@ export function warpPreview(
 function isColoredInk(r: number, g: number, b: number): boolean {
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
-  if (max < 35) return false;
+  if (max < 40) return false;
   const sat = (max - min) / max;
-  if (sat < 0.14) return false;
-  const isBlue = b > r + 12 && b > g + 8;
-  const isRed = r > g + 18 && r > b + 12;
-  const isPurple = r > 70 && b > 70 && g < Math.min(r, b) * 0.88;
-  const isGreenStamp = g > r + 15 && g > b + 10 && sat > 0.2;
-  return isBlue || isRed || isPurple || isGreenStamp || sat > 0.32;
+  if (sat < 0.16) return false;
+  const isBlue = b > r + 14 && b > g + 10;
+  const isRed = r > g + 20 && r > b + 14;
+  const isPurple = r > 70 && b > 70 && g < Math.min(r, b) * 0.85;
+  const isGreenStamp = g > r + 18 && g > b + 12 && sat > 0.22;
+  return isBlue || isRed || isPurple || isGreenStamp;
 }
 
 /**
  * Professional skaner:
- * — yumshoq oq fonda o‘qiladigan matn (qalin binary emas)
+ * — matn aniq o‘qiladi, oqqa yuvilmaydi
  * — pechat / muhur / imzo ranglari saqlanadi
  */
-export function enhanceDocument(imageData: ImageData, mode: ScanMode = "bw"): ImageData {
+export function enhanceDocument(imageData: ImageData, mode: ScanMode = "color"): ImageData {
   const { width: w, height: h, data } = imageData;
   const out = new ImageData(w, h);
   const od = out.data;
@@ -735,19 +742,21 @@ export function enhanceDocument(imageData: ImageData, mode: ScanMode = "bw"): Im
     gray[i] = luminance(data[p]!, data[p + 1]!, data[p + 2]!);
   }
 
+  // Yumshoq kontrast (foydali diapazon)
   const sample: number[] = [];
-  const step = Math.max(1, Math.floor(gray.length / 8000));
+  const step = Math.max(1, Math.floor(gray.length / 10000));
   for (let i = 0; i < gray.length; i += step) sample.push(gray[i]!);
   sample.sort((a, b) => a - b);
-  const lo = sample[Math.floor(sample.length * 0.03)] ?? 0;
-  const hi = sample[Math.floor(sample.length * 0.97)] ?? 255;
-  const span = Math.max(1, hi - lo);
+  const lo = sample[Math.floor(sample.length * 0.04)] ?? 0;
+  const hi = sample[Math.floor(sample.length * 0.96)] ?? 255;
+  const span = Math.max(24, hi - lo);
 
   const stretched = new Float32Array(w * h);
   for (let i = 0; i < gray.length; i++) {
     stretched[i] = clamp(((gray[i]! - lo) / span) * 255, 0, 255);
   }
 
+  // Lokal o‘rtacha (soya tekislash)
   const integ = new Float64Array((w + 1) * (h + 1));
   for (let y = 1; y <= h; y++) {
     let rowSum = 0;
@@ -769,7 +778,7 @@ export function enhanceDocument(imageData: ImageData, mode: ScanMode = "bw"): Im
     );
   };
 
-  const half = 32;
+  const half = 36;
 
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -779,85 +788,82 @@ export function enhanceDocument(imageData: ImageData, mode: ScanMode = "bw"): Im
       const g0 = data[p + 1]!;
       const b0 = data[p + 2]!;
       const g = stretched[i]!;
-      const x0 = x - half;
-      const y0 = y - half;
-      const x1 = x + half + 1;
-      const y1 = y + half + 1;
       const area = Math.max(
         1,
-        (Math.min(w, x1) - Math.max(0, x0)) * (Math.min(h, y1) - Math.max(0, y0)),
+        (Math.min(w, x + half + 1) - Math.max(0, x - half)) *
+          (Math.min(h, y + half + 1) - Math.max(0, y - half)),
       );
-      const mean = rectSum(x0, y0, x1, y1) / area;
+      const mean = rectSum(x - half, y - half, x + half + 1, y + half + 1) / area;
+      // Lokal kontrast: matn qorong‘iroq, fon ochiqroq — lekin o‘rtacha qiymat atrofida
+      const local = clamp(g - mean * 0.55 + 128, 0, 255);
       const colored = isColoredInk(r0, g0, b0);
 
       if (mode === "color" || (mode === "bw" && colored)) {
-        // Rangli siyoh / pechat: ranglarni saqlab, fonni biroz oqartirish
-        const lift = clamp((mean - g) * 0.35 + 8, -20, 40);
-        let rr = clamp(r0 + lift * 0.15, 0, 255);
-        let gg = clamp(g0 + lift * 0.15, 0, 255);
-        let bb = clamp(b0 + lift * 0.15, 0, 255);
         if (colored) {
-          // Muhur/imzo kontrastini biroz kuchaytirish, lekin oqqa yuvmaslik
-          const boost = 1.12;
-          const mid = (rr + gg + bb) / 3;
-          rr = clamp(mid + (rr - mid) * boost, 0, 255);
-          gg = clamp(mid + (gg - mid) * boost, 0, 255);
-          bb = clamp(mid + (bb - mid) * boost, 0, 255);
-        } else if (mode === "color" && g > mean * 0.98 && g > 170) {
-          // Oddiy qog‘oz — yumshoq oq
-          const t = clamp((g - 160) / 70, 0, 1);
-          rr = clamp(rr + (248 - rr) * t * 0.85, 0, 255);
-          gg = clamp(gg + (248 - gg) * t * 0.85, 0, 255);
-          bb = clamp(bb + (248 - bb) * t * 0.85, 0, 255);
+          // Muhur / imzo — asl rangni saqlash, biroz to‘yinganlik
+          const mid = (r0 + g0 + b0) / 3 || 1;
+          const satBoost = 1.25;
+          od[p] = clamp(mid + (r0 - mid) * satBoost, 0, 255);
+          od[p + 1] = clamp(mid + (g0 - mid) * satBoost, 0, 255);
+          od[p + 2] = clamp(mid + (b0 - mid) * satBoost, 0, 255);
+        } else {
+          // Matn + qog‘oz: kulrang kanal asosida, yumshoq
+          // Fonni biroz oqartirish, matnni biroz qoraytirish — lekin oqqa yuvmaslik
+          let v = local;
+          if (v > 200) v = 200 + (v - 200) * 0.35; // yuqori yorug‘likni siqish
+          if (v < 70) v = v * 0.85; // matnni biroz chuqurlashtirish
+          v = clamp(v, 18, 245);
+          // Asl rangdan juda oz iz (tabiiylik)
+          const mix = 0.12;
+          od[p] = clamp(v * (1 - mix) + r0 * mix, 0, 255);
+          od[p + 1] = clamp(v * (1 - mix) + g0 * mix, 0, 255);
+          od[p + 2] = clamp(v * (1 - mix) + b0 * mix, 0, 255);
         }
-        od[p] = rr;
-        od[p + 1] = gg;
-        od[p + 2] = bb;
         od[p + 3] = 255;
       } else if (mode === "gray") {
-        let v = clamp((g - mean) * 1.25 + 150, 0, 255);
-        if (v > 210) v = 245;
-        if (v < 50) v = 35;
+        let v = clamp(local * 1.05, 0, 255);
+        v = clamp(v, 22, 245);
         od[p] = od[p + 1] = od[p + 2] = v;
         od[p + 3] = 255;
       } else {
-        // Yumshoq skaner: binary emas — matn qalinlashmasin
-        const thr = mean * 0.97;
+        // Qora-oq: yumshoq threshold — binary emas
+        const thr = mean * 0.96;
         const diff = thr - g;
         let ink: number;
-        if (diff > 28) ink = 28;
-        else if (diff > 10) ink = clamp(55 + (28 - diff) * 4, 28, 120);
-        else if (diff < -20) ink = 252;
-        else ink = clamp(210 - diff * 3.2, 90, 252);
-        // Juda ochiq joylar — yumshoq oq (qattiq 255 emas)
-        if (g > mean * 1.01 && g > 175) ink = Math.max(ink, 248);
+        if (diff > 35) ink = 22;
+        else if (diff > 12) ink = clamp(40 + (35 - diff) * 3.5, 22, 140);
+        else if (diff < -25) ink = 242;
+        else ink = clamp(195 - diff * 2.8, 70, 242);
         od[p] = od[p + 1] = od[p + 2] = ink;
         od[p + 3] = 255;
       }
     }
   }
 
-  if (mode === "bw") sharpenInPlace(out, 0.18);
-  else if (mode === "gray") sharpenInPlace(out, 0.22);
-  else sharpenInPlace(out, 0.12);
+  // Faqat engil unsharp — eski formula oqqa yuvardi
+  if (mode === "bw" || mode === "gray") sharpenInPlace(out, 0.35);
+  else sharpenInPlace(out, 0.2);
 
   return out;
 }
 
+/** To‘g‘ri unsharp: pixel + amount * (pixel - blur) */
 function sharpenInPlace(img: ImageData, amount: number) {
   const { width: w, height: h, data } = img;
   const copy = new Uint8ClampedArray(data);
+  const a = clamp(amount, 0, 1.5);
   for (let y = 1; y < h - 1; y++) {
     for (let x = 1; x < w - 1; x++) {
       const i = (y * w + x) * 4;
       for (let c = 0; c < 3; c++) {
-        const center = copy[i + c]! * 5;
-        const neigh =
-          copy[((y - 1) * w + x) * 4 + c]! +
-          copy[((y + 1) * w + x) * 4 + c]! +
-          copy[(y * w + x - 1) * 4 + c]! +
-          copy[(y * w + x + 1) * 4 + c]!;
-        data[i + c] = clamp(center - neigh * amount + copy[i + c]! * (1 - amount * 0.15), 0, 255);
+        const px = copy[i + c]!;
+        const blur =
+          (copy[((y - 1) * w + x) * 4 + c]! +
+            copy[((y + 1) * w + x) * 4 + c]! +
+            copy[(y * w + x - 1) * 4 + c]! +
+            copy[(y * w + x + 1) * 4 + c]!) /
+          4;
+        data[i + c] = clamp(px + a * (px - blur), 0, 255);
       }
     }
   }

@@ -9,7 +9,7 @@ import {
   getDeviceSecuritySettings,
   isDeviceSecurityEnforced,
   parseDeviceMeta,
-  policyForGroup,
+  policyForUser,
   readDeviceCookie,
   registerPendingDevice,
   setDeviceCookie,
@@ -163,7 +163,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     // ========== Device security enforced ==========
     const settings = await getDeviceSecuritySettings();
     const group = staffGroupForRole(user.role);
-    const policy = policyForGroup(settings, group);
+    const policy = policyForUser(settings, user);
     const cred = readDeviceCookie(req);
     let device = cred ? await findDeviceByCred(user.id, cred.deviceId, cred.token) : null;
 

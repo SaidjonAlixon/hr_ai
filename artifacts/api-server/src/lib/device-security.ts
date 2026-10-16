@@ -173,12 +173,31 @@ export async function isDeviceSecurityEnforced(user: {
   const settings = await getDeviceSecuritySettings();
   const mode = settings.enforcementMode;
   if (mode === "off") return false;
+  // Admin "Majburiy" yoqqan xodim — rejimdan qat'i nazar (off dan tashqari)
+  if (user.deviceSecurityEnforced) return true;
   if (mode === "all") return true;
-  if (mode === "selected") return Boolean(user.deviceSecurityEnforced);
+  if (mode === "selected") return false;
   const group = staffGroupForRole(user.role);
   if (mode === "office") return group === "office";
   if (mode === "pharmacy") return group === "pharmacy";
   return false;
+}
+
+/** Majburiy yoqilgan xodim: faqat 1 asosiy qurilma, begona blok */
+export function policyForUser(
+  settings: DeviceSecuritySettings,
+  user: { role: string; deviceSecurityEnforced?: boolean | null },
+) {
+  const base = policyForGroup(settings, staffGroupForRole(user.role));
+  if (user.deviceSecurityEnforced) {
+    return {
+      ...base,
+      maxDevices: 1,
+      blockForeign: true,
+      requireApprove: false,
+    };
+  }
+  return base;
 }
 
 export function readDeviceCookie(req: Request): { deviceId: string; token: string } | null {
@@ -397,7 +416,15 @@ export async function approveDevice(deviceRowId: number, reviewedBy: number) {
     .where(eq(usersTable.id, device.userId))
     .limit(1);
   if (!user) return null;
-  const policy = policyForGroup(settings, staffGroupForRole(user.role));
+  const [userFlags] = await db
+    .select({ deviceSecurityEnforced: usersTable.deviceSecurityEnforced })
+    .from(usersTable)
+    .where(eq(usersTable.id, user.id))
+    .limit(1);
+  const policy = policyForUser(settings, {
+    role: user.role,
+    deviceSecurityEnforced: userFlags?.deviceSecurityEnforced,
+  });
   const verified = await db
     .select()
     .from(userDevicesTable)

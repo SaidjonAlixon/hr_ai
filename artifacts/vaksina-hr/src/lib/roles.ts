@@ -599,6 +599,12 @@ export function isPharmacyBranchRole(role?: string | null): boolean {
   return role === "mudir" || role === "farmasevt" || role === "stajyor";
 }
 
+/** Qurilma xavfsizligi + Face ID majburiy (dorixona xodimlari) */
+export function isPharmacyDeviceStaff(role?: string | null): boolean {
+  const r = normalizeUserRole(role);
+  return r === "mudir" || r === "farmasevt" || r === "stajyor" || r === "koordinator";
+}
+
 /** Filial reytingi (cheklist ball) — o‘z filiali */
 export function canViewPharmacyReyting(role?: string | null): boolean {
   return isPharmacyBranchRole(role);

@@ -996,6 +996,14 @@ export default function DavomatFacePage() {
     try {
       const s = await fetchFaceIdStatus();
       setFaceRegistered(s.registered);
+      // Dorixona: ?enroll=1 — Face ID majburiy ochiladi
+      try {
+        if (!s.registered && new URL(window.location.href).searchParams.get("enroll") === "1") {
+          setEnrollOpen(true);
+        }
+      } catch {
+        /* ignore */
+      }
     } catch {
       setFaceRegistered(null);
     }

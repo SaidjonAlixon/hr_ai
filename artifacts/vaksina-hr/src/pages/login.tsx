@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from 'wouter';
-import { Eye, EyeOff, ShieldAlert, ShieldQuestion } from 'lucide-react';
+import { Eye, EyeOff, MessageCircle, Phone, ShieldAlert, ShieldQuestion } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -14,9 +14,20 @@ import { LanguageSwitcher } from '../components/language-switcher';
 import { HELP_ASSISTANT_ENABLED, HelpAssistantDialog } from '../components/HelpAssistantDialog';
 import { OperatorHeadsetIcon } from '../components/OperatorHeadsetIcon';
 import { useI18n } from '../i18n/I18nProvider';
-import { isStajyor, isLimitedOfficeStaffRole, isReviziyaRole, isStudentRole } from '../lib/roles';
+import {
+  isStajyor,
+  isLimitedOfficeStaffRole,
+  isReviziyaRole,
+  isStudentRole,
+  isPharmacyDeviceStaff,
+} from '../lib/roles';
 import { loginWithDevice, requestDeviceChange } from '../lib/device-security-api';
 import { takeAfterLogin } from '../lib/conference/api';
+import { fetchFaceIdStatus } from '../lib/face-id';
+
+const SUPPORT_PHONE = '+998701743722';
+const SUPPORT_PHONE_DISPLAY = '+998 70 174 37 22';
+const SUPPORT_TELEGRAM = 'saidmuhammadalixon_hr';
 
 type DeviceGate =
   | null
@@ -26,6 +37,46 @@ type DeviceGate =
       deviceName?: string;
       canRequestChange?: boolean;
     };
+
+function SupportContacts() {
+  return (
+    <div className="space-y-2 rounded-2xl border border-[#1e3a8a]/15 bg-gradient-to-br from-[#1e3a8a]/[0.06] to-sky-50/80 p-3 dark:from-sky-500/10 dark:to-background">
+      <p className="text-center text-[11px] font-semibold uppercase tracking-wide text-[#1e3a8a] dark:text-sky-300">
+        Bog‘lanish
+      </p>
+      <a
+        href={`tel:${SUPPORT_PHONE}`}
+        className="flex min-h-12 items-center gap-3 rounded-xl border border-emerald-200/80 bg-white px-3 py-2.5 shadow-sm transition active:scale-[0.99] dark:border-emerald-500/30 dark:bg-card"
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
+          <Phone className="h-5 w-5" />
+        </span>
+        <span className="min-w-0 text-left">
+          <span className="block text-[11px] text-muted-foreground">Qo‘ng‘iroq</span>
+          <span className="block text-base font-semibold tracking-tight text-foreground">
+            {SUPPORT_PHONE_DISPLAY}
+          </span>
+        </span>
+      </a>
+      <a
+        href={`https://t.me/${SUPPORT_TELEGRAM}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex min-h-12 items-center gap-3 rounded-xl border border-sky-200/80 bg-white px-3 py-2.5 shadow-sm transition active:scale-[0.99] dark:border-sky-500/30 dark:bg-card"
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#2AABEE] text-white">
+          <MessageCircle className="h-5 w-5" />
+        </span>
+        <span className="min-w-0 text-left">
+          <span className="block text-[11px] text-muted-foreground">Telegram</span>
+          <span className="block text-base font-semibold tracking-tight text-foreground">
+            @{SUPPORT_TELEGRAM}
+          </span>
+        </span>
+      </a>
+    </div>
+  );
+}
 
 export default function Login() {
   const [login, setLogin] = useState('');
@@ -40,7 +91,7 @@ export default function Login() {
   const { toast } = useToast();
   const { t } = useI18n();
 
-  const goAfterLogin = (user: User) => {
+  const goAfterLogin = async (user: User) => {
     switchToUser(user);
     if (isStudentRole(user.role)) {
       setLocation('/kirish');
@@ -51,6 +102,18 @@ export default function Login() {
       setLocation(back);
       return;
     }
+
+    // Dorixona: avval Face ID, keyin davomat
+    if (isPharmacyDeviceStaff(user.role)) {
+      try {
+        const face = await fetchFaceIdStatus();
+        setLocation(face.registered ? '/davomat-face' : '/davomat-face?enroll=1');
+      } catch {
+        setLocation('/davomat-face?enroll=1');
+      }
+      return;
+    }
+
     if (isStajyor(user.role)) {
       setLocation('/kirish');
       return;
@@ -82,7 +145,7 @@ export default function Login() {
     setGate(null);
     try {
       const data = await loginWithDevice(loginTrim, passwordTrim);
-      goAfterLogin(data.user);
+      await goAfterLogin(data.user);
     } catch (err) {
       const data = (err as { data?: Record<string, unknown>; code?: string })?.data || {};
       const code = String((err as { code?: string }).code || data.code || '');
@@ -165,9 +228,10 @@ export default function Login() {
               </p>
             ) : (
               <p className="text-center text-xs text-muted-foreground">
-                Dashboard, QR va Face ID ochilmaydi. Asosiy qurilmangizdan kiring.
+                Faqat asosiy telefongizdan kiring. Boshqa joydan kirish uchun admin ruxsati kerak.
               </p>
             )}
+            <SupportContacts />
           </CardContent>
           <CardFooter className="flex flex-col gap-2">
             {gate.canRequestChange ? (
@@ -221,7 +285,6 @@ export default function Login() {
                   value={login}
                   onChange={(e) => setLogin(e.target.value)}
                   placeholder={t('login.loginPlaceholder')}
-                  className="bg-slate-50 dark:bg-background"
                 />
               </div>
               <div className="space-y-2">
@@ -234,13 +297,12 @@ export default function Login() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder={t('login.passwordPlaceholder')}
-                    className="bg-slate-50 pr-10 dark:bg-background"
                   />
                   <button
                     type="button"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground"
                     onClick={() => setShowPassword((v) => !v)}
-                    aria-label="Toggle password"
+                    aria-label={showPassword ? 'Yashirish' : 'Ko‘rsatish'}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -248,25 +310,25 @@ export default function Login() {
               </div>
             </CardContent>
             <CardFooter className="flex flex-col gap-3">
-              <Button type="submit" className="w-full bg-[#1e3a8a] hover:bg-[#1e3a8a]/90" disabled={pending}>
+              <Button type="submit" className="w-full bg-[#1e3a8a] hover:bg-[#16306f]" disabled={pending}>
                 {pending ? t('login.submitting') : t('login.submit')}
               </Button>
               {HELP_ASSISTANT_ENABLED ? (
                 <Button
                   type="button"
-                  variant="ghost"
-                  className="gap-2 text-muted-foreground"
+                  variant="outline"
+                  className="w-full gap-2"
                   onClick={() => setHelpOpen(true)}
                 >
                   <OperatorHeadsetIcon className="h-4 w-4" />
-                  {t('login.help')}
+                  {t('login.helpAria')}
                 </Button>
               ) : null}
             </CardFooter>
           </form>
         </Card>
+        <HelpAssistantDialog open={helpOpen} onOpenChange={setHelpOpen} />
       </div>
-      <HelpAssistantDialog open={helpOpen} onOpenChange={setHelpOpen} />
     </div>
   );
 }

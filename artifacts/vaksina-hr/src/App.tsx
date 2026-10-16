@@ -12,6 +12,7 @@ import { StudentShell } from './components/student/StudentShell';
 import { isStudentRole } from './lib/roles';
 import { RealtimeSync } from './lib/realtime-sync';
 import { DeviceSecurityListener } from './components/DeviceSecurityListener';
+import { PharmacyFaceGate } from './components/PharmacyFaceGate';
 import { DisciplineLockOverlay } from './components/DisciplineLockOverlay';
 import { ExplanationLetterPrompt } from './components/explanation-letter/ExplanationLetterPrompt';
 import { CallLayer } from './components/calls/CallLayer';
@@ -355,6 +356,7 @@ function App() {
             <StaffOnly>
               <RealtimeSync />
               <DeviceSecurityListener />
+              <PharmacyFaceGate />
               <DisciplineLockOverlay />
             </StaffOnly>
             <TooltipProvider>

@@ -306,7 +306,7 @@ router.post(
     }
     await notifyUser({
       userId: device.userId,
-      text: "Qurilmangiz admin tomonidan tasdiqlandi. Qayta login qiling.",
+      text: "Qurilmangiz asosiy qilib tasdiqlandi. Faqat shu qurilmadan qayta kiring — boshqa joylar yopildi.",
       type: "security",
       linkUrl: "/login",
       title: "Qurilma tasdiqlandi",
@@ -347,6 +347,13 @@ router.post(
           eq(deviceChangeRequestsTable.status, "pending"),
         ),
       );
+    await notifyUser({
+      userId: device.userId,
+      text: "Qurilma so‘rovingiz rad etildi. Bu qurilmadan kira olmaysiz — asosiy qurilmangizdan kiring.",
+      type: "security",
+      linkUrl: "/login",
+      title: "Qurilma rad etildi",
+    });
     res.json({ ok: true });
   },
 );
@@ -399,19 +406,12 @@ router.post(
   async (req: AuthRequest, res): Promise<void> => {
     if (!requireManage(req, res)) return;
     const id = Number(req.params.id);
-    const [device] = await db.select().from(userDevicesTable).where(eq(userDevicesTable.id, id)).limit(1);
+    // Asosiy qilish = ruxsat berish bilan bir xil: faqat shu qurilma, qolganlari yopiladi
+    const device = await approveDevice(id, req.userId!);
     if (!device) {
       res.status(404).json({ error: "Topilmadi" });
       return;
     }
-    await db
-      .update(userDevicesTable)
-      .set({ isPrimary: false })
-      .where(eq(userDevicesTable.userId, device.userId));
-    await db
-      .update(userDevicesTable)
-      .set({ isPrimary: true, isVerified: true, isBlocked: false })
-      .where(eq(userDevicesTable.id, id));
     res.json({ ok: true });
   },
 );

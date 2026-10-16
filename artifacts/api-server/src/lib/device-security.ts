@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "crypto";
 import type { Request, Response } from "express";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import {
   db,
   usersTable,
@@ -409,54 +409,35 @@ export async function registerPendingDevice(opts: {
 export async function approveDevice(deviceRowId: number, reviewedBy: number) {
   const [device] = await db.select().from(userDevicesTable).where(eq(userDevicesTable.id, deviceRowId)).limit(1);
   if (!device) return null;
-  const settings = await getDeviceSecuritySettings();
   const [user] = await db
     .select({ id: usersTable.id, role: usersTable.role })
     .from(usersTable)
     .where(eq(usersTable.id, device.userId))
     .limit(1);
   if (!user) return null;
-  const [userFlags] = await db
-    .select({ deviceSecurityEnforced: usersTable.deviceSecurityEnforced })
-    .from(usersTable)
-    .where(eq(usersTable.id, user.id))
-    .limit(1);
-  const policy = policyForUser(settings, {
-    role: user.role,
-    deviceSecurityEnforced: userFlags?.deviceSecurityEnforced,
-  });
-  const verified = await db
-    .select()
+
+  // Ruxsat = faqat shu qurilma asosiy; eski joylar yopiladi va bloklanadi
+  const others = await db
+    .select({ id: userDevicesTable.id })
     .from(userDevicesTable)
-    .where(
-      and(
-        eq(userDevicesTable.userId, user.id),
-        eq(userDevicesTable.isVerified, true),
-        eq(userDevicesTable.isBlocked, false),
-      ),
-    );
+    .where(and(eq(userDevicesTable.userId, user.id), ne(userDevicesTable.id, deviceRowId)));
 
-  // Agar limit to‘lgan bo‘lsa — eng eski primary emasini revoke
-  if (verified.length >= policy.maxDevices) {
-    const toRevoke = verified.filter((d) => d.id !== deviceRowId).sort((a, b) => a.id - b.id);
-    while (toRevoke.length >= policy.maxDevices) {
-      const old = toRevoke.shift()!;
-      await db
-        .update(userDevicesTable)
-        .set({ isVerified: false, isPrimary: false, isBlocked: true, blockedAt: new Date(), blockedBy: reviewedBy })
-        .where(eq(userDevicesTable.id, old.id));
-      await revokeSessionsForUser(user.id, old.id);
-    }
-  }
-
-  // 1 qurilma limida yangi tasdiq = yangi asosiy; eski primary yuqorida bloklangan
-  const makePrimary = policy.maxDevices <= 1 || !verified.some((d) => d.isPrimary && d.id !== deviceRowId);
-  if (makePrimary) {
+  for (const old of others) {
     await db
       .update(userDevicesTable)
-      .set({ isPrimary: false })
-      .where(and(eq(userDevicesTable.userId, user.id), eq(userDevicesTable.isPrimary, true)));
+      .set({
+        isVerified: false,
+        isPrimary: false,
+        isBlocked: true,
+        blockedAt: new Date(),
+        blockedBy: reviewedBy,
+      })
+      .where(eq(userDevicesTable.id, old.id));
   }
+
+  // Barcha ochiq sessionlar yopiladi — faqat yangi asosiydan qayta kiradi
+  await revokeSessionsForUser(user.id);
+
   await db
     .update(userDevicesTable)
     .set({
@@ -464,7 +445,7 @@ export async function approveDevice(deviceRowId: number, reviewedBy: number) {
       isBlocked: false,
       blockedAt: null,
       blockedBy: null,
-      isPrimary: makePrimary,
+      isPrimary: true,
       lastSeenAt: new Date(),
       lastLoginAt: new Date(),
     })
@@ -477,6 +458,18 @@ export async function approveDevice(deviceRowId: number, reviewedBy: number) {
       and(
         eq(deviceChangeRequestsTable.newDeviceRowId, deviceRowId),
         eq(deviceChangeRequestsTable.status, "pending"),
+      ),
+    );
+
+  // Boshqa pending so‘rovlar rad
+  await db
+    .update(deviceChangeRequestsTable)
+    .set({ status: "rejected", reviewedAt: new Date(), reviewedBy })
+    .where(
+      and(
+        eq(deviceChangeRequestsTable.userId, user.id),
+        eq(deviceChangeRequestsTable.status, "pending"),
+        ne(deviceChangeRequestsTable.newDeviceRowId, deviceRowId),
       ),
     );
 

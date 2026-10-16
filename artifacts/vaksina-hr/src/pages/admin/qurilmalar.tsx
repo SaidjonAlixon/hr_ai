@@ -165,6 +165,7 @@ export default function AdminQurilmalarPage() {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("all");
   const [devices, setDevices] = useState<DeviceRow[]>([]);
+  const [pendingDevices, setPendingDevices] = useState<DeviceRow[]>([]);
   const [summary, setSummary] = useState({
     total: 0,
     active: 0,
@@ -228,13 +229,16 @@ export default function AdminQurilmalarPage() {
     };
   }, [enforceUsers, filteredEnforceUsers]);
 
+  const pendingRequests = pendingDevices;
+
   const load = useCallback(async () => {
     if (!allowed) return;
     setLoading(true);
     try {
-      const [sum, list, st, users, hist, ev] = await Promise.all([
+      const [sum, list, pendingList, st, users, hist, ev] = await Promise.all([
         fetchDeviceSummary(),
         fetchDevices({ q: q.trim() || undefined, status }),
+        fetchDevices({ status: "pending" }),
         fetchDeviceSettings(),
         fetchEnforceUsers(),
         fetchLoginHistory(),
@@ -242,6 +246,7 @@ export default function AdminQurilmalarPage() {
       ]);
       setSummary(sum);
       setDevices(list.devices);
+      setPendingDevices(pendingList.devices);
       setSettings(st);
       setEnforceUsers(users.users);
       setLogs(hist.logs);
@@ -334,8 +339,16 @@ export default function AdminQurilmalarPage() {
         <Kpi icon={<ShieldAlert className="h-4 w-4" />} label="Shubhali (7 kun)" value={summary.suspicious} tone="orange" />
       </div>
 
-      <Tabs defaultValue="devices" className="space-y-4">
+      <Tabs defaultValue="requests" className="space-y-4">
         <TabsList className="ds-tabs h-auto flex-wrap gap-1 rounded-xl bg-muted/60 p-1">
+          <TabsTrigger value="requests" className="ds-tab relative rounded-lg px-3 py-2">
+            Ruxsat so‘rovlari
+            {summary.pending > 0 ? (
+              <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
+                {summary.pending}
+              </span>
+            ) : null}
+          </TabsTrigger>
           <TabsTrigger value="devices" className="ds-tab rounded-lg px-3 py-2">
             Qurilmalar
           </TabsTrigger>
@@ -352,6 +365,128 @@ export default function AdminQurilmalarPage() {
             Xavfsizlik hodisalari
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="requests" className="mt-0 space-y-4">
+          <Card className="overflow-hidden border-amber-200/80 bg-gradient-to-br from-amber-50/90 via-white to-orange-50/40 shadow-sm dark:border-amber-500/30 dark:from-amber-500/10 dark:via-background dark:to-background">
+            <CardHeader className="border-b border-amber-200/60 pb-4 dark:border-amber-500/20">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-60" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500" />
+                    </span>
+                    Ruxsat so‘raganlar
+                  </CardTitle>
+                  <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+                    Tasdiqlansa — shu qurilma/IP asosiy bo‘ladi, eski joylar avtomatik yopiladi.
+                    Rad etilsa — shu qurilmadan kira olmaydi.
+                  </p>
+                </div>
+                <Badge className="bg-amber-500 text-white hover:bg-amber-500">
+                  {pendingRequests.length} ta kutmoqda
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3 p-3 sm:p-4">
+              {pendingRequests.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-amber-200/80 bg-white/60 px-4 py-12 text-center dark:bg-background/40">
+                  <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-emerald-500/70" />
+                  <p className="font-medium">Yangi so‘rov yo‘q</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Xodim boshqa qurilmadan kirsa, so‘rov shu yerda chiqadi.
+                  </p>
+                </div>
+              ) : (
+                pendingRequests.map((d) => {
+                  const kind = deviceKind(d.deviceType);
+                  const Icon = kind.Icon;
+                  return (
+                    <div
+                      key={d.id}
+                      className="rounded-2xl border border-amber-200/70 bg-white p-4 shadow-sm ring-1 ring-amber-500/10 dark:border-amber-500/25 dark:bg-card"
+                    >
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <button
+                          type="button"
+                          className="min-w-0 flex-1 text-left"
+                          onClick={() => void openDetail(d.id)}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="rounded-xl bg-amber-500/15 p-2.5 text-amber-800 dark:text-amber-300">
+                              <Icon className="h-5 w-5" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-semibold">{d.fullName}</span>
+                                <StatusBadge status="pending" compact />
+                              </div>
+                              <div className="mt-0.5 text-xs text-muted-foreground">
+                                {d.login}
+                                {d.phone ? ` · ${d.phone}` : ""}
+                                {d.departmentName ? ` · ${d.departmentName}` : ""}
+                              </div>
+                              <div className="mt-2 grid gap-1 text-sm sm:grid-cols-2">
+                                <div>
+                                  <span className="text-muted-foreground">Qurilma: </span>
+                                  <span className="font-medium">{d.deviceName || kind.label}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">IP: </span>
+                                  <span className="font-mono text-xs font-medium">
+                                    {d.lastIp || d.ipAddress || "—"}
+                                  </span>
+                                </div>
+                                <div className="text-xs text-muted-foreground sm:col-span-2">
+                                  {displayOsBrowser(d.os, d.browser)} · {fmt(d.lastSeenAt)}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+
+                        {canEdit ? (
+                          <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col xl:flex-row">
+                            <Button
+                              type="button"
+                              disabled={busy}
+                              className="h-11 min-w-[140px] rounded-xl bg-emerald-600 hover:bg-emerald-700"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void run(
+                                  () => approveDevice(d.id),
+                                  "Tasdiqlandi — shu qurilma asosiy, eski joylar yopildi",
+                                );
+                              }}
+                            >
+                              <CheckCircle2 className="h-4 w-4" />
+                              Tasdiqlash
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              disabled={busy}
+                              className="h-11 min-w-[140px] rounded-xl"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void run(() => rejectDevice(d.id), "Rad etildi — bu qurilmadan kirolmaydi");
+                              }}
+                            >
+                              <XCircle className="h-4 w-4" />
+                              Rad etish
+                            </Button>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">Faqat admin tasdiqlaydi</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="devices" className="mt-0 space-y-4">
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -379,7 +514,7 @@ export default function AdminQurilmalarPage() {
 
           <Card className="overflow-hidden border-border/60 shadow-sm">
             <CardContent className="overflow-x-auto p-0">
-              <table className="w-full min-w-[980px] text-left text-sm">
+              <table className="w-full min-w-[1100px] text-left text-sm">
                 <thead>
                   <tr className="border-b bg-gradient-to-r from-slate-50 to-white text-[11px] uppercase tracking-wide text-muted-foreground dark:from-slate-900/50 dark:to-background">
                     <th className="px-4 py-3 font-semibold">Xodim</th>
@@ -387,19 +522,23 @@ export default function AdminQurilmalarPage() {
                     <th className="px-4 py-3 font-semibold">Holat</th>
                     <th className="px-4 py-3 font-semibold">Faollik</th>
                     <th className="px-4 py-3 font-semibold">IP</th>
+                    <th className="px-4 py-3 font-semibold">Amallar</th>
                   </tr>
                 </thead>
                 <tbody>
                   {devices.map((d) => {
                     const kind = deviceKind(d.deviceType);
                     const Icon = kind.Icon;
+                    const isPending = d.status === "pending" || (!d.isVerified && !d.isBlocked);
                     return (
                       <tr
                         key={d.id}
-                        className="cursor-pointer border-b border-border/50 transition-colors hover:bg-[#1e3a8a]/[0.04]"
-                        onClick={() => void openDetail(d.id)}
+                        className="border-b border-border/50 transition-colors hover:bg-[#1e3a8a]/[0.04]"
                       >
-                        <td className="px-4 py-3.5">
+                        <td
+                          className="cursor-pointer px-4 py-3.5"
+                          onClick={() => void openDetail(d.id)}
+                        >
                           <div className="font-semibold text-foreground">{d.fullName}</div>
                           <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                             <span>{d.login}</span>
@@ -423,7 +562,10 @@ export default function AdminQurilmalarPage() {
                             ) : null}
                           </div>
                         </td>
-                        <td className="px-4 py-3.5">
+                        <td
+                          className="cursor-pointer px-4 py-3.5"
+                          onClick={() => void openDetail(d.id)}
+                        >
                           <div className="flex items-start gap-2.5">
                             <div className="mt-0.5 rounded-lg bg-muted/80 p-2 ring-1 ring-border/60">
                               <Icon className="h-4 w-4 text-[#1e3a8a] dark:text-sky-300" />
@@ -453,12 +595,54 @@ export default function AdminQurilmalarPage() {
                         <td className="px-4 py-3.5 font-mono text-xs text-muted-foreground">
                           {d.lastIp || d.ipAddress || "—"}
                         </td>
+                        <td className="px-4 py-3.5">
+                          {isPending && canEdit ? (
+                            <div className="flex flex-col gap-1.5 sm:flex-row">
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={busy}
+                                className="h-9 rounded-lg bg-emerald-600 hover:bg-emerald-700"
+                                onClick={() =>
+                                  void run(
+                                    () => approveDevice(d.id),
+                                    "Tasdiqlandi — asosiy qilindi",
+                                  )
+                                }
+                              >
+                                Tasdiq
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="destructive"
+                                disabled={busy}
+                                className="h-9 rounded-lg"
+                                onClick={() =>
+                                  void run(() => rejectDevice(d.id), "Rad etildi")
+                                }
+                              >
+                                Rad
+                              </Button>
+                            </div>
+                          ) : (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-9 rounded-lg"
+                              onClick={() => void openDetail(d.id)}
+                            >
+                              Batafsil
+                            </Button>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
                   {!loading && devices.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-14 text-center">
+                      <td colSpan={6} className="px-4 py-14 text-center">
                         <div className="mx-auto max-w-sm space-y-2">
                           <MonitorSmartphone className="mx-auto h-8 w-8 text-muted-foreground/50" />
                           <p className="font-medium">Hali qurilma yo‘q</p>

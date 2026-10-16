@@ -24,6 +24,8 @@ import {
   touchDevice,
   writeLoginAudit,
   writeSecurityEvent,
+  getLastDeviceApproval,
+  getPrimaryDeviceInfo,
   type CookieSiteMode,
 } from "./device-security";
 
@@ -87,6 +89,10 @@ export async function completeEnforcedDeviceLogin(opts: {
   const settings = await getDeviceSecuritySettings();
   const group = staffGroupForRole(user.role);
   const policy = policyForUser(settings, user);
+  const [lastApproval, primaryDevice] = await Promise.all([
+    getLastDeviceApproval(user.id),
+    getPrimaryDeviceInfo(user.id),
+  ]);
   const devicePayload =
     opts.deviceBody && typeof opts.deviceBody === "object"
       ? (opts.deviceBody as Record<string, unknown>)
@@ -191,9 +197,12 @@ export async function completeEnforcedDeviceLogin(opts: {
       status: "pending",
       failureReason: "DEVICE_PENDING",
     });
+    const isForeign = Boolean(primaryDevice && primaryDevice.id !== device.id);
     await notifyAdminsDevice({
-      title: "Qurilma almashtirish so‘rovi",
-      message: `${user.fullName} qurilma almashtirish so‘ramoqda (${device.deviceName || "qurilma"})${siteMode === "telegram" ? " · Telegram" : ""}. Qurilmalar → Ruxsat so‘rovlari.`,
+      title: isForeign ? "Boshqa qurilmadan kirish" : "Qurilma almashtirish so‘rovi",
+      message: isForeign
+        ? `${user.fullName} BOSHQA qurilmadan kiryapti va ruxsat so‘ramoqda. Asosiy: ${primaryDevice?.deviceName || "—"}. Yangi: ${device.deviceName || "qurilma"}${siteMode === "telegram" ? " · Telegram" : ""}. Qurilmalar → Ruxsat so‘rovlari.`
+        : `${user.fullName} qurilma almashtirish so‘ramoqda (${device.deviceName || "qurilma"})${siteMode === "telegram" ? " · Telegram" : ""}. Qurilmalar → Ruxsat so‘rovlari.`,
     });
     return {
       kind: "blocked",
@@ -202,11 +211,18 @@ export async function completeEnforcedDeviceLogin(opts: {
         success: false,
         code: "DEVICE_PENDING",
         error: "Qurilma admin tasdig‘ini kutmoqda.",
-        message: "So‘rov adminga yuborildi. Tasdiqlansa shu qurilma asosiy bo‘ladi.",
+        message: isForeign
+          ? "Diqqat: siz boshqa qurilmadan kiryapsiz. So‘rov adminga yuborildi — tasdiqlansa shu qurilma asosiy bo‘ladi."
+          : "So‘rov adminga yuborildi. Tasdiqlansa shu qurilma asosiy bo‘ladi.",
         canRequestChange: true,
         requestSent: true,
+        foreignDevice: isForeign,
+        primaryDevice: primaryDevice
+          ? { name: primaryDevice.deviceName, lastLoginAt: primaryDevice.lastLoginAt }
+          : null,
         deviceBind: bind,
         device: { name: device.deviceName, os: device.os, browser: device.browser },
+        lastApproval,
       },
     };
   }
@@ -231,9 +247,12 @@ export async function completeEnforcedDeviceLogin(opts: {
       status: "pending",
       failureReason: "DEVICE_PENDING",
     });
+    const isForeign = Boolean(primaryDevice && primaryDevice.id !== device.id);
     await notifyAdminsDevice({
-      title: "Qurilma almashtirish so‘rovi",
-      message: `${user.fullName} qurilma tasdig‘ini kutmoqda (${device.deviceName || "qurilma"})${siteMode === "telegram" ? " · Telegram" : ""}. Qurilmalar → Ruxsat so‘rovlari.`,
+      title: isForeign ? "Boshqa qurilmadan kirish" : "Qurilma almashtirish so‘rovi",
+      message: isForeign
+        ? `${user.fullName} BOSHQA qurilmadan kiryapti va ruxsat so‘ramoqda. Asosiy: ${primaryDevice?.deviceName || "—"}. Yangi: ${device.deviceName || "qurilma"}${siteMode === "telegram" ? " · Telegram" : ""}. Qurilmalar → Ruxsat so‘rovlari.`
+        : `${user.fullName} qurilma tasdig‘ini kutmoqda (${device.deviceName || "qurilma"})${siteMode === "telegram" ? " · Telegram" : ""}. Qurilmalar → Ruxsat so‘rovlari.`,
     });
     return {
       kind: "blocked",
@@ -242,15 +261,22 @@ export async function completeEnforcedDeviceLogin(opts: {
         success: false,
         code: "DEVICE_PENDING",
         error: "Qurilma admin tasdig‘ini kutmoqda.",
-        message: "So‘rov adminga yuborildi. Tasdiqlansa shu qurilmadan kira olasiz.",
+        message: isForeign
+          ? "Diqqat: siz boshqa qurilmadan kiryapsiz. So‘rov adminga yuborildi — tasdiqlansa shu qurilmadan kira olasiz."
+          : "So‘rov adminga yuborildi. Tasdiqlansa shu qurilmadan kira olasiz.",
         canRequestChange: true,
         requestSent: true,
+        foreignDevice: isForeign,
+        primaryDevice: primaryDevice
+          ? { name: primaryDevice.deviceName, lastLoginAt: primaryDevice.lastLoginAt }
+          : null,
         deviceBind: bind,
         device: {
           name: device.deviceName,
           os: device.os,
           browser: device.browser,
         },
+        lastApproval,
       },
     };
   }
@@ -298,9 +324,10 @@ export async function completeEnforcedDeviceLogin(opts: {
       severity: "high",
       metadata: { deviceName: meta.deviceName, ip, via: siteMode },
     });
+    const primaryName = primaryDevice?.deviceName || "asosiy telefon";
     await notifyAdminsDevice({
-      title: "Qurilma almashtirish so‘rovi",
-      message: `${user.fullName} yangi qurilmadan kirishga harakat qildi (${meta.deviceName})${siteMode === "telegram" ? " · Telegram" : ""}. Qurilmalar → Ruxsat so‘rovlari.`,
+      title: "Boshqa qurilmadan kirish",
+      message: `${user.fullName} BOSHQA qurilmadan kiryapti va ruxsat so‘ramoqda. Asosiy: ${primaryName}. Yangi: ${meta.deviceName}${siteMode === "telegram" ? " · Telegram" : ""}. Qurilmalar → Ruxsat so‘rovlari.`,
     });
 
     return {
@@ -312,11 +339,16 @@ export async function completeEnforcedDeviceLogin(opts: {
         error:
           "Ushbu akkaunt boshqa qurilmaga biriktirilgan. Iltimos, o‘zingizga biriktirilgan asosiy qurilmadan kiring.",
         message:
-          "Ushbu akkaunt boshqa qurilmaga biriktirilgan. Iltimos, o‘zingizga biriktirilgan asosiy qurilmadan kiring. Qurilma almashtirish so‘rovi adminga yuborildi — tasdiqlansa shu telefon asosiy bo‘ladi.",
+          "Diqqat: siz boshqa qurilmadan kiryapsiz. Akkaunt asosiy telefonga biriktirilgan. So‘rov adminga yuborildi — tasdiqlansa shu telefon asosiy bo‘ladi.",
         canRequestChange: true,
         requestSent: true,
+        foreignDevice: true,
+        primaryDevice: primaryDevice
+          ? { name: primaryDevice.deviceName, lastLoginAt: primaryDevice.lastLoginAt }
+          : null,
         deviceBind,
         device: { name: meta.deviceName, os: meta.os, browser: meta.browser },
+        lastApproval,
       },
     };
   }
@@ -404,6 +436,7 @@ export async function completeEnforcedDeviceLogin(opts: {
       requestSent: true,
       deviceBind: firstBind,
       device: { name: meta.deviceName, os: meta.os, browser: meta.browser },
+      lastApproval,
     },
   };
 }

@@ -557,6 +557,98 @@ export async function approveDevice(deviceRowId: number, reviewedBy: number) {
   return device;
 }
 
+/** Hozirgi asosiy (tasdiqlangan) qurilma */
+export async function getPrimaryDeviceInfo(userId: number): Promise<{
+  id: number;
+  deviceName: string | null;
+  lastLoginAt: string | null;
+} | null> {
+  const [primary] = await db
+    .select({
+      id: userDevicesTable.id,
+      deviceName: userDevicesTable.deviceName,
+      lastLoginAt: userDevicesTable.lastLoginAt,
+    })
+    .from(userDevicesTable)
+    .where(
+      and(
+        eq(userDevicesTable.userId, userId),
+        eq(userDevicesTable.isVerified, true),
+        eq(userDevicesTable.isBlocked, false),
+        eq(userDevicesTable.isPrimary, true),
+      ),
+    )
+    .limit(1);
+  if (!primary) return null;
+  return {
+    id: primary.id,
+    deviceName: primary.deviceName ?? null,
+    lastLoginAt: primary.lastLoginAt ? primary.lastLoginAt.toISOString() : null,
+  };
+}
+
+/** Oxirgi marta admin qachon ruxsat bergani (so‘rov yuborganlarga ko‘rsatish uchun) */
+export async function getLastDeviceApproval(userId: number): Promise<{
+  at: string;
+  deviceName: string | null;
+  status: "approved";
+} | null> {
+  const [row] = await db
+    .select({
+      reviewedAt: deviceChangeRequestsTable.reviewedAt,
+      deviceName: userDevicesTable.deviceName,
+    })
+    .from(deviceChangeRequestsTable)
+    .leftJoin(
+      userDevicesTable,
+      eq(userDevicesTable.id, deviceChangeRequestsTable.newDeviceRowId),
+    )
+    .where(
+      and(
+        eq(deviceChangeRequestsTable.userId, userId),
+        eq(deviceChangeRequestsTable.status, "approved"),
+      ),
+    )
+    .orderBy(desc(deviceChangeRequestsTable.reviewedAt))
+    .limit(1);
+
+  if (row?.reviewedAt) {
+    return {
+      at: row.reviewedAt.toISOString(),
+      deviceName: row.deviceName ?? null,
+      status: "approved",
+    };
+  }
+
+  // So‘rov yozuvi yo‘q bo‘lsa — hozirgi asosiy qurilma birinchi tasdiq vaqti
+  const [primary] = await db
+    .select({
+      lastLoginAt: userDevicesTable.lastLoginAt,
+      firstSeenAt: userDevicesTable.firstSeenAt,
+      updatedAt: userDevicesTable.updatedAt,
+      deviceName: userDevicesTable.deviceName,
+    })
+    .from(userDevicesTable)
+    .where(
+      and(
+        eq(userDevicesTable.userId, userId),
+        eq(userDevicesTable.isVerified, true),
+        eq(userDevicesTable.isBlocked, false),
+        eq(userDevicesTable.isPrimary, true),
+      ),
+    )
+    .limit(1);
+
+  if (!primary) return null;
+  const at = primary.updatedAt || primary.lastLoginAt || primary.firstSeenAt;
+  if (!at) return null;
+  return {
+    at: at.toISOString(),
+    deviceName: primary.deviceName ?? null,
+    status: "approved",
+  };
+}
+
 /** Pending qurilma uchun almashtirish so‘rovi (mavjud bo‘lsa qayta yaratmaydi) */
 export async function ensureDeviceChangeRequest(opts: {
   userId: number;

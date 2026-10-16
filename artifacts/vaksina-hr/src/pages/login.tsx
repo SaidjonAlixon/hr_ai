@@ -13,7 +13,13 @@ import { ThemeToggle } from '../components/theme-toggle';
 import { LanguageSwitcher } from '../components/language-switcher';
 import { HELP_ASSISTANT_ENABLED, HelpAssistantDialog } from '../components/HelpAssistantDialog';
 import { OperatorHeadsetIcon } from '../components/OperatorHeadsetIcon';
-import { SupportContacts } from '../components/SupportContacts';
+import {
+  ForeignDeviceWarning,
+  LastApprovalBanner,
+  SupportContacts,
+  type LastDeviceApproval,
+  type PrimaryDeviceInfo,
+} from '../components/SupportContacts';
 import { useI18n } from '../i18n/I18nProvider';
 import {
   isStajyor,
@@ -33,6 +39,9 @@ type DeviceGate =
       message: string;
       deviceName?: string;
       canRequestChange?: boolean;
+      lastApproval?: LastDeviceApproval | null;
+      foreignDevice?: boolean;
+      primaryDevice?: PrimaryDeviceInfo | null;
     };
 
 const DEVICE_GATE_KEY = 'vhr_device_gate';
@@ -131,6 +140,9 @@ export default function Login() {
           message,
           deviceName: (data.device as { name?: string } | undefined)?.name,
           canRequestChange: Boolean(data.canRequestChange) || code === 'DEVICE_NOT_AUTHORIZED',
+          lastApproval: (data.lastApproval as LastDeviceApproval | null | undefined) ?? null,
+          foreignDevice: Boolean(data.foreignDevice) || code === 'DEVICE_NOT_AUTHORIZED',
+          primaryDevice: (data.primaryDevice as PrimaryDeviceInfo | null | undefined) ?? null,
         });
       } else {
         toast({
@@ -204,6 +216,12 @@ export default function Login() {
                 Faqat asosiy telefongizdan kiring. Boshqa joydan kirish uchun admin ruxsati kerak.
               </p>
             )}
+            <ForeignDeviceWarning
+              show={gate.foreignDevice || gate.code === 'DEVICE_NOT_AUTHORIZED'}
+              primaryName={gate.primaryDevice?.name || gate.lastApproval?.deviceName}
+              currentName={gate.deviceName}
+            />
+            <LastApprovalBanner lastApproval={gate.lastApproval} />
             <SupportContacts />
           </CardContent>
           <CardFooter className="flex flex-col gap-2">

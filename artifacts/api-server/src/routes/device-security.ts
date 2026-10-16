@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, sql, isNull, gte } from "drizzle-orm";
+import { and, desc, eq, sql, isNull, gte, inArray } from "drizzle-orm";
 import {
   db,
   usersTable,
@@ -27,6 +27,7 @@ import {
   parseDeviceBindRaw,
   findDeviceByClientKey,
   sha256,
+  getLastDeviceApproval,
 } from "../lib/device-security";
 import { notifyUser } from "../lib/notify";
 
@@ -171,6 +172,57 @@ router.get(
           .map((s) => s.deviceRowId!),
       );
 
+      // Oxirgi tasdiq + asosiy qurilma — qayta / boshqa qurilma so‘rovlari uchun
+      const userIds = [...new Set(filtered.map((r) => r.userId))];
+      const lastApprovalByUser = new Map<number, { at: string; deviceName: string | null }>();
+      const primaryByUser = new Map<number, { id: number; deviceName: string | null }>();
+      if (userIds.length > 0) {
+        const approvedRows = await db
+          .select({
+            userId: deviceChangeRequestsTable.userId,
+            reviewedAt: deviceChangeRequestsTable.reviewedAt,
+            deviceName: userDevicesTable.deviceName,
+          })
+          .from(deviceChangeRequestsTable)
+          .leftJoin(
+            userDevicesTable,
+            eq(userDevicesTable.id, deviceChangeRequestsTable.newDeviceRowId),
+          )
+          .where(
+            and(
+              inArray(deviceChangeRequestsTable.userId, userIds),
+              eq(deviceChangeRequestsTable.status, "approved"),
+            ),
+          )
+          .orderBy(desc(deviceChangeRequestsTable.reviewedAt));
+        for (const a of approvedRows) {
+          if (!a.reviewedAt || lastApprovalByUser.has(a.userId)) continue;
+          lastApprovalByUser.set(a.userId, {
+            at: a.reviewedAt.toISOString(),
+            deviceName: a.deviceName ?? null,
+          });
+        }
+
+        const primaries = await db
+          .select({
+            id: userDevicesTable.id,
+            userId: userDevicesTable.userId,
+            deviceName: userDevicesTable.deviceName,
+          })
+          .from(userDevicesTable)
+          .where(
+            and(
+              inArray(userDevicesTable.userId, userIds),
+              eq(userDevicesTable.isVerified, true),
+              eq(userDevicesTable.isBlocked, false),
+              eq(userDevicesTable.isPrimary, true),
+            ),
+          );
+        for (const p of primaries) {
+          primaryByUser.set(p.userId, { id: p.id, deviceName: p.deviceName ?? null });
+        }
+      }
+
       res.json({
         devices: filtered.map((r) => {
           let os = r.os || "";
@@ -189,6 +241,9 @@ router.get(
             else if (/Firefox\//i.test(ua)) browser = "Firefox";
             else if (/Safari\//i.test(ua) && !/Chrome/i.test(ua)) browser = "Safari";
           }
+          const lastApproval = lastApprovalByUser.get(r.userId) || null;
+          const primary = primaryByUser.get(r.userId) || null;
+          const foreignDevice = Boolean(primary && primary.id !== r.id && !r.isVerified);
           return {
             ...r,
             os: os || null,
@@ -202,6 +257,10 @@ router.get(
                   ? "active"
                   : "inactive",
             sessionActive: activeSessionByDevice.has(r.id),
+            lastApprovalAt: lastApproval?.at ?? null,
+            lastApprovalDeviceName: lastApproval?.deviceName ?? null,
+            primaryDeviceName: primary?.deviceName ?? null,
+            foreignDevice,
           };
         }),
       });
@@ -687,6 +746,20 @@ router.post("/devices/me/request-change", async (req: AuthRequest, res): Promise
       .where(eq(usersTable.id, userId))
       .limit(1);
 
+    const [primary] = await db
+      .select({ id: userDevicesTable.id, deviceName: userDevicesTable.deviceName })
+      .from(userDevicesTable)
+      .where(
+        and(
+          eq(userDevicesTable.userId, userId),
+          eq(userDevicesTable.isVerified, true),
+          eq(userDevicesTable.isBlocked, false),
+          eq(userDevicesTable.isPrimary, true),
+        ),
+      )
+      .limit(1);
+    const isForeign = Boolean(primary && device && primary.id !== device.id);
+
     const admins = await db
       .select({ id: usersTable.id, role: usersTable.role })
       .from(usersTable)
@@ -695,14 +768,25 @@ router.post("/devices/me/request-change", async (req: AuthRequest, res): Promise
       if (!canManageKochmaAdmin(a.role) && !canManageUsers(a.role)) continue;
       await notifyUser({
         userId: a.id,
-        text: `${user?.fullName || "Xodim"} yangi qurilmadan foydalanishga ruxsat so‘ramoqda. Qurilmalar ? Ruxsat so‘rovlari.`,
+        text: isForeign
+          ? `${user?.fullName || "Xodim"} BOSHQA qurilmadan kiryapti va ruxsat so‘ramoqda. Asosiy: ${primary?.deviceName || "—"}. Yangi: ${device?.deviceName || "qurilma"}. Qurilmalar ? Ruxsat so‘rovlari.`
+          : `${user?.fullName || "Xodim"} yangi qurilmadan foydalanishga ruxsat so‘ramoqda. Qurilmalar ? Ruxsat so‘rovlari.`,
         type: "security",
         linkUrl: "/admin/qurilmalar",
-        title: "Qurilma almashtirish so‘rovi",
+        title: isForeign ? "Boshqa qurilmadan kirish" : "Qurilma almashtirish so‘rovi",
       });
     }
 
-    res.json({ ok: true, message: "So‘rov yuborildi — admin tasdig‘ini kuting" });
+    const lastApproval = await getLastDeviceApproval(userId);
+    res.json({
+      ok: true,
+      message: "So‘rov yuborildi — admin tasdig‘ini kuting",
+      lastApproval,
+      foreignDevice: isForeign,
+      primaryDevice: primary
+        ? { name: primary.deviceName, id: primary.id }
+        : null,
+    });
   } catch (err) {
     console.error("devices/me/request-change", err);
     res.status(503).json({ error: "So‘rov yuborilmadi" });

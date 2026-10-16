@@ -441,6 +441,25 @@ export default function AdminQurilmalarPage() {
                                   {displayOsBrowser(d.os, d.browser)} · {fmt(d.lastSeenAt)}
                                 </div>
                               </div>
+                              {d.foreignDevice || d.lastApprovalAt ? (
+                                <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-2 text-xs dark:border-rose-500/30 dark:bg-rose-500/10">
+                                  <div className="flex items-center gap-1.5 font-semibold text-rose-800 dark:text-rose-300">
+                                    <ShieldAlert className="h-3.5 w-3.5" />
+                                    Boshqa qurilmadan kiryapti
+                                  </div>
+                                  {d.primaryDeviceName ? (
+                                    <p className="mt-1 text-rose-900/80 dark:text-rose-200/80">
+                                      Asosiy: <span className="font-medium">{d.primaryDeviceName}</span>
+                                    </p>
+                                  ) : null}
+                                  {d.lastApprovalAt ? (
+                                    <p className="mt-0.5 text-rose-900/80 dark:text-rose-200/80">
+                                      Oxirgi ruxsat: <span className="font-medium tabular-nums">{fmt(d.lastApprovalAt)}</span>
+                                      {d.lastApprovalDeviceName ? ` · ${d.lastApprovalDeviceName}` : ""}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              ) : null}
                             </div>
                           </div>
                         </button>

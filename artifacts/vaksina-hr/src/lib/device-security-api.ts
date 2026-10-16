@@ -88,6 +88,10 @@ export type DeviceRow = {
   status: string;
   sessionActive: boolean;
   staffGroup: string;
+  lastApprovalAt?: string | null;
+  lastApprovalDeviceName?: string | null;
+  primaryDeviceName?: string | null;
+  foreignDevice?: boolean;
 };
 
 export type DeviceSettings = {

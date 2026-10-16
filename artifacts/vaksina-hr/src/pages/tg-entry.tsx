@@ -12,7 +12,13 @@ import {
   requestDeviceChange,
   saveDeviceBind,
 } from "../lib/device-security-api";
-import { SupportContacts } from "../components/SupportContacts";
+import {
+  ForeignDeviceWarning,
+  LastApprovalBanner,
+  SupportContacts,
+  type LastDeviceApproval,
+  type PrimaryDeviceInfo,
+} from "../components/SupportContacts";
 import { fetchFaceIdStatus } from "../lib/face-id";
 import { Button } from "../components/ui/button";
 
@@ -44,6 +50,9 @@ type DeviceGate = {
   message: string;
   deviceName?: string;
   canRequestChange?: boolean;
+  lastApproval?: LastDeviceApproval | null;
+  foreignDevice?: boolean;
+  primaryDevice?: PrimaryDeviceInfo | null;
 };
 
 function readTokenFromUrl(): string | null {
@@ -185,6 +194,9 @@ export default function TgEntryPage() {
       message: String(data.message || data.error || e.message),
       deviceName: (data.device as { name?: string } | undefined)?.name,
       canRequestChange: Boolean(data.canRequestChange) || code === "DEVICE_NOT_AUTHORIZED",
+      lastApproval: (data.lastApproval as LastDeviceApproval | null | undefined) ?? null,
+      foreignDevice: Boolean(data.foreignDevice) || code === "DEVICE_NOT_AUTHORIZED",
+      primaryDevice: (data.primaryDevice as PrimaryDeviceInfo | null | undefined) ?? null,
     };
   };
 
@@ -366,6 +378,12 @@ export default function TgEntryPage() {
               ? "Admin tasdiqlasa Telegram bot orqali shu telefonda ishlay olasiz."
               : "Faqat asosiy telefongizdan kiring. Boshqa joydan — admin ruxsati kerak."}
           </p>
+          <ForeignDeviceWarning
+            show={gate.foreignDevice || gate.code === "DEVICE_NOT_AUTHORIZED"}
+            primaryName={gate.primaryDevice?.name || gate.lastApproval?.deviceName}
+            currentName={gate.deviceName}
+          />
+          <LastApprovalBanner lastApproval={gate.lastApproval} />
           <SupportContacts />
           <div className="flex flex-col gap-2">
             {gate.canRequestChange ? (

@@ -1,8 +1,113 @@
-import { MessageCircle, Phone } from "lucide-react";
+import { AlertTriangle, CheckCircle2, MessageCircle, Phone } from "lucide-react";
 
 export const SUPPORT_PHONE = "+998701743722";
 export const SUPPORT_PHONE_DISPLAY = "+998 70 174 37 22";
 export const SUPPORT_TELEGRAM = "saidmuhammadalixon_hr";
+
+export type LastDeviceApproval = {
+  at: string;
+  deviceName?: string | null;
+  status?: string;
+};
+
+export type PrimaryDeviceInfo = {
+  name?: string | null;
+  lastLoginAt?: string | null;
+};
+
+function formatApprovalAt(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString("uz-UZ", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+/** Boshqa qurilmadan kirish — aniq ogohlantirish */
+export function ForeignDeviceWarning({
+  show,
+  primaryName,
+  currentName,
+}: {
+  show?: boolean;
+  primaryName?: string | null;
+  currentName?: string | null;
+}) {
+  if (!show) return null;
+  return (
+    <div className="rounded-xl border border-rose-300/90 bg-rose-50 px-3 py-2.5 text-left dark:border-rose-500/40 dark:bg-rose-500/10">
+      <div className="flex items-start gap-2.5">
+        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rose-500 text-white">
+          <AlertTriangle className="h-4 w-4" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-800 dark:text-rose-300">
+            Ogohlantirish
+          </p>
+          <p className="text-sm font-semibold text-rose-950 dark:text-rose-100">
+            Boshqa qurilmadan kiryapsiz
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-rose-900/80 dark:text-rose-200/80">
+            Akkaunt asosiy telefonga biriktirilgan. Bu joydan kirish uchun admin ruxsati kerak.
+          </p>
+          {primaryName || currentName ? (
+            <div className="mt-2 space-y-0.5 text-xs text-rose-900/90 dark:text-rose-100/90">
+              {primaryName ? (
+                <p>
+                  <span className="text-muted-foreground">Asosiy: </span>
+                  <span className="font-medium">{primaryName}</span>
+                </p>
+              ) : null}
+              {currentName ? (
+                <p>
+                  <span className="text-muted-foreground">Hozirgi: </span>
+                  <span className="font-medium">{currentName}</span>
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Oldingi admin ruxsati — qayta so‘rovda qachon berilgani ko‘rinsin */
+export function LastApprovalBanner({ lastApproval }: { lastApproval?: LastDeviceApproval | null }) {
+  if (!lastApproval?.at) return null;
+  return (
+    <div className="rounded-xl border border-emerald-200/90 bg-emerald-50/90 px-3 py-2.5 text-left dark:border-emerald-500/30 dark:bg-emerald-500/10">
+      <div className="flex items-start gap-2.5">
+        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
+          <CheckCircle2 className="h-4 w-4" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-300">
+            Oxirgi ruxsat
+          </p>
+          <p className="text-sm font-semibold tabular-nums text-foreground">
+            {formatApprovalAt(lastApproval.at)}
+          </p>
+          {lastApproval.deviceName ? (
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              Qurilma: {lastApproval.deviceName}
+            </p>
+          ) : (
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Admin shu vaqtda asosiy qurilmaga ruxsat bergan
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /** Qurilma ruxsati / so‘rov ekrani — telefon va Telegram */
 export function SupportContacts() {

@@ -62,15 +62,15 @@ export const REGION_CENTERS: DistrictCenter[] = [
 /** Joy nomi (location) bo‘yicha viloyat — GPS chalkashganda ustuvor */
 const LOCATION_REGION_HINTS: Array<{ re: RegExp; name: string }> = [
   {
-    re: /qashqadaryo|qarshi|shahrisabz|shaxrisabz|nishon|koson|kitob|g[‘']?uzor|yakkabog|chiroqchi|muborak|dehqonobod|mirishkor|kasbi|baxoriston/i,
+    re: /qashqadaryo|қашқадарё|qarshi|қарши|shahrisabz|shaxrisabz|шахрисабз|шаҳрисабз|nishon|нишон|koson|косон|kitob|китоб|g[‘']?uzor|ғузор|yakkabog|яккабоғ|chiroqchi|чироқчи|muborak|муборак|dehqonobod|деҳқонобод|mirishkor|kasbi|baxoriston/i,
     name: "Qashqadaryo",
   },
   {
-    re: /surxondaryo|termiz|denov|sherobod|boysun|jarqo[‘']rgon|sariosiyo|uzun|qiziriq/i,
+    re: /surxondaryo|сурхондарё|termiz|термиз|denov|денов|sherobod|boysun|jarqo[‘']rgon|sariosiyo|uzun|qiziriq/i,
     name: "Surxondaryo",
   },
   {
-    re: /samarqand|urgut|kattaqo[‘']rgon|ishtixon|payariq|jomboy|nurobod|oqdaryo/i,
+    re: /samarqand|самарканд|urgut|ургут|kattaqo[‘']rgon|каттақўрғон|ishtixon|payariq|jomboy|nurobod|oqdaryo|sogdiana|сагдиана|мархабо|marxabo|тайлок|taylok|фрунзе/i,
     name: "Samarqand",
   },
 ];

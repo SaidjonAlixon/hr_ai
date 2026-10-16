@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useI18n } from '../../i18n/I18nProvider';
 import { useToast } from '../../hooks/use-toast';
 import { cn } from '../../lib/utils';
-import { canManagePharmacyOps, isHrRole, isSbRole, canChangeStaffStatus, isDirectorRole } from "../../lib/roles";
+import { canManagePharmacyOps, isHrRole, isSbRole, canChangeStaffStatus, isDirectorRole, isRegionalManager } from "../../lib/roles";
 import { fetchStaff, staffQueryKey } from '../../lib/staff-api';
 import { isVacancyPlaceholder } from '../../lib/vacancy-slot';
 import {
@@ -320,6 +320,7 @@ export default function PharmacyNetworkPage() {
 
   const isMudirOnly = user?.role === 'mudir';
   const isKoordinatorOnly = user?.role === 'koordinator';
+  const isRegionalOnly = isRegionalManager(user?.role);
   const canDismissStaff = canRunNetwork;
 
   const canSeeFullNetwork =
@@ -328,6 +329,7 @@ export default function PharmacyNetworkPage() {
     user?.role === 'admin' ||
     user?.role === 'recruiter' ||
     user?.role === 'koordinator' ||
+    isRegionalOnly ||
     user?.role === 'department_head' ||
     isSbRole(user?.role);
   const { data: mudirCreds = [] } = useOwnMudirCredentials(isKoordinatorOnly);

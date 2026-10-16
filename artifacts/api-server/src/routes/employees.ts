@@ -488,14 +488,28 @@ function scopeEmployees(
   return filtered;
 }
 
+async function scopeRegionalPharmacyEmployees(
+  rows: EmpRow[],
+  userId: number,
+): Promise<EmpRow[]> {
+  const { employeeIdsForRegionalManager } = await import("../lib/pharmacy-region-scope");
+  const allowed = await employeeIdsForRegionalManager(userId);
+  if (!allowed.size) return [];
+  return rows.filter((e) => allowed.has(e.id));
+}
+
 router.get("/employees", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
     const role = req.userRole ?? "";
     const { departmentId, mentorId, search, group, workplace, role: roleFilter, status } =
       req.query as Record<string, string>;
     const pharmacyNetworkRole =
-      role === "mudir" || role === "koordinator" || role === "farmasevt" || role === "stajyor";
-    // Ofis katalogi yoki apteka tarmog‘i (mudir/koordinator)
+      role === "mudir" ||
+      role === "koordinator" ||
+      role === "regional_menejer" ||
+      role === "farmasevt" ||
+      role === "stajyor";
+    // Ofis katalogi yoki apteka tarmog‘i (mudir/koordinator/regional)
     if (!canViewEmployees(role) && !pharmacyNetworkRole) {
       res.status(403).json({ error: "Xodimlar ro‘yxatini ko‘rish ruxsati yo‘q" });
       return;
@@ -521,7 +535,7 @@ router.get("/employees", requireAuth, async (req: AuthRequest, res): Promise<voi
       staffGroup === "active" &&
       workplaceMode !== "ofis" &&
       !deptHeadScoped &&
-      (role === "koordinator" || fullAccess);
+      (role === "koordinator" || role === "regional_menejer" || fullAccess);
     if (wantVacantBranches) {
       const known = new Set(rows.map((r) => r.id));
       rows = [...rows, ...(await loadVacantBranchRows()).filter((r) => !known.has(r.id))];
@@ -532,6 +546,9 @@ router.get("/employees", requireAuth, async (req: AuthRequest, res): Promise<voi
       mentorId,
       search,
     });
+    if (role === "regional_menejer" && userId) {
+      filtered = await scopeRegionalPharmacyEmployees(filtered, userId);
+    }
 
     if (workplaceMode === "ofis") {
       filtered = filtered.filter((e) => !isPharmacyStaffRow(e));

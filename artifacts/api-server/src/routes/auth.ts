@@ -139,8 +139,10 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       return;
     }
 
+    // Admin/HR odatda ochiq; lekin "Majburiy" yoqilgan bo‘lsa — ular ham 1 qurilmaga bog‘lanadi
+    const modeEnforced = await isDeviceSecurityEnforced(user);
     const enforced =
-      !canManageUsers(user.role) && (await isDeviceSecurityEnforced(user));
+      modeEnforced && (!canManageUsers(user.role) || Boolean(user.deviceSecurityEnforced));
     const fullUser = await getUserWithDept(user.id);
 
     // ========== Opt-in yo‘q — eski login ==========

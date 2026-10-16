@@ -374,12 +374,68 @@ export async function countVerifiedDevices(userId: number): Promise<number> {
   return rows.length;
 }
 
+export function parseDeviceBindRaw(raw?: string | null): { deviceId: string; token: string } | null {
+  if (!raw || typeof raw !== "string") return null;
+  const i = raw.indexOf(".");
+  if (i <= 0 || i >= raw.length - 1) return null;
+  const deviceId = raw.slice(0, i).trim();
+  const token = raw.slice(i + 1).trim();
+  if (!deviceId || !token) return null;
+  return { deviceId, token };
+}
+
+export async function findDeviceByClientKey(userId: number, clientKey: string) {
+  const key = clientKey.trim().slice(0, 120);
+  if (!key) return null;
+  const [row] = await db
+    .select()
+    .from(userDevicesTable)
+    .where(and(eq(userDevicesTable.userId, userId), eq(userDevicesTable.clientKey, key)))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Tokenni yangilab cookie uchun qaytaradi */
+export async function refreshDeviceToken(deviceRowId: number): Promise<string> {
+  const token = randomToken(32);
+  await db
+    .update(userDevicesTable)
+    .set({ deviceTokenHash: sha256(token), lastSeenAt: new Date() })
+    .where(eq(userDevicesTable.id, deviceRowId));
+  return token;
+}
+
 export async function registerPendingDevice(opts: {
   userId: number;
   meta: DeviceMeta;
   ip: string;
   slot: string;
+  clientKey?: string | null;
 }): Promise<{ deviceId: string; token: string; rowId: number }> {
+  const clientKey = opts.clientKey?.trim().slice(0, 120) || null;
+  if (clientKey) {
+    const existing = await findDeviceByClientKey(opts.userId, clientKey);
+    if (existing) {
+      if (existing.isBlocked) {
+        await reopenDeviceForApproval(existing.id);
+      }
+      const token = await refreshDeviceToken(existing.id);
+      await db
+        .update(userDevicesTable)
+        .set({
+          deviceName: opts.meta.deviceName || existing.deviceName,
+          deviceType: opts.meta.deviceType || existing.deviceType,
+          os: opts.meta.os || existing.os,
+          browser: opts.meta.browser || existing.browser,
+          userAgent: opts.meta.userAgent || existing.userAgent,
+          lastIp: opts.ip,
+          lastSeenAt: new Date(),
+        })
+        .where(eq(userDevicesTable.id, existing.id));
+      return { deviceId: existing.deviceId, token, rowId: existing.id };
+    }
+  }
+
   const deviceId = randomToken(18);
   const token = randomToken(32);
   const [row] = await db
@@ -387,6 +443,7 @@ export async function registerPendingDevice(opts: {
     .values({
       userId: opts.userId,
       deviceId,
+      clientKey,
       deviceTokenHash: sha256(token),
       deviceName: opts.meta.deviceName,
       deviceType: opts.meta.deviceType || "unknown",

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db, usersTable, departmentsTable, userDevicesTable, deviceChangeRequestsTable } from "@workspace/db";
 import { setSessionCookie, clearSessionCookie } from "../lib/session";
 import {
@@ -20,6 +20,9 @@ import {
   touchDevice,
   ensureDeviceChangeRequest,
   reopenDeviceForApproval,
+  parseDeviceBindRaw,
+  findDeviceByClientKey,
+  refreshDeviceToken,
 } from "../lib/device-security";
 import { notifyUser } from "../lib/notify";
 import { canManageKochmaAdmin, canManageUsers } from "../lib/roles";
@@ -170,52 +173,49 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     const settings = await getDeviceSecuritySettings();
     const group = staffGroupForRole(user.role);
     const policy = policyForUser(settings, user);
-    const cred = readDeviceCookie(req);
-    let device = cred ? await findDeviceByCred(user.id, cred.deviceId, cred.token) : null;
+    const clientKey = String(req.body?.device?.clientKey || "")
+      .trim()
+      .slice(0, 120);
+    const bodyBind =
+      parseDeviceBindRaw(req.body?.device?.deviceBind) ||
+      (req.body?.device?.deviceId && req.body?.device?.deviceToken
+        ? {
+            deviceId: String(req.body.device.deviceId),
+            token: String(req.body.device.deviceToken),
+          }
+        : null);
+    const cookieCred = readDeviceCookie(req);
+    const cred = cookieCred || bodyBind;
 
-    // Bloklangan cookie — qayta so‘rov ochiladi (admin «Ruxsat so‘rovlari»da ko‘radi)
-    if (device && device.isBlocked) {
-      await reopenDeviceForApproval(device.id);
-      await ensureDeviceChangeRequest({
-        userId: user.id,
-        newDeviceRowId: device.id,
-        reason: "Bloklangan qurilmadan qayta kirish — almashtirish so‘rovi",
-      });
-      await writeLoginAudit({
-        userId: user.id,
-        deviceRowId: device.id,
-        deviceId: device.deviceId,
-        ipAddress: ip,
-        userAgent: ua,
-        action: "login",
-        status: "pending",
-        failureReason: "DEVICE_PENDING",
-      });
-      await writeSecurityEvent({
-        userId: user.id,
-        deviceRowId: device.id,
-        eventType: "device_change_request",
-        severity: "high",
-        metadata: { deviceName: device.deviceName, ip, fromBlocked: true },
-      });
-      await notifyAdminsDevice({
-        title: "Qurilma almashtirish so‘rovi",
-        message: `${user.fullName} qurilma almashtirish so‘ramoqda (${device.deviceName || "qurilma"}). Qurilmalar → Ruxsat so‘rovlari.`,
-      });
-      res.status(403).json({
-        success: false,
-        code: "DEVICE_PENDING",
-        error: "Qurilma admin tasdig‘ini kutmoqda.",
-        message:
-          "So‘rov adminga yuborildi. Tasdiqlansa shu qurilma asosiy bo‘ladi.",
-        canRequestChange: true,
-        requestSent: true,
-        device: { name: device.deviceName, os: device.os, browser: device.browser },
-      });
-      return;
+    let device = cred ? await findDeviceByCred(user.id, cred.deviceId, cred.token) : null;
+    // Cookie yo‘qolsa ham shu telefon (localStorage clientKey) orqali taniladi
+    if (!device && clientKey) {
+      device = await findDeviceByClientKey(user.id, clientKey);
     }
 
-    if (device && device.isVerified) {
+    const issueBind = async (row: { id: number; deviceId: string }) => {
+      const token = await refreshDeviceToken(row.id);
+      setDeviceCookie(res, row.deviceId, token);
+      if (clientKey) {
+        await db
+          .update(userDevicesTable)
+          .set({ clientKey })
+          .where(and(eq(userDevicesTable.id, row.id), isNull(userDevicesTable.clientKey)));
+      }
+      return { deviceId: row.deviceId, token };
+    };
+
+    // Bloklangan qoldiq cookie — avval clientKey orqali asosiy verified ni qidiramiz
+    if (device && device.isBlocked && clientKey) {
+      const byKey = await findDeviceByClientKey(user.id, clientKey);
+      if (byKey && byKey.isVerified && !byKey.isBlocked) {
+        device = byKey;
+      }
+    }
+
+    // Tasdiqlangan qurilma — chiqib-kirish erkin
+    if (device && device.isVerified && !device.isBlocked) {
+      const bind = await issueBind(device);
       await touchDevice(device.id, ip);
       await db
         .update(userDevicesTable)
@@ -245,11 +245,49 @@ router.post("/auth/login", async (req, res): Promise<void> => {
           deviceName: device.deviceName,
           isPrimary: device.isPrimary,
         },
+        deviceBind: bind,
+      });
+      return;
+    }
+
+    // Bloklangan — faqat shu telefon qayta so‘rov (clientKey shu qurilmaga bog‘langan)
+    if (device && device.isBlocked) {
+      await reopenDeviceForApproval(device.id);
+      const bind = await issueBind(device);
+      await ensureDeviceChangeRequest({
+        userId: user.id,
+        newDeviceRowId: device.id,
+        reason: "Bloklangan qurilmadan qayta kirish — almashtirish so‘rovi",
+      });
+      await writeLoginAudit({
+        userId: user.id,
+        deviceRowId: device.id,
+        deviceId: device.deviceId,
+        ipAddress: ip,
+        userAgent: ua,
+        action: "login",
+        status: "pending",
+        failureReason: "DEVICE_PENDING",
+      });
+      await notifyAdminsDevice({
+        title: "Qurilma almashtirish so‘rovi",
+        message: `${user.fullName} qurilma almashtirish so‘ramoqda (${device.deviceName || "qurilma"}). Qurilmalar → Ruxsat so‘rovlari.`,
+      });
+      res.status(403).json({
+        success: false,
+        code: "DEVICE_PENDING",
+        error: "Qurilma admin tasdig‘ini kutmoqda.",
+        message: "So‘rov adminga yuborildi. Tasdiqlansa shu qurilma asosiy bo‘ladi.",
+        canRequestChange: true,
+        requestSent: true,
+        deviceBind: bind,
+        device: { name: device.deviceName, os: device.os, browser: device.browser },
       });
       return;
     }
 
     if (device && !device.isVerified) {
+      const bind = await issueBind(device);
       await ensureDeviceChangeRequest({
         userId: user.id,
         newDeviceRowId: device.id,
@@ -276,6 +314,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
         message: "So‘rov adminga yuborildi. Tasdiqlansa shu qurilmadan kira olasiz.",
         canRequestChange: true,
         requestSent: true,
+        deviceBind: bind,
         device: {
           name: device.deviceName,
           os: device.os,
@@ -295,8 +334,10 @@ router.post("/auth/login", async (req, res): Promise<void> => {
         meta,
         ip,
         slot: group,
+        clientKey: clientKey || null,
       });
       setDeviceCookie(res, pending.deviceId, pending.token);
+      const deviceBind = { deviceId: pending.deviceId, token: pending.token };
 
       // Adminga almashtirish so‘rovi — tasdiqlasa shu qurilma asosiy bo‘ladi
       try {
@@ -341,6 +382,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
           "Ushbu akkaunt boshqa qurilmaga biriktirilgan. Iltimos, o‘zingizga biriktirilgan asosiy qurilmadan kiring. Qurilma almashtirish so‘rovi adminga yuborildi — tasdiqlansa shu telefon asosiy bo‘ladi.",
         canRequestChange: true,
         requestSent: true,
+        deviceBind,
         device: { name: meta.deviceName, os: meta.os, browser: meta.browser },
       });
       return;
@@ -352,8 +394,10 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       meta,
       ip,
       slot: group,
+      clientKey: clientKey || null,
     });
     setDeviceCookie(res, pending.deviceId, pending.token);
+    const firstBind = { deviceId: pending.deviceId, token: pending.token };
 
     if (!policy.requireApprove) {
       await db
@@ -384,6 +428,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       res.json({
         user: fullUser,
         deviceSecurity: { enforced: true, status: "ok", autoApproved: true },
+        deviceBind: firstBind,
       });
       return;
     }
@@ -415,6 +460,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       code: "DEVICE_PENDING",
       error: "Yangi qurilma aniqlandi. Administrator tasdig‘i kerak.",
       message: "Yangi qurilma aniqlandi. Ushbu qurilmani asosiy qurilma sifatida biriktirish uchun administrator tasdig‘i kerak.",
+      deviceBind: firstBind,
       device: { name: meta.deviceName, os: meta.os, browser: meta.browser },
     });
   } catch (err) {

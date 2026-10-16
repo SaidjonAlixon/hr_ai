@@ -38,6 +38,8 @@ export const userDevicesTable = pgTable(
     userId: integer("user_id").notNull(),
     /** Public device id (cookie/client) */
     deviceId: text("device_id").notNull(),
+    /** Brauzer localStorage kaliti — cookie o‘chsa ham shu telefon taniladi */
+    clientKey: text("client_key"),
     /** sha256(device_token) */
     deviceTokenHash: text("device_token_hash").notNull(),
     deviceName: text("device_name"),

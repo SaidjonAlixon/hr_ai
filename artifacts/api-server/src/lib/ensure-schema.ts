@@ -1562,6 +1562,10 @@ CREATE TABLE IF NOT EXISTS user_devices (
 CREATE UNIQUE INDEX IF NOT EXISTS user_devices_device_id_uidx ON user_devices (device_id);
 CREATE INDEX IF NOT EXISTS user_devices_user_idx ON user_devices (user_id);
 CREATE INDEX IF NOT EXISTS user_devices_user_verified_idx ON user_devices (user_id, is_verified);
+ALTER TABLE user_devices ADD COLUMN IF NOT EXISTS client_key TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS user_devices_user_client_key_uidx
+  ON user_devices (user_id, client_key)
+  WHERE client_key IS NOT NULL AND length(trim(client_key)) > 0;
 
 CREATE TABLE IF NOT EXISTS user_sessions (
   id SERIAL PRIMARY KEY,

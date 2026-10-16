@@ -1,5 +1,46 @@
 /** Device security admin / employee API helpers */
 
+const CLIENT_KEY_LS = "vhr_device_client_key";
+const DEVICE_BIND_LS = "vhr_device_bind";
+
+export function getOrCreateClientDeviceKey(): string {
+  try {
+    let key = localStorage.getItem(CLIENT_KEY_LS);
+    if (!key) {
+      key =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `ck_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      localStorage.setItem(CLIENT_KEY_LS, key);
+    }
+    return key;
+  } catch {
+    return `ck_${Date.now()}`;
+  }
+}
+
+export function saveDeviceBind(bind?: { deviceId?: string; token?: string } | null) {
+  if (!bind?.deviceId || !bind?.token) return;
+  try {
+    localStorage.setItem(DEVICE_BIND_LS, `${bind.deviceId}.${bind.token}`);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function readDeviceBind(): string | null {
+  try {
+    return localStorage.getItem(DEVICE_BIND_LS);
+  } catch {
+    return null;
+  }
+}
+
+function rememberBindFromBody(body: unknown) {
+  const b = body as { deviceBind?: { deviceId?: string; token?: string } };
+  if (b?.deviceBind) saveDeviceBind(b.deviceBind);
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     credentials: "include",
@@ -163,6 +204,8 @@ export function requestDeviceChange(
 }
 
 export async function loginWithDevice(login: string, password: string) {
+  const clientKey = getOrCreateClientDeviceKey();
+  const deviceBind = readDeviceBind();
   const res = await fetch("/api/auth/login", {
     method: "POST",
     credentials: "include",
@@ -172,10 +215,13 @@ export async function loginWithDevice(login: string, password: string) {
       password,
       device: {
         userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
+        clientKey,
+        deviceBind: deviceBind || undefined,
       },
     }),
   });
   const body = await res.json().catch(() => ({}));
+  rememberBindFromBody(body);
   if (!res.ok) {
     const err = new Error((body as { error?: string; message?: string }).error || (body as { message?: string }).message || "Login xato");
     (err as Error & { data?: unknown; code?: string; status?: number }).data = body;

@@ -25,7 +25,8 @@ export type NavLayoutSection = {
   icon: ComponentType<{ className?: string }>;
 };
 
-const STORAGE_PREFIX = "vaksina-nav-layout-v1";
+/** v3 — Reviziya/AyTi Asosiy ichida; eski tartib bekor */
+const STORAGE_PREFIX = "vaksina-nav-layout-v3";
 
 export function navLayoutStorageKey(userId?: number | string | null) {
   return userId != null ? `${STORAGE_PREFIX}:${userId}` : STORAGE_PREFIX;

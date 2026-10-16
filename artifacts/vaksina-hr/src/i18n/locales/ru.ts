@@ -59,9 +59,12 @@ export const ru: Messages = {
   "nav.section.staff": "Сотрудники",
   "nav.section.recruitment": "Найм",
   "nav.section.attendance": "Посещаемость",
+  "nav.section.finance": "Финансы",
   "nav.section.pharmacy": "Сеть аптек",
+  "nav.section.logistika": "Логистика",
   "nav.section.distribution": "Дистрибуция",
-  "nav.section.admin": "Настройки",
+  "nav.section.system": "Система",
+  "nav.section.admin": "Система",
   "nav.section.other": "Другое",
 
   "nav.dashboard": "Dashboard",

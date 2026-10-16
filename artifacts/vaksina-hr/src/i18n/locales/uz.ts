@@ -59,9 +59,12 @@ export const uz: Messages = {
   "nav.section.staff": "Xodimlar",
   "nav.section.recruitment": "Ishga qabul",
   "nav.section.attendance": "Davomat",
+  "nav.section.finance": "Moliya",
   "nav.section.pharmacy": "Apteka tarmog‘i",
+  "nav.section.logistika": "Logistika",
   "nav.section.distribution": "Distribyutsiya",
-  "nav.section.admin": "Sozlamalar",
+  "nav.section.system": "Tizim",
+  "nav.section.admin": "Tizim",
   "nav.section.other": "Boshqa",
 
   "nav.dashboard": "Dashboard",

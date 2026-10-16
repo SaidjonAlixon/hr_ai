@@ -28,7 +28,7 @@ function git(cmd: string): string {
 
 const pkg = JSON.parse(readFileSync(path.resolve(import.meta.dirname, 'package.json'), 'utf8')) as { version?: string };
 
-/** Versiya qo‘lda: katta o‘zgarishda package.json → "version" ni oshiring (1.4.0 → 1.5.0) */
+/** Versiya qo‘lda: katta o‘zgarishda package.json → "version" ni oshiring (1.5.0 → 1.6.0) */
 const appBuild = {
   version: (pkg.version ?? '').replace(/\.0$/, ''),
   commit: git('rev-parse --short HEAD'),

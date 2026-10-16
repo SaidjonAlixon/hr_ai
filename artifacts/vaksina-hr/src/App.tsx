@@ -64,6 +64,7 @@ const AdminAtestatsiyaPage = lazyPage('/admin/atestatsiya', () => import('./page
 const AdminFacesPage = lazyPage('/admin/faces', () => import('./pages/admin/faces'));
 const AdminDavomatQrPage = lazyPage('/admin/davomat-qr', () => import('./pages/admin/davomat-qr'));
 const AdminTestPage = lazyPage('/admin/test', () => import('./pages/admin/test'));
+const AdminScannerPage = lazyPage('/admin/scanner', () => import('./pages/admin/scanner'));
 const AdminTushuntirishXatlariPage = lazyPage('/admin/tushuntirish-xatlari', () => import('./pages/admin/tushuntirish-xatlari'));
 const AdminJarimalarPage = lazyPage('/admin/jarimalar', () => import('./pages/admin/jarimalar'));
 const TushuntirishXatimPage = lazyPage('/tushuntirish-xatim', () => import('./pages/tushuntirish-xatim'));
@@ -330,6 +331,7 @@ function Router() {
       </Route>
       <ProtectedRoute path="/admin/davomat-qr" component={AdminDavomatQrPage} />
       <ProtectedRoute path="/admin/test" component={AdminTestPage} />
+      <ProtectedRoute path="/admin/scanner" component={AdminScannerPage} />
       <ProtectedRoute path="/admin/tushuntirish-xatlari" component={AdminTushuntirishXatlariPage} />
       <ProtectedRoute path="/admin/jarimalar" component={AdminJarimalarPage} />
       <ProtectedRoute path="/tushuntirish-xatim" component={TushuntirishXatimPage} />

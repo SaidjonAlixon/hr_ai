@@ -41,6 +41,7 @@ import { fetchStaff, staffQueryKey, type StaffGroup } from "../../lib/staff-api"
 import { formatPersonName } from "../../lib/person-name";
 import { EmployeesTabs } from "./employees-tabs";
 import { useI18n } from "../../i18n/I18nProvider";
+import { EmployeeDossierSheet } from "../../components/employees/EmployeeDossierSheet";
 
 type TFn = (key: string, fallback?: string) => string;
 
@@ -326,6 +327,9 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
   });
   const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
   const [pendingId, setPendingId] = useState<number | null>(null);
+  const [dossierEmp, setDossierEmp] = useState<Employee | null>(null);
+  /** HR/admin — tahrir; rekruter va bo‘lim boshlig‘i — faqat ko‘rish */
+  const canEditDossier = fullAccess && !viewOnly;
 
   const { data: departments } = useGetDepartments();
   const updateEmp = useUpdateEmployee();
@@ -919,13 +923,23 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                     {list.map((e, i) => (
                       <tr
                         key={`${e.userId ?? e.id}`}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setDossierEmp(e)}
+                        onKeyDown={(ev) => {
+                          if (ev.key === "Enter" || ev.key === " ") {
+                            ev.preventDefault();
+                            setDossierEmp(e);
+                          }
+                        }}
                         className={cn(
-                          "border-b border-border transition hover:bg-muted/60",
+                          "cursor-pointer border-b border-border transition hover:bg-muted/60",
                           i % 2 === 0 ? "bg-card" : "bg-muted/30",
+                          dossierEmp?.id === e.id && "bg-emerald-50/80 dark:bg-emerald-950/30",
                         )}
                       >
                         <td className="px-3 py-2.5 text-xs text-muted-foreground">{i + 1}</td>
-                        <td className="px-2 py-2">
+                        <td className="px-2 py-2" onClick={(ev) => ev.stopPropagation()}>
                           <StaffAvatar employee={e} />
                         </td>
                         <td className="px-3 py-2.5 font-medium text-foreground">
@@ -947,7 +961,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                             "—"}
                         </td>
                         <td className="px-3 py-2.5 text-muted-foreground">{e.departmentName || "—"}</td>
-                        <td className="px-3 py-2">
+                        <td className="px-3 py-2" onClick={(ev) => ev.stopPropagation()}>
                           <StatusControl employee={e} canEdit={canEdit} pendingId={pendingId} onChange={setStatus} />
                         </td>
                         <td className="whitespace-nowrap px-3 py-2.5 text-muted-foreground">{shiftLabel(e, t)}</td>
@@ -960,8 +974,25 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
 
               <div className="divide-y md:hidden">
                 {list.map((e, i) => (
-                  <div key={`${e.userId ?? e.id}`} className="flex gap-3 px-3 py-3">
-                    <StaffAvatar employee={e} />
+                  <div
+                    key={`${e.userId ?? e.id}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setDossierEmp(e)}
+                    onKeyDown={(ev) => {
+                      if (ev.key === "Enter" || ev.key === " ") {
+                        ev.preventDefault();
+                        setDossierEmp(e);
+                      }
+                    }}
+                    className={cn(
+                      "flex cursor-pointer gap-3 px-3 py-3 transition hover:bg-muted/50",
+                      dossierEmp?.id === e.id && "bg-emerald-50/80 dark:bg-emerald-950/30",
+                    )}
+                  >
+                    <div onClick={(ev) => ev.stopPropagation()}>
+                      <StaffAvatar employee={e} />
+                    </div>
                     <div className="min-w-0 flex-1 space-y-2">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
@@ -977,7 +1008,9 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                           ) : null}
                           <p className="text-xs text-muted-foreground">{e.position}</p>
                         </div>
-                        <StatusControl employee={e} canEdit={canEdit} pendingId={pendingId} onChange={setStatus} />
+                        <div onClick={(ev) => ev.stopPropagation()}>
+                          <StatusControl employee={e} canEdit={canEdit} pendingId={pendingId} onChange={setStatus} />
+                        </div>
                       </div>
                       <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                         <span>
@@ -998,6 +1031,15 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
           )}
         </CardContent>
       </Card>
+
+      <EmployeeDossierSheet
+        employee={dossierEmp}
+        open={dossierEmp != null}
+        onOpenChange={(o) => {
+          if (!o) setDossierEmp(null);
+        }}
+        canEdit={canEditDossier}
+      />
     </div>
   );
 }

@@ -22,6 +22,7 @@ import {
   AlarmClock,
   Network,
   ScanFace,
+  ScanLine,
   Building2,
   MonitorSmartphone,
   MapPin,
@@ -38,8 +39,9 @@ import {
   Cpu,
   Wrench,
   HelpCircle,
-  Layers,
+  Home,
   Package,
+  Wallet,
   PhoneCall,
   Phone,
   Truck,
@@ -90,7 +92,7 @@ import { useCall } from '@/lib/calls/engine';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
 import { VerifiedBadge, VerifiedName } from "@/components/VerifiedBadge";
-import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canViewDavomatXatoliklar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome, isSbRole, canManageSmenaFilial, canManageStudents, canSeeAbet } from "@/lib/roles";
+import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewEmployeesFull, canViewDavomat, canViewDavomatXatoliklar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome, isSbRole, canManageSmenaFilial, canManageStudents, canSeeAbet } from "@/lib/roles";
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -141,6 +143,10 @@ type NavSection = {
   icon: NavIcon;
 };
 
+/**
+ * Menyu kategoriyalari — har biri o‘z kartasida.
+ * O‘xshash bo‘limlar bir ichida: Xodimlar (qabul/ariza/ehtiyoj), Moliya, Tizim.
+ */
 const NAV_SECTIONS: {
   id: string;
   label: string;
@@ -150,49 +156,65 @@ const NAV_SECTIONS: {
   {
     id: 'main',
     label: 'Asosiy',
-    icon: Layers,
-    paths: ['/dashboard', '/kirish', '/preboarding', '/darsliklar', '/atestatsiya', '/javob-olish', '/javob-olish/holat', '/tashkiliy-tuzilma', '/oylik', '/tushuntirish-xatim', '/hisobkitob', '/reyting', '/reviziya', '/abet', '/it', '/qongiroq'],
+    icon: Home,
+    paths: [
+      '/dashboard',
+      '/kirish',
+      '/preboarding',
+      '/darsliklar',
+      '/atestatsiya',
+      '/javob-olish',
+      '/javob-olish/holat',
+      '/tashkiliy-tuzilma',
+      '/reviziya',
+      '/it',
+      '/qongiroq',
+      '/reyting',
+    ],
   },
   {
     id: 'attendance',
     label: 'Davomat',
     icon: AlarmClock,
-    paths: ['/davomat/analytics', '/davomat/xatoliklar', '/davomat/bloklash', '/davomat/dorixona-ochilishi', '/davomat/ofisda', '/davomat-face', '/davomat', '/davomat-qr', '/smena-filial', '/checklist-holati', '/admin/tushuntirish-xatlari', '/admin/jarimalar'],
+    paths: [
+      '/davomat-face',
+      '/davomat',
+      '/davomat/analytics',
+      '/davomat/xatoliklar',
+      '/davomat/bloklash',
+      '/davomat/ofisda',
+      '/davomat-qr',
+      '/smena-filial',
+      '/checklist-holati',
+      '/admin/tushuntirish-xatlari',
+      '/admin/jarimalar',
+    ],
   },
   {
     id: 'work',
     label: 'Mening ishim',
-    icon: Package,
+    icon: ListTodo,
     paths: ['/vazifalar', '/vazifalar/tahlil', '/eslatmalar'],
-  },
-  {
-    id: 'requests',
-    label: 'Arizalar',
-    icon: FileText,
-    paths: ['/requests'],
-  },
-  {
-    id: 'xodimKerak',
-    label: 'Xodim kerak',
-    icon: UserPlus,
-    paths: ['/xodim-kerak'],
   },
   {
     id: 'staff',
     label: 'Xodimlar',
     icon: Users,
-    paths: ['/employees'],
-  },
-  {
-    id: 'recruitment',
-    label: 'Ishga qabul',
-    icon: Briefcase,
     paths: [
+      '/employees',
       '/vacancies',
       '/candidates',
       '/internships',
       '/oquvchilar',
+      '/requests',
+      '/xodim-kerak',
     ],
+  },
+  {
+    id: 'finance',
+    label: 'Moliya',
+    icon: Wallet,
+    paths: ['/oylik', '/hisobkitob', '/abet', '/tushuntirish-xatim'],
   },
   {
     id: 'pharmacy',
@@ -225,10 +247,30 @@ const NAV_SECTIONS: {
     paths: ['/omborxona-ish'],
   },
   {
-    id: 'admin',
-    label: 'Sozlamalar',
+    id: 'system',
+    label: 'Tizim',
     icon: Settings,
-    paths: ['/admin/users', '/admin/boshatilganlar', '/admin/holat', '/admin/holat/xodim', '/admin/departments', '/admin/kirish-videolar', '/admin/preboarding', '/admin/darsliklar', '/admin/atestatsiya', '/admin/faces', '/admin/smena-sozlamalar', '/admin/davomat-qr', '/admin/test', '/admin/qurilmalar', '/admin/kochma-davomat', '/admin/kochma-xarita', '/admin/kochma-live'],
+    paths: [
+      '/davomat/dorixona-ochilishi',
+      '/admin/users',
+      '/admin/boshatilganlar',
+      '/admin/holat',
+      '/admin/holat/xodim',
+      '/admin/departments',
+      '/admin/kirish-videolar',
+      '/admin/preboarding',
+      '/admin/darsliklar',
+      '/admin/atestatsiya',
+      '/admin/faces',
+      '/admin/smena-sozlamalar',
+      '/admin/davomat-qr',
+      '/admin/test',
+      '/admin/scanner',
+      '/admin/qurilmalar',
+      '/admin/kochma-davomat',
+      '/admin/kochma-xarita',
+      '/admin/kochma-live',
+    ],
   },
 ];
 
@@ -243,12 +285,15 @@ function groupNavItems(
   for (const sec of NAV_SECTIONS) {
     let paths =
       role === 'director' && sec.id === 'attendance'
-        ? ['/davomat/bloklash', '/davomat/dorixona-ochilishi', '/davomat-face', '/davomat', '/smena-filial', '/checklist-holati']
+        ? ['/davomat/bloklash', '/davomat-face', '/davomat', '/smena-filial', '/checklist-holati']
         : sec.paths;
+    if (role === 'director' && sec.id === 'system') {
+      paths = ['/davomat/dorixona-ochilishi', ...paths.filter((p) => p !== '/davomat/dorixona-ochilishi')];
+    }
     if (role === 'koordinator' && sec.id === 'main') {
       paths = ['/dashboard', '/admin/holat', '/admin/holat/xodim', ...paths.filter((p) => p !== '/dashboard')];
     }
-    if (role === 'koordinator' && sec.id === 'admin') {
+    if (role === 'koordinator' && sec.id === 'system') {
       paths = paths.filter((p) => p !== '/admin/holat' && p !== '/admin/holat/xodim');
     }
     const list = paths
@@ -342,6 +387,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/admin/faces')) return '/admin/faces';
   if (path.startsWith('/admin/davomat-qr')) return '/admin/davomat-qr';
   if (path.startsWith('/admin/test')) return '/admin/test';
+  if (path.startsWith('/admin/scanner')) return '/admin/scanner';
   if (path.startsWith('/admin/qurilmalar')) return '/admin/qurilmalar';
   if (path.startsWith('/admin/kochma-davomat')) return '/admin/kochma-davomat';
   if (path.startsWith('/admin/kochma-xarita')) return '/admin/kochma-xarita';
@@ -390,9 +436,9 @@ function NavBadge({
     <span
       className={cn(
         'inline-flex items-center justify-center rounded-full font-semibold leading-none',
-        pulse && 'animate-pulse ring-2 ring-violet-300/50',
-        tone === 'soft' && 'bg-white text-[#5b4cdb] shadow-sm',
-        tone === 'section' && 'bg-slate-900/10 text-slate-700 dark:bg-white/15 dark:text-white/90',
+        pulse && 'animate-pulse ring-2 ring-teal-300/55',
+        tone === 'soft' && 'bg-[var(--sec)] text-white shadow-sm font-bold dark:text-[#0b1220]',
+        tone === 'section' && 'bg-[var(--sec-soft)] text-[var(--sec)] font-bold ring-1 ring-[color-mix(in_srgb,var(--sec)_40%,transparent)]',
         tone === 'rose' && 'bg-rose-500 text-white',
         collapsed
           ? 'absolute -top-1 -right-1 min-w-[16px] h-4 px-1 text-[10px]'
@@ -943,6 +989,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (location.startsWith('/admin/test') && !canManageSettings(user.role)) {
       setLocation('/dashboard');
     }
+    if (
+      location.startsWith('/admin/scanner') &&
+      !canManageSettings(user.role) &&
+      !canViewEmployeesFull(user.role)
+    ) {
+      setLocation('/dashboard');
+    }
     if (location.startsWith('/oquvchilar') && !canManageStudents(user.role)) {
       setLocation('/dashboard');
     }
@@ -1275,6 +1328,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
     { name: 'Nomzodlar', path: '/candidates', icon: Users },
     { name: 'Xodimlar', path: '/employees', icon: Users },
+      { name: 'Skaner', path: '/admin/scanner', icon: ScanLine },
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       txNav,
       jarimaNav,
@@ -1301,6 +1355,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
     { name: 'Arizalar', path: '/requests', icon: FileText },
     { name: 'Xodimlar', path: '/employees', icon: Users },
+    { name: 'Skaner', path: '/admin/scanner', icon: ScanLine },
     { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
     { name: 'Nomzodlar', path: '/candidates', icon: Users },
     { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
@@ -1361,6 +1416,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Smena sozlamalari', path: '/admin/smena-sozlamalar', icon: AlarmClock },
       { name: 'Davomat QR', path: '/admin/davomat-qr', icon: ScanFace },
       { name: 'Test', path: '/admin/test', icon: Bell },
+      { name: 'Skaner', path: '/admin/scanner', icon: ScanLine },
       { name: 'Hisobot', path: '/admin/holat', icon: BarChart3 },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
@@ -1402,6 +1458,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Smena sozlamalari', path: '/admin/smena-sozlamalar', icon: AlarmClock },
       { name: 'Davomat QR', path: '/admin/davomat-qr', icon: ScanFace },
       { name: 'Test', path: '/admin/test', icon: Bell },
+      { name: 'Skaner', path: '/admin/scanner', icon: ScanLine },
       { name: 'Hisobot', path: '/admin/holat', icon: BarChart3 },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
@@ -1458,6 +1515,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Smena sozlamalari', path: '/admin/smena-sozlamalar', icon: AlarmClock },
       { name: 'Davomat QR', path: '/admin/davomat-qr', icon: ScanFace },
       { name: 'Test', path: '/admin/test', icon: Bell },
+      { name: 'Skaner', path: '/admin/scanner', icon: ScanLine },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
     hr: hrMenejerNav,
@@ -1923,33 +1981,25 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         ) : null}
         <span
           className={cn(
-            'relative flex shrink-0 items-center justify-center transition-colors',
-            opts.nested &&
-              cn(
-                'h-7 w-7 rounded-md',
-                active
-                  ? 'bg-violet-500/25 text-violet-100'
-                  : 'bg-slate-900/[0.04] text-slate-500 group-hover:bg-slate-900/[0.07] group-hover:text-slate-900 dark:bg-white/[0.06] dark:text-white/55 dark:group-hover:bg-white/10 dark:group-hover:text-white',
-              ),
+            'relative flex shrink-0 items-center justify-center',
+            opts.nested
+              ? cn('app-sidebar-item-icon', active && 'app-sidebar-item-icon--active')
+              : 'text-slate-500 group-hover:text-[var(--sec,#0d9488)] dark:text-white/55 dark:group-hover:text-teal-200',
           )}
         >
           {item.icon ? (
             <item.icon
+              strokeWidth={opts.nested ? 2.15 : 2}
               className={cn(
-                'transition-colors',
+                'transition-[transform,color] duration-200',
                 opts.nested ? 'h-3.5 w-3.5' : 'h-4 w-4 min-w-[16px]',
-                !opts.nested &&
-                  (active ? 'text-slate-900 dark:text-white' : 'text-slate-500 group-hover:text-slate-800 dark:text-white/55 dark:group-hover:text-white/90'),
+                !opts.nested && active && 'text-[var(--sec,#0d9488)] dark:text-teal-300',
               )}
             />
           ) : (
             <ListTodo
-              className={cn(
-                'transition-colors',
-                opts.nested ? 'h-3.5 w-3.5' : 'h-4 w-4 min-w-[16px]',
-                !opts.nested &&
-                  (active ? 'text-slate-900 dark:text-white' : 'text-slate-500 group-hover:text-slate-800 dark:text-white/55 dark:group-hover:text-white/90'),
-              )}
+              strokeWidth={opts.nested ? 2.15 : 2}
+              className={cn('h-3.5 w-3.5', opts.nested ? '' : 'h-4 w-4 min-w-[16px]')}
             />
           )}
           {opts.collapsed && <NavBadge count={count} collapsed pulse={pulse} tone="soft" />}
@@ -1958,15 +2008,15 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           <>
             <span
               className={cn(
-                'min-w-0 flex-1 text-[12px] font-medium leading-snug break-words',
-                opts.nested && active && 'font-semibold text-slate-900 dark:text-white',
-                opts.nested && !active && 'text-slate-600 group-hover:text-slate-900 dark:text-white/72 dark:group-hover:text-white',
+                'min-w-0 flex-1 text-[12.5px] leading-snug tracking-tight break-words',
+                opts.nested && active && 'font-bold text-slate-900 dark:text-white',
+                opts.nested && !active && 'font-medium text-slate-600 group-hover:text-slate-900 dark:text-slate-300/85 dark:group-hover:text-white',
               )}
             >
               {navLabelForPath(item.path, t, item.name)}
             </span>
             {opts.nested && active && !navEditMode ? (
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-300 shadow-[0_0_8px_rgba(196,181,253,0.9)]" aria-hidden />
+              <span className="app-sidebar-active-dot shrink-0" aria-hidden />
             ) : (
               <NavBadge count={count} pulse={pulse} tone={opts.nested ? 'soft' : 'rose'} />
             )}
@@ -2082,7 +2132,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       return (
         <div
           key={section.id}
-          className={cn('mb-1', isSectionDrop && 'rounded-xl ring-1 ring-violet-400/40')}
+          data-tone={section.id}
+          className={cn(
+            'app-sidebar-section-card mb-1',
+            open && 'app-sidebar-section-card-open',
+            hasActive && 'app-sidebar-section-card-active',
+            isSectionDrop && 'ring-1 ring-sky-400/40 rounded-lg',
+          )}
           onDragOver={(e) => {
             if (!navEditMode) return;
             e.preventDefault();
@@ -2131,23 +2187,23 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               onClick={() => toggleSection(section.id, pinned)}
               aria-expanded={open}
               className={cn(
-                'app-sidebar-section-trigger flex min-w-0 flex-1 items-center gap-2 rounded-xl px-2 py-1.5 text-left transition-all duration-200',
+                'app-sidebar-section-trigger flex min-w-0 flex-1 items-center gap-2 px-2 text-left transition-all duration-200',
                 open && 'app-sidebar-section-trigger-open',
-                hasActive && !open && 'ring-1 ring-violet-400/25',
               )}
             >
-              <span className="app-sidebar-section-icon flex h-7 w-7 shrink-0 items-center justify-center rounded-lg">
-                <SectionIcon className="h-3.5 w-3.5" />
+              <span className="app-sidebar-section-icon flex h-7 w-7 shrink-0 items-center justify-center">
+                <SectionIcon className="h-3.5 w-3.5" strokeWidth={2.35} />
               </span>
-              <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-slate-900 dark:text-white">
+              <span className="min-w-0 flex-1 truncate text-[11px] font-extrabold uppercase tracking-[0.06em]">
                 {section.label}
               </span>
               {badgeSum > 0 ? <NavBadge count={badgeSum} tone="section" /> : null}
               <ChevronDown
                 className={cn(
-                  'h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform duration-200 dark:text-white/45',
-                  open && 'rotate-180 text-slate-700 dark:text-white/80',
+                  'h-4 w-4 shrink-0 text-slate-400 transition-transform duration-300 ease-out dark:text-white/45',
+                  open && 'rotate-180 text-[var(--sec)] dark:text-[var(--sec)]',
                 )}
+                strokeWidth={2.25}
               />
             </button>
             {!navEditMode ? (
@@ -2159,8 +2215,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 className={cn(
                   'shrink-0 rounded-lg p-1.5 transition-colors',
                   pinned
-                    ? 'bg-violet-500/20 text-violet-700 dark:bg-violet-400/30 dark:text-violet-100'
-                    : 'text-slate-500 hover:bg-slate-900/5 hover:text-slate-900 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white',
+                    ? 'bg-[var(--sec-soft)] text-[var(--sec)]'
+                    : 'text-slate-500 hover:bg-[var(--sec-soft)] hover:text-[var(--sec)] dark:text-white/70',
                 )}
               >
                 <Pin className={cn('h-3.5 w-3.5', pinned && 'fill-current')} />
@@ -2174,7 +2230,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             )}
           >
             <div className="overflow-hidden">
-              <div className="app-sidebar-nested-panel mt-1 ml-0.5 mr-0.5 flex flex-col gap-0.5 p-1">
+              <div className="app-sidebar-nested-panel mt-1 flex flex-col gap-0.5">
                 {section.items.map((item, itemIndex) =>
                   renderNavItem(item, {
                     ...opts,
@@ -2398,7 +2454,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 </span>
                 <span className="mt-px flex min-w-0 items-center gap-1.5">
                   {userRoleLabel(user.role) ? (
-                    <span className="truncate text-[10px] font-medium text-slate-600 dark:text-white/50">{userRoleLabel(user.role)}</span>
+                    <span className="truncate text-[10px] font-medium text-slate-500 dark:text-slate-300/70">{userRoleLabel(user.role)}</span>
                   ) : null}
                   <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400" />
@@ -2443,7 +2499,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  className="shrink-0 rounded-lg bg-[#0b3a5c]/[0.07] px-2 py-1 text-[11px] font-extrabold tabular-nums tracking-tight text-[#0b3a5c] ring-1 ring-[#0b3a5c]/15 transition-colors hover:bg-[#0b3a5c]/[0.12] dark:bg-white/[0.08] dark:text-white/85 dark:ring-white/15 dark:hover:bg-white/[0.14]"
+                  className="shrink-0 rounded-lg bg-sky-100 px-2 py-1 text-[11px] font-extrabold tabular-nums tracking-tight text-sky-800 ring-1 ring-sky-200 transition-colors hover:bg-sky-200 dark:bg-sky-400/15 dark:text-sky-300 dark:ring-sky-400/30 dark:hover:bg-sky-400/25 dark:hover:text-sky-100"
                   aria-label={`Versiya ${APP_VERSION}`}
                 >
                   {APP_VERSION}

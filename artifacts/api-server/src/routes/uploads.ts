@@ -48,7 +48,10 @@ function guessMime(fileName: string): string {
   return map[ext] || "application/octet-stream";
 }
 
-function shouldInline(mime: string) {
+function shouldInline(mime: string, forceInline = false) {
+  if (forceInline && (mime === "application/pdf" || mime.startsWith("image/"))) {
+    return true;
+  }
   return (
     mime.startsWith("image/") ||
     mime.startsWith("audio/") ||
@@ -114,12 +117,13 @@ router.get("/uploads/remote", requireAuth, async (req: AuthRequest, res): Promis
   }
 
   const forceDownload = String(req.query.download || "") === "1";
+  const forceInline = String(req.query.download || "") === "0";
   const mime = data.contentType || guessMime(data.downloadName);
 
   res.setHeader("Content-Type", mime);
   res.setHeader(
     "Content-Disposition",
-    `${forceDownload || !shouldInline(mime) ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(data.downloadName)}`,
+    `${forceDownload || !shouldInline(mime, forceInline) ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(data.downloadName)}`,
   );
   res.setHeader("Cache-Control", "private, max-age=3600");
   res.send(data.buffer);
@@ -146,11 +150,12 @@ router.get("/uploads/:key", requireAuth, async (req: AuthRequest, res): Promise<
   const downloadName = key.includes("__") ? key.split("__").pop() || key : key;
   const mime = guessMime(downloadName);
   const forceDownload = String(req.query.download || "") === "1";
+  const forceInline = String(req.query.download || "") === "0";
 
   res.setHeader("Content-Type", mime);
   res.setHeader(
     "Content-Disposition",
-    `${forceDownload || !shouldInline(mime) ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(downloadName)}`,
+    `${forceDownload || !shouldInline(mime, forceInline) ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(downloadName)}`,
   );
   res.setHeader("Cache-Control", "private, max-age=3600");
   res.send(data);

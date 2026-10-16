@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ArrowLeft,
   Camera,
   Check,
   Download,
+  Eye,
   FileUp,
   Loader2,
   Plus,
@@ -12,6 +14,8 @@ import {
   X,
   ScanLine,
   Layers,
+  Wand2,
+  Sparkles,
 } from "lucide-react";
 import {
   Dialog,
@@ -39,10 +43,11 @@ import {
   loadImageFromFile,
   orderCorners,
   pagesToPdfBlob,
+  warpPreview,
   warpToA4,
 } from "@/lib/document-scan";
 
-type Step = "capture" | "crop" | "pages";
+type Step = "capture" | "crop" | "pages" | "view";
 
 export type DocumentScannerProps = {
   open: boolean;
@@ -52,6 +57,25 @@ export type DocumentScannerProps = {
   defaultFileName?: string;
   standalone?: boolean;
 };
+
+/** Ekran koordinatasini rasm pikseliga — object-contain letterbox hisobga oladi */
+function clientToImagePoint(
+  clientX: number,
+  clientY: number,
+  rect: DOMRect,
+  imgW: number,
+  imgH: number,
+): Point {
+  const scale = Math.min(rect.width / imgW, rect.height / imgH);
+  const dispW = imgW * scale;
+  const dispH = imgH * scale;
+  const ox = rect.left + (rect.width - dispW) / 2;
+  const oy = rect.top + (rect.height - dispH) / 2;
+  return {
+    x: Math.max(0, Math.min(imgW - 1, ((clientX - ox) / dispW) * imgW)),
+    y: Math.max(0, Math.min(imgH - 1, ((clientY - oy) / dispH) * imgH)),
+  };
+}
 
 export function DocumentScanner({
   open,
@@ -66,6 +90,7 @@ export function DocumentScanner({
   const fileRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
+  const cropBoxRef = useRef<HTMLDivElement>(null);
 
   const [step, setStep] = useState<Step>("capture");
   const [busy, setBusy] = useState(false);
@@ -78,6 +103,8 @@ export function DocumentScanner({
   const [pages, setPages] = useState<HTMLCanvasElement[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [livePreview, setLivePreview] = useState<string | null>(null);
+  const [viewIdx, setViewIdx] = useState<number | null>(null);
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -114,6 +141,8 @@ export function DocumentScanner({
       setSourceData(null);
       setSourceUrl(null);
       setCorners([]);
+      setLivePreview(null);
+      setViewIdx(null);
       setPages([]);
       setPreviewUrls((prev) => {
         prev.forEach((u) => {
@@ -137,6 +166,7 @@ export function DocumentScanner({
     c.getContext("2d")!.putImageData(data, 0, 0);
     setSourceUrl(c.toDataURL("image/jpeg", 0.92));
     setCorners(detected);
+    setLivePreview(null);
     setStep("crop");
   }, []);
 
@@ -173,7 +203,7 @@ export function DocumentScanner({
     }
   };
 
-  // Overlay: dim + teal frame + 8 handles (3-rasm)
+  // Overlay chizish — rasm o‘lchami bilan bir xil canvas
   useEffect(() => {
     if (step !== "crop" || !sourceData || !overlayRef.current) return;
     const canvas = overlayRef.current;
@@ -185,11 +215,10 @@ export function DocumentScanner({
 
     const ordered = orderCorners(corners);
     const handles = cornersToHandles(ordered);
-    const lw = Math.max(2.5, canvas.width / 350);
+    const lw = Math.max(3, canvas.width / 280);
 
-    // Dim outside polygon
     ctx.save();
-    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillStyle = "rgba(0,0,0,0.58)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.globalCompositeOperation = "destination-out";
     ctx.beginPath();
@@ -199,8 +228,7 @@ export function DocumentScanner({
     ctx.fill();
     ctx.restore();
 
-    // Teal frame
-    ctx.strokeStyle = "#14b8a6";
+    ctx.strokeStyle = "#22c55e";
     ctx.lineWidth = lw;
     ctx.beginPath();
     ctx.moveTo(ordered[0]!.x, ordered[0]!.y);
@@ -208,10 +236,10 @@ export function DocumentScanner({
     ctx.closePath();
     ctx.stroke();
 
-    // L-corners
-    const arm = Math.max(22, canvas.width / 28);
-    ctx.lineWidth = lw * 1.6;
+    const arm = Math.max(28, canvas.width / 24);
+    ctx.lineWidth = lw * 1.8;
     ctx.lineCap = "round";
+    ctx.strokeStyle = "#4ade80";
     const drawL = (a: Point, towardB: Point, towardD: Point) => {
       const vb = { x: towardB.x - a.x, y: towardB.y - a.y };
       const vd = { x: towardD.x - a.x, y: towardD.y - a.y };
@@ -228,42 +256,67 @@ export function DocumentScanner({
     drawL(ordered[2]!, ordered[1]!, ordered[3]!);
     drawL(ordered[3]!, ordered[0]!, ordered[2]!);
 
-    // 8 handles
     handles.forEach((p, i) => {
-      const r = i % 2 === 0 ? Math.max(11, canvas.width / 90) : Math.max(8, canvas.width / 110);
+      const corner = i % 2 === 0;
+      const r = corner ? Math.max(14, canvas.width / 70) : Math.max(10, canvas.width / 95);
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       ctx.fillStyle = "#fff";
       ctx.fill();
-      ctx.strokeStyle = "#0d9488";
-      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = corner ? "#16a34a" : "#22c55e";
+      ctx.lineWidth = 3;
       ctx.stroke();
+      if (corner) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r * 0.35, 0, Math.PI * 2);
+        ctx.fillStyle = "#16a34a";
+        ctx.fill();
+      }
     });
   }, [step, sourceData, corners]);
 
-  const pointerToImage = (e: React.PointerEvent<HTMLCanvasElement>): Point => {
-    const canvas = e.currentTarget;
-    const rect = canvas.getBoundingClientRect();
-    return {
-      x: ((e.clientX - rect.left) / rect.width) * canvas.width,
-      y: ((e.clientY - rect.top) / rect.height) * canvas.height,
+  // Live preview (kichik) — burchak o‘zgarganda
+  useEffect(() => {
+    if (step !== "crop" || !sourceData || corners.length !== 4 || dragIdx != null) return;
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      try {
+        const warped = warpPreview(sourceData, corners, 360);
+        const enhanced = enhanceDocument(warped, mode);
+        const c = imageDataToCanvas(enhanced);
+        if (!cancelled) setLivePreview(c.toDataURL("image/jpeg", 0.85));
+      } catch {
+        /* ignore preview errors */
+      }
+    }, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
     };
-  };
+  }, [step, sourceData, corners, mode, dragIdx]);
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!sourceData) return;
-    const p = pointerToImage(e);
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const p = clientToImagePoint(e.clientX, e.clientY, rect, sourceData.width, sourceData.height);
+    const scale = Math.min(rect.width / sourceData.width, rect.height / sourceData.height);
+    // Ekranda ~34px — oldingi katta threshold noto‘g‘ri tutqichni ushlar edi
+    const thresh = Math.max(22, 34 / Math.max(scale, 0.05));
     const handles = cornersToHandles(corners);
     let best = -1;
     let bestD = Infinity;
     handles.forEach((c, i) => {
       const d = Math.hypot(c.x - p.x, c.y - p.y);
-      if (d < bestD) {
-        bestD = d;
+      // Burchak tutqichlariga biroz ustunlik
+      const bias = i % 2 === 0 ? 0.85 : 1;
+      const scored = d * bias;
+      if (scored < bestD) {
+        bestD = scored;
         best = i;
       }
     });
-    const thresh = Math.max(36, sourceData.width / 14);
     if (best >= 0 && bestD < thresh) {
       setDragIdx(best);
       e.currentTarget.setPointerCapture(e.pointerId);
@@ -272,7 +325,9 @@ export function DocumentScanner({
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (dragIdx == null || !sourceData) return;
-    const p = pointerToImage(e);
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const p = clientToImagePoint(e.clientX, e.clientY, rect, sourceData.width, sourceData.height);
     setCorners(
       applyHandleDrag(corners, dragIdx, p, {
         w: sourceData.width,
@@ -281,7 +336,16 @@ export function DocumentScanner({
     );
   };
 
-  const onPointerUp = () => setDragIdx(null);
+  const onPointerUp = (e?: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e) {
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        /* already released */
+      }
+    }
+    setDragIdx(null);
+  };
 
   const confirmPage = async (then: "continue" | "pages") => {
     if (!sourceData || corners.length !== 4) return;
@@ -296,6 +360,7 @@ export function DocumentScanner({
       setPreviewUrls((u) => [...u, url]);
       setSourceData(null);
       setSourceUrl(null);
+      setLivePreview(null);
       toast({
         title: `Sahifa ${pages.length + 1} qo‘shildi`,
         description: then === "continue" ? "Keyingi sahifani skaner qiling" : undefined,
@@ -309,8 +374,46 @@ export function DocumentScanner({
   };
 
   const removePage = (idx: number) => {
-    setPages((p) => p.filter((_, i) => i !== idx));
+    setPages((p) => {
+      const next = p.filter((_, i) => i !== idx);
+      if (step === "view" && viewIdx === idx) {
+        setStep(next.length ? "pages" : "capture");
+        setViewIdx(null);
+      } else if (!next.length && (step === "pages" || step === "view")) {
+        setStep("capture");
+        setViewIdx(null);
+      }
+      return next;
+    });
     setPreviewUrls((u) => u.filter((_, i) => i !== idx));
+    setViewIdx((cur) => {
+      if (cur == null) return null;
+      if (cur === idx) return null;
+      if (cur > idx) return cur - 1;
+      return cur;
+    });
+  };
+
+  const openPageView = (idx: number) => {
+    setViewIdx(idx);
+    setStep("view");
+  };
+
+  const retakePage = (idx: number) => {
+    removePage(idx);
+    setViewIdx(null);
+    setSourceData(null);
+    setSourceUrl(null);
+    setLivePreview(null);
+    setStep("capture");
+    toast({ title: "Sahifa o‘chirildi", description: "Yangi listni skaner qiling" });
+  };
+
+  const discardCrop = () => {
+    setSourceData(null);
+    setSourceUrl(null);
+    setLivePreview(null);
+    setStep(pages.length > 0 ? "pages" : "capture");
   };
 
   const buildPdf = async () => {
@@ -374,33 +477,52 @@ export function DocumentScanner({
     }
   };
 
+  const cropAspect = sourceData
+    ? `${sourceData.width} / ${sourceData.height}`
+    : "3 / 4";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[94vh] w-[min(100vw-1rem,720px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[720px]">
-        <DialogHeader className="shrink-0 border-b px-4 py-3 text-left">
-          <DialogTitle className="flex items-center gap-2 text-base">
-            <ScanLine className="h-5 w-5 text-teal-600" />
+      <DialogContent
+        className="flex max-h-[96vh] w-[min(100vw-0.5rem,720px)] flex-col gap-0 overflow-hidden border-0 bg-zinc-950 p-0 text-zinc-50 sm:max-w-[720px] sm:border sm:border-zinc-800 [&>button]:rounded-full [&>button]:text-zinc-300 [&>button]:hover:bg-zinc-800 [&>button]:hover:text-white"
+        onPointerDownOutside={(e) => {
+          if (step === "crop" && dragIdx != null) e.preventDefault();
+        }}
+        onInteractOutside={(e) => {
+          if (step === "crop") e.preventDefault();
+        }}
+      >
+        <DialogHeader className="shrink-0 border-b border-zinc-800 px-4 py-3 text-left">
+          <DialogTitle className="flex items-center gap-2 text-base text-zinc-50">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-400">
+              <ScanLine className="h-4 w-4" />
+            </span>
             {title}
             {pages.length > 0 ? (
-              <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-teal-100 px-2 py-0.5 text-xs font-semibold text-teal-800 dark:bg-teal-950 dark:text-teal-300">
+              <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold text-emerald-300">
                 <Layers className="h-3 w-3" />
                 {pages.length} sahifa
               </span>
             ) : null}
           </DialogTitle>
-          <DialogDescription className="text-xs">
-            Listni belgilang → skaner → yana sahifa qo‘shing → «Yakunlash» bilan PDF.
+          <DialogDescription className="text-xs text-zinc-400">
+            {step === "capture" && "Listni ramkaga joylashtiring — faqat qog‘oz skaner qilinadi."}
+            {step === "crop" && "Yashil ramkani list chetiga torting. Orqa fon qorong‘i qoladi."}
+            {step === "pages" && "Sahifani bosing — ochib ko‘ring. Kerak bo‘lsa o‘chiring yoki qayta oling."}
+            {step === "view" &&
+              viewIdx != null &&
+              `Sahifa ${viewIdx + 1} — ko‘rib chiqing, keyin davom eting yoki qayta oling.`}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
           {step === "capture" ? (
-            <div className="space-y-3">
-              <div className="relative aspect-[3/4] overflow-hidden rounded-lg bg-black sm:aspect-video">
+            <div className="space-y-4">
+              <div className="relative mx-auto aspect-[3/4] max-h-[58vh] w-full overflow-hidden rounded-2xl bg-black ring-1 ring-zinc-800 sm:aspect-video sm:max-h-[50vh]">
                 {camError ? (
-                  <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center text-sm text-white/90">
+                  <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center text-sm text-zinc-300">
                     <p>{camError}</p>
-                    <p className="text-xs text-white/60">Rasm yuklashdan foydalaning</p>
+                    <p className="text-xs text-zinc-500">Galereyadan rasm yuklang</p>
                   </div>
                 ) : (
                   <video
@@ -411,51 +533,50 @@ export function DocumentScanner({
                     className="h-full w-full object-cover"
                   />
                 )}
-                <div className="pointer-events-none absolute inset-[10%] rounded-sm border-2 border-teal-400/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]" />
+                <div className="pointer-events-none absolute inset-[8%] rounded-md border-2 border-emerald-400/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-3 pb-3 pt-8 text-center text-[11px] font-medium text-emerald-100/90">
+                  Faqat oq listni ramka ichiga oling
+                </div>
                 {pages.length > 0 ? (
-                  <div className="absolute left-2 top-2 rounded-md bg-teal-600/90 px-2 py-1 text-xs font-semibold text-white">
+                  <div className="absolute left-3 top-3 rounded-full bg-emerald-500 px-2.5 py-1 text-xs font-semibold text-white shadow">
                     {pages.length} ta tayyor
                   </div>
                 ) : null}
               </div>
 
-              <div className="flex items-center justify-center gap-4">
-                <Button
+              <div className="flex items-center justify-center gap-5">
+                <button
                   type="button"
-                  size="icon"
-                  variant="outline"
-                  className="h-12 w-12 rounded-full"
+                  className="flex h-12 w-12 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900 text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-40"
                   onClick={() => fileRef.current?.click()}
                   disabled={busy}
                   title="Galereya"
                 >
                   <FileUp className="h-5 w-5" />
-                </Button>
-                <Button
+                </button>
+                <button
                   type="button"
-                  className="h-16 w-16 rounded-full bg-white text-slate-900 shadow-lg hover:bg-slate-100"
+                  className="flex h-[72px] w-[72px] items-center justify-center rounded-full bg-emerald-500 text-white shadow-[0_0_0_6px_rgba(16,185,129,0.25)] transition hover:bg-emerald-400 disabled:opacity-40"
                   onClick={captureFrame}
                   disabled={!!camError}
                   title="Suratga olish"
                 >
-                  <Camera className="h-7 w-7" />
-                </Button>
-                <Button
+                  <Camera className="h-8 w-8" />
+                </button>
+                <button
                   type="button"
-                  size="icon"
-                  variant="outline"
-                  className="relative h-12 w-12 rounded-full"
+                  className="relative flex h-12 w-12 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900 text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-40"
                   disabled={!pages.length}
                   onClick={() => setStep("pages")}
                   title="Sahifalar"
                 >
                   <Layers className="h-5 w-5" />
                   {pages.length ? (
-                    <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-teal-600 px-1 text-[10px] text-white">
+                    <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-500 px-1 text-[10px] font-bold text-white">
                       {pages.length}
                     </span>
                   ) : null}
-                </Button>
+                </button>
               </div>
               <input
                 ref={fileRef}
@@ -468,96 +589,164 @@ export function DocumentScanner({
               {pages.length > 0 ? (
                 <Button
                   type="button"
-                  className="w-full bg-teal-700 hover:bg-teal-800"
+                  className="h-11 w-full rounded-xl bg-emerald-600 text-base font-semibold hover:bg-emerald-500"
                   onClick={() => setStep("pages")}
                 >
                   <Check className="mr-1.5 h-4 w-4" />
                   Yakunlash ({pages.length} sahifa → PDF)
                 </Button>
-              ) : (
-                <p className="text-center text-[11px] text-muted-foreground">
-                  Hujjatni ramkaga joylashtiring va markaziy tugmani bosing
-                </p>
-              )}
+              ) : null}
             </div>
           ) : null}
 
-          {step === "crop" && sourceUrl ? (
+          {step === "crop" && sourceUrl && sourceData ? (
             <div className="space-y-3">
-              <p className="text-xs text-muted-foreground">
-                Faqat listni belgilang — oq nuqtalarni sudrang (burchak va yonlar). Keyin skaner.
-              </p>
-              <div className="relative mx-auto max-h-[52vh] w-full overflow-hidden rounded-lg bg-black">
-                <img src={sourceUrl} alt="scan" className="block h-auto w-full select-none" draggable={false} />
-                <canvas
-                  ref={overlayRef}
-                  className="absolute inset-0 h-full w-full cursor-grab touch-none active:cursor-grabbing"
-                  onPointerDown={onPointerDown}
-                  onPointerMove={onPointerMove}
-                  onPointerUp={onPointerUp}
-                  onPointerCancel={onPointerUp}
-                />
+              <div className="flex justify-center">
+                <div
+                  ref={cropBoxRef}
+                  className="relative overflow-hidden rounded-2xl bg-black ring-1 ring-zinc-800"
+                  style={{
+                    aspectRatio: cropAspect,
+                    width: `min(100%, calc(min(54vh, 560px) * ${sourceData.width} / ${sourceData.height}))`,
+                  }}
+                >
+                  <img
+                    src={sourceUrl}
+                    alt="scan"
+                    className="absolute inset-0 h-full w-full select-none"
+                    draggable={false}
+                  />
+                  <canvas
+                    ref={overlayRef}
+                    className="absolute inset-0 h-full w-full cursor-grab touch-none active:cursor-grabbing"
+                    onPointerDown={onPointerDown}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={onPointerUp}
+                    onPointerCancel={onPointerUp}
+                  />
+                </div>
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                {(
-                  [
-                    ["bw", "Skaner"],
-                    ["gray", "Kulrang"],
-                    ["color", "Rangli"],
-                  ] as const
-                ).map(([k, label]) => (
-                  <Button
-                    key={k}
+
+              <div className="flex items-stretch gap-2">
+                <div className="flex flex-1 flex-wrap gap-1.5">
+                  {(
+                    [
+                      ["bw", "Skaner", Sparkles],
+                      ["gray", "Kulrang", null],
+                      ["color", "Rangli", null],
+                    ] as const
+                  ).map(([k, label, Icon]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setMode(k)}
+                      className={cn(
+                        "inline-flex h-9 items-center gap-1 rounded-full px-3 text-xs font-semibold transition",
+                        mode === k
+                          ? "bg-emerald-500 text-white"
+                          : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700",
+                      )}
+                    >
+                      {Icon ? <Icon className="h-3.5 w-3.5" /> : null}
+                      {label}
+                    </button>
+                  ))}
+                  <button
                     type="button"
-                    size="sm"
-                    variant={mode === k ? "default" : "outline"}
-                    onClick={() => setMode(k)}
+                    className="inline-flex h-9 items-center gap-1 rounded-full bg-zinc-800 px-3 text-xs font-medium text-zinc-300 hover:bg-zinc-700"
+                    onClick={() =>
+                      sourceData && setCorners(detectDocumentCorners(sourceData))
+                    }
                   >
-                    {label}
-                  </Button>
-                ))}
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() =>
-                    sourceData && setCorners(defaultCorners(sourceData.width, sourceData.height))
-                  }
-                >
-                  <RotateCcw className="mr-1 h-3.5 w-3.5" />
-                  Reset
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => sourceData && setCorners(detectDocumentCorners(sourceData))}
-                >
-                  Avto
-                </Button>
+                    <Wand2 className="h-3.5 w-3.5 text-emerald-400" />
+                    Avto
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-9 items-center gap-1 rounded-full bg-zinc-800 px-3 text-xs font-medium text-zinc-300 hover:bg-zinc-700"
+                    onClick={() =>
+                      sourceData &&
+                      setCorners(defaultCorners(sourceData.width, sourceData.height))
+                    }
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Reset
+                  </button>
+                </div>
+                {livePreview ? (
+                  <div className="hidden w-16 shrink-0 overflow-hidden rounded-lg border border-emerald-500/40 bg-white shadow sm:block">
+                    <img
+                      src={livePreview}
+                      alt="preview"
+                      className="aspect-[210/297] w-full object-cover"
+                    />
+                  </div>
+                ) : null}
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                <Button type="button" variant="outline" onClick={() => setStep("capture")}>
+
+              {livePreview ? (
+                <div className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/80 p-2 sm:hidden">
+                  <img
+                    src={livePreview}
+                    alt="preview"
+                    className="h-20 w-14 rounded-md border border-zinc-700 object-cover"
+                  />
+                  <p className="text-[11px] leading-snug text-zinc-400">
+                    Natija shunday bo‘ladi. Yashil nuqtalarni list chetiga torting — orqa narsalar
+                    kirmasin.
+                  </p>
+                </div>
+              ) : null}
+
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 rounded-xl border-zinc-700 bg-transparent text-zinc-200 hover:bg-zinc-900 hover:text-white"
+                  onClick={discardCrop}
+                >
                   <X className="mr-1 h-4 w-4" />
                   Bekor
                 </Button>
                 <Button
                   type="button"
-                  variant="secondary"
+                  variant="outline"
+                  className="h-11 rounded-xl border-zinc-700 bg-transparent text-zinc-200 hover:bg-zinc-900 hover:text-white"
+                  onClick={() => {
+                    setSourceData(null);
+                    setSourceUrl(null);
+                    setLivePreview(null);
+                    setStep("capture");
+                  }}
+                >
+                  <Camera className="mr-1 h-4 w-4" />
+                  Qayta ol
+                </Button>
+                <Button
+                  type="button"
                   disabled={busy}
+                  className="h-11 rounded-xl bg-zinc-100 font-semibold text-zinc-900 hover:bg-white"
                   onClick={() => void confirmPage("continue")}
                 >
-                  {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Plus className="mr-1 h-4 w-4" />}
+                  {busy ? (
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Plus className="mr-1 h-4 w-4" />
+                  )}
                   + Sahifa
                 </Button>
                 <Button
                   type="button"
-                  className="bg-teal-700 hover:bg-teal-800"
                   disabled={busy}
+                  className="h-11 rounded-xl bg-emerald-500 text-base font-semibold text-white hover:bg-emerald-400"
                   onClick={() => void confirmPage("pages")}
                 >
-                  {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Check className="mr-1 h-4 w-4" />}
-                  Qo‘shish
+                  {busy ? (
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Check className="mr-1 h-4 w-4" />
+                  )}
+                  Skaner
                 </Button>
               </div>
             </div>
@@ -565,83 +754,185 @@ export function DocumentScanner({
 
           {step === "pages" ? (
             <div className="space-y-3">
-              <p className="text-xs text-muted-foreground">
-                Barcha sahifalar tayyor. Kerak bo‘lsa yana qo‘shing yoki «Yakunlash» bilan PDF yarating.
-              </p>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
                 {previewUrls.map((url, i) => (
                   <div
                     key={i}
-                    className="group relative overflow-hidden rounded-md border bg-white shadow-sm ring-1 ring-black/5"
+                    className="group relative overflow-hidden rounded-xl border border-zinc-800 bg-white shadow-sm"
                   >
-                    <img
-                      src={url}
-                      alt={`Sahifa ${i + 1}`}
-                      className="aspect-[210/297] w-full object-cover"
-                    />
-                    <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-black/55 px-1.5 py-1 text-[10px] text-white">
+                    <button
+                      type="button"
+                      className="block w-full text-left"
+                      onClick={() => openPageView(i)}
+                    >
+                      <img
+                        src={url}
+                        alt={`Sahifa ${i + 1}`}
+                        className="aspect-[210/297] w-full object-cover"
+                      />
+                    </button>
+                    <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-gradient-to-t from-black/75 to-transparent px-1.5 pb-1.5 pt-8 text-[11px] font-medium text-white">
                       <span>#{i + 1}</span>
-                      <button
-                        type="button"
-                        className="rounded p-0.5 hover:bg-white/20"
-                        onClick={() => removePage(i)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          className="rounded-md bg-white/15 p-1.5 hover:bg-emerald-500/90"
+                          title="Ochib ko‘rish"
+                          onClick={() => openPageView(i)}
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-md bg-white/15 p-1.5 hover:bg-amber-500/90"
+                          title="Qayta olish"
+                          onClick={() => retakePage(i)}
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-md bg-white/15 p-1.5 hover:bg-red-500/90"
+                          title="O‘chirish"
+                          onClick={() => {
+                            removePage(i);
+                            toast({ title: `Sahifa ${i + 1} o‘chirildi` });
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
                 <button
                   type="button"
                   onClick={() => setStep("capture")}
-                  className="flex aspect-[210/297] flex-col items-center justify-center gap-2 rounded-md border border-dashed border-teal-400/60 bg-teal-50/40 text-teal-800 transition hover:bg-teal-50 dark:bg-teal-950/20 dark:text-teal-300"
+                  className="flex aspect-[210/297] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-emerald-500/50 bg-emerald-500/10 text-emerald-300 transition hover:bg-emerald-500/20"
                 >
-                  <Plus className="h-6 w-6" />
-                  <span className="text-xs font-medium">Yana sahifa</span>
+                  <Plus className="h-7 w-7" />
+                  <span className="text-xs font-semibold">Yana sahifa</span>
                 </button>
+              </div>
+            </div>
+          ) : null}
+
+          {step === "view" && viewIdx != null && previewUrls[viewIdx] ? (
+            <div className="space-y-3">
+              <div className="relative mx-auto max-h-[58vh] overflow-auto rounded-2xl bg-white ring-1 ring-zinc-700">
+                <img
+                  src={previewUrls[viewIdx]}
+                  alt={`Sahifa ${viewIdx + 1}`}
+                  className="mx-auto h-auto w-full max-w-md object-contain"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 rounded-xl border-zinc-700 bg-transparent text-zinc-200 hover:bg-zinc-900 hover:text-white"
+                  onClick={() => {
+                    setViewIdx(null);
+                    setStep("pages");
+                  }}
+                >
+                  <ArrowLeft className="mr-1 h-4 w-4" />
+                  Ro‘yxat
+                </Button>
+                <Button
+                  type="button"
+                  className="h-11 rounded-xl bg-zinc-100 font-semibold text-zinc-900 hover:bg-white"
+                  onClick={() => setStep("capture")}
+                >
+                  <Plus className="mr-1 h-4 w-4" />
+                  Davom etish
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 rounded-xl border-amber-600/50 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+                  onClick={() => retakePage(viewIdx)}
+                >
+                  <RotateCcw className="mr-1 h-4 w-4" />
+                  Qayta ol
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 rounded-xl border-red-600/40 bg-red-500/10 text-red-200 hover:bg-red-500/20"
+                  onClick={() => {
+                    const n = viewIdx + 1;
+                    removePage(viewIdx);
+                    setViewIdx(null);
+                    setStep("pages");
+                    toast({ title: `Sahifa ${n} o‘chirildi` });
+                  }}
+                >
+                  <Trash2 className="mr-1 h-4 w-4" />
+                  O‘chirish
+                </Button>
               </div>
             </div>
           ) : null}
         </div>
 
-        {step === "pages" ? (
-          <div className="shrink-0 space-y-2 border-t bg-muted/40 px-4 py-3">
+        {step === "pages" || step === "view" ? (
+          <div className="shrink-0 space-y-2 border-t border-zinc-800 bg-zinc-900/90 px-4 py-3">
+            {step === "view" ? (
+              <Button
+                type="button"
+                className="h-11 w-full rounded-xl border border-zinc-700 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+                onClick={() => {
+                  setViewIdx(null);
+                  setStep("pages");
+                }}
+              >
+                <Layers className="mr-1.5 h-4 w-4" />
+                Barcha sahifalar ({pages.length})
+              </Button>
+            ) : null}
             <Button
               type="button"
-              className="w-full bg-teal-700 hover:bg-teal-800"
+              className="h-12 w-full rounded-xl bg-emerald-500 text-base font-semibold hover:bg-emerald-400"
               disabled={!pages.length || saving}
               onClick={() => void finishSave()}
             >
-              {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Check className="mr-1.5 h-4 w-4" />}
-              Yakunlash — PDF yaratish ({pages.length} sahifa)
+              {saving ? (
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              ) : (
+                <Check className="mr-1.5 h-4 w-4" />
+              )}
+              Yakunlash — PDF ({pages.length} sahifa)
             </Button>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                className="flex-1"
-                disabled={!pages.length || saving}
-                onClick={() => void shareTg()}
-              >
-                <Send className="mr-1.5 h-4 w-4" />
-                Telegram
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1"
-                disabled={!pages.length || saving}
-                onClick={() => void downloadOnly()}
-              >
-                <Download className="mr-1.5 h-4 w-4" />
-                Yuklash
-              </Button>
-            </div>
-            <p className={cn("text-[11px] text-muted-foreground")}>
-              {standalone || !onComplete
-                ? "PDF A4 formatida yaratiladi."
-                : "PDF xodim hujjatiga saqlanadi."}
-            </p>
+            {step === "pages" ? (
+              <>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    className="h-10 flex-1 rounded-xl border border-zinc-700 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+                    disabled={!pages.length || saving}
+                    onClick={() => void shareTg()}
+                  >
+                    <Send className="mr-1.5 h-4 w-4" />
+                    Telegram
+                  </Button>
+                  <Button
+                    type="button"
+                    className="h-10 flex-1 rounded-xl border border-zinc-700 bg-transparent text-zinc-200 hover:bg-zinc-800"
+                    disabled={!pages.length || saving}
+                    onClick={() => void downloadOnly()}
+                  >
+                    <Download className="mr-1.5 h-4 w-4" />
+                    Yuklash
+                  </Button>
+                </div>
+                <p className={cn("text-center text-[11px] text-zinc-500")}>
+                  {standalone || !onComplete
+                    ? "PDF A4 formatida yaratiladi — faqat belgilangan list."
+                    : "PDF xodim hujjatiga saqlanadi."}
+                </p>
+              </>
+            ) : null}
           </div>
         ) : null}
       </DialogContent>

@@ -164,6 +164,10 @@ export type MyNeedBranch = {
   branchName: string;
   managerName: string | null;
   coordinatorName: string | null;
+  /** Foydalanuvchi filial mudiri (rol yoki orgRole=manager) */
+  isManager?: boolean;
+  /** Yangi ehtiyoj yuborishi mumkin */
+  canCreateNeed?: boolean;
 };
 
 export function useMyNeedBranch(enabled: boolean) {

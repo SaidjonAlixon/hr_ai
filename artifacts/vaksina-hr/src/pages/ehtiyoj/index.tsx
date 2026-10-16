@@ -192,15 +192,20 @@ export default function EhtiyojPage() {
   const { toast } = useToast();
   const { t } = useI18n();
 
-  const canWrite = user?.role === 'mudir' || user?.role === 'koordinator' || isHrManager(user?.role);
-  const canConfirm = user?.role === 'koordinator' || isHrManager(user?.role);
-  const canVerify = user?.role === 'mudir' || user?.role === 'koordinator' || isHrManager(user?.role);
-  const isMudir = user?.role === 'mudir';
   const isKoordinator = user?.role === 'koordinator';
   const rawRole = String(user?.role ?? '');
   const isAssigneeOnly = rawRole === 'texnik' || rawRole === 'ombor';
   const isBranchStaff = BRANCH_STAFF_ROLES.has(rawRole);
   const { data: myBranch, isLoading: myBranchLoading } = useMyNeedBranch(isBranchStaff);
+  // Mudir roli yoki apteka mudiri (orgRole=manager) — to‘liq yaratish
+  const isMudir = user?.role === 'mudir' || Boolean(myBranch?.isManager);
+  const canWrite =
+    isMudir ||
+    user?.role === 'koordinator' ||
+    isHrManager(user?.role) ||
+    Boolean(myBranch?.canCreateNeed);
+  const canConfirm = user?.role === 'koordinator' || isHrManager(user?.role);
+  const canVerify = isMudir || user?.role === 'koordinator' || isHrManager(user?.role);
 
   const { data: needs, isLoading, refetch } = useBranchNeeds();
   const { data: history, isLoading: historyLoading, refetch: refetchHistory } = useBranchNeedsHistory();
@@ -360,7 +365,7 @@ export default function EhtiyojPage() {
   const subtitle = isAssigneeOnly
     ? 'Sizga biriktirilgan ehtiyojlar. Qabul qilish va bajarish — Topshiriqlar bo‘limida.'
     : isMudir
-      ? 'Filialingizga kerakli narsani yuboring. Koordinator tasdiqlaydi, ijrochi bajaradi, siz yakuniy tasdiqlaysiz.'
+      ? 'Filialingizga kerakli narsani «Yangi ehtiyoj» orqali yuboring. Koordinator tasdiqlaydi, ijrochi bajaradi, siz yakuniy tasdiqlaysiz.'
       : isBranchStaff
         ? 'Filialingiz ehtiyojlari va ularning holati. Yangi ehtiyojni filial mudiri yuboradi.'
         : isKoordinator
@@ -387,15 +392,25 @@ export default function EhtiyojPage() {
           </h1>
           <p className="mt-1.5 max-w-2xl text-sm text-slate-500">{subtitle}</p>
         </div>
-        {canWrite && (
-          <Button onClick={() => setFormOpen(true)} className="h-10 gap-2 bg-[#0b3a5c] px-4 hover:bg-[#0b3a5c]/90">
-            <Plus className="h-4 w-4" />
+        {canWrite ? (
+          <Button
+            onClick={() => setFormOpen(true)}
+            className="h-11 gap-2 bg-emerald-600 px-5 text-base font-semibold shadow-sm hover:bg-emerald-500"
+          >
+            <Plus className="h-5 w-5" />
             {isKoordinator ? t('ehtiyoj.set') : t('ehtiyoj.new')}
           </Button>
-        )}
+        ) : null}
       </div>
 
-      {isBranchStaff ? <MyBranchCard branch={myBranch ?? null} loading={myBranchLoading} /> : null}
+      {isBranchStaff ? (
+        <MyBranchCard
+          branch={myBranch ?? null}
+          loading={myBranchLoading}
+          canCreate={canWrite}
+          onCreate={() => setFormOpen(true)}
+        />
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
@@ -610,7 +625,17 @@ export default function EhtiyojPage() {
 
 const BRANCH_STAFF_ROLES = new Set(['mudir', 'farmasevt', 'stajyor', 'stajor']);
 
-function MyBranchCard({ branch, loading }: { branch: MyNeedBranch | null; loading: boolean }) {
+function MyBranchCard({
+  branch,
+  loading,
+  canCreate,
+  onCreate,
+}: {
+  branch: MyNeedBranch | null;
+  loading: boolean;
+  canCreate?: boolean;
+  onCreate?: () => void;
+}) {
   if (loading) return <Skeleton className="h-[76px] w-full rounded-2xl" />;
   if (!branch) {
     return (
@@ -621,30 +646,42 @@ function MyBranchCard({ branch, loading }: { branch: MyNeedBranch | null; loadin
     );
   }
   return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl border border-[#0b3a5c]/15 bg-gradient-to-r from-[#0b3a5c] to-[#14527f] px-4 py-3.5 text-white shadow-sm">
-      <div className="flex min-w-0 items-center gap-3">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15">
-          <Store className="h-5 w-5" />
-        </span>
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-white/70">Sizning filialingiz</p>
-          <p className="truncate text-lg font-bold leading-tight">{branch.branchName}</p>
+    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-2xl border border-[#0b3a5c]/15 bg-gradient-to-r from-[#0b3a5c] to-[#14527f] px-4 py-3.5 text-white shadow-sm">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-2">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15">
+            <Store className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-white/70">Sizning filialingiz</p>
+            <p className="truncate text-lg font-bold leading-tight">{branch.branchName}</p>
+          </div>
         </div>
-      </div>
-      <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-        <span className="inline-flex items-center gap-1.5">
-          <User className="h-4 w-4 text-white/60" />
-          <span className="text-white/70">Mudir:</span>
-          <span className="font-semibold">{branch.managerName || 'tayinlanmagan'}</span>
-        </span>
-        {branch.coordinatorName ? (
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
           <span className="inline-flex items-center gap-1.5">
             <User className="h-4 w-4 text-white/60" />
-            <span className="text-white/70">Koordinator:</span>
-            <span className="font-semibold">{branch.coordinatorName}</span>
+            <span className="text-white/70">Mudir:</span>
+            <span className="font-semibold">{branch.managerName || 'tayinlanmagan'}</span>
           </span>
-        ) : null}
+          {branch.coordinatorName ? (
+            <span className="inline-flex items-center gap-1.5">
+              <User className="h-4 w-4 text-white/60" />
+              <span className="text-white/70">Koordinator:</span>
+              <span className="font-semibold">{branch.coordinatorName}</span>
+            </span>
+          ) : null}
+        </div>
       </div>
+      {canCreate && onCreate ? (
+        <Button
+          type="button"
+          onClick={onCreate}
+          className="h-10 shrink-0 gap-2 bg-white font-semibold text-[#0b3a5c] hover:bg-emerald-50"
+        >
+          <Plus className="h-4 w-4" />
+          Yangi ehtiyoj
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -819,15 +856,21 @@ function EmptyState({ tab, searching, canWrite, onCreate }: { tab: Tab; searchin
             ? 'Yakuniy tasdiq kutayotgan ehtiyoj yo‘q'
             : 'Hozircha faol ehtiyoj yo‘q';
   return (
-    <div className="flex flex-col items-center gap-2 px-4 py-12 text-center">
-      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
-        <Inbox className="h-6 w-6 text-slate-400" />
+    <div className="flex flex-col items-center gap-3 px-4 py-12 text-center">
+      <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 ring-1 ring-emerald-100">
+        <Inbox className="h-7 w-7 text-emerald-600" />
       </span>
-      <p className="text-sm font-medium text-slate-600">{text}</p>
-      {canWrite && !searching && tab === 'active' ? (
-        <Button size="sm" variant="outline" className="mt-1 gap-1.5" onClick={onCreate}>
-          <Plus className="h-4 w-4" /> Yangi ehtiyoj qo‘shish
-        </Button>
+      <p className="text-sm font-semibold text-slate-700">{text}</p>
+      {canWrite && !searching && (tab === 'active' || tab === 'pending') ? (
+        <>
+          <p className="max-w-sm text-xs text-slate-500">
+            Filialingizga printer, kompyuter, internet yoki boshqa narsa kerak bo‘lsa — yuboring. Koordinator
+            tasdiqlaydi.
+          </p>
+          <Button className="mt-1 h-11 gap-2 bg-emerald-600 px-5 font-semibold hover:bg-emerald-500" onClick={onCreate}>
+            <Plus className="h-4 w-4" /> Yangi ehtiyoj yuborish
+          </Button>
+        </>
       ) : null}
     </div>
   );

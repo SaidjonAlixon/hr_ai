@@ -1,6 +1,6 @@
 /**
  * CamScanner uslubidagi A4 hujjat skaneri:
- * — qog‘oz chetini aniqlash, 4 burchak, perspektiv, oq fonda qora matn
+ * — markazdan qog‘ozni topish, 4 burchak, perspektiv, oq fonda qora matn
  */
 
 export type Point = { x: number; y: number };
@@ -12,7 +12,7 @@ export const A4_WIDTH = 1654;
 export const A4_HEIGHT = 2339;
 
 export function defaultCorners(w: number, h: number): Point[] {
-  const m = Math.min(w, h) * 0.08;
+  const m = Math.min(w, h) * 0.06;
   return [
     { x: m, y: m },
     { x: w - m, y: m },
@@ -54,20 +54,20 @@ export function imageToImageData(
 
 function otsuThreshold(gray: Float32Array): number {
   const hist = new Array(256).fill(0);
-  for (let i = 0; i < gray.length; i++) hist[clamp(Math.round(gray[i]), 0, 255)]++;
+  for (let i = 0; i < gray.length; i++) hist[clamp(Math.round(gray[i]!), 0, 255)]++;
   const total = gray.length;
   let sum = 0;
-  for (let i = 0; i < 256; i++) sum += i * hist[i];
+  for (let i = 0; i < 256; i++) sum += i * hist[i]!;
   let sumB = 0;
   let wB = 0;
   let maxVar = 0;
   let thr = 128;
   for (let t = 0; t < 256; t++) {
-    wB += hist[t];
+    wB += hist[t]!;
     if (!wB) continue;
     const wF = total - wB;
     if (!wF) break;
-    sumB += t * hist[t];
+    sumB += t * hist[t]!;
     const mB = sumB / wB;
     const mF = (sum - sumB) / wF;
     const v = wB * wF * (mB - mF) * (mB - mF);
@@ -79,22 +79,204 @@ function otsuThreshold(gray: Float32Array): number {
   return thr;
 }
 
-/**
- * Qog‘ozni topish: yorug‘ maska + 4 tomondan chekka → burchaklar.
- * Fon qorong‘i, list oq bo‘lganda yaxshi ishlaydi (3-rasm uslubi).
- */
-export function detectDocumentCorners(imageData: ImageData): Point[] {
-  const { width: w, height: h, data } = imageData;
-  const gray = new Float32Array(w * h);
-  for (let i = 0, p = 0; i < gray.length; i++, p += 4) {
-    gray[i] = luminance(data[p], data[p + 1], data[p + 2]);
+function pctSorted(sorted: number[], p: number) {
+  if (!sorted.length) return 0;
+  return sorted[clamp(Math.floor(sorted.length * p), 0, sorted.length - 1)]!;
+}
+
+export function orderCorners(pts: Point[]): Point[] {
+  const sorted = [...pts].sort((a, b) => a.y - b.y);
+  const top = sorted.slice(0, 2).sort((a, b) => a.x - b.x);
+  const bottom = sorted.slice(2, 4).sort((a, b) => a.x - b.x);
+  return [top[0]!, top[1]!, bottom[1]!, bottom[0]!];
+}
+
+/** 4 burchakni biroz ichkariga — orqa fon chekkada qolmasin */
+function insetCorners(corners: Point[], w: number, h: number, ratio = 0.012): Point[] {
+  const c = orderCorners(corners);
+  const cx = (c[0]!.x + c[1]!.x + c[2]!.x + c[3]!.x) / 4;
+  const cy = (c[0]!.y + c[1]!.y + c[2]!.y + c[3]!.y) / 4;
+  return c.map((p) => ({
+    x: clamp(p.x + (cx - p.x) * ratio, 0, w - 1),
+    y: clamp(p.y + (cy - p.y) * ratio, 0, h - 1),
+  }));
+}
+
+function blurGray(gray: Float32Array, w: number, h: number): Float32Array {
+  const tmp = new Float32Array(w * h);
+  const out = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let s = 0;
+      let n = 0;
+      for (let dx = -2; dx <= 2; dx++) {
+        const xx = clamp(x + dx, 0, w - 1);
+        s += gray[y * w + xx]!;
+        n++;
+      }
+      tmp[y * w + x] = s / n;
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let s = 0;
+      let n = 0;
+      for (let dy = -2; dy <= 2; dy++) {
+        const yy = clamp(y + dy, 0, h - 1);
+        s += tmp[yy * w + x]!;
+        n++;
+      }
+      out[y * w + x] = s / n;
+    }
+  }
+  return out;
+}
+
+/** Markazdan oq/yorug‘ qog‘ozni flood-fill qilish */
+function paperMaskFromCenter(gray: Float32Array, w: number, h: number): Uint8Array | null {
+  const blurred = blurGray(gray, w, h);
+  const thr = Math.max(otsuThreshold(blurred) * 0.88, 100);
+
+  const seedX = Math.floor(w / 2);
+  const seedY = Math.floor(h / 2);
+  // Markaz atrofida eng yorug‘ nuqta — list markaziga “yopishish”
+  let best = { x: seedX, y: seedY, v: blurred[seedY * w + seedX]! };
+  const r = Math.floor(Math.min(w, h) * 0.12);
+  for (let y = seedY - r; y <= seedY + r; y++) {
+    for (let x = seedX - r; x <= seedX + r; x++) {
+      if (x < 0 || y < 0 || x >= w || y >= h) continue;
+      const v = blurred[y * w + x]!;
+      if (v > best.v) best = { x, y, v };
+    }
   }
 
-  const thr = Math.max(otsuThreshold(gray) * 0.92, 90);
-  const paper = new Uint8Array(w * h);
-  for (let i = 0; i < gray.length; i++) paper[i] = gray[i] >= thr ? 1 : 0;
+  if (best.v < thr * 0.85) return null;
 
-  // Har qatordan chap/o‘ng chekka
+  const seedThr = Math.min(best.v - 18, thr);
+  const mask = new Uint8Array(w * h);
+  const stackX = new Int32Array(w * h);
+  const stackY = new Int32Array(w * h);
+  let sp = 0;
+  const push = (x: number, y: number) => {
+    const i = y * w + x;
+    if (mask[i]) return;
+    if (blurred[i]! < seedThr) return;
+    mask[i] = 1;
+    stackX[sp] = x;
+    stackY[sp] = y;
+    sp++;
+  };
+  push(best.x, best.y);
+
+  while (sp > 0) {
+    sp--;
+    const x = stackX[sp]!;
+    const y = stackY[sp]!;
+    if (x > 0) push(x - 1, y);
+    if (x < w - 1) push(x + 1, y);
+    if (y > 0) push(x, y - 1);
+    if (y < h - 1) push(x, y + 1);
+  }
+
+  // Tez dilate (3×3) — matn teshiklarini biroz yopish
+  const closed = new Uint8Array(w * h);
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      closed[i] =
+        mask[i] ||
+        mask[i - 1] ||
+        mask[i + 1] ||
+        mask[i - w] ||
+        mask[i + w] ||
+        mask[i - w - 1] ||
+        mask[i - w + 1] ||
+        mask[i + w - 1] ||
+        mask[i + w + 1]
+          ? 1
+          : 0;
+    }
+  }
+
+  let count = 0;
+  for (let i = 0; i < closed.length; i++) if (closed[i]) count++;
+  const areaRatio = count / (w * h);
+  if (areaRatio < 0.12 || areaRatio > 0.92) return null;
+
+  return closed;
+}
+
+/** Maskadan 4 ekstremal burchak (TL/TR/BR/BL) */
+function cornersFromMask(mask: Uint8Array, w: number, h: number): Point[] | null {
+  let minX = w;
+  let maxX = 0;
+  let minY = h;
+  let maxY = 0;
+  let count = 0;
+  let tl = { x: 0, y: 0 };
+  let tr = { x: 0, y: 0 };
+  let br = { x: 0, y: 0 };
+  let bl = { x: 0, y: 0 };
+  let tlS = Infinity;
+  let trS = -Infinity;
+  let brS = -Infinity;
+  let blS = Infinity;
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (!mask[i]) continue;
+      count++;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+
+      // Faqat kontur — ekstremumlar aniqroq
+      const isEdge =
+        x === 0 ||
+        y === 0 ||
+        x === w - 1 ||
+        y === h - 1 ||
+        !mask[i - 1] ||
+        !mask[i + 1] ||
+        !mask[i - w] ||
+        !mask[i + w];
+      if (!isEdge) continue;
+
+      const s1 = x + y;
+      const s2 = x - y;
+      if (s1 < tlS) {
+        tlS = s1;
+        tl = { x, y };
+      }
+      if (s2 > trS) {
+        trS = s2;
+        tr = { x, y };
+      }
+      if (s1 > brS) {
+        brS = s1;
+        br = { x, y };
+      }
+      if (s2 < blS) {
+        blS = s2;
+        bl = { x, y };
+      }
+    }
+  }
+
+  if (count < 80 || tlS === Infinity) return null;
+  if (maxX - minX < w * 0.2 || maxY - minY < h * 0.2) return null;
+
+  return orderCorners([tl, tr, br, bl]);
+}
+
+/** Yorug‘lik bo‘yicha qator/ustun chekkalari (zaxira) */
+function cornersFromBrightBounds(gray: Float32Array, w: number, h: number): Point[] | null {
+  const thr = Math.max(otsuThreshold(gray) * 0.95, 110);
+  const paper = new Uint8Array(w * h);
+  for (let i = 0; i < gray.length; i++) paper[i] = gray[i]! >= thr ? 1 : 0;
+
   const leftX: number[] = [];
   const rightX: number[] = [];
   const topY: number[] = [];
@@ -103,147 +285,139 @@ export function detectDocumentCorners(imageData: ImageData): Point[] {
   for (let y = 0; y < h; y++) {
     let L = -1;
     let R = -1;
+    let run = 0;
+    let bestRun = 0;
+    let bestL = -1;
+    let bestR = -1;
     for (let x = 0; x < w; x++) {
       if (paper[y * w + x]) {
-        L = x;
-        break;
-      }
-    }
-    for (let x = w - 1; x >= 0; x--) {
-      if (paper[y * w + x]) {
+        if (L < 0) L = x;
         R = x;
-        break;
+        run++;
+      } else {
+        if (run > bestRun) {
+          bestRun = run;
+          bestL = L;
+          bestR = R;
+        }
+        L = -1;
+        R = -1;
+        run = 0;
       }
     }
-    if (L >= 0 && R > L + w * 0.15) {
-      leftX.push(L);
-      rightX.push(R);
+    if (run > bestRun) {
+      bestRun = run;
+      bestL = L;
+      bestR = R;
+    }
+    // Eng uzun yorug‘ segment — klaviatura “chiziqlarini” rad etadi
+    if (bestL >= 0 && bestR - bestL > w * 0.28) {
+      leftX.push(bestL);
+      rightX.push(bestR);
     }
   }
 
   for (let x = 0; x < w; x++) {
     let T = -1;
     let B = -1;
+    let run = 0;
+    let bestRun = 0;
+    let bestT = -1;
+    let bestB = -1;
     for (let y = 0; y < h; y++) {
       if (paper[y * w + x]) {
-        T = y;
-        break;
-      }
-    }
-    for (let y = h - 1; y >= 0; y--) {
-      if (paper[y * w + x]) {
+        if (T < 0) T = y;
         B = y;
-        break;
-      }
-    }
-    if (T >= 0 && B > T + h * 0.15) {
-      topY.push(T);
-      botY.push(B);
-    }
-  }
-
-  if (leftX.length < 10 || topY.length < 10) {
-    return refineByGradient(imageData, defaultCorners(w, h));
-  }
-
-  const pct = (arr: number[], p: number) => {
-    const s = [...arr].sort((a, b) => a - b);
-    return s[clamp(Math.floor(s.length * p), 0, s.length - 1)]!;
-  };
-
-  // Median-ish: outlierlardan himoya
-  const L = pct(leftX, 0.15);
-  const R = pct(rightX, 0.85);
-  const T = pct(topY, 0.15);
-  const B = pct(botY, 0.85);
-
-  if (R - L < w * 0.25 || B - T < h * 0.25) {
-    return refineByGradient(imageData, defaultCorners(w, h));
-  }
-
-  // Perspektiv uchun chekka chiziqlarini biroz aniqroq: yuqori/pastki qatorlarda L/R
-  const band = Math.max(4, Math.floor(h * 0.08));
-  const sampleLR = (y0: number, y1: number) => {
-    const ls: number[] = [];
-    const rs: number[] = [];
-    for (let y = y0; y < y1; y++) {
-      let l = -1;
-      let r = -1;
-      for (let x = 0; x < w; x++) {
-        if (paper[y * w + x]) {
-          l = x;
-          break;
+        run++;
+      } else {
+        if (run > bestRun) {
+          bestRun = run;
+          bestT = T;
+          bestB = B;
         }
-      }
-      for (let x = w - 1; x >= 0; x--) {
-        if (paper[y * w + x]) {
-          r = x;
-          break;
-        }
-      }
-      if (l >= 0 && r > l) {
-        ls.push(l);
-        rs.push(r);
+        T = -1;
+        B = -1;
+        run = 0;
       }
     }
-    return {
-      l: ls.length ? pct(ls, 0.2) : L,
-      r: rs.length ? pct(rs, 0.8) : R,
-    };
-  };
+    if (run > bestRun) {
+      bestRun = run;
+      bestT = T;
+      bestB = B;
+    }
+    if (bestT >= 0 && bestB - bestT > h * 0.28) {
+      topY.push(bestT);
+      botY.push(bestB);
+    }
+  }
 
-  const topBand = sampleLR(T, Math.min(h, T + band));
-  const botBand = sampleLR(Math.max(0, B - band), B + 1);
+  if (leftX.length < 12 || topY.length < 12) return null;
 
-  const corners: Point[] = [
-    { x: topBand.l, y: T },
-    { x: topBand.r, y: T },
-    { x: botBand.r, y: B },
-    { x: botBand.l, y: B },
-  ];
+  const ls = [...leftX].sort((a, b) => a - b);
+  const rs = [...rightX].sort((a, b) => a - b);
+  const ts = [...topY].sort((a, b) => a - b);
+  const bs = [...botY].sort((a, b) => a - b);
 
-  return refineByGradient(imageData, orderCorners(corners));
+  const L = pctSorted(ls, 0.2);
+  const R = pctSorted(rs, 0.8);
+  const T = pctSorted(ts, 0.2);
+  const B = pctSorted(bs, 0.8);
+  if (R - L < w * 0.25 || B - T < h * 0.25) return null;
+
+  return orderCorners([
+    { x: L, y: T },
+    { x: R, y: T },
+    { x: R, y: B },
+    { x: L, y: B },
+  ]);
 }
 
-/** Gradient bo‘yicha burchaklarni biroz siljitish */
+/** Gradient bo‘yicha burchaklarni qisqa masofada aniqlashtirish (ichkariga ustunlik) */
 function refineByGradient(imageData: ImageData, corners: Point[]): Point[] {
   const { width: w, height: h, data } = imageData;
   const gray = new Float32Array(w * h);
   for (let i = 0, p = 0; i < gray.length; i++, p += 4) {
-    gray[i] = luminance(data[p], data[p + 1], data[p + 2]);
+    gray[i] = luminance(data[p]!, data[p + 1]!, data[p + 2]!);
   }
   const mag = (x: number, y: number) => {
     if (x < 1 || y < 1 || x >= w - 1 || y >= h - 1) return 0;
     const i = y * w + x;
     const gx =
-      -gray[i - w - 1] +
-      gray[i - w + 1] -
-      2 * gray[i - 1] +
-      2 * gray[i + 1] -
-      gray[i + w - 1] +
-      gray[i + w + 1];
+      -gray[i - w - 1]! +
+      gray[i - w + 1]! -
+      2 * gray[i - 1]! +
+      2 * gray[i + 1]! -
+      gray[i + w - 1]! +
+      gray[i + w + 1]!;
     const gy =
-      -gray[i - w - 1] -
-      2 * gray[i - w] -
-      gray[i - w + 1] +
-      gray[i + w - 1] +
-      2 * gray[i + w] +
-      gray[i + w + 1];
+      -gray[i - w - 1]! -
+      2 * gray[i - w]! -
+      gray[i - w + 1]! +
+      gray[i + w - 1]! +
+      2 * gray[i + w]! +
+      gray[i + w + 1]!;
     return Math.hypot(gx, gy);
   };
 
-  const rad = Math.max(12, Math.floor(Math.min(w, h) * 0.04));
+  const cx = w / 2;
+  const cy = h / 2;
+  const rad = Math.max(8, Math.floor(Math.min(w, h) * 0.025));
+
   return orderCorners(
     corners.map((c) => {
       let best = c;
-      let bestM = mag(Math.round(c.x), Math.round(c.y));
-      for (let dy = -rad; dy <= rad; dy += 2) {
-        for (let dx = -rad; dx <= rad; dx += 2) {
+      let bestScore = -1;
+      for (let dy = -rad; dy <= rad; dy += 1) {
+        for (let dx = -rad; dx <= rad; dx += 1) {
           const x = clamp(Math.round(c.x + dx), 1, w - 2);
           const y = clamp(Math.round(c.y + dy), 1, h - 2);
           const m = mag(x, y);
-          if (m > bestM) {
-            bestM = m;
+          // Markazga yaqinroq (ichkariga) biroz bonus — orqa fon chekkasiga tortilmasin
+          const inward =
+            1 + 0.15 * (1 - Math.hypot(x - cx, y - cy) / (Math.hypot(w, h) / 2));
+          const score = m * inward;
+          if (score > bestScore) {
+            bestScore = score;
             best = { x, y };
           }
         }
@@ -253,11 +427,107 @@ function refineByGradient(imageData: ImageData, corners: Point[]): Point[] {
   );
 }
 
-export function orderCorners(pts: Point[]): Point[] {
-  const sorted = [...pts].sort((a, b) => a.y - b.y);
-  const top = sorted.slice(0, 2).sort((a, b) => a.x - b.x);
-  const bottom = sorted.slice(2, 4).sort((a, b) => a.x - b.x);
-  return [top[0]!, top[1]!, bottom[1]!, bottom[0]!];
+function scoreQuad(corners: Point[], w: number, h: number): number {
+  const [tl, tr, br, bl] = orderCorners(corners);
+  const area =
+    0.5 *
+    Math.abs(
+      tl.x * tr.y +
+        tr.x * br.y +
+        br.x * bl.y +
+        bl.x * tl.y -
+        (tr.x * tl.y + br.x * tr.y + bl.x * br.y + tl.x * bl.y),
+    );
+  const areaRatio = area / (w * h);
+  if (areaRatio < 0.1 || areaRatio > 0.95) return 0;
+
+  const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
+  const top = dist(tl, tr);
+  const bottom = dist(bl, br);
+  const left = dist(tl, bl);
+  const right = dist(tr, br);
+  if (top < 10 || bottom < 10 || left < 10 || right < 10) return 0;
+
+  const avgW = (top + bottom) / 2;
+  const avgH = (left + right) / 2;
+  const aspect = avgH / avgW;
+  // A4 ~1.41; biroz kengroq/torroq ham bo‘lishi mumkin
+  const aspectScore = 1 - Math.min(1, Math.abs(aspect - 1.414) / 1.2);
+
+  const parallel =
+    1 -
+    Math.min(1, Math.abs(top - bottom) / Math.max(top, bottom)) * 0.5 -
+    Math.min(1, Math.abs(left - right) / Math.max(left, right)) * 0.5;
+
+  return areaRatio * 0.45 + aspectScore * 0.3 + parallel * 0.25;
+}
+
+/** Aniqlash uchun kichikroq rasm — tez va barqaror */
+function downscaleForDetect(imageData: ImageData, maxSide = 640): {
+  data: ImageData;
+  scale: number;
+} {
+  const { width: w, height: h } = imageData;
+  const scale = Math.min(1, maxSide / Math.max(w, h));
+  if (scale >= 0.999) return { data: imageData, scale: 1 };
+  const nw = Math.max(1, Math.round(w * scale));
+  const nh = Math.max(1, Math.round(h * scale));
+  const src = document.createElement("canvas");
+  src.width = w;
+  src.height = h;
+  src.getContext("2d")!.putImageData(imageData, 0, 0);
+  const c = document.createElement("canvas");
+  c.width = nw;
+  c.height = nh;
+  const ctx = c.getContext("2d", { willReadFrequently: true })!;
+  ctx.drawImage(src, 0, 0, nw, nh);
+  return { data: ctx.getImageData(0, 0, nw, nh), scale };
+}
+
+/**
+ * Qog‘ozni topish: avvalo markaz flood-fill, keyin yorug‘ segmentlar.
+ * Natija — faqat list burchaklari (orqa fon emas).
+ */
+export function detectDocumentCorners(imageData: ImageData): Point[] {
+  const fullW = imageData.width;
+  const fullH = imageData.height;
+  const { data: small, scale } = downscaleForDetect(imageData, 640);
+  const { width: w, height: h, data } = small;
+  const gray = new Float32Array(w * h);
+  for (let i = 0, p = 0; i < gray.length; i++, p += 4) {
+    gray[i] = luminance(data[p]!, data[p + 1]!, data[p + 2]!);
+  }
+
+  const candidates: Point[][] = [];
+
+  const mask = paperMaskFromCenter(gray, w, h);
+  if (mask) {
+    const fromMask = cornersFromMask(mask, w, h);
+    if (fromMask) candidates.push(fromMask);
+  }
+
+  const fromBounds = cornersFromBrightBounds(gray, w, h);
+  if (fromBounds) candidates.push(fromBounds);
+
+  candidates.push(defaultCorners(w, h));
+
+  let best = candidates[0]!;
+  let bestScore = -1;
+  for (const c of candidates) {
+    const s = scoreQuad(c, w, h);
+    if (s > bestScore) {
+      bestScore = s;
+      best = c;
+    }
+  }
+
+  // To‘liq o‘lchamga qaytarish
+  const scaled = orderCorners(best).map((p) => ({
+    x: p.x / scale,
+    y: p.y / scale,
+  }));
+  const refined = refineByGradient(imageData, scaled);
+  return insetCorners(refined, fullW, fullH, 0.018);
 }
 
 /** 4 burchak + 4 o‘rta tutqich (CamScanner uslubi) */
@@ -293,29 +563,29 @@ export function applyHandleDrag(
       c[0] = p;
       break;
     case 1:
-      c[0].y = p.y;
-      c[1].y = p.y;
+      c[0]!.y = p.y;
+      c[1]!.y = p.y;
       break;
     case 2:
       c[1] = p;
       break;
     case 3:
-      c[1].x = p.x;
-      c[2].x = p.x;
+      c[1]!.x = p.x;
+      c[2]!.x = p.x;
       break;
     case 4:
       c[2] = p;
       break;
     case 5:
-      c[2].y = p.y;
-      c[3].y = p.y;
+      c[2]!.y = p.y;
+      c[3]!.y = p.y;
       break;
     case 6:
       c[3] = p;
       break;
     case 7:
-      c[0].x = p.x;
-      c[3].x = p.x;
+      c[0]!.x = p.x;
+      c[3]!.x = p.x;
       break;
   }
   return orderCorners(c);
@@ -424,6 +694,18 @@ export function warpToA4(
   return out;
 }
 
+/** Tezkor preview uchun kichik warp */
+export function warpPreview(
+  source: ImageData,
+  corners: Point[],
+  maxSide = 420,
+): ImageData {
+  const aspect = A4_HEIGHT / A4_WIDTH;
+  const outW = maxSide;
+  const outH = Math.round(maxSide * aspect);
+  return warpToA4(source, corners, outW, outH);
+}
+
 /**
  * Professional skaner: dog‘/soya yo‘qoladi, oq qog‘oz + qora matn.
  */
@@ -437,7 +719,6 @@ export function enhanceDocument(imageData: ImageData, mode: ScanMode = "bw"): Im
     gray[i] = luminance(data[p]!, data[p + 1]!, data[p + 2]!);
   }
 
-  // Percentile stretch — kontrast
   const sample: number[] = [];
   const step = Math.max(1, Math.floor(gray.length / 8000));
   for (let i = 0; i < gray.length; i += step) sample.push(gray[i]!);
@@ -451,7 +732,6 @@ export function enhanceDocument(imageData: ImageData, mode: ScanMode = "bw"): Im
     stretched[i] = clamp(((gray[i]! - lo) / span) * 255, 0, 255);
   }
 
-  // Integral image — adaptive
   const integ = new Float64Array((w + 1) * (h + 1));
   for (let y = 1; y <= h; y++) {
     let rowSum = 0;
@@ -484,12 +764,14 @@ export function enhanceDocument(imageData: ImageData, mode: ScanMode = "bw"): Im
       const y0 = y - half;
       const x1 = x + half + 1;
       const y1 = y + half + 1;
-      const area = Math.max(1, (Math.min(w, x1) - Math.max(0, x0)) * (Math.min(h, y1) - Math.max(0, y0)));
+      const area = Math.max(
+        1,
+        (Math.min(w, x1) - Math.max(0, x0)) * (Math.min(h, y1) - Math.max(0, y0)),
+      );
       const mean = rectSum(x0, y0, x1, y1) / area;
 
       if (mode === "color") {
         const gain = clamp((g - mean) * 1.4 + 140, 0, 255) / (g + 1e-3);
-        // Fonni oqqa yaqinlashtirish
         const wr = clamp(data[p]! * gain * 0.5 + (g > mean * 0.95 ? 245 : g), 0, 255);
         const wg = clamp(data[p + 1]! * gain * 0.5 + (g > mean * 0.95 ? 245 : g), 0, 255);
         const wb = clamp(data[p + 2]! * gain * 0.5 + (g > mean * 0.95 ? 245 : g), 0, 255);
@@ -504,14 +786,12 @@ export function enhanceDocument(imageData: ImageData, mode: ScanMode = "bw"): Im
         od[p] = od[p + 1] = od[p + 2] = v;
         od[p + 3] = 255;
       } else {
-        // B&W CamScanner: oq fon, qora matn, soft edges
         const thr = mean * 0.94;
         const diff = thr - g;
         let ink: number;
         if (diff > 18) ink = 12;
         else if (diff < -12) ink = 255;
         else ink = clamp(200 - diff * 10, 12, 255);
-        // Juda ochiq — sof oq
         if (g > mean * 1.02 && g > 160) ink = 255;
         od[p] = od[p + 1] = od[p + 2] = ink;
         od[p + 3] = 255;

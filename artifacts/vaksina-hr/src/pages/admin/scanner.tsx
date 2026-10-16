@@ -39,16 +39,20 @@ export default function AdminScannerPage() {
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
+      <Card className="overflow-hidden border-emerald-200/60 shadow-sm">
+        <CardHeader className="bg-gradient-to-br from-emerald-50 to-transparent dark:from-emerald-950/40">
           <CardTitle className="text-base">Yangi skan</CardTitle>
           <CardDescription>
-            Bir necha sahifa qo‘shish mumkin. Tayyor PDF ni saqlang, yuklab oling yoki Telegramga
-            yuboring.
+            Listni ramkaga oling → yashil chetni tuzating → skaner. Orqa fon PDF ga kirmaydi.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <Button type="button" size="lg" className="w-full sm:w-auto" onClick={() => setOpen(true)}>
+        <CardContent className="space-y-4 pt-4">
+          <Button
+            type="button"
+            size="lg"
+            className="w-full bg-emerald-600 hover:bg-emerald-500 sm:w-auto"
+            onClick={() => setOpen(true)}
+          >
             <ScanLine className="mr-2 h-5 w-5" />
             Skannerini ochish
           </Button>

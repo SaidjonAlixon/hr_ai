@@ -2030,7 +2030,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       opts.collapsed && 'justify-center px-0 py-2',
       opts.nested
         ? cn(
-            'rounded-lg px-2 py-1.5',
+            'rounded-xl px-2.5 py-2',
             active
               ? 'app-sidebar-nested-item-active'
               : 'app-sidebar-nested-item',
@@ -2230,7 +2230,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             )}
           >
             <div className="overflow-hidden">
-              <div className="app-sidebar-nested-panel mt-1 flex flex-col gap-0.5">
+              <div className="app-sidebar-nested-panel mt-1.5">
                 {section.items.map((item, itemIndex) =>
                   renderNavItem(item, {
                     ...opts,

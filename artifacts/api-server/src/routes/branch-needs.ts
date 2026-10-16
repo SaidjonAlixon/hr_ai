@@ -10,7 +10,7 @@ import {
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { notifyByRoles, notifyUser } from "../lib/notify";
-import { HR_ROLES, isDirectorRole } from "../lib/roles";
+import { HR_ROLES, isDirectorRole, isHrRole } from "../lib/roles";
 import { displayBranchName } from "../lib/geo-location";
 
 function branchTitle(raw: string | null | undefined): string {
@@ -21,16 +21,56 @@ const router: IRouter = Router();
 
 const BRANCH_STAFF_ROLES = new Set(["mudir", "farmasevt", "stajyor", "stajor"]);
 
+function isActiveEmployee(e: { employmentStatus?: string | null }) {
+  return e.employmentStatus !== "dismissed";
+}
+
+/** Foydalanuvchining o‘zi filial mudiri (orgRole=manager) ekanligi */
+async function myManagerEmployee(userId: number) {
+  const mine = await db.select().from(employeesTable).where(eq(employeesTable.userId, userId));
+  return (
+    mine.find((e) => e.orgRole === "manager" && isActiveEmployee(e)) ??
+    mine.find((e) => e.orgRole === "manager") ??
+    null
+  );
+}
+
 /** Mudir — o‘z filiali; farmasevt/stajyor — biriktirilgan filiali (assignedBranchId yoki reportsTo) */
 async function myBranchManager(userId: number) {
-  const mine = await db.select().from(employeesTable).where(eq(employeesTable.userId, userId));
-  const asManager = mine.find((e) => e.orgRole === "manager");
+  const asManager = await myManagerEmployee(userId);
   if (asManager) return asManager;
-  const me = mine.find((e) => e.employmentStatus !== "dismissed") ?? mine[0];
+  const mine = await db.select().from(employeesTable).where(eq(employeesTable.userId, userId));
+  const me = mine.find((e) => isActiveEmployee(e)) ?? mine[0];
   const branchId = me?.assignedBranchId ?? me?.reportsToId;
   if (!branchId) return null;
   const [branch] = await db.select().from(employeesTable).where(eq(employeesTable.id, branchId));
   return branch?.orgRole === "manager" ? branch : null;
+}
+
+/** Ehtiyoj yozishi mumkin: mudir roli yoki apteka mudiri (orgRole=manager) */
+async function canCreateBranchNeed(role: string, userId: number | undefined): Promise<boolean> {
+  if (WRITE_ROLES.has(role)) return true;
+  if (!userId || !BRANCH_STAFF_ROLES.has(role)) return false;
+  return Boolean(await myManagerEmployee(userId));
+}
+
+/** Mudir sifatida filialni aniqlash (rol mudir yoki orgRole=manager) */
+async function resolveCreatorBranch(userId: number, role: string) {
+  const asManager = await myManagerEmployee(userId);
+  if (asManager) return asManager;
+  if (role !== "mudir") return null;
+  // Rol mudir, lekin orgRole boshqacha — baribir o‘z xodim kartochkasidan filial
+  const mine = await db.select().from(employeesTable).where(eq(employeesTable.userId, userId));
+  const me = mine.find((e) => isActiveEmployee(e)) ?? mine[0];
+  if (!me) return null;
+  if (me.orgRole === "manager") return me;
+  const branchId = me.assignedBranchId ?? me.reportsToId;
+  if (branchId) {
+    const [branch] = await db.select().from(employeesTable).where(eq(employeesTable.id, branchId));
+    if (branch?.orgRole === "manager") return branch;
+  }
+  // Oxirgi chora: mudirning o‘z kartochkasi filial sifatida
+  return me;
 }
 
 const VIEW_ROLES = new Set([
@@ -217,6 +257,8 @@ router.get("/branch-needs/my-branch", requireAuth, async (req: AuthRequest, res)
     res.json({ branch: null });
     return;
   }
+  const selfManager = await myManagerEmployee(req.userId);
+  const isManager = Boolean(selfManager) || role === "mudir";
   let coordinatorName: string | null = null;
   if (mgr.reportsToId) {
     const [coord] = await db
@@ -231,6 +273,8 @@ router.get("/branch-needs/my-branch", requireAuth, async (req: AuthRequest, res)
       branchName: branchTitle(mgr.location),
       managerName: mgr.employmentStatus === "no_manager" ? null : mgr.fullName,
       coordinatorName,
+      isManager,
+      canCreateNeed: isManager || WRITE_ROLES.has(role),
     },
   });
 });
@@ -266,8 +310,8 @@ router.get("/branch-needs/assignees", requireAuth, async (req: AuthRequest, res)
 
 router.post("/branch-needs", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole ?? "";
-  if (!WRITE_ROLES.has(role)) {
-    res.status(403).json({ error: "Ruxsat yoʻq" });
+  if (!(await canCreateBranchNeed(role, req.userId))) {
+    res.status(403).json({ error: "Ruxsat yoʻq — ehtiyojni filial mudiri yuboradi" });
     return;
   }
 
@@ -285,10 +329,16 @@ router.post("/branch-needs", requireAuth, async (req: AuthRequest, res): Promise
   let mgrId = managerEmployeeId ? Number(managerEmployeeId) : null;
   let branch = typeof branchLocation === "string" ? branchLocation.trim() : "";
 
-  if (role === "mudir" && req.userId) {
-    const myMgr = await myBranchManager(req.userId);
+  const asBranchManager =
+    req.userId &&
+    (role === "mudir" || Boolean(await myManagerEmployee(req.userId)));
+
+  if (asBranchManager && req.userId) {
+    const myMgr = await resolveCreatorBranch(req.userId, role);
     if (!myMgr) {
-      res.status(400).json({ error: "Filial bogʻlanmagan" });
+      res.status(400).json({
+        error: "Filial bogʻlanmagan. HR yoki koordinator sizni filial mudiri sifatida biriktirishi kerak.",
+      });
       return;
     }
     mgrId = myMgr.id;
@@ -524,7 +574,9 @@ router.post("/branch-needs/:id/confirm", requireAuth, async (req: AuthRequest, r
 /** Mudir yoki koordinator — xodim bajarganini yakuniy tasdiqlaydi (baza saqlanadi) */
 router.post("/branch-needs/:id/verify", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole ?? "";
-  if (!VERIFY_ROLES.has(role)) {
+  const selfMgr = req.userId ? await myManagerEmployee(req.userId) : null;
+  const isMudirLike = role === "mudir" || Boolean(selfMgr);
+  if (!VERIFY_ROLES.has(role) && !selfMgr) {
     res.status(403).json({ error: "Faqat mudir yoki koordinator yakuniy tasdiqlashi mumkin" });
     return;
   }
@@ -545,10 +597,8 @@ router.post("/branch-needs/:id/verify", requireAuth, async (req: AuthRequest, re
     return;
   }
 
-  if (role === "mudir" && req.userId) {
-    const myMgr = (
-      await db.select().from(employeesTable).where(eq(employeesTable.userId, req.userId))
-    ).find((e) => e.orgRole === "manager");
+  if (isMudirLike && req.userId && !CONFIRM_ROLES.has(role) && !isHrRole(role) && role !== "admin") {
+    const myMgr = selfMgr ?? (await resolveCreatorBranch(req.userId, role));
     if (!myMgr || row.managerEmployeeId !== myMgr.id) {
       res.status(403).json({ error: "Faqat o‘z filial ehtiyojini tasdiqlashingiz mumkin" });
       return;
@@ -587,7 +637,8 @@ router.post("/branch-needs/:id/verify", requireAuth, async (req: AuthRequest, re
 
 router.post("/branch-needs/:id/close", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole ?? "";
-  if (!WRITE_ROLES.has(role) && !isDirectorRole(role)) {
+  const selfMgr = req.userId ? await myManagerEmployee(req.userId) : null;
+  if (!WRITE_ROLES.has(role) && !isDirectorRole(role) && !selfMgr) {
     res.status(403).json({ error: "Ruxsat yoʻq" });
     return;
   }
@@ -603,10 +654,9 @@ router.post("/branch-needs/:id/close", requireAuth, async (req: AuthRequest, res
     return;
   }
 
-  if (role === "mudir" && req.userId) {
-    const myMgr = (
-      await db.select().from(employeesTable).where(eq(employeesTable.userId, req.userId))
-    ).find((e) => e.orgRole === "manager");
+  const isMudirLike = role === "mudir" || Boolean(selfMgr);
+  if (isMudirLike && req.userId && !CONFIRM_ROLES.has(role) && role !== "admin" && !isDirectorRole(role)) {
+    const myMgr = selfMgr ?? (await resolveCreatorBranch(req.userId, role));
     if (!myMgr || row.managerEmployeeId !== myMgr.id) {
       res.status(403).json({ error: "Faqat o‘z filial ehtiyojini yopishingiz mumkin" });
       return;

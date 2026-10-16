@@ -251,18 +251,17 @@
   box-shadow: inset 3px 0 0 0 #7dd3fc;
 }
 
-/* Kartasiz bo‘lim — faqat pastki chiziq */
+/* Bo‘lim kartasi — yumshoq, chiziqsiz */
 .app-sidebar-section-card {
   --sec: #0284c7;
   --sec-soft: rgba(2, 132, 199, 0.1);
   --sec-glow: rgba(2, 132, 199, 0.28);
   border: none;
-  border-radius: 0;
+  border-radius: 1rem;
   background: transparent;
-  padding: 0.15rem 0 0.55rem;
-  margin-bottom: 0.15rem;
+  padding: 0.2rem;
+  margin-bottom: 0.35rem;
   box-shadow: none;
-  border-bottom: 1px solid rgb(15 23 42 / 0.07);
 }
 
 .app-sidebar-section-card[data-tone='main'] { --sec: #0284c7; --sec-soft: rgba(2,132,199,.12); --sec-glow: rgba(2,132,199,.3); }
@@ -278,15 +277,14 @@
 .app-sidebar-section-card[data-tone='other'] { --sec: #64748b; --sec-soft: rgba(100,116,139,.12); --sec-glow: rgba(100,116,139,.25); }
 
 .app-sidebar-section-card-open {
-  border-bottom-color: color-mix(in srgb, var(--sec) 40%, transparent);
+  background: color-mix(in srgb, var(--sec) 5%, transparent);
 }
 .app-sidebar-section-card-active {
-  border-bottom-color: color-mix(in srgb, var(--sec) 55%, transparent);
+  background: color-mix(in srgb, var(--sec) 7%, transparent);
 }
 
 .dark .app-sidebar-section-card {
   background: transparent;
-  border-bottom: 1px solid rgb(255 255 255 / 0.06);
   box-shadow: none;
 }
 .dark .app-sidebar-section-card[data-tone='main'] { --sec: #38bdf8; --sec-soft: rgba(56,189,248,.16); --sec-glow: rgba(56,189,248,.4); }
@@ -303,8 +301,7 @@
 
 .dark .app-sidebar-section-card-open,
 .dark .app-sidebar-section-card-active {
-  background: transparent;
-  border-bottom-color: color-mix(in srgb, var(--sec) 40%, transparent);
+  background: color-mix(in srgb, var(--sec) 8%, transparent);
 }
 
 .app-sidebar-section-open { @apply bg-transparent ring-0 shadow-none; }
@@ -318,8 +315,8 @@
   letter-spacing: 0.02em;
   text-transform: uppercase;
   font-size: 11px !important;
-  border-radius: 0.55rem;
-  padding-block: 0.45rem !important;
+  border-radius: 0.85rem;
+  padding-block: 0.5rem !important;
 }
 .app-sidebar-section-trigger:hover {
   background: rgb(15 23 42 / 0.04);
@@ -337,16 +334,16 @@
   background: rgb(255 255 255 / 0.05);
 }
 .dark .app-sidebar-section-trigger-open {
-  background: rgb(255 255 255 / 0.04);
+  background: color-mix(in srgb, var(--sec) 14%, transparent);
   color: var(--sec);
 }
 
 .app-sidebar-section-icon {
-  background: transparent;
-  color: var(--sec);
+  background: var(--sec);
+  color: var(--sb-icon-on);
   border-radius: 999px;
-  border: 1.5px solid color-mix(in srgb, var(--sec) 50%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sec) 10%, transparent);
+  border: none;
+  box-shadow: 0 4px 12px -4px var(--sec-glow);
   transition:
     transform 0.25s cubic-bezier(0.34, 1.45, 0.64, 1),
     background 0.2s ease,
@@ -355,28 +352,27 @@
 }
 .app-sidebar-section-trigger:hover .app-sidebar-section-icon,
 .app-sidebar-section-trigger-open .app-sidebar-section-icon {
-  transform: scale(1.1);
-  background: var(--sec);
-  color: var(--sb-icon-on);
-  border-color: var(--sec);
-  box-shadow: 0 0 18px -4px var(--sec-glow);
+  transform: scale(1.06);
+  box-shadow: 0 6px 16px -4px var(--sec-glow);
 }
 
+/* Ichki menyu — yumshoq panel, daraxt chiziqlari yo‘q */
 .app-sidebar-nested-panel {
-  border-radius: 0;
-  background: transparent;
+  border-radius: 0.85rem;
+  background: rgb(15 23 42 / 0.03);
   border: none;
-  border-left: 2px solid color-mix(in srgb, var(--sec) 30%, transparent);
-  margin-left: 1.05rem;
-  padding: 0.25rem 0 0.15rem 0.55rem;
+  margin-left: 0;
+  padding: 0.3rem;
   box-shadow: none;
   backdrop-filter: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
 }
 
 .dark .app-sidebar-nested-panel {
-  background: transparent;
+  background: rgb(255 255 255 / 0.04);
   border: none;
-  border-left: 2px solid color-mix(in srgb, var(--sec) 30%, transparent);
   box-shadow: none;
 }
 
@@ -420,49 +416,49 @@
 .app-sidebar-nested-item {
   color: #475569;
   font-weight: 500;
-  border-radius: 0.5rem;
+  border-radius: 0.7rem;
   position: relative;
-  transition: background 0.18s ease, color 0.18s ease, padding-left 0.18s ease;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
 }
 .app-sidebar-nested-item:hover {
-  background: rgb(15 23 42 / 0.04);
+  background: rgb(255 255 255 / 0.85);
   color: #0f172a;
-  padding-left: 0.65rem;
+  box-shadow: 0 1px 4px rgb(15 23 42 / 0.04);
 }
 .app-sidebar-nested-item-active {
-  background: var(--sec-soft);
+  background: #fff;
   color: #0f172a;
   font-weight: 700;
-  box-shadow: none;
-}
-.app-sidebar-nested-item-active::before {
-  content: '';
-  position: absolute;
-  left: -0.7rem;
-  top: 50%;
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 999px;
-  background: var(--sec);
-  transform: translateY(-50%);
-  box-shadow: 0 0 10px var(--sec-glow);
+  box-shadow:
+    0 2px 8px -2px rgb(15 23 42 / 0.08),
+    inset 3px 0 0 0 var(--sec);
 }
 
 .dark .app-sidebar-nested-item {
-  color: rgb(226 232 240 / 0.7);
+  color: rgb(226 232 240 / 0.72);
 }
 .dark .app-sidebar-nested-item:hover {
-  background: rgb(255 255 255 / 0.05);
-  color: #fff;
-}
-.dark .app-sidebar-nested-item-active {
-  background: color-mix(in srgb, var(--sec) 16%, transparent);
+  background: rgb(255 255 255 / 0.06);
   color: #fff;
   box-shadow: none;
 }
+.dark .app-sidebar-nested-item-active {
+  background: color-mix(in srgb, var(--sec) 18%, rgb(15 23 42));
+  color: #fff;
+  box-shadow: inset 3px 0 0 0 var(--sec);
+}
 
 .app-sidebar-active-dot {
-  display: none;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--sec);
+  box-shadow: 0 0 8px var(--sec-glow);
+  display: block;
 }
 
 .app-sidebar-help-card {

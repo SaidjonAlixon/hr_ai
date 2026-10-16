@@ -34,8 +34,8 @@ export default function AdminScannerPage() {
           Hujjat skaneri
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          A4 varaqni kamera orqali professional skaner qiling — avto-kesish, oq fonda qora matn,
-          PDF, Telegram va yuklab olish.
+          A4 skaner: pechat/muhur/imzo ranglari saqlanadi. PDF 1 soat saqlanadi, Tushuntirish xatlari
+          bo‘limiga ham yuboriladi.
         </p>
       </div>
 
@@ -43,7 +43,8 @@ export default function AdminScannerPage() {
         <CardHeader className="bg-gradient-to-br from-emerald-50 to-transparent dark:from-emerald-950/40">
           <CardTitle className="text-base">Yangi skan</CardTitle>
           <CardDescription>
-            Listni ramkaga oling → yashil chetni tuzating → skaner. Orqa fon PDF ga kirmaydi.
+            Listni ramkaga oling → yashil chetni tuzating → skaner. Muhur/imzo rangli qoladi. PDF 1
+            soat ichida TG/yuklash mumkin.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 pt-4">

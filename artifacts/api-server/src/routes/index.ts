@@ -68,6 +68,7 @@ import vaksinamedRouter from "./vaksinamed";
 import publicFilialMapRouter from "./public-filial-map";
 import disciplineRouter from "./discipline";
 import explanationLettersRouter from "./explanation-letters";
+import scannerDocsRouter from "./scanner-docs";
 import abetRouter from "./abet";
 
 const router: IRouter = Router();
@@ -75,6 +76,7 @@ const router: IRouter = Router();
 router.use(healthRouter);
 router.use(disciplineRouter);
 router.use(explanationLettersRouter);
+router.use(scannerDocsRouter);
 router.use(abetRouter);
 router.use(publicFilialMapRouter);
 router.use(uploadsRouter);

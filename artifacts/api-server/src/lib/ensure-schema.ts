@@ -1733,6 +1733,7 @@ CREATE INDEX IF NOT EXISTS mobile_att_audit_action_idx ON mobile_attendance_audi
   }
 
   await ensureZonePresenceSchema();
+  await ensureScannerDocsSchema();
 
   try {
     const { syncAllRoleDepartmentAssignments } = await import("./role-departments");
@@ -2278,6 +2279,39 @@ export async function ensureRevisionVisitsSchema(): Promise<void> {
     logger.info("Revision visits schema ensured");
   } catch (err) {
     logger.warn({ err }, "Revision visits schema ensure failed");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+const SCANNER_DOCS_SQL = `
+CREATE TABLE IF NOT EXISTS scanner_docs (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  user_name TEXT,
+  user_role TEXT,
+  filename TEXT NOT NULL,
+  file_url TEXT NOT NULL,
+  file_key TEXT,
+  size INTEGER NOT NULL DEFAULT 0,
+  page_count INTEGER NOT NULL DEFAULT 1,
+  sent_to_tx BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS scanner_docs_expires_idx ON scanner_docs (expires_at);
+CREATE INDEX IF NOT EXISTS scanner_docs_user_idx ON scanner_docs (user_id);
+CREATE INDEX IF NOT EXISTS scanner_docs_created_idx ON scanner_docs (created_at DESC);
+`;
+
+export async function ensureScannerDocsSchema(): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query(SCANNER_DOCS_SQL);
+    logger.info("Scanner docs schema ensured");
+  } catch (err) {
+    logger.warn({ err }, "Scanner docs schema ensure failed");
     throw err;
   } finally {
     client.release();

@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   CalendarX2,
   CheckCircle2,
@@ -11,6 +12,7 @@ import {
   Loader2,
   MapPin,
   Phone,
+  ScanLine,
   Search,
   Send,
   ShieldCheck,
@@ -56,6 +58,12 @@ import {
   useSendLetterReport,
   type ExplanationLetter,
 } from "@/lib/explanation-letters-api";
+import {
+  fetchScannerDocsInbox,
+  formatExpiresIn,
+  scannerDocDownloadUrl,
+  type ScannerDoc,
+} from "@/lib/scanner-docs-api";
 
 type StatusTab = "all" | "waiting" | "decide" | "approved" | "cancelled";
 type KindTab = "all" | "late" | "absent";
@@ -310,6 +318,8 @@ export default function TushuntirishXatlariPage() {
           </Button>
         </div>
       </header>
+
+      <ScannerInboxPanel enabled={allowed} />
 
       <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
         <StaffGroupTabs value={group} onChange={setGroup} counts={q.isLoading ? undefined : groupCounts} className="lg:max-w-xl lg:flex-1" />
@@ -750,6 +760,67 @@ export default function TushuntirishXatlariPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+function ScannerInboxPanel({ enabled }: { enabled: boolean }) {
+  const q = useQuery({
+    queryKey: ["scanner-docs", "inbox"],
+    queryFn: fetchScannerDocsInbox,
+    enabled,
+    refetchInterval: 60_000,
+  });
+  const items = q.data ?? [];
+  if (!enabled) return null;
+  return (
+    <section className="rounded-2xl border border-violet-200 bg-violet-50/50 p-3 dark:border-violet-500/25 dark:bg-violet-500/5">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-600 text-white">
+          <ScanLine className="h-4 w-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-bold text-slate-900 dark:text-white">Tizim skaneri · kelgan PDF lar</p>
+          <p className="text-[11px] text-slate-500">
+            Kim skaner qilsa — shu yerga va Telegram TX guruhiga tushadi. 1 soatdan keyin bazadan o‘chadi.
+          </p>
+        </div>
+        <span className="rounded-full bg-violet-600/15 px-2.5 py-1 text-xs font-bold tabular-nums text-violet-800 dark:text-violet-200">
+          {q.isLoading ? "…" : items.length}
+        </span>
+      </div>
+      {q.isLoading ? (
+        <p className="py-3 text-center text-xs text-slate-500">Yuklanmoqda…</p>
+      ) : !items.length ? (
+        <p className="py-3 text-center text-xs text-slate-500">Hozircha faol skaner fayli yo‘q</p>
+      ) : (
+        <ul className="max-h-48 space-y-1.5 overflow-y-auto">
+          {items.map((d: ScannerDoc) => (
+            <li
+              key={d.id}
+              className="flex flex-wrap items-center gap-2 rounded-xl border border-violet-100 bg-white px-2.5 py-2 text-xs dark:border-white/10 dark:bg-slate-900/60"
+            >
+              <span className="min-w-0 flex-1 truncate font-semibold text-slate-800 dark:text-slate-100">
+                {d.filename}
+                <span className="ml-1.5 font-normal text-slate-500">
+                  · {d.userName || "—"}
+                  {d.userRole ? ` (${d.userRole})` : ""} · {d.pageCount} sahifa
+                </span>
+              </span>
+              <span className="tabular-nums text-violet-700 dark:text-violet-300">
+                {formatExpiresIn(d.expiresInSec)}
+              </span>
+              <a
+                href={scannerDocDownloadUrl(d.id)}
+                className="inline-flex h-7 items-center gap-1 rounded-lg bg-violet-600 px-2 font-semibold text-white hover:bg-violet-500"
+              >
+                <FileDown className="h-3.5 w-3.5" />
+                Yuklash
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

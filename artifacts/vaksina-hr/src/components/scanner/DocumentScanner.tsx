@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { deliverFile } from "@/lib/tg-download";
+import { formatExpiresIn, saveScannerDoc, type ScannerDoc } from "@/lib/scanner-docs-api";
 import {
   type Point,
   type ScanMode,
@@ -99,12 +100,14 @@ export function DocumentScanner({
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [corners, setCorners] = useState<Point[]>([]);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
-  const [mode, setMode] = useState<ScanMode>("bw");
+  // Rangli pechat/muhur/imzo saqlanadi (yumshoq skaner)
+  const [mode, setMode] = useState<ScanMode>("color");
   const [pages, setPages] = useState<HTMLCanvasElement[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [livePreview, setLivePreview] = useState<string | null>(null);
   const [viewIdx, setViewIdx] = useState<number | null>(null);
+  const [savedDoc, setSavedDoc] = useState<ScannerDoc | null>(null);
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -143,6 +146,7 @@ export function DocumentScanner({
       setCorners([]);
       setLivePreview(null);
       setViewIdx(null);
+      setSavedDoc(null);
       setPages([]);
       setPreviewUrls((prev) => {
         prev.forEach((u) => {
@@ -424,16 +428,43 @@ export function DocumentScanner({
     return pagesToPdfBlob(pages, defaultFileName);
   };
 
+  /** PDF yaratish + 1 soat saqlash + TX bo‘limiga yuborish */
+  const persistPdf = async (): Promise<{
+    blob: Blob;
+    filename: string;
+    doc: ScannerDoc | null;
+  } | null> => {
+    const result = await buildPdf();
+    if (!result) return null;
+    if (savedDoc && savedDoc.expiresInSec > 60) {
+      return { blob: result.blob, filename: result.filename, doc: savedDoc };
+    }
+    try {
+      const doc = await saveScannerDoc(result.blob, result.filename, pages.length);
+      setSavedDoc(doc);
+      return { blob: result.blob, filename: result.filename, doc };
+    } catch {
+      return { blob: result.blob, filename: result.filename, doc: null };
+    }
+  };
+
   const finishSave = async () => {
     setSaving(true);
     try {
-      const result = await buildPdf();
-      if (!result) return;
-      if (onComplete) await onComplete(result.blob, result.filename);
+      const persisted = await persistPdf();
+      if (!persisted) return;
+      if (onComplete) await onComplete(persisted.blob, persisted.filename);
       else {
-        await deliverFile(result.blob, result.filename);
-        toast({ title: "PDF tayyor" });
+        await deliverFile(persisted.blob, persisted.filename);
       }
+      toast({
+        title: persisted.doc?.sentToTx
+          ? "PDF tayyor · TX bo‘limiga yuborildi"
+          : "PDF tayyor",
+        description: persisted.doc
+          ? `Yuklash/Telegram: ${formatExpiresIn(persisted.doc.expiresInSec)} (keyin o‘chadi)`
+          : "Mahalliy yetkazildi",
+      });
       onOpenChange(false);
     } catch (err: any) {
       toast({ title: err?.message || "Saqlash xatosi", variant: "destructive" });
@@ -445,11 +476,14 @@ export function DocumentScanner({
   const shareTg = async () => {
     setSaving(true);
     try {
-      const result = await buildPdf();
-      if (!result) return;
-      const r = await deliverFile(result.blob, result.filename);
+      const persisted = await persistPdf();
+      if (!persisted) return;
+      const r = await deliverFile(persisted.blob, persisted.filename);
       toast({
         title: r.via === "telegram" ? "Telegramga yuborildi" : "Yuklab olindi",
+        description: persisted.doc
+          ? `Serverda yana ${formatExpiresIn(persisted.doc.expiresInSec)}`
+          : undefined,
       });
     } catch (err: any) {
       toast({ title: err?.message || "Ulashish xatosi", variant: "destructive" });
@@ -461,15 +495,20 @@ export function DocumentScanner({
   const downloadOnly = async () => {
     setSaving(true);
     try {
-      const result = await buildPdf();
-      if (!result) return;
-      const url = URL.createObjectURL(result.blob);
+      const persisted = await persistPdf();
+      if (!persisted) return;
+      const url = URL.createObjectURL(persisted.blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = result.filename;
+      a.download = persisted.filename;
       a.click();
       URL.revokeObjectURL(url);
-      toast({ title: "PDF yuklab olindi" });
+      toast({
+        title: "PDF yuklab olindi",
+        description: persisted.doc
+          ? `Serverda yana ${formatExpiresIn(persisted.doc.expiresInSec)}`
+          : undefined,
+      });
     } catch (err: any) {
       toast({ title: err?.message || "Yuklash xatosi", variant: "destructive" });
     } finally {
@@ -507,8 +546,10 @@ export function DocumentScanner({
           </DialogTitle>
           <DialogDescription className="text-xs text-zinc-400">
             {step === "capture" && "Listni ramkaga joylashtiring — faqat qog‘oz skaner qilinadi."}
-            {step === "crop" && "Yashil ramkani list chetiga torting. Orqa fon qorong‘i qoladi."}
-            {step === "pages" && "Sahifani bosing — ochib ko‘ring. Kerak bo‘lsa o‘chiring yoki qayta oling."}
+            {step === "crop" &&
+              "Yashil ramkani list chetiga torting. Pechat/muhur/imzo ranglari saqlanadi."}
+            {step === "pages" &&
+              "Sahifani oching · PDF 1 soat saqlanadi · TX bo‘limiga ham yuboriladi."}
             {step === "view" &&
               viewIdx != null &&
               `Sahifa ${viewIdx + 1} — ko‘rib chiqing, keyin davom eting yoki qayta oling.`}
@@ -631,9 +672,9 @@ export function DocumentScanner({
                 <div className="flex flex-1 flex-wrap gap-1.5">
                   {(
                     [
-                      ["bw", "Skaner", Sparkles],
+                      ["color", "Skaner", Sparkles],
+                      ["bw", "Qora-oq", null],
                       ["gray", "Kulrang", null],
-                      ["color", "Rangli", null],
                     ] as const
                   ).map(([k, label, Icon]) => (
                     <button
@@ -692,8 +733,8 @@ export function DocumentScanner({
                     className="h-20 w-14 rounded-md border border-zinc-700 object-cover"
                   />
                   <p className="text-[11px] leading-snug text-zinc-400">
-                    Natija shunday bo‘ladi. Yashil nuqtalarni list chetiga torting — orqa narsalar
-                    kirmasin.
+                    Natija shunday. Muhur/imzo ranglari saqlanadi. Yashil nuqtalarni faqat list
+                    chetiga torting.
                   </p>
                 </div>
               ) : null}
@@ -926,11 +967,15 @@ export function DocumentScanner({
                     Yuklash
                   </Button>
                 </div>
-                <p className={cn("text-center text-[11px] text-zinc-500")}>
-                  {standalone || !onComplete
-                    ? "PDF A4 formatida yaratiladi — faqat belgilangan list."
-                    : "PDF xodim hujjatiga saqlanadi."}
-                </p>
+            <p className={cn("text-center text-[11px] text-zinc-500")}>
+              {savedDoc
+                ? `Saqlangan · ${formatExpiresIn(savedDoc.expiresInSec)} ichida TG/yuklash · ${
+                    savedDoc.sentToTx ? "TX ga yuborilgan" : "TX kutilmoqda"
+                  }`
+                : standalone || !onComplete
+                  ? "PDF 1 soat saqlanadi, keyin o‘chadi. Tushuntirish xatlari bo‘limiga ham yuboriladi."
+                  : "PDF xodim hujjatiga va TX bo‘limiga yuboriladi (1 soat)."}
+            </p>
               </>
             ) : null}
           </div>

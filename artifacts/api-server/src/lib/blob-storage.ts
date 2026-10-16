@@ -32,11 +32,11 @@ function sanitizeFileName(name: string) {
   return base.replace(/[^\w.\-()\s'а-яА-ЯёЁўқғҳЎҚҒҲ\-]/giu, "_") || "fayl";
 }
 
-export function makeUploadId(originalName: string) {
+export function makeUploadId(originalName: string, prefix = "tasks") {
   const safe = sanitizeFileName(originalName);
   const stamp = Date.now().toString(36);
   const rand = randomBytes(5).toString("hex");
-  return `tasks__${stamp}_${rand}__${safe}`;
+  return `${prefix}__${stamp}_${rand}__${safe}`;
 }
 
 export function hasBlobToken() {
@@ -48,8 +48,10 @@ export async function storeUploadBuffer(opts: {
   buffer: Buffer;
   fileName: string;
   mimeType: string;
+  /** Disk/blob papka prefiksi — masalan scans */
+  folder?: "tasks" | "scans";
 }): Promise<{ url: string; key: string; size: number }> {
-  const { buffer, fileName, mimeType } = opts;
+  const { buffer, fileName, mimeType, folder = "tasks" } = opts;
   if (!buffer.length) {
     throw new Error("Fayl bo'sh");
   }
@@ -57,12 +59,12 @@ export async function storeUploadBuffer(opts: {
     throw new Error("Fayl 10 MB dan katta");
   }
 
-  const key = makeUploadId(fileName);
+  const key = makeUploadId(fileName, folder);
   const token = blobToken();
 
   if (token) {
     try {
-      const blob = await put(`tasks/${key}`, buffer, {
+      const blob = await put(`${folder}/${key}`, buffer, {
         access: "private",
         contentType: mimeType || "application/octet-stream",
         token,
@@ -101,7 +103,11 @@ export async function readBlobUpload(pathname: string): Promise<{
   contentType: string;
   downloadName: string;
 } | null> {
-  if (!pathname || pathname.includes("..") || !pathname.startsWith("tasks/")) {
+  if (
+    !pathname ||
+    pathname.includes("..") ||
+    !(pathname.startsWith("tasks/") || pathname.startsWith("scans/"))
+  ) {
     return null;
   }
 
@@ -175,6 +181,35 @@ export async function readLocalUpload(key: string): Promise<Buffer | null> {
     return await readFile(path.join(uploadsDir(), safe));
   } catch {
     return null;
+  }
+}
+
+export async function deleteStoredUpload(key: string): Promise<void> {
+  if (!key || key.includes("..")) return;
+  const token = blobToken();
+  if (token && (key.startsWith("tasks/") || key.startsWith("scans/"))) {
+    try {
+      const { del } = await import("@vercel/blob");
+      await del(key, { token });
+    } catch {
+      /* ignore blob delete errors */
+    }
+    // Mirror ham bo‘lishi mumkin
+    try {
+      const { unlink } = await import("node:fs/promises");
+      await unlink(path.join(uploadsDir(), "blob", ...key.split("/")));
+      await unlink(path.join(uploadsDir(), "blob", ...key.split("/")) + ".meta.json").catch(() => undefined);
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+  try {
+    const { unlink } = await import("node:fs/promises");
+    const safe = path.basename(key);
+    await unlink(path.join(uploadsDir(), safe));
+  } catch {
+    /* ignore */
   }
 }
 

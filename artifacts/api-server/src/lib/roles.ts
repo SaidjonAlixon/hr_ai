@@ -121,20 +121,31 @@ export function canDeleteUsers(role?: string | null): boolean {
   return canManageUsers(role);
 }
 
-/** Davomat qo‘lda tahrirlash (vaqt) — admin, direktor va HR direktor */
-export function canEditDavomatManual(role?: string | null): boolean {
-  return hasFullPlatformAccess(role) || isHrDirektor(role);
+/** Davomat qo‘lda tahrirlash (vaqt) — faqat bosh admin */
+export function canEditDavomatManual(
+  roleOrUser?: string | null | { role?: string | null; login?: string | null },
+  login?: string | null,
+): boolean {
+  if (roleOrUser && typeof roleOrUser === "object") return isBoshAdmin(roleOrUser);
+  return isBoshAdmin({ role: roleOrUser as string | null | undefined, login });
 }
 
-/** Davomatni bekor qilish (0) — admin va korxona direktori */
-export function canResetDavomatManual(role?: string | null): boolean {
-  return hasFullPlatformAccess(role);
+/** Davomatni bekor qilish (0) — faqat bosh admin */
+export function canResetDavomatManual(
+  roleOrUser?: string | null | { role?: string | null; login?: string | null },
+  login?: string | null,
+): boolean {
+  if (roleOrUser && typeof roleOrUser === "object") return isBoshAdmin(roleOrUser);
+  return isBoshAdmin({ role: roleOrUser as string | null | undefined, login });
 }
 
-/** Davomatni sababli qilish (jarimasiz) — admin, direktor va HR menejer */
-export function canMarkDavomatExcuse(role?: string | null): boolean {
-  const r = (role ?? "").trim().toLowerCase();
-  return hasFullPlatformAccess(r) || r === "hr_menejer";
+/** Davomatni sababli qilish (jarimasiz) — faqat bosh admin */
+export function canMarkDavomatExcuse(
+  roleOrUser?: string | null | { role?: string | null; login?: string | null },
+  login?: string | null,
+): boolean {
+  if (roleOrUser && typeof roleOrUser === "object") return isBoshAdmin(roleOrUser);
+  return isBoshAdmin({ role: roleOrUser as string | null | undefined, login });
 }
 
 /** Davomat xatoliklar — faqat admin va asoschi. Korxona direktori ko‘rmaydi. */
@@ -199,9 +210,19 @@ export function canViewLeadershipModules(role?: string | null): boolean {
   );
 }
 
-/** Davomat erta-ketish / qo‘lda izoh — rahbariyat, HR va SB */
-export function canViewDavomatNotes(role?: string | null): boolean {
-  return canViewLeadershipModules(role) || isSbRole(role);
+/**
+ * Davomat izohlari (sababli / erta-ketish) — faqat SB.
+ * Bosh admin ham ko‘radi (o‘zi yozadi).
+ */
+export function canViewDavomatNotes(
+  roleOrUser?: string | null | { role?: string | null; login?: string | null },
+  login?: string | null,
+): boolean {
+  if (roleOrUser && typeof roleOrUser === "object") {
+    return isSbRole(roleOrUser.role) || isBoshAdmin(roleOrUser);
+  }
+  const role = roleOrUser as string | null | undefined;
+  return isSbRole(role) || isBoshAdmin({ role, login });
 }
 
 /** Davomat: to‘liq dashboard rollari + SB + bo‘lim boshliqlari + koordinator (faqat o‘z dorixonasi) */

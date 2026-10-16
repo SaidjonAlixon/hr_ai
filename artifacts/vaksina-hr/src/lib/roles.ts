@@ -232,27 +232,52 @@ export function canViewDavomat(role?: string | null): boolean {
   );
 }
 
+/** Bosh admin — `VITE_BOSH_ADMIN_LOGINS` (standart: vaksina_admin) */
+export function isBoshAdmin(user?: { role?: string | null; login?: string | null } | null): boolean {
+  if (normalizeUserRole(user?.role) !== "admin") return false;
+  const fromEnv =
+    typeof import.meta !== "undefined" ? String(import.meta.env?.VITE_BOSH_ADMIN_LOGINS || "") : "";
+  const logins = (fromEnv || "vaksina_admin")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return logins.includes((user?.login ?? "").trim().toLowerCase());
+}
+
 /**
- * Davomat erta-ketish / qo‘lda izoh — rahbariyat, HR va SB (boshliq ham, xodim ham).
+ * Davomat izohlari — faqat SB (+ bosh admin, o‘zi yozadi).
  */
-export function canViewDavomatNotes(role?: string | null): boolean {
-  return canViewLeadershipModules(role) || isSbRole(role);
+export function canViewDavomatNotes(
+  roleOrUser?: string | null | { role?: string | null; login?: string | null },
+): boolean {
+  if (roleOrUser && typeof roleOrUser === "object") {
+    return isSbRole(roleOrUser.role) || isBoshAdmin(roleOrUser);
+  }
+  return isSbRole(roleOrUser as string | null | undefined);
 }
 
-/** Davomat qo‘lda tahrirlash (vaqt) — admin, direktor va HR direktor */
-export function canEditDavomatManual(role?: string | null): boolean {
-  return hasFullPlatformAccess(role) || normalizeUserRole(role) === "hr_direktor";
+/** Davomat qo‘lda tahrirlash (vaqt) — faqat bosh admin */
+export function canEditDavomatManual(
+  roleOrUser?: string | null | { role?: string | null; login?: string | null },
+): boolean {
+  if (roleOrUser && typeof roleOrUser === "object") return isBoshAdmin(roleOrUser);
+  return false;
 }
 
-/** Davomatni bekor qilish (0) — admin va korxona direktori */
-export function canResetDavomatManual(role?: string | null): boolean {
-  return hasFullPlatformAccess(role);
+/** Davomatni bekor qilish (0) — faqat bosh admin */
+export function canResetDavomatManual(
+  roleOrUser?: string | null | { role?: string | null; login?: string | null },
+): boolean {
+  if (roleOrUser && typeof roleOrUser === "object") return isBoshAdmin(roleOrUser);
+  return false;
 }
 
-/** Davomatni sababli qilish (jarimasiz) — admin, direktor va HR menejer */
-export function canMarkDavomatExcuse(role?: string | null): boolean {
-  const r = normalizeUserRole(role);
-  return hasFullPlatformAccess(r) || r === "hr_menejer";
+/** Davomatni sababli qilish (jarimasiz) — faqat bosh admin */
+export function canMarkDavomatExcuse(
+  roleOrUser?: string | null | { role?: string | null; login?: string | null },
+): boolean {
+  if (roleOrUser && typeof roleOrUser === "object") return isBoshAdmin(roleOrUser);
+  return false;
 }
 
 /** Xodim smenasi va kelish-ketish vaqti — admin va korxona direktori */

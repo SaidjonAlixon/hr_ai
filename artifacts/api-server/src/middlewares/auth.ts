@@ -27,6 +27,7 @@ import { activeLockFor, DISCIPLINE_ROLES, LOCK_MESSAGE } from "../lib/discipline
 export interface AuthRequest extends Request {
   userId?: number;
   userRole?: string;
+  userLogin?: string;
   deviceEnforced?: boolean;
   deviceRowId?: number;
   secureSessionId?: number;
@@ -39,13 +40,13 @@ function dbErrDetail(err: unknown): string {
 
 async function loadSessionUser(
   req: AuthRequest,
-): Promise<{ id: number; role: string; deviceSecurityEnforced: boolean } | null> {
+): Promise<{ id: number; role: string; login: string; deviceSecurityEnforced: boolean } | null> {
   return withDbRetry(() => loadSessionUserOnce(req), { attempts: 2, label: "loadSessionUser" });
 }
 
 async function loadSessionUserOnce(
   req: AuthRequest,
-): Promise<{ id: number; role: string; deviceSecurityEnforced: boolean } | null> {
+): Promise<{ id: number; role: string; login: string; deviceSecurityEnforced: boolean } | null> {
   const sessionCookie = req.cookies?.session;
   if (!sessionCookie) return null;
 
@@ -63,6 +64,7 @@ async function loadSessionUserOnce(
       .select({
         id: usersTable.id,
         role: usersTable.role,
+        login: usersTable.login,
         status: usersTable.status,
         deviceSecurityEnforced: usersTable.deviceSecurityEnforced,
       })
@@ -77,6 +79,7 @@ async function loadSessionUserOnce(
     return {
       id: user.id,
       role: user.role,
+      login: user.login,
       deviceSecurityEnforced: Boolean(user.deviceSecurityEnforced),
     };
   }
@@ -221,6 +224,7 @@ export async function requireAuth(
     }
     req.userId = user.id;
     req.userRole = user.role;
+    req.userLogin = user.login;
     if (isStudentRole(user.role) && !STUDENT_API_RE.test((req.originalUrl || "").split("?")[0] ?? "")) {
       res.status(403).json({ error: "O‘quvchilar uchun faqat Kirish darslari ochiq" });
       return;
@@ -253,6 +257,7 @@ export async function optionalAuth(
     if (user) {
       req.userId = user.id;
       req.userRole = user.role;
+      req.userLogin = user.login;
     }
   } catch (err) {
     console.error("optionalAuth db error:", dbErrDetail(err));

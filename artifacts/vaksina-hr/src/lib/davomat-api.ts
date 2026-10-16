@@ -295,7 +295,7 @@ export async function clearEmployeeSchedule(employeeId: number, id?: number | nu
   });
 }
 
-/** Kunni sababli qilish — faqat admin va HR menejer. Izoh majburiy. */
+/** Kunni sababli qilish — faqat bosh admin. Izoh majburiy. */
 export async function saveDavomatExcuse(payload: {
   employeeId: number;
   workDate: string;

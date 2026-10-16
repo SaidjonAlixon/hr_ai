@@ -253,15 +253,17 @@ function requireDavomat(req: AuthRequest, res: { status: (n: number) => { json: 
   return true;
 }
 
-/** Erta-ketish izohlari — faqat rahbariyat / HR / auditor */
-function redactReportNotes<T extends { employees: Array<{ days: Array<{ notes?: string | null }> }> }>(
-  report: T,
-  role?: string | null,
-): T {
-  if (canViewDavomatNotes(role)) return report;
+/** Izohlar (erta-ketish / sababli) — faqat SB va bosh admin */
+function redactReportNotes<
+  T extends {
+    employees: Array<{ days: Array<{ notes?: string | null; excuseNote?: string | null }> }>;
+  },
+>(report: T, role?: string | null, login?: string | null): T {
+  if (canViewDavomatNotes({ role, login })) return report;
   for (const e of report.employees) {
     for (const d of e.days) {
       d.notes = null;
+      d.excuseNote = null;
     }
   }
   return report;
@@ -1767,7 +1769,7 @@ router.get("/davomat", requireAuth, async (req: AuthRequest, res): Promise<void>
     );
     const defs = await getEffectiveShiftDefs();
     const report = await buildReportWithJavob(employees, records, from, to, defs);
-    res.json(redactReportNotes(report, req.userRole));
+    res.json(redactReportNotes(report, req.userRole, req.userLogin));
   } catch (err) {
     console.error("GET /davomat error:", err);
     res.status(503).json({ error: "Davomat yuklanmadi" });
@@ -1891,8 +1893,8 @@ router.get("/davomat/today", requireAuth, async (req: AuthRequest, res): Promise
 /** HR: qo‘lda kelish/ketish yozish yoki tahrirlash */
 router.post("/davomat/manual", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireDavomat(req, res)) return;
-  if (!canEditDavomatManual(req.userRole)) {
-    res.status(403).json({ error: "Davomatni qo‘lda tahrirlash faqat admin va HR direktor uchun" });
+  if (!canEditDavomatManual({ role: req.userRole, login: req.userLogin })) {
+    res.status(403).json({ error: "Davomatni qo‘lda tahrirlash faqat bosh admin uchun" });
     return;
   }
   try {
@@ -1997,8 +1999,8 @@ const EXCUSE_STATUSES = new Set(["present", "late", "absent", "incomplete", "lea
 /** Admin va HR menejer: kunni sababli qilish. Izoh majburiy, jarima tushmaydi. */
 router.post("/davomat/excuse", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireDavomat(req, res)) return;
-  if (!canMarkDavomatExcuse(req.userRole)) {
-    res.status(403).json({ error: "Sababli qilish faqat admin va HR menejer uchun" });
+  if (!canMarkDavomatExcuse({ role: req.userRole, login: req.userLogin })) {
+    res.status(403).json({ error: "Sababli qilish faqat bosh admin uchun" });
     return;
   }
   try {
@@ -2255,8 +2257,8 @@ router.post("/davomat/schedule-override/clear", requireAuth, async (req: AuthReq
  */
 router.post("/davomat/reset", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireDavomat(req, res)) return;
-  if (!canResetDavomatManual(req.userRole)) {
-    res.status(403).json({ error: "Davomatni bekor qilish faqat admin uchun" });
+  if (!canResetDavomatManual({ role: req.userRole, login: req.userLogin })) {
+    res.status(403).json({ error: "Davomatni bekor qilish faqat bosh admin uchun" });
     return;
   }
   try {
@@ -6119,6 +6121,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     const report = redactReportNotes(
       await buildReportWithJavob(employees, records, from, to, await getEffectiveShiftDefs()),
       req.userRole,
+      req.userLogin,
     );
 
     // Kelmaganlar Excel: koordinator (filtrlangan smenada ham to‘liq zanjir)

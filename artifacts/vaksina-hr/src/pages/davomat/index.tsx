@@ -695,11 +695,11 @@ export default function DavomatPage() {
   const urlSearch = useSearch();
   const allowed = canViewDavomat(user?.role);
   const pharmacyScope = normalizeUserRole(user?.role) === "koordinator";
-  const canEdit = canEditDavomatManual(user?.role);
-  const canReset = canResetDavomatManual(user?.role);
-  const canExcuse = canMarkDavomatExcuse(user?.role);
+  const canEdit = canEditDavomatManual(user);
+  const canReset = canResetDavomatManual(user);
+  const canExcuse = canMarkDavomatExcuse(user);
   const canSchedule = canSetEmployeeSchedule(user?.role);
-  const canSeeNotes = canViewDavomatNotes(user?.role);
+  const canSeeNotes = canViewDavomatNotes(user);
   const canChecklist = canViewChecklistStatus(user?.role);
 
   const [section, setSection] = useState<Section>(() => sectionFromLocation(location, urlSearch) ?? "schedule");
@@ -2867,12 +2867,12 @@ export default function DavomatPage() {
                               status={day!.status}
                               excused={day!.excused}
                               onClick={
-                                day!.excused
+                                day!.excused && canSeeNotes
                                   ? () => openDayNote(emp.fullName, selectedDay, day!)
                                   : undefined
                               }
                             />
-                            {day!.excused && day!.excuseNote ? (
+                            {canSeeNotes && day!.excused && day!.excuseNote ? (
                               <button
                                 type="button"
                                 className="mt-1 block max-w-[12rem] truncate text-left text-[11px] font-medium text-teal-800 dark:text-teal-200"
@@ -3181,12 +3181,12 @@ export default function DavomatPage() {
                                 status={d.status}
                                 excused={d.excused}
                                 onClick={
-                                  d.excused
+                                  d.excused && canSeeNotes
                                     ? () => openDayNote(detailEmployee.fullName, d.date, d)
                                     : undefined
                                 }
                               />
-                              {d.excused && d.excuseNote ? (
+                              {canSeeNotes && d.excused && d.excuseNote ? (
                                 <button
                                   type="button"
                                   className="mt-1 block max-w-[12rem] truncate text-left text-[11px] font-medium text-teal-800 dark:text-teal-200"
@@ -4100,9 +4100,9 @@ function dayCellTooltip(
   }
   if (day.excused) {
     lines.unshift("Sababli (jarimasiz)");
-    if (day.excuseNote?.trim()) lines.push(`Izoh: ${day.excuseNote.trim()}`);
-    if (day.excusedByName) lines.push(`Kim belgilagan: ${day.excusedByName}`);
-    if (day.excusedAt) lines.push(`Qachon belgilangan: ${formatExcuseStamp(day.excusedAt)}`);
+    if (canSeeNotes && day.excuseNote?.trim()) lines.push(`Izoh: ${day.excuseNote.trim()}`);
+    if (canSeeNotes && day.excusedByName) lines.push(`Kim belgilagan: ${day.excusedByName}`);
+    if (canSeeNotes && day.excusedAt) lines.push(`Qachon belgilangan: ${formatExcuseStamp(day.excusedAt)}`);
   } else if (canSeeNotes && day.notes?.trim()) {
     lines.push(`Izoh: ${day.notes.trim()}`);
   }
@@ -4150,7 +4150,9 @@ function WeekCell({
     (hasIn || hasOut || status === "incomplete");
   const subline = day ? weekCellSublineParts(day) : null;
   const interactive = Boolean(onClick);
-  const hasNote = Boolean((excused && day?.excuseNote) || (canSeeNotes && day?.notes?.trim()));
+  const hasNote = Boolean(
+    canSeeNotes && ((excused && day?.excuseNote) || day?.notes?.trim()),
+  );
   const clickable = interactive || Boolean(onExcuse) || Boolean(onSchedule) || Boolean(onNoteClick);
 
   return (

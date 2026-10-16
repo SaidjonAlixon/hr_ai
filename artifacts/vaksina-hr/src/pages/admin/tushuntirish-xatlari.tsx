@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarX2,
   CheckCircle2,
@@ -59,6 +59,7 @@ import {
   type ExplanationLetter,
 } from "@/lib/explanation-letters-api";
 import {
+  clearAllScannerDocs,
   fetchScannerDocsInbox,
   formatExpiresIn,
   scannerDocDownloadUrl,
@@ -764,11 +765,28 @@ export default function TushuntirishXatlariPage() {
 }
 
 function ScannerInboxPanel({ enabled }: { enabled: boolean }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [confirmClear, setConfirmClear] = useState(false);
   const q = useQuery({
     queryKey: ["scanner-docs", "inbox"],
     queryFn: fetchScannerDocsInbox,
     enabled,
     refetchInterval: 60_000,
+  });
+  const clearMut = useMutation({
+    mutationFn: clearAllScannerDocs,
+    onSuccess: (r) => {
+      void qc.invalidateQueries({ queryKey: ["scanner-docs"] });
+      setConfirmClear(false);
+      toast({
+        title: "Tozalandi",
+        description: `${r.deleted} ta skaner PDF bazadan o‘chirildi`,
+      });
+    },
+    onError: (e) => {
+      toast({ title: "O‘chirilmadi", description: (e as Error).message, variant: "destructive" });
+    },
   });
   const items = q.data ?? [];
   if (!enabled) return null;
@@ -787,6 +805,18 @@ function ScannerInboxPanel({ enabled }: { enabled: boolean }) {
         <span className="rounded-full bg-violet-600/15 px-2.5 py-1 text-xs font-bold tabular-nums text-violet-800 dark:text-violet-200">
           {q.isLoading ? "…" : items.length}
         </span>
+        {items.length > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1 rounded-lg border-rose-200 bg-white text-rose-700 hover:bg-rose-50 hover:text-rose-800 dark:border-rose-500/30 dark:bg-transparent dark:text-rose-300"
+            onClick={() => setConfirmClear(true)}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Barchasini o‘chirish
+          </Button>
+        )}
       </div>
       {q.isLoading ? (
         <p className="py-3 text-center text-xs text-slate-500">Yuklanmoqda…</p>
@@ -820,6 +850,31 @@ function ScannerInboxPanel({ enabled }: { enabled: boolean }) {
           ))}
         </ul>
       )}
+
+      <AlertDialog open={confirmClear} onOpenChange={(o) => !o && !clearMut.isPending && setConfirmClear(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Barcha skaner PDF larni o‘chirish?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {items.length} ta fayl bazadan va saqlashdan butunlay o‘chiriladi. Bu amalni qaytarib bo‘lmaydi.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={clearMut.isPending}>Bekor</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-rose-600 hover:bg-rose-700"
+              disabled={clearMut.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                clearMut.mutate();
+              }}
+            >
+              {clearMut.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Trash2 className="mr-1.5 h-4 w-4" />}
+              Ha, barchasini o‘chirish
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }

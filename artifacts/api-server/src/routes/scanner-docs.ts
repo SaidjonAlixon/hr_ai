@@ -200,6 +200,34 @@ router.get("/scanner-docs", requireAuth, async (req: AuthRequest, res): Promise<
   res.json(rows.map(mapRow));
 });
 
+/** Barcha skaner PDF larini bazadan va saqlashdan tozalash — TX/HR */
+router.delete("/scanner-docs", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  await ensureScannerDocsSchema();
+  if (!canViewTxInbox(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yoʻq" });
+    return;
+  }
+  try {
+    const { rows } = await pool.query<{ id: number; file_key: string | null }>(
+      `SELECT id, file_key FROM scanner_docs`,
+    );
+    for (const row of rows) {
+      if (row.file_key) {
+        try {
+          await deleteStoredUpload(row.file_key);
+        } catch (err) {
+          logger.warn({ err, id: row.id }, "Scanner bulk file delete failed");
+        }
+      }
+    }
+    const del = await pool.query(`DELETE FROM scanner_docs`);
+    res.json({ ok: true, deleted: del.rowCount ?? rows.length });
+  } catch (err: any) {
+    logger.error({ err }, "Scanner docs clear failed");
+    res.status(500).json({ error: err?.message || "Tozalash xatosi" });
+  }
+});
+
 /** Mening faol skanerlarim */
 router.get("/scanner-docs/mine", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   await ensureScannerDocsSchema();

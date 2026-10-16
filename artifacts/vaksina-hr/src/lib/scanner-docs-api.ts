@@ -59,6 +59,11 @@ export async function fetchScannerDocsInbox(): Promise<ScannerDoc[]> {
   return apiFetch<ScannerDoc[]>("/scanner-docs");
 }
 
+/** Barcha skaner PDF larini bazadan va fayllardan tozalash */
+export async function clearAllScannerDocs(): Promise<{ ok: boolean; deleted: number }> {
+  return apiFetch<{ ok: boolean; deleted: number }>("/scanner-docs", { method: "DELETE" });
+}
+
 export async function fetchMyScannerDocs(): Promise<ScannerDoc[]> {
   return apiFetch<ScannerDoc[]>("/scanner-docs/mine");
 }

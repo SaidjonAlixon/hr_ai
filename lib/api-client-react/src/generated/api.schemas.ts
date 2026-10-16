@@ -49,6 +49,8 @@ export interface User {
   /** @nullable */
   phone?: string | null;
   status: UserStatus;
+  /** regional_menejer uchun viloyat slug */
+  assignedViloyat?: string | null;
   createdAt: string;
 }
 
@@ -66,6 +68,8 @@ export interface UserInput {
   /** @nullable */
   phone?: string | null;
   status?: string;
+  /** @nullable */
+  assignedViloyat?: string | null;
 }
 
 export interface CreateUserResult extends User {
@@ -80,6 +84,8 @@ export interface UserUpdate {
   /** @nullable */
   phone?: string | null;
   status?: string;
+  /** @nullable */
+  assignedViloyat?: string | null;
 }
 
 export interface Department {

@@ -61,6 +61,7 @@ function branchNameOf(location: string | null | undefined, fallback: string): st
 function canCreateStaffNeed(role?: string | null): boolean {
   return (
     role === "koordinator" ||
+    role === "regional_menejer" ||
     role === "mudir" ||
     isDeptHeadRole(role) ||
     hasFullPlatformAccess(role)
@@ -347,6 +348,10 @@ router.get("/staff-needs", requireAuth, async (req: AuthRequest, res): Promise<v
 
   if (role === "koordinator" && req.userId) {
     rows = rows.filter((r) => r.coordinatorUserId === req.userId);
+  } else if (role === "regional_menejer" && req.userId) {
+    const { managerIdsForRegionalManager } = await import("../lib/pharmacy-region-scope");
+    const owned = await managerIdsForRegionalManager(req.userId);
+    rows = rows.filter((r) => r.managerEmployeeId != null && owned.has(r.managerEmployeeId));
   } else if (role === "mudir" && req.userId) {
     const mudir = await actorMudir(req.userId);
     rows = rows.filter(

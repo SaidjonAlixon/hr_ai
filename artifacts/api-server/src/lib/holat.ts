@@ -405,6 +405,18 @@ export async function buildHolatReport(opts: {
           .map((m) => m.employeeId)
           .filter((id): id is number => id != null),
       );
+    } else if (opts.scopeRole === "regional_menejer" && opts.scopeUserId) {
+      const { managerIdsForRegionalManager, employeeIdsForRegionalManager } = await import(
+        "./pharmacy-region-scope"
+      );
+      allowedMudirIds = await managerIdsForRegionalManager(opts.scopeUserId);
+      const keep = await employeeIdsForRegionalManager(opts.scopeUserId);
+      allowedCoordIds = new Set(
+        coords
+          .filter((c) => c.employeeId != null && keep.has(c.employeeId))
+          .map((c) => c.employeeId!)
+          .filter((id): id is number => id != null),
+      );
     } else if (opts.scopeRole === "mudir") {
       const mine = mudirsAll.filter((m) => m.userId === opts.scopeUserId);
       allowedMudirIds = new Set(mine.map((m) => m.employeeId).filter((id): id is number => id != null));

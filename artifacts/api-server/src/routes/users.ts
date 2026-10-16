@@ -11,6 +11,7 @@ import { canManageUsers, canDeleteUsers, canChangeStaffStatus, isBoshAdmin, isSt
 import { clientIp, createServerSession, writeLoginAudit } from "../lib/device-security";
 import { formatPersonName } from "../lib/person-name";
 import { resolveDepartmentIdForRole } from "../lib/role-departments";
+import { isValidViloyatSlug } from "../lib/viloyat";
 
 const router: IRouter = Router();
 
@@ -27,6 +28,7 @@ const ALLOWED_ROLES = [
   "asoschi",
   "mudir",
   "koordinator",
+  "regional_menejer",
   "it",
   "it_rahbar",
   "it_dasturchi",
@@ -82,6 +84,7 @@ const ROLE_LABEL_UZ: Record<string, string> = {
   asoschi: "Asoschi",
   mudir: "Mudir",
   koordinator: "Koordinator",
+  regional_menejer: "Regional menejer",
   it: "AyTi mutaxassisi",
   it_rahbar: "AyTi bo‘lim boshlig‘i",
   it_dasturchi: "Dasturchi",
@@ -211,6 +214,7 @@ function publicUser(row: {
   phone: string | null;
   status: string;
   createdAt: Date;
+  assignedViloyat?: string | null;
 }, departmentName: string | null = null) {
   return {
     id: row.id,
@@ -221,6 +225,7 @@ function publicUser(row: {
     login: row.login,
     phone: row.phone,
     status: row.status,
+    assignedViloyat: row.assignedViloyat ?? null,
     createdAt: row.createdAt,
   };
 }
@@ -242,6 +247,7 @@ router.get("/users", async (req, res): Promise<void> => {
       login: usersTable.login,
       phone: usersTable.phone,
       status: usersTable.status,
+      assignedViloyat: usersTable.assignedViloyat,
       createdAt: usersTable.createdAt,
     })
     .from(usersTable)
@@ -441,13 +447,19 @@ router.get("/users/export", requireAuth, async (req: AuthRequest, res): Promise<
 router.post("/users", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireUsersAdmin(req, res)) return;
 
-  const { fullName, role, departmentId, login, password, phone, status } = req.body ?? {};
+  const { fullName, role, departmentId, login, password, phone, status, assignedViloyat } = req.body ?? {};
   if (!fullName?.trim() || !role) {
     res.status(400).json({ error: "Ism-familiya va rol majburiy" });
     return;
   }
   if (!ALLOWED_ROLES.includes(role)) {
     res.status(400).json({ error: "Noto'g'ri rol" });
+    return;
+  }
+  const viloyatSlug =
+    role === "regional_menejer" ? String(assignedViloyat || "").trim() || null : null;
+  if (role === "regional_menejer" && !isValidViloyatSlug(viloyatSlug)) {
+    res.status(400).json({ error: "Regional menejer uchun viloyat tanlang" });
     return;
   }
 
@@ -482,6 +494,7 @@ router.post("/users", requireAuth, async (req: AuthRequest, res): Promise<void> 
         password: generatedPassword,
         phone: phone ?? null,
         status: status ?? "active",
+        assignedViloyat: viloyatSlug,
       })
       .returning();
 
@@ -684,7 +697,7 @@ router.patch("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<v
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
   if (await blockedByBoshAdmin(req, res, id)) return;
   const [existing] = await db
-    .select({ id: usersTable.id, role: usersTable.role })
+    .select({ id: usersTable.id, role: usersTable.role, assignedViloyat: usersTable.assignedViloyat })
     .from(usersTable)
     .where(eq(usersTable.id, id))
     .limit(1);
@@ -693,7 +706,7 @@ router.patch("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<v
     return;
   }
 
-  const allowed = ["fullName", "role", "departmentId", "phone", "status"];
+  const allowed = ["fullName", "role", "departmentId", "phone", "status", "assignedViloyat"];
   const updates: Record<string, unknown> = {};
   for (const key of allowed) {
     if (req.body[key] !== undefined) updates[key] = req.body[key];
@@ -705,6 +718,20 @@ router.patch("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<v
   if (updates.role && !ALLOWED_ROLES.includes(updates.role as typeof ALLOWED_ROLES[number])) {
     res.status(400).json({ error: "Noto'g'ri rol" });
     return;
+  }
+  const nextRole = String(updates.role ?? existing.role);
+  if (nextRole === "regional_menejer") {
+    const nextViloyat =
+      updates.assignedViloyat !== undefined
+        ? String(updates.assignedViloyat || "").trim() || null
+        : existing.assignedViloyat;
+    if (!isValidViloyatSlug(nextViloyat)) {
+      res.status(400).json({ error: "Regional menejer uchun viloyat tanlang" });
+      return;
+    }
+    updates.assignedViloyat = nextViloyat;
+  } else if (updates.role && nextRole !== "regional_menejer") {
+    updates.assignedViloyat = null;
   }
   if (updates.status) {
     const st = String(updates.status);

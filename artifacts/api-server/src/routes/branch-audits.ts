@@ -57,6 +57,7 @@ const router: IRouter = Router();
 
 const VIEW_ROLES = new Set([
   "koordinator",
+  "regional_menejer",
   "admin",
   ...HR_ROLES,
   "director", "asoschi",
@@ -66,7 +67,7 @@ const VIEW_ROLES = new Set([
   "stajyor",
   "moliya",
 ]);
-const WRITE_ROLES = new Set(["koordinator", "admin"]);
+const WRITE_ROLES = new Set(["koordinator", "regional_menejer", "admin"]);
 
 /** Koordinator filialga 70 m dan yaqin bo‘lishi shart */
 export const AUDIT_GEOFENCE_METERS = 70;
@@ -461,6 +462,13 @@ async function loadFilteredAudits(req: AuthRequest) {
     }
   }
 
+  // Regional menejer — faqat o‘z viloyatidagi filial tashriflari
+  if (req.userRole === "regional_menejer" && req.userId) {
+    const { managerIdsForRegionalManager } = await import("../lib/pharmacy-region-scope");
+    const ownedIds = await managerIdsForRegionalManager(req.userId);
+    rows = rows.filter((r) => ownedIds.has(r.managerEmployeeId));
+  }
+
   if (isPharmacyBranchRole(req.userRole) && req.userId) {
     const managerId = await resolvePharmacyManagerEmployeeId(req.userId, req.userRole);
     rows = managerId ? rows.filter((r) => r.managerEmployeeId === managerId) : [];
@@ -549,6 +557,12 @@ router.get("/branch-audits/branches", requireAuth, async (req: AuthRequest, res)
       return;
     }
     scoped = scoped.filter((m) => m.reportsToId === coord.id);
+  }
+
+  if (req.userRole === "regional_menejer" && req.userId) {
+    const { managerIdsForRegionalManager } = await import("../lib/pharmacy-region-scope");
+    const owned = await managerIdsForRegionalManager(req.userId);
+    scoped = scoped.filter((m) => owned.has(m.id));
   }
 
   const seen = new Set<number>();

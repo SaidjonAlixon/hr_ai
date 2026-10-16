@@ -19,5 +19,7 @@ export const usersTable = pgTable("users", {
   davomatQrAllowed: boolean("davomat_qr_allowed"),
   /** null/false = yopiq va xodimga umuman ko‘rinmaydi. true = faqat admin Bloklash oynasidan yoqqanda */
   davomatFingerAllowed: boolean("davomat_finger_allowed"),
+  /** regional_menejer uchun biriktirilgan viloyat slug (toshkent_shahar, samarqand, …) */
+  assignedViloyat: text("assigned_viloyat"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

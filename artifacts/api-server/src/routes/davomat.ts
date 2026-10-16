@@ -1260,8 +1260,14 @@ async function scopeDavomatViewer<
   },
 >(role: string | undefined, userId: number | undefined, employees: T[]): Promise<T[]> {
   const scoped = await scopeDeptHeadDavomatEmployees(role, userId, employees);
-  if ((role ?? "").trim().toLowerCase() !== "koordinator") return scoped;
-  return scopeCoordinatorDavomatEmployees(userId, scoped);
+  const r = (role ?? "").trim().toLowerCase();
+  if (r === "koordinator") return scopeCoordinatorDavomatEmployees(userId, scoped);
+  if (r === "regional_menejer" && userId) {
+    const { employeeIdsForRegionalManager } = await import("../lib/pharmacy-region-scope");
+    const keep = await employeeIdsForRegionalManager(userId);
+    return scoped.filter((e) => keep.has(e.id));
+  }
+  return scoped;
 }
 
 const davomatAnalyticsCache = new Map<string, { at: number; body: unknown }>();

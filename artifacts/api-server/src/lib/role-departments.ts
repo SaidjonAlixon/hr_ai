@@ -43,6 +43,7 @@ export const ROLE_DEPARTMENT_NAME: Record<string, string> = {
   recruiter: "Rekruting",
   trainer: "Trening",
   koordinator: "Koordinator",
+  regional_menejer: "Koordinator",
   it: "AyTi",
   it_rahbar: "AyTi",
   it_dasturchi: "AyTi",

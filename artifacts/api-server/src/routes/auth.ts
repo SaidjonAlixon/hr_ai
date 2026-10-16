@@ -37,6 +37,7 @@ async function getUserWithDept(userId: number) {
       phone: usersTable.phone,
       status: usersTable.status,
       deviceSecurityEnforced: usersTable.deviceSecurityEnforced,
+      assignedViloyat: usersTable.assignedViloyat,
       createdAt: usersTable.createdAt,
     })
     .from(usersTable)

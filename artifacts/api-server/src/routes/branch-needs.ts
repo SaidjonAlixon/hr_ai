@@ -76,6 +76,7 @@ async function resolveCreatorBranch(userId: number, role: string) {
 const VIEW_ROLES = new Set([
   ...BRANCH_STAFF_ROLES,
   "koordinator",
+  "regional_menejer",
   ...HR_ROLES,
   "admin",
   "director", "asoschi",
@@ -83,8 +84,8 @@ const VIEW_ROLES = new Set([
   "texnik",
   "ombor",
 ]);
-const WRITE_ROLES = new Set(["mudir", "koordinator", ...HR_ROLES, "admin"]);
-const CONFIRM_ROLES = new Set(["koordinator", ...HR_ROLES, "admin"]);
+const WRITE_ROLES = new Set(["mudir", "koordinator", "regional_menejer", ...HR_ROLES, "admin"]);
+const CONFIRM_ROLES = new Set(["koordinator", "regional_menejer", ...HR_ROLES, "admin"]);
 
 /** Filial ehtiyojini bajara oladiganlar: IT, kommunal (ma’muriy-xo‘jalik) va hudud mas’ullari */
 const NEED_ASSIGNEE_GROUPS = ["it", "komunal", "hudud"] as const;
@@ -96,9 +97,10 @@ const NEED_ASSIGNEE_ROLES = new Map<string, (typeof NEED_ASSIGNEE_GROUPS)[number
   ["mamuriy_rahbar", "komunal"],
   ["komunalniy", "komunal"],
   ["koordinator", "hudud"],
+  ["regional_menejer", "hudud"],
 ]);
 
-const VERIFY_ROLES = new Set(["mudir", "koordinator", ...HR_ROLES, "admin"]);
+const VERIFY_ROLES = new Set(["mudir", "koordinator", "regional_menejer", ...HR_ROLES, "admin"]);
 
 async function enrichNeed(row: typeof branchNeedsTable.$inferSelect) {
   let managerName: string | null = null;
@@ -236,11 +238,18 @@ router.get("/branch-needs", requireAuth, async (req: AuthRequest, res): Promise<
     conditions.push(eq(branchNeedsTable.assignedUserId, req.userId));
   }
 
-  const rows = await db
+  let rows = await db
     .select()
     .from(branchNeedsTable)
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(branchNeedsTable.createdAt));
+
+  // Regional menejer — faqat o‘z viloyati filiallari
+  if (role === "regional_menejer" && req.userId) {
+    const { managerIdsForRegionalManager } = await import("../lib/pharmacy-region-scope");
+    const owned = await managerIdsForRegionalManager(req.userId);
+    rows = rows.filter((r) => r.managerEmployeeId != null && owned.has(r.managerEmployeeId));
+  }
 
   res.json(await Promise.all(rows.map(enrichNeed)));
 });

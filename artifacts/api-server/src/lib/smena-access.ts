@@ -210,10 +210,14 @@ export async function setCoordAccess(
   return rows[0] ? mapAccessRow(rows[0]) : null;
 }
 
-/** Admin / HR — to‘liq; koordinator — faqat berilgan ruxsat; boshqalar — hech narsa */
+/** Admin / HR — to‘liq; regional menejer — viloyat doirasida; koordinator — berilgan ruxsat */
 export async function smenaAccessFor(role: string | null | undefined, userId: number | null | undefined): Promise<SmenaActorAccess> {
   if (canManageSmenaFilial(role)) return { full: true, canRotate: true, canShift: true, scope: "all", any: true };
-  if (String(role || "").trim().toLowerCase() !== "koordinator" || !userId) {
+  const r = String(role || "").trim().toLowerCase();
+  if (r === "regional_menejer" && userId) {
+    return { full: false, canRotate: true, canShift: true, scope: "own", any: true };
+  }
+  if (r !== "koordinator" || !userId) {
     return { full: false, canRotate: false, canShift: false, scope: "own", any: false };
   }
   const row = await getCoordAccess(userId).catch(() => null);

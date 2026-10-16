@@ -336,7 +336,12 @@ async function loadSmenaActor(req: AuthRequest): Promise<SmenaActor> {
     empByUserId(req.userId!),
     db.select({ fullName: usersTable.fullName }).from(usersTable).where(eq(usersTable.id, req.userId!)).limit(1),
   ]);
-  const scope = access.full || access.scope === "all" ? null : me ? await coordinatorScopeIds(me) : new Set<number>();
+  let scope: Set<number> | null =
+    access.full || access.scope === "all" ? null : me ? await coordinatorScopeIds(me) : new Set<number>();
+  if (role === "regional_menejer" && req.userId && !access.full) {
+    const { employeeIdsForRegionalManager } = await import("../lib/pharmacy-region-scope");
+    scope = await employeeIdsForRegionalManager(req.userId);
+  }
   return { access, me, scope, info: { id: req.userId!, name: user[0]?.fullName ?? null, role }, ip: reqIp(req) };
 }
 

@@ -8,6 +8,7 @@ import { logger } from "./logger";
 /** Davomat barmoq izi — 1 akkaunt = 1 barmoq izi = 1 qurilma */
 const FINGERPRINT_SQL = `
 ALTER TABLE users ADD COLUMN IF NOT EXISTS davomat_finger_allowed BOOLEAN;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS assigned_viloyat TEXT;
 CREATE TABLE IF NOT EXISTS davomat_fingerprints (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL,

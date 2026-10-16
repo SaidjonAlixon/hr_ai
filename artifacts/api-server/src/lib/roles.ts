@@ -7,6 +7,11 @@ export function isHrRole(role?: string | null): boolean {
   return !!role && (HR_ROLES as readonly string[]).includes(role);
 }
 
+/** Regional menejer — bitta viloyat bo‘yicha to‘liq nazorat */
+export function isRegionalManager(role?: string | null): boolean {
+  return (role ?? "").trim().toLowerCase() === "regional_menejer";
+}
+
 /** HR direktor yoki auditor — Kuzatuv bo‘limi */
 export function isHrOversight(role?: string | null): boolean {
   return role === "hr_direktor" || role === "hr_auditor";
@@ -207,6 +212,7 @@ export function canViewDavomat(role?: string | null): boolean {
     isSbRole(r) ||
     isDeptHeadRole(r) ||
     r === "koordinator" ||
+    r === "regional_menejer" ||
     r === "tamojni"
   );
 }
@@ -300,13 +306,14 @@ export function canViewChecklistStatus(role?: string | null): boolean {
     r === "hr" ||
     r === "hr_auditor" ||
     r === "recruiter" ||
-    r === "moliya"
+    r === "moliya" ||
+    r === "regional_menejer"
   );
 }
 
 /** Koordinatorlar reytingi — HR + koordinatorlar (faqat reyting) */
 export function canViewCoordinatorRanking(role?: string | null): boolean {
-  return canViewChecklistStatus(role) || role === "koordinator";
+  return canViewChecklistStatus(role) || role === "koordinator" || isRegionalManager(role);
 }
 
 /** Excel eksport — barcha tashriflar: admin, direktor, HR rahbariyat, auditor, rekruter */
@@ -340,6 +347,7 @@ export function canViewHolat(role?: string | null): boolean {
   return (
     canViewLeadershipModules(r) ||
     r === "koordinator" ||
+    r === "regional_menejer" ||
     r === "mudir"
   );
 }

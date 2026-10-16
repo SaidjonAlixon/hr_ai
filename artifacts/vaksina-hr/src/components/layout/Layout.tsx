@@ -290,10 +290,10 @@ function groupNavItems(
     if (role === 'director' && sec.id === 'system') {
       paths = ['/davomat/dorixona-ochilishi', ...paths.filter((p) => p !== '/davomat/dorixona-ochilishi')];
     }
-    if (role === 'koordinator' && sec.id === 'main') {
+    if ((role === 'koordinator' || role === 'regional_menejer') && sec.id === 'main') {
       paths = ['/dashboard', '/admin/holat', '/admin/holat/xodim', ...paths.filter((p) => p !== '/dashboard')];
     }
-    if (role === 'koordinator' && sec.id === 'system') {
+    if ((role === 'koordinator' || role === 'regional_menejer') && sec.id === 'system') {
       paths = paths.filter((p) => p !== '/admin/holat' && p !== '/admin/holat/xodim');
     }
     const list = paths
@@ -486,14 +486,18 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const logout = useLogout();
   const queryClient = useQueryClient();
   const isKoordinator = normalizeUserRole(user?.role) === 'koordinator';
+  const isRegionalMenejer = normalizeUserRole(user?.role) === 'regional_menejer';
   const smenaAccessQ = useQuery({
     queryKey: ['smena-access'],
     queryFn: fetchSmenaAccess,
-    enabled: Boolean(user) && isKoordinator,
+    enabled: Boolean(user) && (isKoordinator || isRegionalMenejer),
     staleTime: 30_000,
     refetchInterval: 120_000,
   });
-  const canSeeSmenaFilial = canManageSmenaFilial(user?.role) || (isKoordinator && Boolean(smenaAccessQ.data?.any));
+  const canSeeSmenaFilial =
+    canManageSmenaFilial(user?.role) ||
+    isRegionalMenejer ||
+    (isKoordinator && Boolean(smenaAccessQ.data?.any));
   /** Mobil: drawer ochiq/yopiq. Desktop: kengaytirilgan/icon-only. */
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = React.useState(false);
@@ -1113,6 +1117,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         role === 'mudir' ||
         role === 'stajyor' ||
         role === 'koordinator' ||
+        role === 'regional_menejer' ||
         role === 'admin' ||
         isDirectorRole(role) ||
         isDeptHeadRole(role) ||
@@ -1191,6 +1196,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     }
     if (
       (role === 'koordinator' ||
+        role === 'regional_menejer' ||
         role === 'mudir' ||
         role === 'recruiter' ||
         isDeptHeadRole(role) ||
@@ -1574,6 +1580,29 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Cheklist', path: '/checklist', icon: ClipboardCheck },
       { name: 'Reyting', path: '/checklist-holati', icon: Trophy },
+      smenaNav,
+    ],
+    regional_menejer: [
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Hisobot', path: '/admin/holat', icon: BarChart3 },
+      { name: 'Xodimlar hisoboti', path: '/admin/holat/xodim', icon: ClipboardList },
+      javobNav,
+      { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      orgNav,
+      { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
+      { name: 'Davomat tahlil', path: '/davomat/analytics', icon: BarChart3 },
+      davomatFaceNav,
+      davomatOfisdaNav,
+      davomatQrNav,
+      { name: 'Arizalar', path: '/requests', icon: FileText },
+      { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+      { name: "Bog'lanish", path: '/boglanish', icon: Phone },
+      { name: 'Xodim kerak', path: '/xodim-kerak', icon: UserPlus },
+      { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
+      { name: 'Cheklist', path: '/checklist', icon: ClipboardCheck },
+      { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
       smenaNav,
     ],
     it: [

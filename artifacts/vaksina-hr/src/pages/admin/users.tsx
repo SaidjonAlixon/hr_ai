@@ -38,6 +38,7 @@ import {
 import { userRoleLabel, canManageUsers, canDeleteUsers, canChangeStaffStatus, isLimitedOfficeStaffRole, isReviziyaRole, isStajyor } from '../../lib/roles';
 import { useI18n } from '../../i18n/I18nProvider';
 import { dismissUser } from '../../lib/dismissed-staff-api';
+import { isRegionalManagerRole, VILOYAT_OPTIONS, viloyatLabel } from '@/lib/viloyat';
 import { Link, useLocation } from 'wouter';
 
 const ROLES = [
@@ -52,6 +53,7 @@ const ROLES = [
   { value: 'asoschi', label: 'Asoschi' },
   { value: 'mudir', label: 'Mudir' },
   { value: 'koordinator', label: 'Koordinator' },
+  { value: 'regional_menejer', label: 'Regional menejer' },
   { value: 'it_rahbar', label: 'AyTi bo‘lim boshlig‘i' },
   { value: 'it', label: 'AyTi mutaxassisi' },
   { value: 'it_dasturchi', label: 'Dasturchi' },
@@ -130,6 +132,7 @@ const ROLE_DEPARTMENT: Record<string, string> = {
   recruiter: "Rekruting",
   trainer: "Trening",
   koordinator: "Koordinator",
+  regional_menejer: "Koordinator",
   it: "AyTi",
   it_rahbar: "AyTi",
   it_dasturchi: "AyTi",
@@ -264,6 +267,7 @@ export default function AdminUsersPage() {
   const [rolePick, setRolePick] = useState('');
   const [phone, setPhone] = useState('');
   const [departmentId, setDepartmentId] = useState<string>('none');
+  const [assignedViloyat, setAssignedViloyat] = useState<string>('');
   const [status, setStatus] = useState('active');
 
   const { data: users, isLoading } = useGetUsers({
@@ -307,6 +311,7 @@ export default function AdminUsersPage() {
     }
     setRolePick(value);
     setRole(value);
+    if (!isRegionalManagerRole(value)) setAssignedViloyat('');
     const deptName = ROLE_DEPARTMENT[value];
     if (!deptName) return;
     const hit = deptChoices.find((d) => normDept(d.name) === normDept(deptName));
@@ -388,6 +393,7 @@ export default function AdminUsersPage() {
     setRolePick('');
     setPhone('');
     setDepartmentId('none');
+    setAssignedViloyat('');
     setStatus('active');
     setEditing(null);
   };
@@ -400,6 +406,7 @@ export default function AdminUsersPage() {
     setRolePick(u.role === 'hr' ? 'hr_menejer' : u.role);
     setPhone(u.phone || '');
     setDepartmentId(u.departmentId != null ? String(u.departmentId) : 'none');
+    setAssignedViloyat((u as User & { assignedViloyat?: string | null }).assignedViloyat || '');
     setStatus(normalizeUserStatus(u.status));
     setEditOpen(true);
   };
@@ -437,6 +444,14 @@ export default function AdminUsersPage() {
       });
       return;
     }
+    if (isRegionalManagerRole(role) && !assignedViloyat) {
+      toast({
+        title: 'Viloyat tanlanmagan',
+        description: 'Regional menejer uchun viloyatni tanlang',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     createMutation.mutate(
       {
@@ -445,6 +460,7 @@ export default function AdminUsersPage() {
           role,
           phone: normalizeUzPhone(phone) || undefined,
           departmentId: departmentId === 'none' ? null : Number(departmentId),
+          assignedViloyat: isRegionalManagerRole(role) ? assignedViloyat : null,
         } as any,
       },
       {
@@ -502,6 +518,14 @@ export default function AdminUsersPage() {
     ) {
       return;
     }
+    if (isRegionalManagerRole(role) && !assignedViloyat) {
+      toast({
+        title: 'Viloyat tanlanmagan',
+        description: 'Regional menejer uchun viloyatni tanlang',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     updateMutation.mutate(
       {
@@ -512,7 +536,8 @@ export default function AdminUsersPage() {
           phone: normalizeUzPhone(phone) || null,
           departmentId: departmentId === 'none' ? null : Number(departmentId),
           status,
-        },
+          assignedViloyat: isRegionalManagerRole(role) ? assignedViloyat : null,
+        } as any,
       },
       {
         onSuccess: () => {
@@ -839,7 +864,12 @@ export default function AdminUsersPage() {
                         {u.phone && <div className="text-xs text-muted-foreground">{u.phone}</div>}
                       </td>
                       <td className="px-4 py-3">
-                        <Badge variant="secondary">{userRoleLabel(u.role) || u.role}</Badge>
+                        <Badge variant="secondary">
+                          {userRoleLabel(u.role) || u.role}
+                          {isRegionalManagerRole(u.role) && (u as User & { assignedViloyat?: string | null }).assignedViloyat
+                            ? ` · ${viloyatLabel((u as User & { assignedViloyat?: string | null }).assignedViloyat)}`
+                            : ''}
+                        </Badge>
                       </td>
                       <td className="px-4 py-3 font-mono text-xs">{u.login}</td>
                       <td className="px-4 py-3 text-muted-foreground">{u.departmentName || '—'}</td>
@@ -1042,6 +1072,26 @@ export default function AdminUsersPage() {
                     : ''}
                 </p>
               </div>
+              {isRegionalManagerRole(role) ? (
+                <div className="space-y-2">
+                  <Label>Viloyat *</Label>
+                  <Select value={assignedViloyat || undefined} onValueChange={setAssignedViloyat}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Viloyatni tanlang" />
+                    </SelectTrigger>
+                    <SelectContent position="popper" className="z-[100] max-h-80">
+                      {VILOYAT_OPTIONS.map((v) => (
+                        <SelectItem key={v.slug} value={v.slug}>
+                          {v.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Faqat shu viloyatdagi koordinator, filial, davomat, checklist, smena va ehtiyojlar ochiladi.
+                  </p>
+                </div>
+              ) : null}
               <div className="space-y-2">
                 <Label>Telefon (ixtiyoriy)</Label>
                 <PhoneInput value={phone} onChange={setPhone} />
@@ -1109,7 +1159,14 @@ export default function AdminUsersPage() {
               </div>
               <div className="space-y-2">
                 <Label>Rol *</Label>
-                <Select value={role} onValueChange={setRole}>
+                <Select
+                  value={role}
+                  onValueChange={(v) => {
+                    setRole(v);
+                    setRolePick(v);
+                    if (!isRegionalManagerRole(v)) setAssignedViloyat('');
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Rolni tanlang" />
                   </SelectTrigger>
@@ -1120,6 +1177,23 @@ export default function AdminUsersPage() {
                   </SelectContent>
                 </Select>
               </div>
+              {isRegionalManagerRole(role) ? (
+                <div className="space-y-2">
+                  <Label>Viloyat *</Label>
+                  <Select value={assignedViloyat || undefined} onValueChange={setAssignedViloyat}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Viloyatni tanlang" />
+                    </SelectTrigger>
+                    <SelectContent position="popper" className="z-[100] max-h-80">
+                      {VILOYAT_OPTIONS.map((v) => (
+                        <SelectItem key={v.slug} value={v.slug}>
+                          {v.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
               <div className="space-y-2">
                 <Label>Telefon (ixtiyoriy)</Label>
                 <PhoneInput value={phone} onChange={setPhone} />

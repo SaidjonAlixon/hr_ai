@@ -476,6 +476,64 @@ export async function approveDevice(deviceRowId: number, reviewedBy: number) {
   return device;
 }
 
+/** Pending qurilma uchun almashtirish so‘rovi (mavjud bo‘lsa qayta yaratmaydi) */
+export async function ensureDeviceChangeRequest(opts: {
+  userId: number;
+  newDeviceRowId: number;
+  reason?: string | null;
+}): Promise<{ created: boolean; requestId?: number }> {
+  const [existing] = await db
+    .select({ id: deviceChangeRequestsTable.id })
+    .from(deviceChangeRequestsTable)
+    .where(
+      and(
+        eq(deviceChangeRequestsTable.newDeviceRowId, opts.newDeviceRowId),
+        eq(deviceChangeRequestsTable.status, "pending"),
+      ),
+    )
+    .limit(1);
+  if (existing) return { created: false, requestId: existing.id };
+
+  const [oldPrimary] = await db
+    .select({ id: userDevicesTable.id })
+    .from(userDevicesTable)
+    .where(
+      and(
+        eq(userDevicesTable.userId, opts.userId),
+        eq(userDevicesTable.isPrimary, true),
+        eq(userDevicesTable.isVerified, true),
+      ),
+    )
+    .limit(1);
+
+  const [row] = await db
+    .insert(deviceChangeRequestsTable)
+    .values({
+      userId: opts.userId,
+      oldDeviceRowId: oldPrimary?.id ?? null,
+      newDeviceRowId: opts.newDeviceRowId,
+      status: "pending",
+      reason: opts.reason?.slice(0, 500) || null,
+    })
+    .returning({ id: deviceChangeRequestsTable.id });
+  return { created: true, requestId: row?.id };
+}
+
+/** Bloklangan qurilmani qayta «tasdiq kutilmoqda» holatiga qaytaradi */
+export async function reopenDeviceForApproval(deviceRowId: number) {
+  await db
+    .update(userDevicesTable)
+    .set({
+      isBlocked: false,
+      isVerified: false,
+      isPrimary: false,
+      blockedAt: null,
+      blockedBy: null,
+      lastSeenAt: new Date(),
+    })
+    .where(eq(userDevicesTable.id, deviceRowId));
+}
+
 export async function touchDevice(deviceRowId: number, ip?: string) {
   await db
     .update(userDevicesTable)

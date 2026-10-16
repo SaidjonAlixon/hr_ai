@@ -16,8 +16,10 @@ import { requireRegisteredDevice } from "../middlewares/device-security";
 import { canManageKochmaAdmin, canManageUsers, canViewKochmaAdmin } from "../lib/roles";
 import {
   approveDevice,
+  ensureDeviceChangeRequest,
   getDeviceSecuritySettings,
   invalidateSettingsCache,
+  reopenDeviceForApproval,
   revokeSessionsForUser,
   staffGroupForRole,
   writeSecurityEvent,
@@ -625,7 +627,7 @@ router.post("/devices/me/request-change", async (req: AuthRequest, res): Promise
       res.status(400).json({ error: "Qurilma cookie topilmadi — qayta login urinib ko‘ring" });
       return;
     }
-    const [device] = await db
+    let [device] = await db
       .select()
       .from(userDevicesTable)
       .where(and(eq(userDevicesTable.userId, userId), eq(userDevicesTable.deviceId, cred.deviceId)))
@@ -634,41 +636,25 @@ router.post("/devices/me/request-change", async (req: AuthRequest, res): Promise
       res.status(400).json({ error: "Qurilma topilmadi" });
       return;
     }
-    const [oldPrimary] = await db
-      .select()
-      .from(userDevicesTable)
-      .where(
-        and(
-          eq(userDevicesTable.userId, userId),
-          eq(userDevicesTable.isPrimary, true),
-          eq(userDevicesTable.isVerified, true),
-        ),
-      )
-      .limit(1);
-
-    const [existingReq] = await db
-      .select({ id: deviceChangeRequestsTable.id })
-      .from(deviceChangeRequestsTable)
-      .where(
-        and(
-          eq(deviceChangeRequestsTable.newDeviceRowId, device.id),
-          eq(deviceChangeRequestsTable.status, "pending"),
-        ),
-      )
-      .limit(1);
-    if (!existingReq) {
-      await db.insert(deviceChangeRequestsTable).values({
-        userId,
-        oldDeviceRowId: oldPrimary?.id ?? null,
-        newDeviceRowId: device.id,
-        status: "pending",
-        reason: String(req.body?.reason || "").slice(0, 500) || null,
-      });
+    // Bloklangan bo‘lsa — qayta ochib so‘rovga qo‘yamiz
+    if (device.isBlocked || device.isVerified === false) {
+      await reopenDeviceForApproval(device.id);
+      [device] = await db
+        .select()
+        .from(userDevicesTable)
+        .where(eq(userDevicesTable.id, device.id))
+        .limit(1);
     }
+
+    await ensureDeviceChangeRequest({
+      userId,
+      newDeviceRowId: device!.id,
+      reason: String(req.body?.reason || "").slice(0, 500) || "Login sahifasidan so‘rov",
+    });
 
     await writeSecurityEvent({
       userId,
-      deviceRowId: device.id,
+      deviceRowId: device!.id,
       eventType: "device_change_request",
       severity: "medium",
     });
@@ -684,13 +670,13 @@ router.post("/devices/me/request-change", async (req: AuthRequest, res): Promise
       .from(usersTable)
       .where(eq(usersTable.status, "active"));
     for (const a of admins) {
-      if (!canManageUsers(a.role)) continue;
+      if (!canManageKochmaAdmin(a.role) && !canManageUsers(a.role)) continue;
       await notifyUser({
         userId: a.id,
-        text: `${user?.fullName || "Xodim"} yangi qurilmadan foydalanishga ruxsat so‘ramoqda.`,
+        text: `${user?.fullName || "Xodim"} yangi qurilmadan foydalanishga ruxsat so‘ramoqda. Qurilmalar ? Ruxsat so‘rovlari.`,
         type: "security",
         linkUrl: "/admin/qurilmalar",
-        title: "Qurilma almashtirish",
+        title: "Qurilma almashtirish so‘rovi",
       });
     }
 

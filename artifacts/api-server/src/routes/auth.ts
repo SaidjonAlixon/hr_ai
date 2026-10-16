@@ -18,9 +18,11 @@ import {
   writeSecurityEvent,
   countVerifiedDevices,
   touchDevice,
+  ensureDeviceChangeRequest,
+  reopenDeviceForApproval,
 } from "../lib/device-security";
 import { notifyUser } from "../lib/notify";
-import { canManageUsers } from "../lib/roles";
+import { canManageKochmaAdmin, canManageUsers } from "../lib/roles";
 
 const router: IRouter = Router();
 
@@ -81,12 +83,14 @@ async function notifyAdminsDevice(opts: {
       .from(usersTable)
       .where(eq(usersTable.status, "active"));
     for (const a of admins) {
-      if (!canManageUsers(a.role)) continue;
+      // Qurilmalar bo‘limini boshqaradiganlar: admin / asoschi / director
+      if (!canManageKochmaAdmin(a.role) && !canManageUsers(a.role)) continue;
       await notifyUser({
         userId: a.id,
         text: `${opts.title}: ${opts.message}`,
         type: "security",
         linkUrl: opts.link || "/admin/qurilmalar",
+        title: opts.title,
       });
     }
   } catch (err) {
@@ -169,7 +173,14 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     const cred = readDeviceCookie(req);
     let device = cred ? await findDeviceByCred(user.id, cred.deviceId, cred.token) : null;
 
+    // Bloklangan cookie — qayta so‘rov ochiladi (admin «Ruxsat so‘rovlari»da ko‘radi)
     if (device && device.isBlocked) {
+      await reopenDeviceForApproval(device.id);
+      await ensureDeviceChangeRequest({
+        userId: user.id,
+        newDeviceRowId: device.id,
+        reason: "Bloklangan qurilmadan qayta kirish — almashtirish so‘rovi",
+      });
       await writeLoginAudit({
         userId: user.id,
         deviceRowId: device.id,
@@ -177,20 +188,29 @@ router.post("/auth/login", async (req, res): Promise<void> => {
         ipAddress: ip,
         userAgent: ua,
         action: "login",
-        status: "blocked",
-        failureReason: "DEVICE_BLOCKED",
+        status: "pending",
+        failureReason: "DEVICE_PENDING",
       });
       await writeSecurityEvent({
         userId: user.id,
         deviceRowId: device.id,
-        eventType: "device_blocked_login",
+        eventType: "device_change_request",
         severity: "high",
+        metadata: { deviceName: device.deviceName, ip, fromBlocked: true },
+      });
+      await notifyAdminsDevice({
+        title: "Qurilma almashtirish so‘rovi",
+        message: `${user.fullName} qurilma almashtirish so‘ramoqda (${device.deviceName || "qurilma"}). Qurilmalar → Ruxsat so‘rovlari.`,
       });
       res.status(403).json({
         success: false,
-        code: "DEVICE_NOT_AUTHORIZED",
-        error: "Qurilma bloklangan. Administratorga murojaat qiling.",
-        message: "Qurilma bloklangan. Administratorga murojaat qiling.",
+        code: "DEVICE_PENDING",
+        error: "Qurilma admin tasdig‘ini kutmoqda.",
+        message:
+          "So‘rov adminga yuborildi. Tasdiqlansa shu qurilma asosiy bo‘ladi.",
+        canRequestChange: true,
+        requestSent: true,
+        device: { name: device.deviceName, os: device.os, browser: device.browser },
       });
       return;
     }
@@ -230,6 +250,11 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     }
 
     if (device && !device.isVerified) {
+      await ensureDeviceChangeRequest({
+        userId: user.id,
+        newDeviceRowId: device.id,
+        reason: "Yangi qurilma tasdiq kutilmoqda",
+      });
       await writeLoginAudit({
         userId: user.id,
         deviceRowId: device.id,
@@ -240,11 +265,17 @@ router.post("/auth/login", async (req, res): Promise<void> => {
         status: "pending",
         failureReason: "DEVICE_PENDING",
       });
+      await notifyAdminsDevice({
+        title: "Qurilma almashtirish so‘rovi",
+        message: `${user.fullName} qurilma tasdig‘ini kutmoqda (${device.deviceName || "qurilma"}). Qurilmalar → Ruxsat so‘rovlari.`,
+      });
       res.status(403).json({
         success: false,
         code: "DEVICE_PENDING",
         error: "Qurilma admin tasdig‘ini kutmoqda.",
-        message: "Qurilma admin tasdig‘ini kutmoqda.",
+        message: "So‘rov adminga yuborildi. Tasdiqlansa shu qurilmadan kira olasiz.",
+        canRequestChange: true,
+        requestSent: true,
         device: {
           name: device.deviceName,
           os: device.os,
@@ -269,36 +300,11 @@ router.post("/auth/login", async (req, res): Promise<void> => {
 
       // Adminga almashtirish so‘rovi — tasdiqlasa shu qurilma asosiy bo‘ladi
       try {
-        const [existingReq] = await db
-          .select({ id: deviceChangeRequestsTable.id })
-          .from(deviceChangeRequestsTable)
-          .where(
-            and(
-              eq(deviceChangeRequestsTable.newDeviceRowId, pending.rowId),
-              eq(deviceChangeRequestsTable.status, "pending"),
-            ),
-          )
-          .limit(1);
-        if (!existingReq) {
-          const [oldPrimary] = await db
-            .select({ id: userDevicesTable.id })
-            .from(userDevicesTable)
-            .where(
-              and(
-                eq(userDevicesTable.userId, user.id),
-                eq(userDevicesTable.isPrimary, true),
-                eq(userDevicesTable.isVerified, true),
-              ),
-            )
-            .limit(1);
-          await db.insert(deviceChangeRequestsTable).values({
-            userId: user.id,
-            oldDeviceRowId: oldPrimary?.id ?? null,
-            newDeviceRowId: pending.rowId,
-            status: "pending",
-            reason: "Yangi qurilmadan kirish urinishi",
-          });
-        }
+        await ensureDeviceChangeRequest({
+          userId: user.id,
+          newDeviceRowId: pending.rowId,
+          reason: "Yangi qurilmadan kirish urinishi",
+        });
       } catch (e) {
         console.error("device_change_request insert", e);
       }
@@ -320,12 +326,11 @@ router.post("/auth/login", async (req, res): Promise<void> => {
         severity: "high",
         metadata: { deviceName: meta.deviceName, ip },
       });
-      if (settings.suspiciousNotify) {
-        await notifyAdminsDevice({
-          title: "Qurilma almashtirish so‘rovi",
-          message: `${user.fullName} yangi qurilmadan kirishga harakat qildi (${meta.deviceName}). Qurilmalar bo‘limidan tasdiqlang.`,
-        });
-      }
+      // Har doim adminga (faqat suspiciousNotify ga bog‘lanmaydi)
+      await notifyAdminsDevice({
+        title: "Qurilma almashtirish so‘rovi",
+        message: `${user.fullName} yangi qurilmadan kirishga harakat qildi (${meta.deviceName}). Qurilmalar → Ruxsat so‘rovlari.`,
+      });
 
       res.status(403).json({
         success: false,

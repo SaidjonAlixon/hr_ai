@@ -19,7 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -45,8 +45,14 @@ import {
   type DeviceSettings,
 } from "@/lib/device-security-api";
 import {
+  Ban,
   Building2,
+  CheckCircle2,
+  Clock3,
+  KeyRound,
   Loader2,
+  LogOut,
+  Monitor,
   MonitorSmartphone,
   RefreshCw,
   Search,
@@ -54,8 +60,12 @@ import {
   ShieldAlert,
   ShieldCheck,
   ShieldOff,
+  Smartphone,
+  Star,
   Store,
+  Tablet,
   Users,
+  XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -74,32 +84,66 @@ function fmt(v: string | null | undefined) {
   }
 }
 
-function StatusBadge({ status }: { status: string }) {
+function statusMeta(status: string) {
   if (status === "active")
-    return (
-      <Badge className="bg-emerald-100 text-emerald-800" title="Hozir faol session bor">
-        Hozir onlayn
-      </Badge>
-    );
+    return {
+      label: "Hozir onlayn",
+      hint: "Xodim hozir shu qurilmadan tizimda",
+      className: "bg-emerald-500/12 text-emerald-800 ring-1 ring-emerald-500/25 dark:text-emerald-300",
+      dot: "bg-emerald-500",
+    };
   if (status === "pending")
-    return (
-      <Badge className="bg-amber-100 text-amber-900" title="Admin tasdiqlashi kerak">
-        Tasdiqlash kutilmoqda
-      </Badge>
-    );
+    return {
+      label: "Tasdiq kutilmoqda",
+      hint: "Admin ruxsati bo‘lmaguncha kirish ochilmaydi",
+      className: "bg-amber-500/12 text-amber-900 ring-1 ring-amber-500/25 dark:text-amber-300",
+      dot: "bg-amber-500",
+    };
   if (status === "blocked")
-    return (
-      <Badge className="bg-rose-100 text-rose-800" title="Kirish taqiqlangan">
-        Bloklangan
-      </Badge>
-    );
+    return {
+      label: "Bloklangan",
+      hint: "Bu qurilmadan kirish taqiqlangan",
+      className: "bg-rose-500/12 text-rose-800 ring-1 ring-rose-500/25 dark:text-rose-300",
+      dot: "bg-rose-500",
+    };
   if (status === "inactive")
-    return (
-      <Badge className="bg-sky-100 text-sky-900" title="Tasdiqlangan, lekin hozir session yo‘q">
-        Offline (tasdiqlangan)
-      </Badge>
-    );
-  return <Badge variant="secondary">Noma’lum</Badge>;
+    return {
+      label: "Offline",
+      hint: "Tasdiqlangan, lekin hozir ochiq session yo‘q",
+      className: "bg-sky-500/12 text-sky-900 ring-1 ring-sky-500/25 dark:text-sky-300",
+      dot: "bg-sky-500",
+    };
+  return {
+    label: "Noma’lum",
+    hint: "",
+    className: "bg-muted text-muted-foreground ring-1 ring-border",
+    dot: "bg-muted-foreground",
+  };
+}
+
+function StatusBadge({ status, compact }: { status: string; compact?: boolean }) {
+  const m = statusMeta(status);
+  return (
+    <span
+      title={m.hint}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold",
+        m.className,
+        compact && "px-2 py-0.5",
+      )}
+    >
+      <span className={cn("h-1.5 w-1.5 rounded-full", m.dot)} />
+      {m.label}
+    </span>
+  );
+}
+
+function deviceKind(type?: string | null) {
+  const t = String(type || "").toLowerCase();
+  if (t === "mobile") return { label: "Telefon", Icon: Smartphone };
+  if (t === "tablet") return { label: "Planshet", Icon: Tablet };
+  if (t === "desktop") return { label: "Kompyuter", Icon: Monitor };
+  return { label: "Qurilma", Icon: MonitorSmartphone };
 }
 
 function displayOsBrowser(os?: string | null, browser?: string | null) {
@@ -109,19 +153,6 @@ function displayOsBrowser(os?: string | null, browser?: string | null) {
   if (!o) return b;
   if (!b) return o;
   return `${o} · ${b}`;
-}
-
-function ActionBtn({
-  children,
-  hint,
-  ...props
-}: React.ComponentProps<typeof Button> & { hint: string }) {
-  return (
-    <div className="flex min-w-[9.5rem] flex-col gap-0.5">
-      <Button {...props}>{children}</Button>
-      <span className="px-0.5 text-[10px] leading-tight text-muted-foreground">{hint}</span>
-    </div>
-  );
 }
 
 export default function AdminQurilmalarPage() {
@@ -232,6 +263,7 @@ export default function AdminQurilmalarPage() {
 
   const openDetail = async (id: number) => {
     setDetailId(id);
+    setDetail(null);
     try {
       const d = await fetchDeviceDetail(id);
       setDetail(d as typeof detail);
@@ -259,54 +291,65 @@ export default function AdminQurilmalarPage() {
   };
 
   if (!allowed) {
-    return (
-      <div className="py-16 text-center text-muted-foreground">Ruxsat yo‘q</div>
-    );
+    return <div className="py-16 text-center text-muted-foreground">Ruxsat yo‘q</div>;
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
-            <MonitorSmartphone className="h-7 w-7 text-primary" />
-            Qurilmalar
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Device Security — faqat tanlangan / ofis / dorixona scope dagi xodimlar uchun majburiy
-            {!canEdit ? " · Faqat ko‘rish (o‘zgartirish admin)" : ""}
-          </p>
+    <div className="mx-auto max-w-[1400px] space-y-6 pb-10">
+      <header className="relative overflow-hidden rounded-2xl border border-[#1e3a8a]/15 bg-gradient-to-br from-[#0f274f] via-[#1e3a8a] to-[#2d4a8a] px-5 py-6 text-white shadow-lg sm:px-7">
+        <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
+        <div className="pointer-events-none absolute bottom-0 left-1/3 h-24 w-48 rounded-full bg-sky-300/20 blur-3xl" />
+        <div className="relative flex flex-wrap items-start justify-between gap-4">
+          <div className="max-w-2xl">
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-[11px] font-medium ring-1 ring-white/15">
+              <Shield className="h-3.5 w-3.5" />
+              Qurilma xavfsizligi
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Qurilmalar</h1>
+            <p className="mt-2 text-sm leading-relaxed text-white/80">
+              Xodim qaysi telefon yoki kompyuterdan kirganini ko‘ring. Asosiy qurilmani belgilang,
+              begona kirishni tasdiqlang yoki bloklang.
+              {!canEdit ? " · Sizda faqat ko‘rish huquqi bor." : ""}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="bg-white/95 text-[#1e3a8a] hover:bg-white"
+            onClick={() => void load()}
+            disabled={loading}
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Yangilash
+          </Button>
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          Yangilash
-        </Button>
-      </div>
+      </header>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <Kpi icon={<Shield className="h-4 w-4" />} label="Jami" value={summary.total} />
-        <Kpi icon={<ShieldCheck className="h-4 w-4 text-emerald-600" />} label="Faol" value={summary.active} />
-        <Kpi icon={<ShieldAlert className="h-4 w-4 text-amber-600" />} label="Kutilmoqda" value={summary.pending} />
-        <Kpi icon={<ShieldOff className="h-4 w-4 text-rose-600" />} label="Bloklangan" value={summary.blocked} />
-        <Kpi icon={<ShieldAlert className="h-4 w-4 text-rose-700" />} label="Shubhali (7 kun)" value={summary.suspicious} />
+        <Kpi icon={<Shield className="h-4 w-4" />} label="Jami qurilma" value={summary.total} tone="slate" />
+        <Kpi icon={<ShieldCheck className="h-4 w-4" />} label="Hozir onlayn" value={summary.active} tone="emerald" />
+        <Kpi icon={<Clock3 className="h-4 w-4" />} label="Tasdiq kutilmoqda" value={summary.pending} tone="amber" />
+        <Kpi icon={<ShieldOff className="h-4 w-4" />} label="Bloklangan" value={summary.blocked} tone="rose" />
+        <Kpi icon={<ShieldAlert className="h-4 w-4" />} label="Shubhali (7 kun)" value={summary.suspicious} tone="orange" />
       </div>
 
       <Tabs defaultValue="devices" className="space-y-4">
-        <TabsList className="ds-tabs">
-          <TabsTrigger value="devices" className="ds-tab">
+        <TabsList className="ds-tabs h-auto flex-wrap gap-1 rounded-xl bg-muted/60 p-1">
+          <TabsTrigger value="devices" className="ds-tab rounded-lg px-3 py-2">
             Qurilmalar
           </TabsTrigger>
-          <TabsTrigger value="enforce" className="ds-tab">
-            Majburiy userlar
+          <TabsTrigger value="enforce" className="ds-tab rounded-lg px-3 py-2">
+            Majburiy xodimlar
           </TabsTrigger>
-          <TabsTrigger value="settings" className="ds-tab">
+          <TabsTrigger value="settings" className="ds-tab rounded-lg px-3 py-2">
             Sozlamalar
           </TabsTrigger>
-          <TabsTrigger value="history" className="ds-tab">
+          <TabsTrigger value="history" className="ds-tab rounded-lg px-3 py-2">
             Login tarixi
           </TabsTrigger>
-          <TabsTrigger value="events" className="ds-tab">
-            Security events
+          <TabsTrigger value="events" className="ds-tab rounded-lg px-3 py-2">
+            Xavfsizlik hodisalari
           </TabsTrigger>
         </TabsList>
 
@@ -315,76 +358,115 @@ export default function AdminQurilmalarPage() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                className="pl-9"
-                placeholder="Xodim, telefon, IP, Device ID…"
+                className="h-11 rounded-xl border-border/70 bg-background pl-9 shadow-sm"
+                placeholder="Xodim, login, telefon, IP…"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
               />
             </div>
             <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger className="w-full sm:w-48">
+              <SelectTrigger className="h-11 w-full rounded-xl sm:w-52">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Barcha holatlar</SelectItem>
                 <SelectItem value="active">Hozir onlayn</SelectItem>
-                <SelectItem value="pending">Tasdiqlash kutilmoqda</SelectItem>
+                <SelectItem value="pending">Tasdiq kutilmoqda</SelectItem>
                 <SelectItem value="blocked">Bloklangan</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
-          <Card className="overflow-hidden">
+          <Card className="overflow-hidden border-border/60 shadow-sm">
             <CardContent className="overflow-x-auto p-0">
-              <table className="w-full min-w-[1100px] text-left text-sm">
-                <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2">Xodim</th>
-                    <th className="px-3 py-2">Login / tel</th>
-                    <th className="px-3 py-2">Bo‘lim</th>
-                    <th className="px-3 py-2">Qurilma</th>
-                    <th className="px-3 py-2">Tizim / Brauzer</th>
-                    <th className="px-3 py-2">IP</th>
-                    <th className="px-3 py-2">Oxirgi faollik</th>
-                    <th className="px-3 py-2">Holat</th>
-                    <th className="px-3 py-2">Asosiy?</th>
+              <table className="w-full min-w-[980px] text-left text-sm">
+                <thead>
+                  <tr className="border-b bg-gradient-to-r from-slate-50 to-white text-[11px] uppercase tracking-wide text-muted-foreground dark:from-slate-900/50 dark:to-background">
+                    <th className="px-4 py-3 font-semibold">Xodim</th>
+                    <th className="px-4 py-3 font-semibold">Qurilma</th>
+                    <th className="px-4 py-3 font-semibold">Holat</th>
+                    <th className="px-4 py-3 font-semibold">Faollik</th>
+                    <th className="px-4 py-3 font-semibold">IP</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {devices.map((d) => (
-                    <tr
-                      key={d.id}
-                      className="cursor-pointer border-b hover:bg-muted/40"
-                      onClick={() => void openDetail(d.id)}
-                    >
-                      <td className="px-3 py-2 font-medium">
-                        {d.fullName}
-                        <div className="text-[10px] text-muted-foreground">{d.staffGroup}</div>
-                      </td>
-                      <td className="px-3 py-2 text-xs">
-                        {d.login}
-                        <div className="text-muted-foreground">{d.phone || "—"}</div>
-                      </td>
-                      <td className="px-3 py-2 text-xs">{d.departmentName || "—"}</td>
-                      <td className="px-3 py-2 text-xs">
-                        {d.deviceName || "—"}
-                        <div className="text-muted-foreground">{d.deviceType}</div>
-                      </td>
-                      <td className="px-3 py-2 text-xs">
-                        {displayOsBrowser(d.os, d.browser)}
-                      </td>
-                      <td className="px-3 py-2 font-mono text-xs">{d.lastIp || d.ipAddress || "—"}</td>
-                      <td className="px-3 py-2 text-xs tabular-nums">{fmt(d.lastSeenAt)}</td>
-                      <td className="px-3 py-2">
-                        <StatusBadge status={d.status} />
-                      </td>
-                      <td className="px-3 py-2 text-xs">{d.isPrimary ? "Ha · asosiy" : "Yo‘q"}</td>
-                    </tr>
-                  ))}
+                  {devices.map((d) => {
+                    const kind = deviceKind(d.deviceType);
+                    const Icon = kind.Icon;
+                    return (
+                      <tr
+                        key={d.id}
+                        className="cursor-pointer border-b border-border/50 transition-colors hover:bg-[#1e3a8a]/[0.04]"
+                        onClick={() => void openDetail(d.id)}
+                      >
+                        <td className="px-4 py-3.5">
+                          <div className="font-semibold text-foreground">{d.fullName}</div>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                            <span>{d.login}</span>
+                            {d.phone ? <span>· {d.phone}</span> : null}
+                          </div>
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            <span
+                              className={cn(
+                                "rounded-md px-1.5 py-0.5 text-[10px] font-medium",
+                                d.staffGroup === "pharmacy"
+                                  ? "bg-teal-500/10 text-teal-800 dark:text-teal-300"
+                                  : "bg-sky-500/10 text-sky-800 dark:text-sky-300",
+                              )}
+                            >
+                              {d.staffGroup === "pharmacy" ? "Dorixona" : "Ofis"}
+                            </span>
+                            {d.departmentName ? (
+                              <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                                {d.departmentName}
+                              </span>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <div className="flex items-start gap-2.5">
+                            <div className="mt-0.5 rounded-lg bg-muted/80 p-2 ring-1 ring-border/60">
+                              <Icon className="h-4 w-4 text-[#1e3a8a] dark:text-sky-300" />
+                            </div>
+                            <div>
+                              <div className="font-medium">{d.deviceName || "Nomsiz qurilma"}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {kind.label} · {displayOsBrowser(d.os, d.browser)}
+                              </div>
+                              {d.isPrimary ? (
+                                <div className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                                  <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
+                                  Asosiy qurilma
+                                </div>
+                              ) : (
+                                <div className="mt-1 text-[11px] text-muted-foreground">Asosiy emas</div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <StatusBadge status={d.status} />
+                        </td>
+                        <td className="px-4 py-3.5 text-xs tabular-nums text-muted-foreground">
+                          {fmt(d.lastSeenAt)}
+                        </td>
+                        <td className="px-4 py-3.5 font-mono text-xs text-muted-foreground">
+                          {d.lastIp || d.ipAddress || "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {!loading && devices.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-3 py-10 text-center text-muted-foreground">
-                        Qurilma yo‘q — xodimni «Majburiy userlar» dan yoqing
+                      <td colSpan={5} className="px-4 py-14 text-center">
+                        <div className="mx-auto max-w-sm space-y-2">
+                          <MonitorSmartphone className="mx-auto h-8 w-8 text-muted-foreground/50" />
+                          <p className="font-medium">Hali qurilma yo‘q</p>
+                          <p className="text-sm text-muted-foreground">
+                            Xodimni «Majburiy xodimlar» dan yoqing — keyin birinchi login shu yerda
+                            chiqadi.
+                          </p>
+                        </div>
                       </td>
                     </tr>
                   ) : null}
@@ -400,11 +482,12 @@ export default function AdminQurilmalarPage() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <CardTitle className="flex items-center gap-2 text-base">
-                    <Users className="h-4 w-4 text-primary" />
-                    Majburiy userlar
+                    <Users className="h-4 w-4 text-[#1e3a8a]" />
+                    Majburiy xodimlar
                   </CardTitle>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Ofis yoki Dorixona bo‘yicha belgilang — ro‘yxat chiqadi, qidirib filter qiling
+                  <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+                    Yoqilganda xodim faqat o‘z asosiy qurilmasidan kira oladi. Boshqa joydan urinish
+                    bloklanadi va adminga so‘rov keladi.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs">
@@ -432,12 +515,12 @@ export default function AdminQurilmalarPage() {
                     className="mt-0.5"
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 font-semibold text-foreground">
+                    <div className="flex items-center gap-2 font-semibold">
                       <Building2 className="h-4 w-4 text-sky-600" />
                       Ofis
                     </div>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      Ofis xodimlari · {enforceCounts.office} ta · yoqilgan {enforceCounts.officeOn}
+                      {enforceCounts.office} ta · yoqilgan {enforceCounts.officeOn}
                     </p>
                   </div>
                 </label>
@@ -446,7 +529,7 @@ export default function AdminQurilmalarPage() {
                   className={cn(
                     "flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition-all",
                     showPharmacy
-                      ? "border-violet-300 bg-violet-50/80 shadow-sm dark:border-violet-500/40 dark:bg-violet-500/10"
+                      ? "border-teal-300 bg-teal-50/80 shadow-sm dark:border-teal-500/40 dark:bg-teal-500/10"
                       : "border-border/70 bg-card hover:bg-muted/40",
                   )}
                 >
@@ -456,8 +539,8 @@ export default function AdminQurilmalarPage() {
                     className="mt-0.5"
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 font-semibold text-foreground">
-                      <Store className="h-4 w-4 text-violet-600" />
+                    <div className="flex items-center gap-2 font-semibold">
+                      <Store className="h-4 w-4 text-teal-700" />
                       Dorixona
                     </div>
                     <p className="mt-0.5 text-xs text-muted-foreground">
@@ -473,7 +556,7 @@ export default function AdminQurilmalarPage() {
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     className="h-10 rounded-xl border-border/70 bg-background pl-9"
-                    placeholder="Ism, login, rol, bo‘lim bo‘yicha qidirish…"
+                    placeholder="Ism, login, rol, bo‘lim…"
                     value={enforceQ}
                     onChange={(e) => setEnforceQ(e.target.value)}
                   />
@@ -496,13 +579,9 @@ export default function AdminQurilmalarPage() {
 
             <CardContent className="max-h-[min(560px,60vh)] space-y-2 overflow-y-auto p-3 sm:p-4">
               {!showOffice && !showPharmacy ? (
-                <div className="rounded-xl border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
-                  Ofis yoki Dorixona checkboxini belgilang — xodimlar shu yerda chiqadi
-                </div>
+                <EmptyHint text="Ofis yoki Dorixona ni belgilang — xodimlar shu yerda chiqadi" />
               ) : filteredEnforceUsers.length === 0 ? (
-                <div className="rounded-xl border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
-                  Mos xodim topilmadi
-                </div>
+                <EmptyHint text="Mos xodim topilmadi" />
               ) : (
                 filteredEnforceUsers.map((u) => (
                   <div
@@ -522,7 +601,7 @@ export default function AdminQurilmalarPage() {
                           className={cn(
                             "text-[10px]",
                             u.staffGroup === "pharmacy"
-                              ? "border-violet-200 text-violet-700 dark:border-violet-500/30 dark:text-violet-300"
+                              ? "border-teal-200 text-teal-800 dark:border-teal-500/30 dark:text-teal-300"
                               : "border-sky-200 text-sky-700 dark:border-sky-500/30 dark:text-sky-300",
                           )}
                         >
@@ -535,8 +614,8 @@ export default function AdminQurilmalarPage() {
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      <span className="hidden text-[11px] text-muted-foreground sm:inline">
-                        {u.enforced ? "Majburiy" : "O‘chirilgan"}
+                      <span className="hidden text-[11px] font-medium text-muted-foreground sm:inline">
+                        {u.enforced ? "1 qurilma" : "Erkin"}
                       </span>
                       <Switch
                         checked={u.enforced}
@@ -544,7 +623,7 @@ export default function AdminQurilmalarPage() {
                         onCheckedChange={(v) =>
                           void run(
                             () => setUserEnforce(u.id, v),
-                            v ? "Majburiy yoqildi" : "O‘chirildi",
+                            v ? "Majburiy yoqildi — faqat 1 qurilma" : "Majburiy o‘chirildi",
                           )
                         }
                       />
@@ -558,102 +637,122 @@ export default function AdminQurilmalarPage() {
 
         <TabsContent value="settings" className="mt-0">
           {settings ? (
-            <Card>
-              <CardContent className="space-y-4 pt-5">
+            <Card className="border-border/70 shadow-sm">
+              <CardHeader className="border-b pb-4">
+                <CardTitle className="text-base">Umumiy sozlamalar</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Qaysi guruhga qurilma himoyasi qo‘llanadi va qancha qurilma ruxsat etiladi.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-5 pt-5">
                 <div>
-                  <Label>Enforcement mode</Label>
+                  <Label className="text-sm font-semibold">Kimlarga qo‘llanadi?</Label>
                   <Select
                     value={settings.enforcementMode}
                     onValueChange={(v) => setSettings({ ...settings, enforcementMode: v })}
                   >
-                    <SelectTrigger className="mt-1">
+                    <SelectTrigger className="mt-1.5 h-11 rounded-xl">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="off">Off (hech kim)</SelectItem>
-                      <SelectItem value="selected">Selected (tanlangan userlar)</SelectItem>
-                      <SelectItem value="office">Ofis xodimlari</SelectItem>
-                      <SelectItem value="pharmacy">Dorixona xodimlari</SelectItem>
-                      <SelectItem value="all">Hammasi</SelectItem>
+                      <SelectItem value="off">O‘chiq — hech kimga</SelectItem>
+                      <SelectItem value="selected">Faqat «Majburiy» yoqilganlar</SelectItem>
+                      <SelectItem value="office">Barcha ofis xodimlari</SelectItem>
+                      <SelectItem value="pharmacy">Barcha dorixona xodimlari</SelectItem>
+                      <SelectItem value="all">Hammaga</SelectItem>
                     </SelectContent>
                   </Select>
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    «Majburiy» yoqilgan alohida xodimlar rejimdan qat’i nazar 1 qurilmaga bog‘lanadi.
+                  </p>
                 </div>
+
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-3 rounded-xl border p-3">
-                    <p className="font-semibold">Ofis</p>
+                  <PolicyCard title="Ofis" tone="sky">
                     <FieldNum
-                      label="Max qurilma"
+                      label="Maksimal qurilma soni"
+                      hint="Bir xodim nechta qurilmadan kirishi mumkin"
                       value={settings.officeMaxDevices}
                       onChange={(n) => setSettings({ ...settings, officeMaxDevices: n })}
                     />
                     <Toggle
-                      label="Admin tasdiq"
+                      label="Admin tasdiqi kerak"
+                      hint="Yangi qurilma avtomatik emas — admin tasdiqlaydi"
                       checked={settings.officeRequireApprove}
                       onChange={(v) => setSettings({ ...settings, officeRequireApprove: v })}
                     />
                     <Toggle
-                      label="Boshqa qurilmani bloklash"
+                      label="Begona qurilmani bloklash"
+                      hint="Asosiy dan boshqa joydan kirishni to‘xtatadi"
                       checked={settings.officeBlockForeign}
                       onChange={(v) => setSettings({ ...settings, officeBlockForeign: v })}
                     />
                     <Toggle
-                      label="QR device verify"
+                      label="QR orqali tekshirish"
                       checked={settings.officeVerifyQr}
                       onChange={(v) => setSettings({ ...settings, officeVerifyQr: v })}
                     />
                     <Toggle
-                      label="Face device verify"
+                      label="Face ID orqali tekshirish"
                       checked={settings.officeVerifyFace}
                       onChange={(v) => setSettings({ ...settings, officeVerifyFace: v })}
                     />
-                  </div>
-                  <div className="space-y-3 rounded-xl border p-3">
-                    <p className="font-semibold">Dorixona</p>
+                  </PolicyCard>
+
+                  <PolicyCard title="Dorixona" tone="teal">
                     <FieldNum
-                      label="Max qurilma"
+                      label="Maksimal qurilma soni"
+                      hint="Odatda 1 — faqat o‘z telefoni"
                       value={settings.pharmacyMaxDevices}
                       onChange={(n) => setSettings({ ...settings, pharmacyMaxDevices: n })}
                     />
                     <Toggle
-                      label="Admin tasdiq"
+                      label="Admin tasdiqi kerak"
+                      hint="O‘chiq bo‘lsa 1-telefon avtomatik asosiy bo‘ladi"
                       checked={settings.pharmacyRequireApprove}
                       onChange={(v) => setSettings({ ...settings, pharmacyRequireApprove: v })}
                     />
                     <Toggle
-                      label="Boshqa qurilmani bloklash"
+                      label="Begona qurilmani bloklash"
+                      hint="Boshqa telefonda kirish mumkin emas"
                       checked={settings.pharmacyBlockForeign}
                       onChange={(v) => setSettings({ ...settings, pharmacyBlockForeign: v })}
                     />
                     <Toggle
-                      label="QR device verify"
+                      label="QR orqali tekshirish"
                       checked={settings.pharmacyVerifyQr}
                       onChange={(v) => setSettings({ ...settings, pharmacyVerifyQr: v })}
                     />
                     <Toggle
-                      label="Face device verify"
+                      label="Face ID orqali tekshirish"
                       checked={settings.pharmacyVerifyFace}
                       onChange={(v) => setSettings({ ...settings, pharmacyVerifyFace: v })}
                     />
-                  </div>
+                  </PolicyCard>
                 </div>
-                <Toggle
-                  label="IP o‘zgarishini qayd qilish"
-                  checked={settings.logIpChanges}
-                  onChange={(v) => setSettings({ ...settings, logIpChanges: v })}
-                />
-                <Toggle
-                  label="Shubhali login notification"
-                  checked={settings.suspiciousNotify}
-                  onChange={(v) => setSettings({ ...settings, suspiciousNotify: v })}
-                />
+
+                <div className="space-y-3 rounded-xl border border-border/70 bg-muted/20 p-4">
+                  <Toggle
+                    label="IP o‘zgarishini yozib borish"
+                    hint="Boshqa joydan kirganda jurnalda chiqadi"
+                    checked={settings.logIpChanges}
+                    onChange={(v) => setSettings({ ...settings, logIpChanges: v })}
+                  />
+                  <Toggle
+                    label="Shubhali login haqida xabar"
+                    hint="Adminlarga bildirishnoma yuboriladi"
+                    checked={settings.suspiciousNotify}
+                    onChange={(v) => setSettings({ ...settings, suspiciousNotify: v })}
+                  />
+                </div>
+
                 <Button
                   type="button"
+                  className="h-11 rounded-xl bg-[#1e3a8a] hover:bg-[#16306f]"
                   disabled={busy || !canEdit}
-                  onClick={() =>
-                    void run(() => saveDeviceSettings(settings), "Sozlamalar saqlandi")
-                  }
+                  onClick={() => void run(() => saveDeviceSettings(settings), "Sozlamalar saqlandi")}
                 >
-                  Saqlash
+                  Sozlamalarni saqlash
                 </Button>
               </CardContent>
             </Card>
@@ -661,28 +760,45 @@ export default function AdminQurilmalarPage() {
         </TabsContent>
 
         <TabsContent value="history" className="mt-0">
-          <Card>
+          <Card className="overflow-hidden border-border/70 shadow-sm">
+            <CardHeader className="border-b pb-3">
+              <CardTitle className="text-base">Login tarixi</CardTitle>
+              <p className="text-sm text-muted-foreground">Muvaffaqiyatli, bloklangan va rad etilgan kirishlar.</p>
+            </CardHeader>
             <CardContent className="overflow-x-auto p-0">
               <table className="w-full text-sm">
-                <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2">Vaqt</th>
-                    <th className="px-3 py-2">Xodim</th>
-                    <th className="px-3 py-2">IP</th>
-                    <th className="px-3 py-2">Status</th>
-                    <th className="px-3 py-2">Sabab</th>
+                <thead>
+                  <tr className="border-b bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
+                    <th className="px-4 py-3 font-semibold">Vaqt</th>
+                    <th className="px-4 py-3 font-semibold">Xodim</th>
+                    <th className="px-4 py-3 font-semibold">IP</th>
+                    <th className="px-4 py-3 font-semibold">Natija</th>
+                    <th className="px-4 py-3 font-semibold">Sabab</th>
                   </tr>
                 </thead>
                 <tbody>
                   {logs.map((l) => (
-                    <tr key={String(l.id)} className="border-b">
-                      <td className="px-3 py-2 text-xs">{fmt(String(l.createdAt || ""))}</td>
-                      <td className="px-3 py-2">{String(l.fullName || l.userId || "—")}</td>
-                      <td className="px-3 py-2 font-mono text-xs">{String(l.ipAddress || "—")}</td>
-                      <td className="px-3 py-2">{String(l.status)}</td>
-                      <td className="px-3 py-2 text-xs">{String(l.failureReason || "—")}</td>
+                    <tr key={String(l.id)} className="border-b border-border/50">
+                      <td className="px-4 py-3 text-xs tabular-nums text-muted-foreground">
+                        {fmt(String(l.createdAt || ""))}
+                      </td>
+                      <td className="px-4 py-3 font-medium">{String(l.fullName || l.userId || "—")}</td>
+                      <td className="px-4 py-3 font-mono text-xs">{String(l.ipAddress || "—")}</td>
+                      <td className="px-4 py-3">
+                        <LoginStatus status={String(l.status)} />
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">
+                        {String(l.failureReason || "—")}
+                      </td>
                     </tr>
                   ))}
+                  {logs.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                        Hali yozuv yo‘q
+                      </td>
+                    </tr>
+                  ) : null}
                 </tbody>
               </table>
             </CardContent>
@@ -690,234 +806,323 @@ export default function AdminQurilmalarPage() {
         </TabsContent>
 
         <TabsContent value="events" className="mt-0">
-          <Card>
+          <Card className="border-border/70 shadow-sm">
+            <CardHeader className="border-b pb-3">
+              <CardTitle className="text-base">Xavfsizlik hodisalari</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Begona qurilma, bloklash va almashtirish so‘rovlari.
+              </p>
+            </CardHeader>
             <CardContent className="space-y-2 p-4">
               {events.map((e) => (
-                <div key={String(e.id)} className="rounded-lg border px-3 py-2 text-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-medium">{String(e.fullName || e.userId || "—")}</span>
-                    <Badge variant="outline">{String(e.severity)}</Badge>
+                <div
+                  key={String(e.id)}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/60 bg-card px-3.5 py-3"
+                >
+                  <div>
+                    <div className="font-medium">{String(e.fullName || e.userId || "—")}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {String(e.eventType)} · {fmt(String(e.createdAt || ""))}
+                    </div>
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    {String(e.eventType)} · {fmt(String(e.createdAt || ""))}
-                  </div>
+                  <Badge variant="outline" className="capitalize">
+                    {String(e.severity)}
+                  </Badge>
                 </div>
               ))}
               {events.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Hozircha event yo‘q</p>
+                <EmptyHint text="Hozircha hodisa yo‘q" />
               ) : null}
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
 
-      <Dialog open={detailId != null} onOpenChange={(o) => !o && setDetailId(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Qurilma tafsilotlari</DialogTitle>
-            <p className="text-xs text-muted-foreground">
-              Xodimning qaysi telefon/kompyuterdan kirgani va nima qilish mumkinligi.
-            </p>
-          </DialogHeader>
+      <Dialog
+        open={detailId != null}
+        onOpenChange={(o) => {
+          if (!o) {
+            setDetailId(null);
+            setDetail(null);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[92vh] max-w-xl gap-0 overflow-hidden p-0 sm:rounded-2xl">
           {detail ? (
-            <div className="space-y-3 text-sm">
-              <div className="rounded-xl border bg-muted/30 p-3 space-y-2">
-                <Row
-                  label="Xodim"
-                  value={String(detail.user.fullName || detail.device.fullName || "—")}
-                />
-                <Row
-                  label="Login"
-                  value={String(detail.user.login || detail.device.login || "—")}
-                />
-                <Row
-                  label="Qurilma nomi"
-                  value={detail.device.deviceName || "Nomsiz qurilma"}
-                />
-                <Row
-                  label="Turi"
-                  value={
-                    detail.device.deviceType === "mobile"
-                      ? "Telefon / planshet"
-                      : detail.device.deviceType === "desktop"
-                        ? "Kompyuter"
-                        : detail.device.deviceType === "tablet"
-                          ? "Planshet"
-                          : detail.device.deviceType || "Aniqlanmagan"
-                  }
-                />
-                <Row label="Tizim (OS)" value={detail.device.os?.trim() || "Aniqlanmagan"} />
-                <Row label="Brauzer" value={detail.device.browser?.trim() || "Aniqlanmagan"} />
-                <Row
-                  label="IP manzil"
-                  value={detail.device.lastIp || detail.device.ipAddress || "—"}
-                  mono
-                />
-                <Row label="Birinchi marta ko‘rilgan" value={fmt(detail.device.firstSeenAt)} />
-                <Row label="Oxirgi faollik" value={fmt(detail.device.lastSeenAt)} />
-                <Row
-                  label="Oxirgi login"
-                  value={fmt(detail.device.lastLoginAt)}
-                />
-                <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-2">
-                  <span className="text-muted-foreground">Holat:</span>
-                  <StatusBadge status={detail.device.status} />
-                  {detail.device.isPrimary ? (
-                    <Badge title="Shu xodim uchun asosiy ruxsat etilgan qurilma">
-                      Asosiy qurilma
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline">Asosiy emas</Badge>
-                  )}
-                </div>
-                <p className="text-[11px] leading-snug text-muted-foreground">
-                  {detail.device.status === "active"
-                    ? "Xodim hozir shu qurilmadan tizimda."
-                    : detail.device.status === "inactive"
-                      ? "Qurilma tasdiqlangan, lekin hozir ochiq session yo‘q (offline)."
-                      : detail.device.status === "pending"
-                        ? "Hali tasdiqlanmagan — kirish to‘liq ochilmaydi."
-                        : detail.device.status === "blocked"
-                          ? "Bloklangan — bu qurilmadan kirish mumkin emas."
-                          : "Holat aniqlanmadi."}
-                </p>
-                <details className="text-[11px] text-muted-foreground">
-                  <summary className="cursor-pointer select-none font-medium text-foreground/80">
-                    Ichki identifikator (Device ID)
-                  </summary>
-                  <p className="mt-1 break-all font-mono text-[10px]">{detail.device.deviceId}</p>
-                </details>
-              </div>
-
-              {(detail.sessions?.length ?? 0) > 0 ? (
-                <div className="rounded-xl border p-3">
-                  <p className="mb-2 text-xs font-semibold text-foreground">
-                    Sessionlar ({detail.sessions.length})
-                  </p>
-                  <ul className="max-h-28 space-y-1 overflow-y-auto text-[11px] text-muted-foreground">
-                    {detail.sessions.slice(0, 8).map((s) => {
-                      const revoked = Boolean(s.revokedAt);
-                      const expired =
-                        s.expiresAt && new Date(String(s.expiresAt)).getTime() <= Date.now();
-                      const live = !revoked && !expired;
-                      return (
-                        <li key={String(s.id)} className="flex justify-between gap-2">
-                          <span>{fmt(String(s.createdAt || ""))}</span>
-                          <span className={live ? "font-medium text-emerald-700" : ""}>
-                            {live ? "Ochiq" : revoked ? "Yopilgan" : "Muddati o‘tgan"}
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              ) : null}
-            </div>
+            <DeviceDetailBody
+              detail={detail}
+              canEdit={canEdit}
+              busy={busy}
+              onAction={run}
+            />
           ) : (
-            <Loader2 className="h-5 w-5 animate-spin" />
-          )}
-          <DialogFooter className="flex-col items-stretch gap-3 sm:flex-col sm:space-x-0">
-            {canEdit ? (
-              <>
-            <p className="text-[11px] font-medium text-muted-foreground">Amallar</p>
-            <div className="flex flex-wrap gap-3">
-              {detail && !detail.device.isVerified ? (
-                <ActionBtn
-                  size="sm"
-                  hint="Kirishga ruxsat beradi"
-                  disabled={busy}
-                  onClick={() => void run(() => approveDevice(detail.device.id), "Tasdiqlandi")}
-                >
-                  Tasdiqlash
-                </ActionBtn>
-              ) : null}
-              {detail && !detail.device.isVerified ? (
-                <ActionBtn
-                  size="sm"
-                  variant="destructive"
-                  hint="Rad etib bloklaydi"
-                  disabled={busy}
-                  onClick={() => void run(() => rejectDevice(detail.device.id), "Rad etildi")}
-                >
-                  Rad etish
-                </ActionBtn>
-              ) : null}
-              {detail ? (
-                <>
-                  {!detail.device.isPrimary ? (
-                    <ActionBtn
-                      size="sm"
-                      variant="secondary"
-                      hint="Shu qurilmani asosiy qiladi"
-                      disabled={busy}
-                      onClick={() =>
-                        void run(() => setPrimaryDevice(detail.device.id), "Asosiy qilindi")
-                      }
-                    >
-                      Asosiy qilish
-                    </ActionBtn>
-                  ) : (
-                    <ActionBtn size="sm" variant="secondary" hint="Allaqachon asosiy" disabled>
-                      Asosiy qurilma
-                    </ActionBtn>
-                  )}
-                  {detail.device.isBlocked ? (
-                    <ActionBtn
-                      size="sm"
-                      hint="Yana kirishga ruxsat"
-                      disabled={busy}
-                      onClick={() =>
-                        void run(() => unblockDevice(detail.device.id), "Blokdan chiqarildi")
-                      }
-                    >
-                      Blokdan chiqarish
-                    </ActionBtn>
-                  ) : (
-                    <ActionBtn
-                      size="sm"
-                      variant="destructive"
-                      hint="Shu qurilmadan kirishni taqiqlaydi"
-                      disabled={busy}
-                      onClick={() => void run(() => blockDevice(detail.device.id), "Bloklandi")}
-                    >
-                      Bloklash
-                    </ActionBtn>
-                  )}
-                  <ActionBtn
-                    size="sm"
-                    variant="outline"
-                    hint="Faqat shu qurilmadagi ochiq kirishni yopadi"
-                    disabled={busy}
-                    onClick={() =>
-                      void run(() => revokeDeviceSessions(detail.device.id), "Session tugatildi")
-                    }
-                  >
-                    Sessionni yopish
-                  </ActionBtn>
-                  <ActionBtn
-                    size="sm"
-                    variant="outline"
-                    hint="Xodimning barcha qurilmalaridan chiqaradi"
-                    disabled={busy}
-                    onClick={() =>
-                      void run(
-                        () => revokeAllUserSessions(detail.device.userId),
-                        "Barcha sessionlar tugatildi",
-                      )
-                    }
-                  >
-                    Barcha sessionlarni yopish
-                  </ActionBtn>
-                </>
-              ) : null}
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-              </>
-            ) : (
-              <p className="text-xs text-muted-foreground">Faqat ko‘rish — o‘zgartirish admin uchun</p>
-            )}
-          </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function DeviceDetailBody({
+  detail,
+  canEdit,
+  busy,
+  onAction,
+}: {
+  detail: {
+    device: DeviceRow;
+    user: Record<string, unknown>;
+    sessions: Array<Record<string, unknown>>;
+  };
+  canEdit: boolean;
+  busy: boolean;
+  onAction: (fn: () => Promise<unknown>, okMsg: string) => Promise<void>;
+}) {
+  const d = detail.device;
+  const kind = deviceKind(d.deviceType);
+  const Icon = kind.Icon;
+  const meta = statusMeta(d.status);
+  const openSessions = detail.sessions.filter((s) => {
+    const revoked = Boolean(s.revokedAt);
+    const expired = s.expiresAt && new Date(String(s.expiresAt)).getTime() <= Date.now();
+    return !revoked && !expired;
+  }).length;
+
+  return (
+    <>
+      <div className="relative overflow-hidden border-b bg-gradient-to-br from-slate-50 via-white to-sky-50/60 px-5 pb-5 pt-6 dark:from-slate-900 dark:via-background dark:to-background">
+        <DialogHeader className="space-y-3 text-left">
+          <div className="flex items-start gap-3">
+            <div className="rounded-2xl bg-[#1e3a8a] p-3 text-white shadow-md shadow-[#1e3a8a]/25">
+              <Icon className="h-6 w-6" />
+            </div>
+            <div className="min-w-0 flex-1 pr-6">
+              <DialogTitle className="text-xl font-bold tracking-tight">
+                {String(detail.user.fullName || d.fullName || "Xodim")}
+              </DialogTitle>
+              <DialogDescription className="mt-1 text-sm">
+                {String(detail.user.login || d.login || "—")} · {kind.label}
+              </DialogDescription>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={d.status} />
+            {d.isPrimary ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2.5 py-1 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-500/25 dark:text-amber-300">
+                <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
+                Asosiy qurilma
+              </span>
+            ) : (
+              <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+                Asosiy emas
+              </span>
+            )}
+          </div>
+          <p className="text-sm leading-relaxed text-muted-foreground">{meta.hint}</p>
+        </DialogHeader>
+      </div>
+
+      <div className="max-h-[min(48vh,420px)] space-y-4 overflow-y-auto px-5 py-4">
+        <div className="grid grid-cols-2 gap-2.5">
+          <InfoTile label="Qurilma" value={d.deviceName || "Nomsiz"} />
+          <InfoTile label="Tizim" value={displayOsBrowser(d.os, d.browser)} />
+          <InfoTile label="IP manzil" value={d.lastIp || d.ipAddress || "—"} mono />
+          <InfoTile label="Oxirgi faollik" value={fmt(d.lastSeenAt)} />
+          <InfoTile label="Oxirgi login" value={fmt(d.lastLoginAt)} />
+          <InfoTile label="Birinchi ko‘rilgan" value={fmt(d.firstSeenAt)} />
+        </div>
+
+        {detail.sessions.length > 0 ? (
+          <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Sessionlar
+              </p>
+              <span className="text-xs text-muted-foreground">
+                {openSessions > 0 ? `${openSessions} ochiq` : "Ochiq yo‘q"}
+              </span>
+            </div>
+            <ul className="space-y-1.5">
+              {detail.sessions.slice(0, 6).map((s) => {
+                const revoked = Boolean(s.revokedAt);
+                const expired =
+                  s.expiresAt && new Date(String(s.expiresAt)).getTime() <= Date.now();
+                const live = !revoked && !expired;
+                return (
+                  <li
+                    key={String(s.id)}
+                    className="flex items-center justify-between gap-2 rounded-lg bg-background/80 px-2.5 py-1.5 text-xs"
+                  >
+                    <span className="tabular-nums text-muted-foreground">{fmt(String(s.createdAt || ""))}</span>
+                    <span
+                      className={cn(
+                        "font-semibold",
+                        live ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground",
+                      )}
+                    >
+                      {live ? "Ochiq" : revoked ? "Yopilgan" : "Muddati o‘tgan"}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ) : null}
+
+        <details className="group rounded-xl border border-dashed border-border/70 px-3 py-2 text-xs text-muted-foreground">
+          <summary className="cursor-pointer select-none font-medium text-foreground/80">
+            Texnik ID (kerak bo‘lsa)
+          </summary>
+          <p className="mt-2 break-all font-mono text-[10px] leading-relaxed">{d.deviceId}</p>
+        </details>
+      </div>
+
+      <div className="border-t bg-muted/30 px-5 py-4">
+        {canEdit ? (
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Amallar
+            </p>
+            <div className="grid gap-2">
+              {!d.isVerified ? (
+                <>
+                  <ActionRow
+                    icon={<CheckCircle2 className="h-4 w-4" />}
+                    title="Tasdiqlash"
+                    desc="Shu qurilmadan kirishga ruxsat beradi (asosiy bo‘lishi mumkin)"
+                    tone="primary"
+                    disabled={busy}
+                    onClick={() => void onAction(() => approveDevice(d.id), "Tasdiqlandi")}
+                  />
+                  <ActionRow
+                    icon={<XCircle className="h-4 w-4" />}
+                    title="Rad etish"
+                    desc="So‘rovni bekor qiladi va qurilmani bloklaydi"
+                    tone="danger"
+                    disabled={busy}
+                    onClick={() => void onAction(() => rejectDevice(d.id), "Rad etildi")}
+                  />
+                </>
+              ) : null}
+
+              {d.isVerified && !d.isPrimary ? (
+                <ActionRow
+                  icon={<Star className="h-4 w-4" />}
+                  title="Asosiy qilish"
+                  desc="Faqat shu qurilmadan kirish mumkin bo‘ladi"
+                  tone="primary"
+                  disabled={busy}
+                  onClick={() => void onAction(() => setPrimaryDevice(d.id), "Asosiy qilindi")}
+                />
+              ) : null}
+
+              {d.isBlocked ? (
+                <ActionRow
+                  icon={<KeyRound className="h-4 w-4" />}
+                  title="Blokdan chiqarish"
+                  desc="Yana shu qurilmadan kirishga ruxsat"
+                  tone="primary"
+                  disabled={busy}
+                  onClick={() => void onAction(() => unblockDevice(d.id), "Blokdan chiqarildi")}
+                />
+              ) : (
+                <ActionRow
+                  icon={<Ban className="h-4 w-4" />}
+                  title="Bloklash"
+                  desc="Shu qurilmadan kirishni butunlay taqiqlaydi"
+                  tone="danger"
+                  disabled={busy}
+                  onClick={() => void onAction(() => blockDevice(d.id), "Bloklandi")}
+                />
+              )}
+
+              <ActionRow
+                icon={<LogOut className="h-4 w-4" />}
+                title="Sessionni yopish"
+                desc="Faqat shu qurilmadagi ochiq kirishni yopadi"
+                tone="neutral"
+                disabled={busy}
+                onClick={() => void onAction(() => revokeDeviceSessions(d.id), "Session tugatildi")}
+              />
+              <ActionRow
+                icon={<ShieldOff className="h-4 w-4" />}
+                title="Barcha joylardan chiqarish"
+                desc="Xodimning barcha qurilmalaridagi sessionlarni yopadi"
+                tone="neutral"
+                disabled={busy}
+                onClick={() =>
+                  void onAction(() => revokeAllUserSessions(d.userId), "Barcha sessionlar tugatildi")
+                }
+              />
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Faqat ko‘rish — o‘zgartirish admin uchun.</p>
+        )}
+      </div>
+    </>
+  );
+}
+
+function ActionRow({
+  icon,
+  title,
+  desc,
+  tone,
+  disabled,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+  tone: "primary" | "danger" | "neutral";
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-start gap-3 rounded-xl border px-3.5 py-3 text-left transition-all disabled:opacity-50",
+        tone === "primary" &&
+          "border-[#1e3a8a]/25 bg-[#1e3a8a]/[0.06] hover:bg-[#1e3a8a]/[0.12] dark:border-sky-500/30 dark:bg-sky-500/10",
+        tone === "danger" &&
+          "border-rose-200 bg-rose-50/80 hover:bg-rose-100/80 dark:border-rose-500/30 dark:bg-rose-500/10",
+        tone === "neutral" && "border-border/70 bg-background hover:bg-muted/50",
+      )}
+    >
+      <span
+        className={cn(
+          "mt-0.5 rounded-lg p-2",
+          tone === "primary" && "bg-[#1e3a8a] text-white",
+          tone === "danger" && "bg-rose-600 text-white",
+          tone === "neutral" && "bg-muted text-foreground",
+        )}
+      >
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold">{title}</span>
+        <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">{desc}</span>
+      </span>
+    </button>
+  );
+}
+
+function InfoTile({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-background px-3 py-2.5">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <div className={cn("mt-0.5 truncate text-sm font-medium", mono && "font-mono text-xs")}>
+        {value || "—"}
+      </div>
     </div>
   );
 }
@@ -926,15 +1131,24 @@ function Kpi({
   icon,
   label,
   value,
+  tone,
 }: {
   icon: React.ReactNode;
   label: string;
   value: number;
+  tone: "slate" | "emerald" | "amber" | "rose" | "orange";
 }) {
+  const tones: Record<string, string> = {
+    slate: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
+    emerald: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
+    amber: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
+    rose: "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300",
+    orange: "bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300",
+  };
   return (
-    <Card className="border-border/70 shadow-sm transition-shadow hover:shadow-md">
+    <Card className="border-border/60 shadow-sm transition-shadow hover:shadow-md">
       <CardContent className="flex items-center gap-3 p-4">
-        <div className="rounded-xl bg-muted/80 p-2.5 ring-1 ring-border/50">{icon}</div>
+        <div className={cn("rounded-xl p-2.5", tones[tone])}>{icon}</div>
         <div>
           <div className="text-2xl font-bold tabular-nums tracking-tight">{value}</div>
           <div className="text-xs font-medium text-muted-foreground">{label}</div>
@@ -944,54 +1158,93 @@ function Kpi({
   );
 }
 
-function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function PolicyCard({
+  title,
+  tone,
+  children,
+}: {
+  title: string;
+  tone: "sky" | "teal";
+  children: React.ReactNode;
+}) {
   return (
-    <div className="flex justify-between gap-3">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className={cn("max-w-[60%] break-words text-right font-medium", mono && "font-mono text-xs")}>
-        {value || "—"}
-      </span>
+    <div
+      className={cn(
+        "space-y-3 rounded-2xl border p-4",
+        tone === "sky" && "border-sky-200/80 bg-sky-50/40 dark:border-sky-500/20 dark:bg-sky-500/5",
+        tone === "teal" && "border-teal-200/80 bg-teal-50/40 dark:border-teal-500/20 dark:bg-teal-500/5",
+      )}
+    >
+      <p className="font-semibold">{title}</p>
+      {children}
     </div>
   );
 }
 
 function Toggle({
   label,
+  hint,
   checked,
   onChange,
 }: {
   label: string;
+  hint?: string;
   checked: boolean;
   onChange: (v: boolean) => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <Label className="text-sm font-normal">{label}</Label>
-      <Switch checked={checked} onCheckedChange={onChange} />
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <Label className="text-sm font-medium">{label}</Label>
+        {hint ? <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{hint}</p> : null}
+      </div>
+      <Switch checked={checked} onCheckedChange={onChange} className="mt-0.5 shrink-0" />
     </div>
   );
 }
 
 function FieldNum({
   label,
+  hint,
   value,
   onChange,
 }: {
   label: string;
+  hint?: string;
   value: number;
   onChange: (n: number) => void;
 }) {
   return (
     <div>
-      <Label className="text-xs">{label}</Label>
+      <Label className="text-xs font-semibold">{label}</Label>
+      {hint ? <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p> : null}
       <Input
         type="number"
         min={1}
         max={5}
-        className="mt-1 h-8"
+        className="mt-1.5 h-9 rounded-lg"
         value={value}
         onChange={(e) => onChange(Math.max(1, Math.min(5, Number(e.target.value) || 1)))}
       />
+    </div>
+  );
+}
+
+function LoginStatus({ status }: { status: string }) {
+  const s = status.toLowerCase();
+  if (s === "success")
+    return <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">OK</Badge>;
+  if (s === "blocked" || s === "fail")
+    return <Badge className="bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-300">{status}</Badge>;
+  if (s === "pending")
+    return <Badge className="bg-amber-100 text-amber-900 dark:bg-amber-500/15 dark:text-amber-300">Kutilmoqda</Badge>;
+  return <Badge variant="secondary">{status}</Badge>;
+}
+
+function EmptyHint({ text }: { text: string }) {
+  return (
+    <div className="rounded-xl border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
+      {text}
     </div>
   );
 }

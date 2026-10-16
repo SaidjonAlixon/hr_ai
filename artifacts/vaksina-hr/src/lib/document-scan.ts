@@ -152,7 +152,8 @@ function paperMaskFromCenter(gray: Float32Array, w: number, h: number): Uint8Arr
 
   if (best.v < thr * 0.85) return null;
 
-  const seedThr = Math.min(best.v - 18, thr);
+  // Faqat list: stol/fonni kiritmaslik uchun qattiqroq chegarа
+  const seedThr = Math.max(best.v * 0.8, Math.min(best.v - 22, thr + 8));
   const mask = new Uint8Array(w * h);
   const stackX = new Int32Array(w * h);
   const stackY = new Int32Array(w * h);
@@ -527,7 +528,8 @@ export function detectDocumentCorners(imageData: ImageData): Point[] {
     y: p.y / scale,
   }));
   const refined = refineByGradient(imageData, scaled);
-  return insetCorners(refined, fullW, fullH, 0.018);
+  // Ichkariga biroz — stol chekkasi PDF da qolmasin; list kengligiga mos
+  return insetCorners(refined, fullW, fullH, 0.03);
 }
 
 /** 4 burchak + 4 o‘rta tutqich (CamScanner uslubi) */
@@ -636,7 +638,7 @@ function applyHomography(H: number[], x: number, y: number): Point {
 
 function sampleBilinear(data: ImageData, x: number, y: number): [number, number, number] {
   const { width: w, height: h, data: d } = data;
-  // Chegaradan tashqari — engx yakin piksel (oq fon emas)
+  // Chegaradan tashqari — eng yaqin piksel (oq fon emas)
   if (x < 0 || y < 0 || x >= w || y >= h) {
     const xx = clamp(Math.round(x), 0, w - 1);
     const yy = clamp(Math.round(y), 0, h - 1);
@@ -728,8 +730,104 @@ function isColoredInk(r: number, g: number, b: number): boolean {
 }
 
 /**
+ * Warpdan keyin qolgan qora/stol chekkalarni kesib,
+ * listni A4 kengligiga cho‘zadi (avto moslash).
+ */
+export function autoFitPage(
+  imageData: ImageData,
+  outW = imageData.width,
+  outH = imageData.height,
+): ImageData {
+  const { width: w, height: h, data } = imageData;
+  const gray = new Float32Array(w * h);
+  for (let i = 0, p = 0; i < gray.length; i++, p += 4) {
+    gray[i] = luminance(data[p]!, data[p + 1]!, data[p + 2]!);
+  }
+
+  // Markaz yorug‘ligi — list
+  let cSum = 0;
+  let cN = 0;
+  const x0c = Math.floor(w * 0.25);
+  const x1c = Math.floor(w * 0.75);
+  const y0c = Math.floor(h * 0.25);
+  const y1c = Math.floor(h * 0.75);
+  for (let y = y0c; y < y1c; y++) {
+    for (let x = x0c; x < x1c; x++) {
+      cSum += gray[y * w + x]!;
+      cN++;
+    }
+  }
+  const center = cN ? cSum / cN : 160;
+  const darkThr = Math.min(center * 0.52, 95);
+
+  const colDark = (x: number) => {
+    let dark = 0;
+    const step = Math.max(1, Math.floor(h / 80));
+    let n = 0;
+    for (let y = 0; y < h; y += step) {
+      n++;
+      if (gray[y * w + x]! < darkThr) dark++;
+    }
+    return dark / Math.max(1, n) > 0.62;
+  };
+  const rowDark = (y: number) => {
+    let dark = 0;
+    const step = Math.max(1, Math.floor(w / 80));
+    let n = 0;
+    for (let x = 0; x < w; x += step) {
+      n++;
+      if (gray[y * w + x]! < darkThr) dark++;
+    }
+    return dark / Math.max(1, n) > 0.62;
+  };
+
+  const maxTrimX = Math.floor(w * 0.22);
+  const maxTrimY = Math.floor(h * 0.18);
+  let left = 0;
+  let right = w - 1;
+  let top = 0;
+  let bottom = h - 1;
+  while (left < maxTrimX && colDark(left)) left++;
+  while (right > w - 1 - maxTrimX && colDark(right)) right--;
+  while (top < maxTrimY && rowDark(top)) top++;
+  while (bottom > h - 1 - maxTrimY && rowDark(bottom)) bottom--;
+
+  // Juda oz kesilsa — o‘zgartirmaslik
+  const cw = right - left + 1;
+  const ch = bottom - top + 1;
+  if (cw < w * 0.55 || ch < h * 0.55) {
+    left = 0;
+    right = w - 1;
+    top = 0;
+    bottom = h - 1;
+  }
+
+  const srcW = right - left + 1;
+  const srcH = bottom - top + 1;
+  if (srcW >= w - 2 && srcH >= h - 2 && outW === w && outH === h) {
+    return imageData;
+  }
+
+  const out = new ImageData(outW, outH);
+  const od = out.data;
+  for (let y = 0; y < outH; y++) {
+    for (let x = 0; x < outW; x++) {
+      const sx = left + ((x + 0.5) * srcW) / outW - 0.5;
+      const sy = top + ((y + 0.5) * srcH) / outH - 0.5;
+      const [r, g, b] = sampleBilinear(imageData, sx, sy);
+      const i = (y * outW + x) * 4;
+      od[i] = r;
+      od[i + 1] = g;
+      od[i + 2] = b;
+      od[i + 3] = 255;
+    }
+  }
+  return out;
+}
+
+/**
  * Professional skaner:
- * — matn aniq o‘qiladi, oqqa yuvilmaydi
+ * — fon oqroq, matn qorong‘iroq (soya tekis)
  * — pechat / muhur / imzo ranglari saqlanadi
  */
 export function enhanceDocument(imageData: ImageData, mode: ScanMode = "color"): ImageData {
@@ -742,21 +840,19 @@ export function enhanceDocument(imageData: ImageData, mode: ScanMode = "color"):
     gray[i] = luminance(data[p]!, data[p + 1]!, data[p + 2]!);
   }
 
-  // Yumshoq kontrast (foydali diapazon)
   const sample: number[] = [];
   const step = Math.max(1, Math.floor(gray.length / 10000));
   for (let i = 0; i < gray.length; i += step) sample.push(gray[i]!);
   sample.sort((a, b) => a - b);
-  const lo = sample[Math.floor(sample.length * 0.04)] ?? 0;
-  const hi = sample[Math.floor(sample.length * 0.96)] ?? 255;
-  const span = Math.max(24, hi - lo);
+  const lo = sample[Math.floor(sample.length * 0.03)] ?? 0;
+  const hi = sample[Math.floor(sample.length * 0.97)] ?? 255;
+  const span = Math.max(20, hi - lo);
 
   const stretched = new Float32Array(w * h);
   for (let i = 0; i < gray.length; i++) {
     stretched[i] = clamp(((gray[i]! - lo) / span) * 255, 0, 255);
   }
 
-  // Lokal o‘rtacha (soya tekislash)
   const integ = new Float64Array((w + 1) * (h + 1));
   for (let y = 1; y <= h; y++) {
     let rowSum = 0;
@@ -778,7 +874,7 @@ export function enhanceDocument(imageData: ImageData, mode: ScanMode = "color"):
     );
   };
 
-  const half = 36;
+  const half = 42;
 
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -794,55 +890,68 @@ export function enhanceDocument(imageData: ImageData, mode: ScanMode = "color"):
           (Math.min(h, y + half + 1) - Math.max(0, y - half)),
       );
       const mean = rectSum(x - half, y - half, x + half + 1, y + half + 1) / area;
-      // Lokal kontrast: matn qorong‘iroq, fon ochiqroq — lekin o‘rtacha qiymat atrofida
-      const local = clamp(g - mean * 0.55 + 128, 0, 255);
+      // Soya olib tashlash: lokal o‘rtachaga nisbatan
+      const ratio = g / Math.max(mean, 10);
+      let local = clamp(ratio * 205, 0, 255);
       const colored = isColoredInk(r0, g0, b0);
+
+      // Matn vs qog‘oz: qattiqroq S-egri
+      const paperThr = 162;
+      if (local >= paperThr) {
+        const t = clamp((local - paperThr) / 55, 0, 1);
+        local = 236 + t * 19; // 236..255 — aniq oq fon
+      } else {
+        const t = local / paperThr;
+        local = Math.pow(t, 1.55) * 78; // qorong‘iroq matn
+      }
+      local = clamp(local, 12, 255);
 
       if (mode === "color" || (mode === "bw" && colored)) {
         if (colored) {
-          // Muhur / imzo — asl rangni saqlash, biroz to‘yinganlik
           const mid = (r0 + g0 + b0) / 3 || 1;
-          const satBoost = 1.25;
-          od[p] = clamp(mid + (r0 - mid) * satBoost, 0, 255);
-          od[p + 1] = clamp(mid + (g0 - mid) * satBoost, 0, 255);
-          od[p + 2] = clamp(mid + (b0 - mid) * satBoost, 0, 255);
+          const satBoost = 1.35;
+          // Muhurni biroz to‘yinganroq, lekin oqqa yuvmaslik
+          let rr = clamp(mid + (r0 - mid) * satBoost, 0, 255);
+          let gg = clamp(mid + (g0 - mid) * satBoost, 0, 255);
+          let bb = clamp(mid + (b0 - mid) * satBoost, 0, 255);
+          const lum = luminance(rr, gg, bb);
+          if (lum > 210) {
+            const k = 200 / lum;
+            rr *= k;
+            gg *= k;
+            bb *= k;
+          }
+          od[p] = rr;
+          od[p + 1] = gg;
+          od[p + 2] = bb;
         } else {
-          // Matn + qog‘oz: kulrang kanal asosida, yumshoq
-          // Fonni biroz oqartirish, matnni biroz qoraytirish — lekin oqqa yuvmaslik
-          let v = local;
-          if (v > 200) v = 200 + (v - 200) * 0.35; // yuqori yorug‘likni siqish
-          if (v < 70) v = v * 0.85; // matnni biroz chuqurlashtirish
-          v = clamp(v, 18, 245);
-          // Asl rangdan juda oz iz (tabiiylik)
-          const mix = 0.12;
-          od[p] = clamp(v * (1 - mix) + r0 * mix, 0, 255);
-          od[p + 1] = clamp(v * (1 - mix) + g0 * mix, 0, 255);
-          od[p + 2] = clamp(v * (1 - mix) + b0 * mix, 0, 255);
+          const mix = 0.06;
+          od[p] = clamp(local * (1 - mix) + r0 * mix, 0, 255);
+          od[p + 1] = clamp(local * (1 - mix) + g0 * mix, 0, 255);
+          od[p + 2] = clamp(local * (1 - mix) + b0 * mix, 0, 255);
         }
         od[p + 3] = 255;
       } else if (mode === "gray") {
-        let v = clamp(local * 1.05, 0, 255);
-        v = clamp(v, 22, 245);
-        od[p] = od[p + 1] = od[p + 2] = v;
+        od[p] = od[p + 1] = od[p + 2] = local;
         od[p + 3] = 255;
       } else {
-        // Qora-oq: yumshoq threshold — binary emas
-        const thr = mean * 0.96;
+        // Qora-oq skaner
+        const thr = mean * 0.94;
         const diff = thr - g;
         let ink: number;
-        if (diff > 35) ink = 22;
-        else if (diff > 12) ink = clamp(40 + (35 - diff) * 3.5, 22, 140);
-        else if (diff < -25) ink = 242;
-        else ink = clamp(195 - diff * 2.8, 70, 242);
+        if (diff > 28) ink = 16;
+        else if (diff > 8) ink = clamp(28 + (28 - diff) * 4, 16, 110);
+        else if (diff < -18) ink = 252;
+        else ink = clamp(200 - diff * 3.5, 55, 252);
+        if (g > mean * 0.98 && g > 150) ink = Math.max(ink, 248);
         od[p] = od[p + 1] = od[p + 2] = ink;
         od[p + 3] = 255;
       }
     }
   }
 
-  // Faqat engil unsharp — eski formula oqqa yuvardi
-  if (mode === "bw" || mode === "gray") sharpenInPlace(out, 0.35);
-  else sharpenInPlace(out, 0.2);
+  if (mode === "bw" || mode === "gray") sharpenInPlace(out, 0.4);
+  else sharpenInPlace(out, 0.28);
 
   return out;
 }

@@ -38,6 +38,7 @@ import {
   cornersToHandles,
   defaultCorners,
   detectDocumentCorners,
+  autoFitPage,
   enhanceDocument,
   imageDataToCanvas,
   imageToImageData,
@@ -286,7 +287,8 @@ export function DocumentScanner({
     const t = window.setTimeout(() => {
       try {
         const warped = warpPreview(sourceData, corners, 360);
-        const enhanced = enhanceDocument(warped, mode);
+        const fitted = autoFitPage(warped);
+        const enhanced = enhanceDocument(fitted, mode);
         const c = imageDataToCanvas(enhanced);
         if (!cancelled) setLivePreview(c.toDataURL("image/jpeg", 0.85));
       } catch {
@@ -357,7 +359,8 @@ export function DocumentScanner({
     try {
       await new Promise((r) => setTimeout(r, 16));
       const warped = warpToA4(sourceData, corners, A4_WIDTH, A4_HEIGHT);
-      const enhanced = enhanceDocument(warped, mode);
+      const fitted = autoFitPage(warped, A4_WIDTH, A4_HEIGHT);
+      const enhanced = enhanceDocument(fitted, mode);
       const canvas = imageDataToCanvas(enhanced);
       const url = canvas.toDataURL("image/jpeg", 0.92);
       setPages((p) => [...p, canvas]);

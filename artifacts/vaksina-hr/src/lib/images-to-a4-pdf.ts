@@ -2,6 +2,7 @@
  * Rasm(lar)ni CamScanner uslubida A4 PDF ga aylantirish.
  */
 import {
+  autoFitPage,
   enhanceDocument,
   imageDataToCanvas,
   imageToImageData,
@@ -25,7 +26,8 @@ export async function imagesToA4Pdf(
     const { data } = imageToImageData(img, 1600);
     const corners = detectDocumentCorners(data);
     const warped = warpToA4(data, corners.length === 4 ? corners : defaultCorners(data.width, data.height));
-    const enhanced = enhanceDocument(warped, "bw");
+    const fitted = autoFitPage(warped);
+    const enhanced = enhanceDocument(fitted, "bw");
     pages.push(imageDataToCanvas(enhanced));
   }
 

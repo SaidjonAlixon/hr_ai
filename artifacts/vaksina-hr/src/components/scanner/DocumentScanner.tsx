@@ -38,15 +38,12 @@ import {
   cornersToHandles,
   defaultCorners,
   detectDocumentCorners,
-  autoFitPage,
-  enhanceDocument,
   imageDataToCanvas,
   imageToImageData,
   loadImageFromFile,
   orderCorners,
   pagesToPdfBlob,
-  warpPreview,
-  warpToA4,
+  processScanPage,
 } from "@/lib/document-scan";
 
 type Step = "capture" | "crop" | "pages" | "view";
@@ -286,10 +283,8 @@ export function DocumentScanner({
     let cancelled = false;
     const t = window.setTimeout(() => {
       try {
-        const warped = warpPreview(sourceData, corners, 360);
-        const fitted = autoFitPage(warped);
-        const enhanced = enhanceDocument(fitted, mode);
-        const c = imageDataToCanvas(enhanced);
+        const preview = processScanPage(sourceData, corners, mode, 420, Math.round(420 * (A4_HEIGHT / A4_WIDTH)));
+        const c = imageDataToCanvas(preview);
         if (!cancelled) setLivePreview(c.toDataURL("image/jpeg", 0.85));
       } catch {
         /* ignore preview errors */
@@ -358,10 +353,8 @@ export function DocumentScanner({
     setBusy(true);
     try {
       await new Promise((r) => setTimeout(r, 16));
-      const warped = warpToA4(sourceData, corners, A4_WIDTH, A4_HEIGHT);
-      const fitted = autoFitPage(warped, A4_WIDTH, A4_HEIGHT);
-      const enhanced = enhanceDocument(fitted, mode);
-      const canvas = imageDataToCanvas(enhanced);
+      const processed = processScanPage(sourceData, corners, mode, A4_WIDTH, A4_HEIGHT);
+      const canvas = imageDataToCanvas(processed);
       const url = canvas.toDataURL("image/jpeg", 0.92);
       setPages((p) => [...p, canvas]);
       setPreviewUrls((u) => [...u, url]);

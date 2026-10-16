@@ -2,13 +2,11 @@
  * Rasm(lar)ni CamScanner uslubida A4 PDF ga aylantirish.
  */
 import {
-  autoFitPage,
-  enhanceDocument,
   imageDataToCanvas,
   imageToImageData,
   loadImageFromFile,
   pagesToPdfBlob,
-  warpToA4,
+  processScanPage,
   defaultCorners,
   detectDocumentCorners,
 } from "@/lib/document-scan";
@@ -25,10 +23,12 @@ export async function imagesToA4Pdf(
     const img = await loadImageFromFile(file);
     const { data } = imageToImageData(img, 1600);
     const corners = detectDocumentCorners(data);
-    const warped = warpToA4(data, corners.length === 4 ? corners : defaultCorners(data.width, data.height));
-    const fitted = autoFitPage(warped);
-    const enhanced = enhanceDocument(fitted, "bw");
-    pages.push(imageDataToCanvas(enhanced));
+    const processed = processScanPage(
+      data,
+      corners.length === 4 ? corners : defaultCorners(data.width, data.height),
+      "bw",
+    );
+    pages.push(imageDataToCanvas(processed));
   }
 
   if (!pages.length) throw new Error("Yaroqli rasm topilmadi");

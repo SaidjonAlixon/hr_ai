@@ -674,11 +674,16 @@ function sampleBilinear(data: ImageData, x: number, y: number): [number, number,
   return [r, g, bl];
 }
 
-export function warpToA4(
+function distPts(a: Point, b: Point) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+/** Perspektiv warp — ixtiyoriy chiqish o‘lchami */
+function warpPerspective(
   source: ImageData,
   corners: Point[],
-  outW = A4_WIDTH,
-  outH = A4_HEIGHT,
+  outW: number,
+  outH: number,
 ): ImageData {
   const dstCorners: Point[] = [
     { x: 0, y: 0 },
@@ -703,16 +708,116 @@ export function warpToA4(
   return out;
 }
 
-/** Tezkor preview uchun kichik warp */
+/**
+ * Tik to‘g‘rilash: yashil ramka bo‘yicha perspektivni tuzatadi.
+ * Listning o‘z kenglik/balandlik nisbatini saqlaydi — yozuv ingichka/qiyshiq bo‘lmaydi.
+ */
+export function warpUpright(
+  source: ImageData,
+  corners: Point[],
+  maxSide = Math.max(A4_WIDTH, A4_HEIGHT),
+): ImageData {
+  const ordered = orderCorners(corners);
+  const [tl, tr, br, bl] = ordered;
+  const avgW = (distPts(tl, tr) + distPts(bl, br)) / 2;
+  const avgH = (distPts(tl, bl) + distPts(tr, br)) / 2;
+  let aspect = avgH / Math.max(avgW, 1e-6);
+  aspect = clamp(aspect, 0.62, 2.35);
+
+  // Manba pikseliga yaqin yuqori sifat
+  const srcLong = Math.max(avgW, avgH, 1);
+  const budget = Math.min(maxSide, Math.max(1100, Math.round(srcLong * 1.25)));
+  let outW: number;
+  let outH: number;
+  if (aspect >= 1) {
+    outH = budget;
+    outW = Math.max(1, Math.round(budget / aspect));
+  } else {
+    outW = budget;
+    outH = Math.max(1, Math.round(budget * aspect));
+  }
+  outW = clamp(outW, 480, maxSide);
+  outH = clamp(outH, 480, maxSide);
+  return warpPerspective(source, ordered, outW, outH);
+}
+
+/**
+ * Proporsiyani buzmasdan oq A4 varaqqa joylashtirish (CamScanner uslubi).
+ */
+export function fitOnA4(
+  doc: ImageData,
+  a4W = A4_WIDTH,
+  a4H = A4_HEIGHT,
+): ImageData {
+  const margin = 0.015;
+  const maxW = a4W * (1 - 2 * margin);
+  const maxH = a4H * (1 - 2 * margin);
+  const scale = Math.min(maxW / Math.max(doc.width, 1), maxH / Math.max(doc.height, 1));
+  const dw = Math.max(1, Math.round(doc.width * scale));
+  const dh = Math.max(1, Math.round(doc.height * scale));
+  const ox = Math.floor((a4W - dw) / 2);
+  const oy = Math.floor((a4H - dh) / 2);
+
+  const out = new ImageData(a4W, a4H);
+  const od = out.data;
+  for (let i = 0; i < od.length; i += 4) {
+    od[i] = 255;
+    od[i + 1] = 255;
+    od[i + 2] = 255;
+    od[i + 3] = 255;
+  }
+  for (let y = 0; y < dh; y++) {
+    for (let x = 0; x < dw; x++) {
+      const sx = ((x + 0.5) * doc.width) / dw - 0.5;
+      const sy = ((y + 0.5) * doc.height) / dh - 0.5;
+      const [r, g, b] = sampleBilinear(doc, sx, sy);
+      const i = ((oy + y) * a4W + (ox + x)) * 4;
+      od[i] = r;
+      od[i + 1] = g;
+      od[i + 2] = b;
+      od[i + 3] = 255;
+    }
+  }
+  return out;
+}
+
+/**
+ * To‘liq skaner: tik warp → chekka kesish → enhance → oq A4.
+ * Yozuv katta va proporsional qoladi.
+ */
+export function processScanPage(
+  source: ImageData,
+  corners: Point[],
+  mode: ScanMode = "color",
+  outW = A4_WIDTH,
+  outH = A4_HEIGHT,
+): ImageData {
+  const upright = warpUpright(source, corners, Math.max(outW, outH));
+  const trimmed = trimDarkBorders(upright);
+  const enhanced = enhanceDocument(trimmed, mode);
+  return fitOnA4(enhanced, outW, outH);
+}
+
+/** Eski API: A4 ga chiqarish (proporsiyani saqlab) */
+export function warpToA4(
+  source: ImageData,
+  corners: Point[],
+  outW = A4_WIDTH,
+  outH = A4_HEIGHT,
+): ImageData {
+  const upright = warpUpright(source, corners, Math.max(outW, outH));
+  const trimmed = trimDarkBorders(upright);
+  return fitOnA4(trimmed, outW, outH);
+}
+
+/** Tezkor preview — tik + proporsional */
 export function warpPreview(
   source: ImageData,
   corners: Point[],
   maxSide = 420,
 ): ImageData {
-  const aspect = A4_HEIGHT / A4_WIDTH;
-  const outW = maxSide;
-  const outH = Math.round(maxSide * aspect);
-  return warpToA4(source, corners, outW, outH);
+  const upright = warpUpright(source, corners, maxSide);
+  return trimDarkBorders(upright);
 }
 
 /** Pechat / muhur / ko‘k-qizil imzo — rangli siyoh */
@@ -730,21 +835,15 @@ function isColoredInk(r: number, g: number, b: number): boolean {
 }
 
 /**
- * Warpdan keyin qolgan qora/stol chekkalarni kesib,
- * listni A4 kengligiga cho‘zadi (avto moslash).
+ * Qora/stol chekkalarni kesadi — proporsiyani o‘zgartirmaydi (cho‘zmaydi).
  */
-export function autoFitPage(
-  imageData: ImageData,
-  outW = imageData.width,
-  outH = imageData.height,
-): ImageData {
+export function trimDarkBorders(imageData: ImageData): ImageData {
   const { width: w, height: h, data } = imageData;
   const gray = new Float32Array(w * h);
   for (let i = 0, p = 0; i < gray.length; i++, p += 4) {
     gray[i] = luminance(data[p]!, data[p + 1]!, data[p + 2]!);
   }
 
-  // Markaz yorug‘ligi — list
   let cSum = 0;
   let cN = 0;
   const x0c = Math.floor(w * 0.25);
@@ -758,7 +857,7 @@ export function autoFitPage(
     }
   }
   const center = cN ? cSum / cN : 160;
-  const darkThr = Math.min(center * 0.52, 95);
+  const darkThr = Math.min(center * 0.55, 100);
 
   const colDark = (x: number) => {
     let dark = 0;
@@ -768,7 +867,7 @@ export function autoFitPage(
       n++;
       if (gray[y * w + x]! < darkThr) dark++;
     }
-    return dark / Math.max(1, n) > 0.62;
+    return dark / Math.max(1, n) > 0.58;
   };
   const rowDark = (y: number) => {
     let dark = 0;
@@ -778,11 +877,11 @@ export function autoFitPage(
       n++;
       if (gray[y * w + x]! < darkThr) dark++;
     }
-    return dark / Math.max(1, n) > 0.62;
+    return dark / Math.max(1, n) > 0.58;
   };
 
-  const maxTrimX = Math.floor(w * 0.22);
-  const maxTrimY = Math.floor(h * 0.18);
+  const maxTrimX = Math.floor(w * 0.2);
+  const maxTrimY = Math.floor(h * 0.16);
   let left = 0;
   let right = w - 1;
   let top = 0;
@@ -792,37 +891,37 @@ export function autoFitPage(
   while (top < maxTrimY && rowDark(top)) top++;
   while (bottom > h - 1 - maxTrimY && rowDark(bottom)) bottom--;
 
-  // Juda oz kesilsa — o‘zgartirmaslik
-  const cw = right - left + 1;
-  const ch = bottom - top + 1;
-  if (cw < w * 0.55 || ch < h * 0.55) {
-    left = 0;
-    right = w - 1;
-    top = 0;
-    bottom = h - 1;
-  }
-
-  const srcW = right - left + 1;
-  const srcH = bottom - top + 1;
-  if (srcW >= w - 2 && srcH >= h - 2 && outW === w && outH === h) {
+  let srcW = right - left + 1;
+  let srcH = bottom - top + 1;
+  if (srcW < w * 0.55 || srcH < h * 0.55) {
     return imageData;
   }
+  if (srcW >= w - 2 && srcH >= h - 2) return imageData;
 
-  const out = new ImageData(outW, outH);
+  const out = new ImageData(srcW, srcH);
   const od = out.data;
-  for (let y = 0; y < outH; y++) {
-    for (let x = 0; x < outW; x++) {
-      const sx = left + ((x + 0.5) * srcW) / outW - 0.5;
-      const sy = top + ((y + 0.5) * srcH) / outH - 0.5;
-      const [r, g, b] = sampleBilinear(imageData, sx, sy);
-      const i = (y * outW + x) * 4;
-      od[i] = r;
-      od[i + 1] = g;
-      od[i + 2] = b;
-      od[i + 3] = 255;
+  for (let y = 0; y < srcH; y++) {
+    for (let x = 0; x < srcW; x++) {
+      const si = ((top + y) * w + (left + x)) * 4;
+      const di = (y * srcW + x) * 4;
+      od[di] = data[si]!;
+      od[di + 1] = data[si + 1]!;
+      od[di + 2] = data[si + 2]!;
+      od[di + 3] = 255;
     }
   }
   return out;
+}
+
+/** @deprecated — trimDarkBorders + fitOnA4 */
+export function autoFitPage(
+  imageData: ImageData,
+  outW = imageData.width,
+  outH = imageData.height,
+): ImageData {
+  const trimmed = trimDarkBorders(imageData);
+  if (outW === trimmed.width && outH === trimmed.height) return trimmed;
+  return fitOnA4(trimmed, outW, outH);
 }
 
 /**
@@ -874,7 +973,7 @@ export function enhanceDocument(imageData: ImageData, mode: ScanMode = "color"):
     );
   };
 
-  const half = 42;
+  const half = 56;
 
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -890,21 +989,20 @@ export function enhanceDocument(imageData: ImageData, mode: ScanMode = "color"):
           (Math.min(h, y + half + 1) - Math.max(0, y - half)),
       );
       const mean = rectSum(x - half, y - half, x + half + 1, y + half + 1) / area;
-      // Soya olib tashlash: lokal o‘rtachaga nisbatan
+      // Soya tekislash + qog‘oz oqartirish
       const ratio = g / Math.max(mean, 10);
-      let local = clamp(ratio * 205, 0, 255);
+      let local = clamp(ratio * 210, 0, 255);
       const colored = isColoredInk(r0, g0, b0);
 
-      // Matn vs qog‘oz: qattiqroq S-egri
-      const paperThr = 162;
+      const paperThr = 155;
       if (local >= paperThr) {
-        const t = clamp((local - paperThr) / 55, 0, 1);
-        local = 236 + t * 19; // 236..255 — aniq oq fon
+        const t = clamp((local - paperThr) / 45, 0, 1);
+        local = 242 + t * 13; // 242..255 — tekis oq qog‘oz
       } else {
         const t = local / paperThr;
-        local = Math.pow(t, 1.55) * 78; // qorong‘iroq matn
+        local = Math.pow(t, 1.65) * 68; // aniqroq qora matn
       }
-      local = clamp(local, 12, 255);
+      local = clamp(local, 10, 255);
 
       if (mode === "color" || (mode === "bw" && colored)) {
         if (colored) {

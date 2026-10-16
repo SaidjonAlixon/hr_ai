@@ -11,7 +11,7 @@ import {
   securityEventsTable,
   deviceSecuritySettingsTable,
 } from "@workspace/db";
-import { requireAuth, type AuthRequest } from "../middlewares/auth";
+import { optionalAuth, requireAuth, type AuthRequest } from "../middlewares/auth";
 import { requireRegisteredDevice } from "../middlewares/device-security";
 import { canManageKochmaAdmin, canManageUsers, canViewKochmaAdmin } from "../lib/roles";
 import {
@@ -592,15 +592,37 @@ router.get(
   },
 );
 
-/** Xodim: qurilma almashtirish soâ€˜rovi */
-router.post(
-  "/devices/me/request-change",
-  requireAuth,
-  async (req: AuthRequest, res): Promise<void> => {
-    const userId = req.userId!;
+/** Xodim: qurilma almashtirish so‘rovi (sessiya yoki login+parol) */
+router.post("/devices/me/request-change", async (req: AuthRequest, res): Promise<void> => {
+  try {
+    await new Promise<void>((resolve) => {
+      void optionalAuth(req, res, () => resolve());
+    });
+
+    let userId = req.userId;
+    if (!userId) {
+      const compact = (v: unknown) => String(v ?? "").replace(/[\s\u00a0\u200b\uFEFF]+/g, "");
+      const login = compact(req.body?.login);
+      const password = compact(req.body?.password);
+      if (!login || !password) {
+        res.status(401).json({ error: "Avtorizatsiya kerak yoki login/parol yuboring" });
+        return;
+      }
+      const [u] = await db
+        .select({ id: usersTable.id, password: usersTable.password, status: usersTable.status })
+        .from(usersTable)
+        .where(sql`lower(${usersTable.login}) = lower(${login})`)
+        .limit(1);
+      if (!u || compact(u.password) !== password || (u.status !== "active" && u.status !== "on_leave")) {
+        res.status(401).json({ error: "Login yoki parol noto‘g‘ri" });
+        return;
+      }
+      userId = u.id;
+    }
+
     const cred = readDeviceCookie(req);
     if (!cred) {
-      res.status(400).json({ error: "Qurilma cookie topilmadi â€” qayta login urinib koâ€˜ring" });
+      res.status(400).json({ error: "Qurilma cookie topilmadi — qayta login urinib ko‘ring" });
       return;
     }
     const [device] = await db
@@ -624,13 +646,25 @@ router.post(
       )
       .limit(1);
 
-    await db.insert(deviceChangeRequestsTable).values({
-      userId,
-      oldDeviceRowId: oldPrimary?.id ?? null,
-      newDeviceRowId: device.id,
-      status: "pending",
-      reason: String(req.body?.reason || "").slice(0, 500) || null,
-    });
+    const [existingReq] = await db
+      .select({ id: deviceChangeRequestsTable.id })
+      .from(deviceChangeRequestsTable)
+      .where(
+        and(
+          eq(deviceChangeRequestsTable.newDeviceRowId, device.id),
+          eq(deviceChangeRequestsTable.status, "pending"),
+        ),
+      )
+      .limit(1);
+    if (!existingReq) {
+      await db.insert(deviceChangeRequestsTable).values({
+        userId,
+        oldDeviceRowId: oldPrimary?.id ?? null,
+        newDeviceRowId: device.id,
+        status: "pending",
+        reason: String(req.body?.reason || "").slice(0, 500) || null,
+      });
+    }
 
     await writeSecurityEvent({
       userId,
@@ -653,16 +687,19 @@ router.post(
       if (!canManageUsers(a.role)) continue;
       await notifyUser({
         userId: a.id,
-        text: `${user?.fullName || "Xodim"} yangi qurilmadan foydalanishga ruxsat soâ€˜ramoqda.`,
+        text: `${user?.fullName || "Xodim"} yangi qurilmadan foydalanishga ruxsat so‘ramoqda.`,
         type: "security",
         linkUrl: "/admin/qurilmalar",
         title: "Qurilma almashtirish",
       });
     }
 
-    res.json({ ok: true, message: "Soâ€˜rov yuborildi â€” admin tasdigâ€˜ini kuting" });
-  },
-);
+    res.json({ ok: true, message: "So‘rov yuborildi — admin tasdig‘ini kuting" });
+  } catch (err) {
+    console.error("devices/me/request-change", err);
+    res.status(503).json({ error: "So‘rov yuborilmadi" });
+  }
+});
 
 router.get("/devices/me", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const devices = await db

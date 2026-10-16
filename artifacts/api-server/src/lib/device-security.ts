@@ -422,7 +422,14 @@ export async function approveDevice(deviceRowId: number, reviewedBy: number) {
     }
   }
 
-  const hasPrimary = verified.some((d) => d.isPrimary && d.id !== deviceRowId);
+  // 1 qurilma limida yangi tasdiq = yangi asosiy; eski primary yuqorida bloklangan
+  const makePrimary = policy.maxDevices <= 1 || !verified.some((d) => d.isPrimary && d.id !== deviceRowId);
+  if (makePrimary) {
+    await db
+      .update(userDevicesTable)
+      .set({ isPrimary: false })
+      .where(and(eq(userDevicesTable.userId, user.id), eq(userDevicesTable.isPrimary, true)));
+  }
   await db
     .update(userDevicesTable)
     .set({
@@ -430,7 +437,7 @@ export async function approveDevice(deviceRowId: number, reviewedBy: number) {
       isBlocked: false,
       blockedAt: null,
       blockedBy: null,
-      isPrimary: !hasPrimary,
+      isPrimary: makePrimary,
       lastSeenAt: new Date(),
       lastLoginAt: new Date(),
     })

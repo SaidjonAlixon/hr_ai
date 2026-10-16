@@ -1521,6 +1521,17 @@ CREATE TABLE IF NOT EXISTS device_security_settings (
 INSERT INTO device_security_settings (id)
 SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM device_security_settings WHERE id = 1);
 
+-- Bir marta: selected/off → dorixona 1-qurilma rejimi (keyin admin panel orqali o‘zgartirish mumkin)
+UPDATE device_security_settings
+SET
+  enforcement_mode = 'pharmacy',
+  pharmacy_max_devices = 1,
+  pharmacy_require_approve = FALSE,
+  pharmacy_block_foreign = TRUE,
+  updated_at = NOW()
+WHERE id = 1
+  AND enforcement_mode IN ('selected', 'off');
+
 CREATE TABLE IF NOT EXISTS user_devices (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL,

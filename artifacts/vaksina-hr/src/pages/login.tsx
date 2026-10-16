@@ -111,10 +111,13 @@ export default function Login() {
   const handleRequestChange = async () => {
     setRequesting(true);
     try {
-      await requestDeviceChange('Login sahifasidan so‘rov');
+      await requestDeviceChange('Login sahifasidan so‘rov', {
+        login: compactCredential(login),
+        password: compactCredential(password),
+      });
       toast({
         title: 'So‘rov yuborildi',
-        description: 'Administrator tasdig‘ini kuting.',
+        description: 'Administrator tasdig‘ini kuting. Tasdiqlansa shu telefon asosiy bo‘ladi.',
       });
     } catch (err) {
       toast({

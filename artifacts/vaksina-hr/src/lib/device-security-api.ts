@@ -148,10 +148,17 @@ export function fetchEnforceUsers() {
     }>;
   }>("/admin/devices/users");
 }
-export function requestDeviceChange(reason?: string) {
+export function requestDeviceChange(
+  reason?: string,
+  credentials?: { login?: string; password?: string },
+) {
   return api("/devices/me/request-change", {
     method: "POST",
-    body: JSON.stringify({ reason: reason || "" }),
+    body: JSON.stringify({
+      reason: reason || "",
+      login: credentials?.login || undefined,
+      password: credentials?.password || undefined,
+    }),
   });
 }
 

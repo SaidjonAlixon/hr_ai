@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, sql } from "drizzle-orm";
-import { db, usersTable, departmentsTable, userDevicesTable } from "@workspace/db";
+import { and, eq, sql } from "drizzle-orm";
+import { db, usersTable, departmentsTable, userDevicesTable, deviceChangeRequestsTable } from "@workspace/db";
 import { setSessionCookie, clearSessionCookie } from "../lib/session";
 import {
   clientIp,
@@ -13,7 +13,6 @@ import {
   readDeviceCookie,
   registerPendingDevice,
   setDeviceCookie,
-  clearDeviceCookie,
   staffGroupForRole,
   writeLoginAudit,
   writeSecurityEvent,
@@ -266,6 +265,42 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       });
       setDeviceCookie(res, pending.deviceId, pending.token);
 
+      // Adminga almashtirish so‘rovi — tasdiqlasa shu qurilma asosiy bo‘ladi
+      try {
+        const [existingReq] = await db
+          .select({ id: deviceChangeRequestsTable.id })
+          .from(deviceChangeRequestsTable)
+          .where(
+            and(
+              eq(deviceChangeRequestsTable.newDeviceRowId, pending.rowId),
+              eq(deviceChangeRequestsTable.status, "pending"),
+            ),
+          )
+          .limit(1);
+        if (!existingReq) {
+          const [oldPrimary] = await db
+            .select({ id: userDevicesTable.id })
+            .from(userDevicesTable)
+            .where(
+              and(
+                eq(userDevicesTable.userId, user.id),
+                eq(userDevicesTable.isPrimary, true),
+                eq(userDevicesTable.isVerified, true),
+              ),
+            )
+            .limit(1);
+          await db.insert(deviceChangeRequestsTable).values({
+            userId: user.id,
+            oldDeviceRowId: oldPrimary?.id ?? null,
+            newDeviceRowId: pending.rowId,
+            status: "pending",
+            reason: "Yangi qurilmadan kirish urinishi",
+          });
+        }
+      } catch (e) {
+        console.error("device_change_request insert", e);
+      }
+
       await writeLoginAudit({
         userId: user.id,
         deviceRowId: pending.rowId,
@@ -285,8 +320,8 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       });
       if (settings.suspiciousNotify) {
         await notifyAdminsDevice({
-          title: "Shubhali kirish",
-          message: `${user.fullName} yangi qurilmadan kirishga harakat qildi (${meta.deviceName}).`,
+          title: "Qurilma almashtirish so‘rovi",
+          message: `${user.fullName} yangi qurilmadan kirishga harakat qildi (${meta.deviceName}). Qurilmalar bo‘limidan tasdiqlang.`,
         });
       }
 
@@ -296,8 +331,9 @@ router.post("/auth/login", async (req, res): Promise<void> => {
         error:
           "Ushbu akkaunt boshqa qurilmaga biriktirilgan. Iltimos, o‘zingizga biriktirilgan asosiy qurilmadan kiring.",
         message:
-          "Ushbu akkaunt boshqa qurilmaga biriktirilgan. Iltimos, o‘zingizga biriktirilgan asosiy qurilmadan kiring. Qurilmangizni almashtirish kerak bo‘lsa administratorga murojaat qiling.",
+          "Ushbu akkaunt boshqa qurilmaga biriktirilgan. Iltimos, o‘zingizga biriktirilgan asosiy qurilmadan kiring. Qurilma almashtirish so‘rovi adminga yuborildi — tasdiqlansa shu telefon asosiy bo‘ladi.",
         canRequestChange: true,
+        requestSent: true,
         device: { name: meta.deviceName, os: meta.os, browser: meta.browser },
       });
       return;
@@ -506,7 +542,7 @@ router.post("/auth/logout", async (req, res): Promise<void> => {
     /* ignore */
   }
   clearSessionCookie(res);
-  clearDeviceCookie(res);
+  // Asosiy qurilma cookie saqlanadi — chiqib qayta kirganda shu telefon yana ishlashi uchun
   res.json({ ok: true });
 });
 

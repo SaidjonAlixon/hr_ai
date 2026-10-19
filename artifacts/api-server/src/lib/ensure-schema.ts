@@ -140,6 +140,7 @@ CREATE TABLE IF NOT EXISTS attestatsiya_exams (
   shuffle_questions BOOLEAN NOT NULL DEFAULT TRUE,
   shuffle_options BOOLEAN NOT NULL DEFAULT TRUE,
   show_result BOOLEAN NOT NULL DEFAULT TRUE,
+  retake_if_failed BOOLEAN NOT NULL DEFAULT TRUE,
   published BOOLEAN NOT NULL DEFAULT TRUE,
   created_by_id INTEGER,
   updated_by_id INTEGER,
@@ -151,6 +152,7 @@ ALTER TABLE attestatsiya_exams ADD COLUMN IF NOT EXISTS questions_per_attempt IN
 ALTER TABLE attestatsiya_exams ADD COLUMN IF NOT EXISTS shuffle_options BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE attestatsiya_exams ADD COLUMN IF NOT EXISTS pool_tracks JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE attestatsiya_exams ADD COLUMN IF NOT EXISTS target_tracks JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE attestatsiya_exams ADD COLUMN IF NOT EXISTS retake_if_failed BOOLEAN NOT NULL DEFAULT TRUE;
 
 CREATE TABLE IF NOT EXISTS attestatsiya_attempts (
   id SERIAL PRIMARY KEY,

@@ -38,6 +38,8 @@ export type AttestExamCard = {
   passScore: number;
   questionCount: number;
   poolCount?: number;
+  poolTracks?: AttestTrack[];
+  retakeIfFailed?: boolean;
   locationMode: "branch" | "office" | "anywhere";
   locationTarget: string;
   startsAt: string;
@@ -79,6 +81,8 @@ export type AttestExamInput = {
   shuffleQuestions: boolean;
   shuffleOptions: boolean;
   showResult: boolean;
+  /** O‘tmaganlar qayta ishlaydi; o‘tganlarga test chiqmaydi */
+  retakeIfFailed: boolean;
   published: boolean;
 };
 

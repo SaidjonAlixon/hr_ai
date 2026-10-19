@@ -316,12 +316,30 @@ function learnerAttempt(a: Attempt, exam: Exam, withQuestions: boolean, poolFall
 function startPolicy(exam: Exam, attempts: Attempt[]) {
   const latest = latestOf(attempts);
   const state = windowState(exam);
-  if (latest?.status === "in_progress") return { canStart: false, canResume: true, reason: null as string | null };
-  if (state === "upcoming") return { canStart: false, canResume: false, reason: `Test ${fmtDt(exam.startsAt)} da ochiladi` };
-  if (state === "closed") return { canStart: false, canResume: false, reason: "Test vaqti tugagan" };
-  if (!latest || latest.retakeAllowed) return { canStart: true, canResume: false, reason: null };
-  if (latest.status === "annulled") return { canStart: false, canResume: false, reason: "Natijangiz bekor qilingan" };
-  return { canStart: false, canResume: false, reason: "Siz bu testni topshirgansiz" };
+  const allowFailRetake = exam.retakeIfFailed !== false;
+  if (latest?.status === "in_progress") {
+    return { canStart: false, canResume: true, reason: null as string | null, hide: false };
+  }
+  if (state === "upcoming") {
+    return { canStart: false, canResume: false, reason: `Test ${fmtDt(exam.startsAt)} da ochiladi`, hide: false };
+  }
+  if (state === "closed") return { canStart: false, canResume: false, reason: "Test vaqti tugagan", hide: false };
+  if (!latest) return { canStart: true, canResume: false, reason: null as string | null, hide: false };
+  if (latest.retakeAllowed) return { canStart: true, canResume: false, reason: null as string | null, hide: false };
+  /** O‘tganlarga test kerak emas — ro‘yxatdan yashirinadi */
+  if (isFinished(latest) && latest.passed === true) {
+    return { canStart: false, canResume: false, reason: "Siz o‘tdingiz", hide: true };
+  }
+  /** O‘tmaganlar — qayta ishlashi mumkin */
+  if (allowFailRetake && isFinished(latest) && latest.passed === false) {
+    return { canStart: true, canResume: false, reason: null as string | null, hide: false };
+  }
+  if (latest.status === "annulled") {
+    return allowFailRetake
+      ? { canStart: true, canResume: false, reason: null as string | null, hide: false }
+      : { canStart: false, canResume: false, reason: "Natijangiz bekor qilingan", hide: false };
+  }
+  return { canStart: false, canResume: false, reason: "Siz bu testni topshirgansiz", hide: false };
 }
 
 /* ---------------------------------- Xodim ---------------------------------- */
@@ -375,8 +393,8 @@ router.get("/atestatsiya/me", requireAuth, async (req: AuthRequest, res): Promis
       const latest = latestOf(mine);
       const policy = who.preview
         ? (e.questionsJson || []).length || normalizePoolTracks(e).some((t) => t !== e.track)
-          ? { canStart: true, canResume: false, reason: null as string | null }
-          : { canStart: false, canResume: false, reason: "Testda savollar yo‘q" }
+          ? { canStart: true, canResume: false, reason: null as string | null, hide: false }
+          : { canStart: false, canResume: false, reason: "Testda savollar yo‘q", hide: false }
         : startPolicy(e, mine);
       return {
         id: e.id,
@@ -391,6 +409,7 @@ router.get("/atestatsiya/me", requireAuth, async (req: AuthRequest, res): Promis
         })(),
         poolCount: (e.questionsJson || []).length,
         poolTracks: normalizePoolTracks(e),
+        retakeIfFailed: e.retakeIfFailed !== false,
         locationMode: e.locationMode,
         locationTarget:
           e.locationMode === "anywhere"
@@ -407,6 +426,7 @@ router.get("/atestatsiya/me", requireAuth, async (req: AuthRequest, res): Promis
         ...policy,
       };
     })
+    .filter((row) => who.preview || !row.hide)
     .sort((a, b) => rank[a.window] - rank[b.window] || (a.window === "closed" ? b.startsAt.localeCompare(a.startsAt) : a.startsAt.localeCompare(b.startsAt)));
 
   res.json({
@@ -764,6 +784,7 @@ type ExamInput = {
   shuffleQuestions: boolean;
   shuffleOptions: boolean;
   showResult: boolean;
+  retakeIfFailed: boolean;
   published: boolean;
 };
 
@@ -851,6 +872,7 @@ function parseExamBody(body: Record<string, unknown> | undefined, examTrack: Tra
     shuffleQuestions: body?.shuffleQuestions !== false,
     shuffleOptions: body?.shuffleOptions !== false,
     showResult: body?.showResult !== false,
+    retakeIfFailed: body?.retakeIfFailed !== false,
     published: body?.published !== false,
   };
 }
@@ -892,6 +914,7 @@ function manageExam(e: Exam, all?: Exam[], banks?: Record<Track, number>) {
     shuffleQuestions: e.shuffleQuestions,
     shuffleOptions: e.shuffleOptions !== false,
     showResult: e.showResult,
+    retakeIfFailed: e.retakeIfFailed !== false,
     published: e.published,
     window: windowState(e),
     updatedAt: e.updatedAt.toISOString(),

@@ -337,12 +337,19 @@ export function ExamRunner({
   );
 }
 
-function ResultBanner({ attempt }: { attempt: AttestLearnerAttempt }) {
+function ResultBanner({
+  attempt,
+  canRetake,
+}: {
+  attempt: AttestLearnerAttempt;
+  canRetake?: boolean;
+}) {
   if (attempt.status === "annulled") {
     return (
       <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
         <p className="font-semibold">Natija bekor qilindi</p>
         {attempt.annulReason ? <p className="mt-0.5">{attempt.annulReason}</p> : null}
+        {canRetake ? <p className="mt-1 font-medium text-rose-800">Qayta topshirishingiz mumkin.</p> : null}
       </div>
     );
   }
@@ -350,6 +357,7 @@ function ResultBanner({ attempt }: { attempt: AttestLearnerAttempt }) {
     return (
       <div className="rounded-2xl border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
         Test topshirildi. Natija yashirilgan — uni trener yoki admin ko‘radi.
+        {canRetake ? " Qayta topshirishingiz mumkin." : ""}
       </div>
     );
   }
@@ -370,7 +378,11 @@ function ResultBanner({ attempt }: { attempt: AttestLearnerAttempt }) {
         </p>
         <p className="text-muted-foreground">
           {attempt.status === "expired" ? "Vaqt tugagach yopildi. " : ""}
-          {attempt.retakeAllowed ? "Qayta topshirishga ruxsat berilgan." : ATTEST_STATUS_LABEL[attempt.status]}
+          {canRetake && !ok
+            ? "Qayta topshirishingiz mumkin — pastdagi tugmani bosing."
+            : attempt.retakeAllowed
+              ? "Qayta topshirishga ruxsat berilgan."
+              : ATTEST_STATUS_LABEL[attempt.status]}
         </p>
       </div>
     </div>
@@ -595,7 +607,12 @@ export default function AtestatsiyaPage() {
                     </div>
                   ))}
                 </div>
-                {exam.attempt ? <ResultBanner attempt={exam.attempt} /> : null}
+                {exam.attempt ? (
+                  <ResultBanner
+                    attempt={exam.attempt}
+                    canRetake={Boolean(exam.canStart && !exam.canResume && exam.attempt.passed !== true)}
+                  />
+                ) : null}
                 {exam.reason ? (
                   <p className="flex items-center gap-1.5 text-xs text-slate-500">
                     <ShieldAlert className="h-3.5 w-3.5 shrink-0" /> {exam.reason}
@@ -627,9 +644,11 @@ export default function AtestatsiyaPage() {
                         ? "Sinab ko‘rish"
                         : exam.canResume
                           ? "Davom ettirish"
-                          : anywhere
-                            ? "Istalgan joydan boshlash"
-                            : "Testni boshlash"}
+                          : exam.attempt && exam.attempt.passed === false
+                            ? "Qayta topshirish"
+                            : anywhere
+                              ? "Istalgan joydan boshlash"
+                              : "Testni boshlash"}
                   </Button>
                 ) : null}
               </article>

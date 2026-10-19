@@ -51,6 +51,8 @@ export const attestatsiyaExamsTable = pgTable(
     /** Variantlar tartibi ham aralashsin */
     shuffleOptions: boolean("shuffle_options").notNull().default(true),
     showResult: boolean("show_result").notNull().default(true),
+    /** O‘tmaganlar / ishlamaganlar qayta topshirishi mumkin; o‘tganlarga test chiqmaydi */
+    retakeIfFailed: boolean("retake_if_failed").notNull().default(true),
     published: boolean("published").notNull().default(true),
     createdById: integer("created_by_id"),
     updatedById: integer("updated_by_id"),

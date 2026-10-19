@@ -83,6 +83,7 @@ type Draft = {
   shuffleQuestions: boolean;
   shuffleOptions: boolean;
   showResult: boolean;
+  retakeIfFailed: boolean;
   published: boolean;
   questions: AttestQuestion[];
   lockedQuestions: boolean;
@@ -153,6 +154,7 @@ function emptyDraft(): Draft {
     shuffleQuestions: true,
     shuffleOptions: true,
     showResult: true,
+    retakeIfFailed: true,
     published: false,
     questions: [emptyQuestion()],
     lockedQuestions: false,
@@ -175,6 +177,7 @@ function fromExam(e: AttestManageExam): Draft {
     shuffleQuestions: e.shuffleQuestions,
     shuffleOptions: e.shuffleOptions !== false,
     showResult: e.showResult,
+    retakeIfFailed: e.retakeIfFailed !== false,
     published: e.published,
     questions: e.questions.map((q) => ({ ...q, options: [...q.options] })),
     lockedQuestions: e.stats.hasAttempts,
@@ -300,6 +303,7 @@ function ExamEditor({
         shuffleQuestions: d.shuffleQuestions,
         shuffleOptions: d.shuffleOptions,
         showResult: d.showResult,
+        retakeIfFailed: d.retakeIfFailed,
         published: d.published,
       });
       toast({ title: d.id ? "Atestatsiya yangilandi" : "Atestatsiya yaratildi" });
@@ -640,6 +644,26 @@ function ExamEditor({
           <Switch checked={d.showResult} onCheckedChange={(v) => setD({ ...d, showResult: v })} />
           Natijani xodim ko‘rsin (foiz va o‘tdi/o‘tmadi)
         </label>
+        <div
+          className={cn(
+            "w-full rounded-2xl border px-3 py-2.5",
+            d.retakeIfFailed ? "border-sky-200 bg-sky-50" : "border-slate-200 bg-slate-50",
+          )}
+        >
+          <label className="flex items-start justify-between gap-3">
+            <span>
+              <span className="block text-sm font-semibold">
+                {d.retakeIfFailed ? "Qayta topshirish yoqilgan" : "Qayta topshirish o‘chiq"}
+              </span>
+              <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                {d.retakeIfFailed
+                  ? "Ishlamagan va o‘tmaganlarga shu test yana chiqadi — qayta ishlashi mumkin. O‘tganlarga chiqmaydi."
+                  : "Har kim faqat bir marta topshiradi (admin alohida ruxsat bersa qayta ochiladi)."}
+              </span>
+            </span>
+            <Switch checked={d.retakeIfFailed} onCheckedChange={(v) => setD({ ...d, retakeIfFailed: v })} />
+          </label>
+        </div>
         <div className={cn("w-full rounded-2xl border px-3 py-2.5", d.published ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50")}>
           <label className="flex items-start justify-between gap-3">
             <span>
@@ -1316,6 +1340,11 @@ export default function AtestatsiyaAdminPage() {
                           <span className="rounded-lg bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
                             {e.stats.passed}/{e.stats.finished} o‘tdi · {e.stats.inProgress} ishlayapti
                           </span>
+                          {e.retakeIfFailed !== false ? (
+                            <span className="rounded-lg bg-sky-50 px-2.5 py-1 font-semibold text-sky-800 dark:bg-sky-950 dark:text-sky-200">
+                              O‘tmaganlar qayta ishlaydi
+                            </span>
+                          ) : null}
                         </div>
                         <div
                           className={cn(

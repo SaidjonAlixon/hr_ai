@@ -33,7 +33,10 @@ describe("Ketdim muddatlari (smena jadvali)", () => {
   it("1-smena 08:00–17:00 → shu kun 23:55", () => {
     assert.equal(stamp(deadline(work, "17:00", false, "one")), "2026-09-25 23:55:00");
   });
-  it("2-smena 17:00–24:00 → ertasi 02:00", () => {
+  it("2-smena 17:00–23:59 → ertasi 02:00", () => {
+    assert.equal(stamp(deadline(work, "23:59", false, "two")), "2026-09-26 02:00:00");
+  });
+  it("2-smena legacy 24:00 → ertasi 02:00", () => {
     assert.equal(stamp(deadline(work, "24:00", false, "two")), "2026-09-26 02:00:00");
   });
   it("3-smena 23:00–07:00 → ertalab 10:00", () => {
@@ -42,8 +45,8 @@ describe("Ketdim muddatlari (smena jadvali)", () => {
   it("ofis 09:00–18:00 → shu kun 23:55", () => {
     assert.equal(stamp(deadline(work, "18:00", false, "one")), "2026-09-25 23:55:00");
   });
-  it("1+2 08:00–24:00 → ertasi 02:00", () => {
-    assert.equal(stamp(deadline(work, "24:00", false, "two")), "2026-09-26 02:00:00");
+  it("1+2 08:00–23:59 → ertasi 02:00", () => {
+    assert.equal(stamp(deadline(work, "23:59", false, "two")), "2026-09-26 02:00:00");
   });
   it("2+3 17:00–07:00 → ertalab 10:00", () => {
     assert.equal(stamp(deadline(work, "07:00", true, "three")), "2026-09-26 10:00:00");

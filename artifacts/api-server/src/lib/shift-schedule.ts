@@ -116,7 +116,7 @@ export function overridesFromPayRow(
     },
     two: {
       startHm: hmOr(row.shiftTwoStartHm, "17:00"),
-      endHm: hmOr(row.shiftTwoEndHm, "24:00"),
+      endHm: hmOr(row.shiftTwoEndHm, "23:59"),
     },
     three: {
       startHm: hmOr(row.shiftThreeStartHm, "23:00"),

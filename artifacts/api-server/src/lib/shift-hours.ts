@@ -454,15 +454,18 @@ export function checkoutDeadlineAt(
     return warehouseCheckoutDeadlineAt(workDateYmd, endHm, overnight);
   }
   const endAt = shiftEndAt(workDateYmd, endHm, overnight);
-  // 24:00 — shu kun oxiri (ertasi 00:00 emas)
-  const endDayYmd = ymdInTashkent(new Date(endAt.getTime() - 60_000));
-  const merged = { ...opts, overnight };
+  // 23:59 / 24:00 — shu kun oxiri (ertasi 00:00 emas)
+  const endDayYmd = ymdInTashkent(new Date(Math.max(endAt.getTime() - 60_000, endAt.getTime() - 1)));
+  const merged = { ...opts, overnight, endHm };
+  // 23:00+ tugash (2-smena) — smena kaliti yo‘q/noto‘g‘ri bo‘lsa ham 23:55 bilan yopilmasin
+  const nearMidnightEnd =
+    !usesShiftThreeCheckoutDeadline(merged) && hmToMinutes(endHm) >= 23 * 60;
 
   if (usesShiftThreeCheckoutDeadline(merged)) {
     // Tun smenasi tugagan ertalab (endDay) 10:00
     return new Date(`${endDayYmd}T${CHECKOUT_DEADLINE_SHIFT_THREE_HM}:00+05:00`);
   }
-  if (usesShiftTwoCheckoutDeadline(merged)) {
+  if (usesShiftTwoCheckoutDeadline(merged) || nearMidnightEnd) {
     const nextDay = addYmdDays(endDayYmd, 1);
     return new Date(`${nextDay}T${CHECKOUT_DEADLINE_SHIFT_TWO_HM}:00+05:00`);
   }

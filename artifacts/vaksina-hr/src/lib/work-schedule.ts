@@ -72,7 +72,7 @@ export function workShiftForUserRole(
         type: keys.length > 1 ? keys.join("+") : "two",
         label: keys.length > 1 ? "2+3 smena" : "2-smena",
         start: "17:00",
-        end: keys.includes("three") ? "07:00" : "24:00",
+        end: keys.includes("three") ? "07:00" : "23:59",
         overnight: keys.includes("three"),
         warnHm: "16:45",
         graceMinutes: 15,
@@ -82,7 +82,7 @@ export function workShiftForUserRole(
       type: keys.length > 1 ? keys.join("+") : "one",
       label: keys.length > 1 ? "1+2 smena" : "1-smena",
       start: "08:00",
-      end: keys.includes("two") ? "24:00" : "17:00",
+      end: keys.includes("two") ? "23:59" : "17:00",
       warnHm: "07:45",
       graceMinutes: 15,
     };

@@ -3892,7 +3892,7 @@ async function applyFacePunch(opts: {
     distanceMeters,
     allowedMeters,
     faceProfileId,
-    action,
+    action: actionRequested,
     verificationMethod = "FACE_ID",
     resolvedBranchId = null,
     resolvedBranchLabel = null,
@@ -3900,6 +3900,7 @@ async function applyFacePunch(opts: {
     daySlots = [],
     notes: notesRaw = null,
   } = opts;
+  let action: "in" | "out" = actionRequested;
   const defs = await getEffectiveShiftDefs();
   const today = todayTashkent();
   const yesterday = addDaysYmd(today, -1);
@@ -3938,6 +3939,17 @@ async function applyFacePunch(opts: {
     todayRec,
     yesterdayRec,
   });
+  // 00:00–02:00: UI «Keldim» yuborsa ham ochiq kechagi smena → Ketdim (yangi kun ochilmasin)
+  if (
+    action === "in" &&
+    resolvedWd.reason === "open_overnight" &&
+    yesterdayRec?.checkInAt &&
+    !yesterdayRec.checkOutAt &&
+    yesterdayRec.status !== "absent" &&
+    yesterdayRec.status !== "leave"
+  ) {
+    action = "out";
+  }
   const workDate = resolvedWd.workDate;
   // Ish kuni aniqlangach — shu kun rejasini ustun qo‘yamiz
   const planForWorkDate = await dayShiftTypeFor(emp.id, workDate);
@@ -4342,7 +4354,9 @@ async function applyFacePunch(opts: {
         if (endAt.getTime() <= startAt.getTime()) {
           endAt = atTashkent(addDaysYmd(workDate, 1), punchHours.end);
         }
-        const isEarlyLeave = now.getTime() < endAt.getTime();
+        // 2-smena: 23:45 dan keyin izoh/jarima yo‘q (end 23:59 yoki 24:00)
+        const leaveGraceMs = earlyLeaveGraceMin(punchHours.end) * 60_000;
+        const isEarlyLeave = now.getTime() < endAt.getTime() - leaveGraceMs;
         const earlyNote = String(notesRaw || "").trim().slice(0, 500);
         if (isEarlyLeave && earlyNote.length < 3) {
           return {

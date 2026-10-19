@@ -33,7 +33,7 @@ export const DEFAULT_SHIFT_DEFS: Record<ShiftKey, ShiftDefinition> = {
     key: "two",
     label: "2-smena",
     startHm: "17:00",
-    endHm: "24:00",
+    endHm: "23:59",
     overnight: false,
     defaultUnpaidBreakMin: 0,
     graceMinutes: 15,
@@ -209,11 +209,23 @@ export function hmToMinutes(hm: string): number {
   return h * 60 + m;
 }
 
-/** Yarim tunda (24:00) tugaydigan smenada oxirgi shuncha daqiqa ichida ketish erta ketish emas */
+/**
+ * 2-smena oxiri (23:45+ / 23:59 / 24:00): shu vaqtdan keyin Ketdim —
+ * erta ketish emas (izoh/jarima yo‘q). 23:45 → end orasidagi daqiqalar grace.
+ */
+export const MIDNIGHT_END_LEAVE_OK_FROM_MIN = 23 * 60 + 45; // 23:45
 export const MIDNIGHT_END_LEAVE_GRACE_MIN = 15;
 
 export function earlyLeaveGraceMin(endHm: string | null | undefined): number {
-  return endHm && hmToMinutes(endHm) >= 24 * 60 ? MIDNIGHT_END_LEAVE_GRACE_MIN : 0;
+  if (!endHm) return 0;
+  const end = hmToMinutes(endHm);
+  // 24:00 va undan katta (legacy)
+  if (end >= 24 * 60) return MIDNIGHT_END_LEAVE_GRACE_MIN;
+  // 23:45+ tugash (23:59): 23:45 dan keyin erta emas
+  if (end >= MIDNIGHT_END_LEAVE_OK_FROM_MIN) {
+    return Math.max(0, end - MIDNIGHT_END_LEAVE_OK_FROM_MIN);
+  }
+  return 0;
 }
 
 export function minutesToHm(total: number): string {

@@ -208,8 +208,23 @@ function ymdInTashkent(ms: number): string {
 /** workDate + endHm → smena tugashi (Toshkent, UTC+5) */
 function shiftEndMs(workDateYmd: string, endHm: string, overnight?: boolean): number {
   const endDay = overnight ? addYmdDays(workDateYmd, 1) : workDateYmd;
-  const hm = /^\d{1,2}:\d{2}$/.test(endHm) ? endHm : "18:00";
+  let hm = /^\d{1,2}:\d{2}$/.test(endHm) ? endHm : "18:00";
+  // Legacy 24:00 → keyingi kun 00:00
+  if (hm === "24:00") {
+    return new Date(`${addYmdDays(endDay, overnight ? 0 : 1)}T00:00:00+05:00`).getTime();
+  }
   return new Date(`${endDay}T${hm}:00+05:00`).getTime();
+}
+
+/** 2-smena 23:45+ / 23:59 / 24:00: shu vaqtdan ketish — izoh so‘ralmasin */
+function earlyLeaveGraceMs(endHm: string): number {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(endHm || "").trim());
+  if (!m) return 0;
+  const endMin = Number(m[1]) * 60 + Number(m[2]);
+  const okFrom = 23 * 60 + 45; // 23:45
+  if (endMin >= 24 * 60) return 15 * 60_000;
+  if (endMin >= okFrom) return Math.max(0, endMin - okFrom) * 60_000;
+  return 0;
 }
 
 function normKeys(opts?: { shiftType?: string | null; shiftKeys?: string[] | null }): string[] {
@@ -1684,7 +1699,7 @@ export default function DavomatFacePage() {
   const shiftOvernight =
     workplace?.shift?.overnight ??
     (user?.role ? Boolean(workShiftForUserRole(user.role).overnight) : false);
-  /** Smena tugaganmi — workDate + end (yarim tun o‘tsa ham to‘g‘ri; 2-smena 24:00 → 00:10 OK) */
+  /** Smena tugaganmi — workDate + end; 2-smena 23:45 dan keyin izoh yo‘q (end 23:59) */
   const shiftEndAtMs = (() => {
     let endMs = shiftEndMs(workDateYmd, shiftEndHm, shiftOvernight);
     const startHm = /^\d{1,2}:\d{2}$/.test(shiftStartHm) ? shiftStartHm : "08:00";
@@ -1692,7 +1707,7 @@ export default function DavomatFacePage() {
     if (endMs <= startMs) endMs = shiftEndMs(workDateYmd, shiftEndHm, true);
     return endMs;
   })();
-  const afterShiftEnd = nowTick >= shiftEndAtMs;
+  const afterShiftEnd = nowTick >= shiftEndAtMs - earlyLeaveGraceMs(shiftEndHm);
   /** Keldimdan keyin Ketdim muddatgacha ochiq (2→02:00, 3→10:00, 1→23:55) */
   const afterCheckoutDeadline = (() => {
     const iso = workplace?.shift?.checkoutDeadlineAt;

@@ -339,7 +339,7 @@ export function workHoursForStaffFilter(filter: DavomatStaffFilter): { start: st
     case "shift_one":
       return { start: "08:00", end: "17:00" };
     case "shift_two":
-      return { start: "17:00", end: "24:00" };
+      return { start: "17:00", end: "23:59" };
     case "security":
       return SECURITY_WORK_HOURS;
     case "office":

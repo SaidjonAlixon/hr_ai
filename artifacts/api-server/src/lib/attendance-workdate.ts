@@ -10,7 +10,8 @@ export type Ymd = string;
 /**
  * Punch uchun workDate:
  * - ochiq (check-in bor, check-out yo‘q, absent/leave emas) yozuv — o‘sha kun
- * - tungi / kechikkan Ketdim: kechagi ochiq yozuv (muddat checkoutDeadlineAt da tekshiriladi)
+ * - tungi / kechikkan Ketdim: kechagi ochiq yozuv ustun (00:00 da yangi «Keldim» emas)
+ * - muddat checkoutDeadlineAt da tekshiriladi (2-smena → ertasi 02:00)
  * - aks holda bugun
  */
 export function resolveAttendanceWorkDate(opts: {
@@ -46,12 +47,12 @@ export function resolveAttendanceWorkDate(opts: {
     return true;
   };
 
-  if (isOpen(todayRec)) {
-    return { workDate: todayYmd, reason: "open_today" };
-  }
-  // 2-smena 02:00 / 3-smena 10:00 gacha Ketdim — ochiq kechagi yozuv ustun
+  // Kechagi ochiq smena (2→02:00) — bugungi bo‘sh yozuvdan oldin: 00:00 «Keldim» bo‘lmasin
   if (isOpen(yesterdayRec)) {
     return { workDate: yesterdayYmd, reason: "open_overnight" };
+  }
+  if (isOpen(todayRec)) {
+    return { workDate: todayYmd, reason: "open_today" };
   }
 
   // 3-smena start: kechqurun 23:00 — workDate = today

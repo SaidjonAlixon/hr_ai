@@ -1266,7 +1266,7 @@ CREATE TABLE IF NOT EXISTS attendance_pay_settings (
   shift_one_start_hm TEXT NOT NULL DEFAULT '08:00',
   shift_one_end_hm TEXT NOT NULL DEFAULT '17:00',
   shift_two_start_hm TEXT NOT NULL DEFAULT '17:00',
-  shift_two_end_hm TEXT NOT NULL DEFAULT '24:00',
+  shift_two_end_hm TEXT NOT NULL DEFAULT '23:59',
   shift_three_start_hm TEXT NOT NULL DEFAULT '23:00',
   shift_three_end_hm TEXT NOT NULL DEFAULT '07:00',
   shift_three_overnight BOOLEAN NOT NULL DEFAULT TRUE,
@@ -1291,7 +1291,7 @@ ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS max_shifts_per_day 
 ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_one_start_hm TEXT NOT NULL DEFAULT '08:00';
 ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_one_end_hm TEXT NOT NULL DEFAULT '17:00';
 ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_two_start_hm TEXT NOT NULL DEFAULT '17:00';
-ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_two_end_hm TEXT NOT NULL DEFAULT '24:00';
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_two_end_hm TEXT NOT NULL DEFAULT '23:59';
 ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_three_start_hm TEXT NOT NULL DEFAULT '23:00';
 ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_three_end_hm TEXT NOT NULL DEFAULT '07:00';
 ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_three_overnight BOOLEAN NOT NULL DEFAULT TRUE;
@@ -1302,6 +1302,10 @@ ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAM
 INSERT INTO attendance_pay_settings (id)
 SELECT 1
 WHERE NOT EXISTS (SELECT 1 FROM attendance_pay_settings WHERE id = 1);
+-- 2-smena tugashi: 24:00 → 23:59 (Ketdim ertasi 02:00 gacha)
+UPDATE attendance_pay_settings
+SET shift_two_end_hm = '23:59', updated_at = NOW()
+WHERE id = 1 AND (shift_two_end_hm IS NULL OR shift_two_end_hm IN ('24:00', '24:0', '00:00'));
 
 -- Kunlik / vaqtinchalik filial biriktirish (rotatsiya)
 CREATE TABLE IF NOT EXISTS employee_branch_assignments (

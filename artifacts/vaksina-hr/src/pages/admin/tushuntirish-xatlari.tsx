@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Clock3,
   Eye,
+  ClipboardList,
   FileDown,
   FileSignature,
   FileSpreadsheet,
@@ -58,6 +59,7 @@ import {
   useSendLetterReport,
   type ExplanationLetter,
 } from "@/lib/explanation-letters-api";
+import { downloadStageRosterPdf, stageReportRows } from "@/lib/explanation-stage-report-pdf";
 import {
   clearAllScannerDocs,
   fetchScannerDocsInbox,
@@ -118,6 +120,7 @@ export default function TushuntirishXatlariPage() {
   const [openId, setOpenId] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [reportBusy, setReportBusy] = useState(false);
   const [headerOpen, setHeaderOpen] = useState(false);
   const canDelete = canDeleteLetters(user?.role);
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
@@ -273,6 +276,44 @@ export default function TushuntirishXatlariPage() {
     }
   };
 
+  /** Tanlangan bosqich: ism-familiya + koordinator hisobot PDF */
+  const stageReport = async () => {
+    if (stage == null) {
+      toast({
+        title: "Bosqich tanlang",
+        description: "Avval yuqoridan 1–6 holatni tanlang — shu bosqich hisoboti chiqadi.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const rows = stageReportRows(list, stage, NO_COORD);
+    if (!rows.length) {
+      toast({ title: "Bo‘sh", description: "Bu bosqichda hisobot uchun xodim yo‘q.", variant: "destructive" });
+      return;
+    }
+    setReportBusy(true);
+    try {
+      const filterBits = [
+        coord || null,
+        branch || null,
+        status !== "all" ? status : null,
+        kind !== "all" ? (kind === "late" ? "Kechikish" : "Kelmagan") : null,
+      ].filter(Boolean);
+      await downloadStageRosterPdf({
+        stage,
+        monthLabel: monthLabel(month),
+        groupLabel: group === "pharmacy" ? "Dorixona" : "Ofis",
+        rows,
+        filterNote: filterBits.length ? filterBits.join(" · ") : undefined,
+      });
+      toast({ title: "Hisobot tayyor", description: `${stage}-holat · ${rows.length} ta xodim` });
+    } catch (e) {
+      toast({ title: "Hisobot", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setReportBusy(false);
+    }
+  };
+
   if (!allowed) {
     return <div className="p-6 text-sm text-muted-foreground">Faqat admin va HR uchun.</div>;
   }
@@ -306,6 +347,20 @@ export default function TushuntirishXatlariPage() {
             ))}
             <option value="all">Barcha oylar</option>
           </select>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10 shrink-0 gap-1.5 rounded-xl border-[#0b3a5c]/30 font-semibold text-[#0b3a5c] hover:bg-[#0b3a5c]/5"
+            disabled={reportBusy || stage == null || !list.length}
+            title={stage == null ? "Avval 1–6 holatni tanlang" : `${stage}-holat: ism + koordinator`}
+            onClick={() => void stageReport()}
+          >
+            {reportBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardList className="h-4 w-4" />}
+            <span className="hidden sm:inline">Hisobot</span>
+            {stage != null ? (
+              <span className="rounded-full bg-[#0b3a5c]/10 px-1.5 text-[11px] tabular-nums">{stage}</span>
+            ) : null}
+          </Button>
           <Button
             type="button"
             className="h-10 shrink-0 gap-1.5 rounded-xl bg-[#0b3a5c] text-white hover:bg-[#0b3a5c]/90"
@@ -384,11 +439,17 @@ export default function TushuntirishXatlariPage() {
           <p className="text-sm font-bold text-slate-900 dark:text-white">Bosqichlar bo‘yicha</p>
           <p className="text-[11px] text-slate-500">
             {stage ? (
-              <button type="button" className="font-semibold text-sky-700 hover:underline" onClick={() => setStage(null)}>
-                Filtrni olib tashlash
-              </button>
+              <>
+                <button type="button" className="font-semibold text-sky-700 hover:underline" onClick={() => setStage(null)}>
+                  Filtrni olib tashlash
+                </button>
+                <span className="text-slate-400"> · </span>
+                <span>
+                  «Hisobot» — {stage}-holatdagi ism familiya va koordinator PDF
+                </span>
+              </>
             ) : (
-              "Bosqichni bosib, ro‘yxatni filtrlang"
+              "Bosqichni tanlang, keyin «Hisobot» — ism + koordinator PDF"
             )}
           </p>
         </div>

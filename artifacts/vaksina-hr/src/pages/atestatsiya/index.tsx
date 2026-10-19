@@ -419,6 +419,16 @@ export default function AtestatsiyaPage() {
         });
         return;
       }
+      if (exam.locationMode === "anywhere") {
+        const res = await start.mutateAsync({
+          examId: exam.id,
+          latitude: 0,
+          longitude: 0,
+          accuracy: 0,
+        });
+        setRunner({ attempt: res.attempt, serverNow: res.serverNow });
+        return;
+      }
       const gps = await readGps();
       const res = await start.mutateAsync({ examId: exam.id, ...gps });
       setRunner({ attempt: res.attempt, serverNow: res.serverNow });
@@ -473,7 +483,7 @@ export default function AtestatsiyaPage() {
                 <p className="text-xs font-semibold uppercase tracking-wider text-sky-200/80">Atestatsiya</p>
                 <h1 className="text-xl font-bold sm:text-2xl">{data?.trackLabel ?? "…"} testi</h1>
                 <p className="mt-1 max-w-xl text-sm text-sky-100/80">
-                  Test faqat belgilangan joyda va belgilangan vaqtda ochiladi. Boshlangach taymer ishlaydi.
+                  Muddat ichida ochiladi. Ba’zi testlar faqat filial/ofisda, ba’zilari istalgan joydan. Boshlangach taymer ishlaydi.
                 </p>
               </div>
             </div>
@@ -527,12 +537,18 @@ export default function AtestatsiyaPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {data.exams.map((exam) => (
-              <article key={exam.id} className="space-y-3 rounded-3xl border border-border bg-card p-4 shadow-sm sm:p-5">
+            {data.exams.map((exam) => {
+              const anywhere = exam.locationMode === "anywhere";
+              const placeLabel = anywhere ? "Istalgan joy" : exam.locationMode === "office" ? "Ofis" : "Filial";
+              return (
+              <article
+                key={exam.id}
+                className="space-y-3 overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-950 sm:p-5"
+              >
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <h2 className="text-base font-bold text-foreground">{exam.title}</h2>
-                    {exam.description ? <p className="mt-1 text-sm text-muted-foreground">{exam.description}</p> : null}
+                    <h2 className="text-base font-extrabold tracking-tight text-slate-900 dark:text-white">{exam.title}</h2>
+                    {exam.description ? <p className="mt-1 text-sm text-slate-500">{exam.description}</p> : null}
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">
                     {data.preview && exam.published === false ? (
@@ -545,18 +561,23 @@ export default function AtestatsiyaPage() {
                         "rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
                         exam.window === "open" && "bg-emerald-100 text-emerald-800",
                         exam.window === "upcoming" && "bg-sky-100 text-sky-800",
-                        exam.window === "closed" && "bg-muted text-muted-foreground",
+                        exam.window === "closed" && "bg-slate-100 text-slate-500",
                       )}
                     >
                       {exam.window === "open" ? "Ochiq" : exam.window === "upcoming" ? "Kutilmoqda" : "Yopilgan"}
                     </span>
+                    {anywhere ? (
+                      <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">
+                        GPS shart emas
+                      </span>
+                    ) : null}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
                   {[
                     { icon: Clock, label: "Vaqt", value: `${formatAttestDt(exam.startsAt)} – ${formatAttestDt(exam.endsAt)}` },
                     { icon: Timer, label: "Davomiylik", value: `${exam.durationMinutes} daqiqa` },
-                    { icon: MapPin, label: exam.locationMode === "office" ? "Ofis" : "Filial", value: exam.locationTarget },
+                    { icon: MapPin, label: placeLabel, value: exam.locationTarget },
                     {
                       icon: Award,
                       label: "O‘tish / savol",
@@ -566,23 +587,26 @@ export default function AtestatsiyaPage() {
                           : `${exam.passScore}% · ${exam.questionCount} savol`,
                     },
                   ].map((x) => (
-                    <div key={x.label} className="rounded-xl bg-muted/50 px-2.5 py-2">
-                      <p className="flex items-center gap-1 text-muted-foreground">
+                    <div key={x.label} className="rounded-2xl bg-slate-50 px-2.5 py-2 dark:bg-white/5">
+                      <p className="flex items-center gap-1 text-slate-500">
                         <x.icon className="h-3 w-3" /> {x.label}
                       </p>
-                      <p className="mt-0.5 font-semibold leading-snug text-foreground">{x.value}</p>
+                      <p className="mt-0.5 font-semibold leading-snug text-slate-900 dark:text-white">{x.value}</p>
                     </div>
                   ))}
                 </div>
                 {exam.attempt ? <ResultBanner attempt={exam.attempt} /> : null}
                 {exam.reason ? (
-                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <p className="flex items-center gap-1.5 text-xs text-slate-500">
                     <ShieldAlert className="h-3.5 w-3.5 shrink-0" /> {exam.reason}
                   </p>
                 ) : null}
                 {exam.canStart || exam.canResume ? (
                   <Button
-                    className="h-11 w-full bg-[#2AABEE] hover:bg-[#229ED9]"
+                    className={cn(
+                      "h-12 w-full text-base font-semibold shadow-sm",
+                      anywhere ? "bg-emerald-600 hover:bg-emerald-700" : "bg-sky-600 hover:bg-sky-700",
+                    )}
                     disabled={locatingId === exam.id}
                     onClick={() => void begin(exam)}
                   >
@@ -596,16 +620,21 @@ export default function AtestatsiyaPage() {
                     {locatingId === exam.id
                       ? data?.preview
                         ? "Ochilmoqda…"
-                        : "Joylashuv tekshirilmoqda…"
+                        : anywhere
+                          ? "Ochilmoqda…"
+                          : "Joylashuv tekshirilmoqda…"
                       : data?.preview
                         ? "Sinab ko‘rish"
                         : exam.canResume
                           ? "Davom ettirish"
-                          : "Testni boshlash"}
+                          : anywhere
+                            ? "Istalgan joydan boshlash"
+                            : "Testni boshlash"}
                   </Button>
                 ) : null}
               </article>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

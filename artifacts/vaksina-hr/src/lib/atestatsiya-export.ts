@@ -232,7 +232,7 @@ export async function exportAttestResultsExcel(data: AttestResults) {
         r.total,
         r.passScore,
         r.attemptsCount,
-        r.locationMode === "office" ? "Ofis" : "Filial",
+        r.locationMode === "anywhere" ? "Istalgan joy" : r.locationMode === "office" ? "Ofis" : "Filial",
         r.locationLabel || "—",
         r.distanceM ?? "",
         r.accuracyM ?? "",
@@ -337,7 +337,8 @@ export async function exportAttestResultsPdf(data: AttestResults) {
         resultStatus(r),
         r.score != null ? `${r.score}%` : "—",
         r.correct != null ? `${r.correct}/${r.total}` : "—",
-        r.locationLabel || (r.locationMode === "office" ? "Ofis" : "Filial"),
+        r.locationLabel ||
+          (r.locationMode === "anywhere" ? "Istalgan joy" : r.locationMode === "office" ? "Ofis" : "Filial"),
         formatAttestDt(r.startedAt),
         formatAttestDt(r.submittedAt),
       ];

@@ -17,8 +17,8 @@ export type AttestatsiyaQuestionRow = {
   correctIndex: number;
 };
 
-/** branch — faqat o‘z filiali zonasida; office — faqat asosiy ofis zonasida */
-export type AttestatsiyaLocationMode = "branch" | "office";
+/** branch — filial; office — ofis; anywhere — istalgan joy (GPS shart emas) */
+export type AttestatsiyaLocationMode = "branch" | "office" | "anywhere";
 
 export type AttestatsiyaAttemptStatus = "in_progress" | "submitted" | "expired" | "annulled";
 

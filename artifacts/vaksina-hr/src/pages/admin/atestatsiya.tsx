@@ -4,10 +4,12 @@ import {
   ArrowLeft,
   BadgeCheck,
   BarChart3,
+  Building2,
   ClipboardList,
   Eye,
   FileDown,
   FileSpreadsheet,
+  Globe2,
   Loader2,
   MapPin,
   Pencil,
@@ -52,6 +54,7 @@ import {
   useGrantRetake,
   usePublishAttest,
   useRestoreAttempt,
+  useAttestBankQuestions,
   useSaveAttestExam,
   startAttestPreview,
   type AttestLearnerAttempt,
@@ -71,7 +74,7 @@ type Draft = {
   durationMinutes: number;
   questionsPerAttempt: number | null;
   poolTracks: AttestTrack[];
-  locationMode: "branch" | "office";
+  locationMode: "branch" | "office" | "anywhere";
   startsAt: string;
   endsAt: string;
   shuffleQuestions: boolean;
@@ -190,16 +193,23 @@ function ExamEditor({
     ...initial,
     poolTracks: initial.poolTracks.length ? initial.poolTracks : [track],
   }));
+  const [bankTab, setBankTab] = useState<AttestTrack | "all">("all");
   const setQ = (i: number, patch: Partial<AttestQuestion>) =>
     setD((p) => ({ ...p, questions: p.questions.map((q, n) => (n === i ? { ...q, ...patch } : q)) }));
 
   const selectedPools = d.poolTracks.length ? d.poolTracks : [track];
+  const bankQ = useAttestBankQuestions(selectedPools, true);
   const localPool = d.questions.filter((q) => q.text.trim()).length;
-  const estimatedPool = ATTESTATSIYA_TRACKS.reduce((sum, t) => {
-    if (!selectedPools.includes(t.key)) return sum;
-    if (t.key === track) return sum + Math.max(bankCounts?.[t.key] ?? 0, localPool);
-    return sum + (bankCounts?.[t.key] ?? 0);
-  }, 0);
+  useEffect(() => {
+    if (bankTab !== "all" && !selectedPools.includes(bankTab)) setBankTab("all");
+  }, [selectedPools, bankTab]);
+  const estimatedPool =
+    bankQ.data?.total ??
+    ATTESTATSIYA_TRACKS.reduce((sum, t) => {
+      if (!selectedPools.includes(t.key)) return sum;
+      if (t.key === track) return sum + Math.max(bankCounts?.[t.key] ?? 0, localPool);
+      return sum + (bankCounts?.[t.key] ?? 0);
+    }, 0);
   const pool = Math.max(1, estimatedPool || localPool);
   const askCount = d.questionsPerAttempt && d.questionsPerAttempt > 0 && d.questionsPerAttempt < pool ? d.questionsPerAttempt : pool;
   const spanHint = windowSpanLabel(d.startsAt, d.endsAt);
@@ -329,15 +339,16 @@ function ExamEditor({
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {ATTESTATSIYA_TRACKS.map((t) => {
             const on = selectedPools.includes(t.key);
+            const live = bankQ.data?.tracks.find((x) => x.key === t.key)?.count;
             const count =
-              t.key === track ? Math.max(bankCounts?.[t.key] ?? 0, localPool) : bankCounts?.[t.key] ?? 0;
+              live ?? (t.key === track ? Math.max(bankCounts?.[t.key] ?? 0, localPool) : bankCounts?.[t.key] ?? 0);
             return (
               <label
                 key={t.key}
                 className={cn(
                   "flex cursor-pointer items-start gap-2.5 rounded-2xl border px-3 py-2.5 transition",
                   on
-                    ? "border-violet-500 bg-white shadow-sm dark:bg-slate-900"
+                    ? "border-violet-500 bg-white shadow-sm ring-1 ring-violet-200 dark:bg-slate-900 dark:ring-violet-900"
                     : "border-slate-200 bg-white/60 opacity-80 dark:border-white/10 dark:bg-slate-950/40",
                 )}
               >
@@ -345,7 +356,10 @@ function ExamEditor({
                   type="checkbox"
                   className="mt-1 h-4 w-4 accent-violet-600"
                   checked={on}
-                  onChange={() => togglePool(t.key)}
+                  onChange={() => {
+                    togglePool(t.key);
+                    setBankTab(t.key);
+                  }}
                 />
                 <span className="min-w-0">
                   <span className="block text-sm font-bold text-slate-900 dark:text-white">{t.label}</span>
@@ -355,6 +369,77 @@ function ExamEditor({
             );
           })}
         </div>
+
+        {selectedPools.length ? (
+          <div className="mt-3 rounded-2xl border border-violet-200/80 bg-white p-3 dark:border-violet-900/40 dark:bg-slate-950">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <p className="text-xs font-bold text-violet-900 dark:text-violet-200">
+                Tanlangan bazalar savollari
+                {bankQ.data ? ` · ${bankQ.data.total} ta` : ""}
+              </p>
+              <div className="ml-auto flex flex-wrap gap-1">
+                <button
+                  type="button"
+                  onClick={() => setBankTab("all")}
+                  className={cn(
+                    "rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
+                    bankTab === "all" ? "bg-violet-600 text-white" : "bg-violet-50 text-violet-800 dark:bg-violet-950",
+                  )}
+                >
+                  Hammasi
+                </button>
+                {selectedPools.map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setBankTab(k)}
+                    className={cn(
+                      "rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
+                      bankTab === k ? "bg-violet-600 text-white" : "bg-violet-50 text-violet-800 dark:bg-violet-950",
+                    )}
+                  >
+                    {ATTESTATSIYA_TRACKS.find((t) => t.key === k)?.label || k}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {bankQ.isLoading ? (
+              <p className="py-4 text-center text-xs text-slate-500">Bazalar yuklanmoqda…</p>
+            ) : bankQ.isError ? (
+              <p className="py-3 text-center text-xs text-rose-600">{(bankQ.error as Error).message}</p>
+            ) : (
+              <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+                {(bankQ.data?.tracks || [])
+                  .filter((g) => bankTab === "all" || g.key === bankTab)
+                  .flatMap((g) =>
+                    g.questions.map((q, i) => (
+                      <div
+                        key={q.id}
+                        className="rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2 dark:border-white/10 dark:bg-white/5"
+                      >
+                        <p className="text-[11px] font-semibold text-violet-700 dark:text-violet-300">
+                          {g.label}
+                          {q.sourceTitle ? ` · ${q.sourceTitle}` : ""}
+                        </p>
+                        <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
+                          {i + 1}. {q.text}
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          To‘g‘ri: {q.options[q.correctIndex] || "—"}
+                        </p>
+                      </div>
+                    )),
+                  )}
+                {!bankQ.data?.total ? (
+                  <p className="py-4 text-center text-xs text-slate-500">Tanlangan bazalarda savol yo‘q.</p>
+                ) : null}
+              </div>
+            )}
+            <p className="mt-2 text-[10px] text-slate-500">
+              Bu yerda ko‘rinadi — xodimga har safar shu pooldan random tanlanadi. Tahrirlash uchun pastga qo‘shing yoki manba testda o‘zgartiring.
+            </p>
+          </div>
+        ) : null}
       </div>
 
       <div className="rounded-2xl border border-sky-200 bg-sky-50/70 p-3 sm:p-4 dark:border-sky-900/50 dark:bg-sky-950/30">
@@ -397,25 +482,33 @@ function ExamEditor({
         </div>
       </div>
       <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 sm:p-4 dark:border-white/10 dark:bg-white/5">
-        <p className="mb-3 text-sm font-bold text-slate-900 dark:text-white">4. Qayerda ochiladi</p>
-        <div className="grid grid-cols-2 gap-2">
+        <p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">4. Qayerda ochiladi</p>
+        <p className="mb-3 text-[11px] text-slate-500">
+          «Istalgan joy» — aptekada bo‘lmaganlar ham GPS’siz test ishlay oladi.
+        </p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {(
             [
-              ["branch", "O‘z filialida", "Faqat biriktirilgan filial hududida"],
-              ["office", "Asosiy ofisda", "Faqat ofis hududida"],
+              ["branch", "O‘z filialida", "Faqat biriktirilgan filial hududida", MapPin],
+              ["office", "Asosiy ofisda", "Faqat ofis hududida", Building2],
+              ["anywhere", "Istalgan joy", "Uydan, yo‘ldan — GPS shart emas", Globe2],
             ] as const
-          ).map(([key, label, hint]) => (
+          ).map(([key, label, hint, Icon]) => (
             <button
               key={key}
               type="button"
               onClick={() => setD({ ...d, locationMode: key })}
               className={cn(
                 "rounded-2xl border p-3 text-left transition",
-                d.locationMode === key ? "border-sky-500 bg-sky-50 shadow-sm dark:bg-sky-950/40" : "border-slate-200 bg-white dark:border-white/10 dark:bg-slate-900",
+                d.locationMode === key
+                  ? key === "anywhere"
+                    ? "border-emerald-500 bg-emerald-50 shadow-sm ring-1 ring-emerald-200 dark:bg-emerald-950/40"
+                    : "border-sky-500 bg-sky-50 shadow-sm dark:bg-sky-950/40"
+                  : "border-slate-200 bg-white dark:border-white/10 dark:bg-slate-900",
               )}
             >
               <p className="flex items-center gap-1.5 text-sm font-semibold">
-                <MapPin className="h-4 w-4 text-sky-600" /> {label}
+                <Icon className={cn("h-4 w-4", key === "anywhere" ? "text-emerald-600" : "text-sky-600")} /> {label}
               </p>
               <p className="mt-1 text-[11px] text-slate-500">{hint}</p>
             </button>
@@ -576,7 +669,12 @@ function Monitor({ examId, onBack }: { examId: number; onBack: () => void }) {
       </div>
       <p className="text-xs text-muted-foreground">
         {data.trackLabel} · {formatAttestDt(data.exam.startsAt)} – {formatAttestDt(data.exam.endsAt)} · {data.exam.durationMinutes} daq ·{" "}
-        {data.exam.locationMode === "office" ? "Asosiy ofis" : "O‘z filiali"} · pool {data.exam.poolCount} · har biriga {data.exam.askCount} savol ·
+        {data.exam.locationMode === "anywhere"
+          ? "Istalgan joy"
+          : data.exam.locationMode === "office"
+            ? "Asosiy ofis"
+            : "O‘z filiali"}{" "}
+        · pool {data.exam.poolCount} · har biriga {data.exam.askCount} savol ·
         Excelda har bir xodimning foizi va har bir javobi bor · har 10 soniyada yangilanadi
       </p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
@@ -867,7 +965,9 @@ function ResultsBoard({ track }: { track: AttestTrack }) {
                 <td className="px-3 py-2">{r.branchLabel || "—"}</td>
                 <td className="max-w-[180px] px-3 py-2">
                   <p className="truncate font-medium" title={r.examTitle}>{r.examTitle}</p>
-                  <p className="text-[10px] text-muted-foreground">{r.locationMode === "office" ? "Ofis" : "Filial"} · o‘tish {r.passScore}%</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {r.locationMode === "anywhere" ? "Istalgan joy" : r.locationMode === "office" ? "Ofis" : "Filial"} · o‘tish {r.passScore}%
+                  </p>
                 </td>
                 <td className={cn("whitespace-nowrap px-3 py-2 font-semibold", r.passed ? "text-emerald-700" : r.passed === false ? "text-rose-700" : "")}>
                   {r.status === "submitted" || r.status === "expired" ? (r.passed ? "O‘tdi" : "O‘tmadi") : ATTEST_STATUS_LABEL[r.status]}
@@ -1122,7 +1222,7 @@ export default function AtestatsiyaAdminPage() {
                           <span className="mx-1.5 text-slate-300">·</span>
                           {e.durationMinutes} daq
                           <span className="mx-1.5 text-slate-300">·</span>
-                          {e.locationMode === "office" ? "Ofis" : "Filial"}
+                          {e.locationMode === "anywhere" ? "Istalgan joy" : e.locationMode === "office" ? "Ofis" : "Filial"}
                           <span className="mx-1.5 text-slate-300">·</span>
                           o‘tish {e.passScore}%
                         </p>

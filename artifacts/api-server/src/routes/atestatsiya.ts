@@ -1,7 +1,7 @@
 /**
  * Atestatsiya — stajyor / farmasevt / mudir uchun vaqt va joy bilan cheklangan test.
  *  - Test faqat belgilangan oynada (startsAt … endsAt) ochiladi.
- *  - branch: faqat o‘z filiali GPS zonasida; office: faqat asosiy ofis zonasida.
+ *  - branch: filial GPS; office: ofis GPS; anywhere: istalgan joy (GPS shart emas).
  *  - Boshlangach taymer: min(boshlangan + davomiylik, oyna tugashi). Vaqt tugasa saqlangan javoblar bilan yakunlanadi.
  *  - Admin / direktor / trener: kiritadi, jonli kuzatadi, natijani bekor qiladi yoki qayta topshirishga ruxsat beradi.
  */
@@ -375,7 +375,11 @@ router.get("/atestatsiya/me", requireAuth, async (req: AuthRequest, res): Promis
         poolTracks: normalizePoolTracks(e),
         locationMode: e.locationMode,
         locationTarget:
-          e.locationMode === "office" ? "Asosiy ofis" : branch?.label || "O‘z filialingiz",
+          e.locationMode === "anywhere"
+            ? "Istalgan joy"
+            : e.locationMode === "office"
+              ? "Asosiy ofis"
+              : branch?.label || "O‘z filialingiz",
         startsAt: e.startsAt.toISOString(),
         endsAt: e.endsAt.toISOString(),
         window: windowState(e),
@@ -401,6 +405,9 @@ type GeoOk = { ok: true; label: string; branchId: number | null; distanceM: numb
 type GeoFail = { ok: false; error: string; code: string; distanceM?: number; allowedM?: number };
 
 async function checkLocation(exam: Exam, userId: number, body: Record<string, unknown>): Promise<GeoOk | GeoFail> {
+  if (exam.locationMode === "anywhere") {
+    return { ok: true, label: "Istalgan joy", branchId: null, distanceM: 0 };
+  }
   const lat = Number(body.latitude);
   const lng = Number(body.longitude);
   const acc = Number(body.accuracy);
@@ -513,8 +520,8 @@ router.post("/atestatsiya/me/exams/:id/start", requireAuth, async (req: AuthRequ
       locationLabel: geo.label,
       branchId: geo.branchId,
       distanceM: geo.distanceM,
-      latitude: Number(body.latitude),
-      longitude: Number(body.longitude),
+      latitude: Number.isFinite(Number(body.latitude)) ? Number(body.latitude) : null,
+      longitude: Number.isFinite(Number(body.longitude)) ? Number(body.longitude) : null,
       accuracyM: Number.isFinite(Number(body.accuracy)) ? Math.round(Number(body.accuracy)) : null,
       userAgent: String(req.headers["user-agent"] || "").slice(0, 300),
     })
@@ -732,7 +739,7 @@ type ExamInput = {
   durationMinutes: number;
   questionsPerAttempt: number | null;
   poolTracks: Track[];
-  locationMode: "branch" | "office";
+  locationMode: "branch" | "office" | "anywhere";
   startsAt: Date;
   endsAt: Date;
   shuffleQuestions: boolean;
@@ -786,8 +793,15 @@ function parseExamBody(body: Record<string, unknown> | undefined, examTrack: Tra
     if (!Number.isFinite(n) || n < 1) return { error: "Har bir xodimga ko‘rinadigan savol soni 1 dan katta bo‘lsin" };
     questionsPerAttempt = n;
   }
-  const locationMode = body?.locationMode === "office" ? "office" : body?.locationMode === "branch" ? "branch" : null;
-  if (!locationMode) return { error: "Joyni tanlang: filial yoki ofis" };
+  const locationMode =
+    body?.locationMode === "office"
+      ? "office"
+      : body?.locationMode === "anywhere"
+        ? "anywhere"
+        : body?.locationMode === "branch"
+          ? "branch"
+          : null;
+  if (!locationMode) return { error: "Joyni tanlang: filial, ofis yoki istalgan joy" };
 
   const startsAt = new Date(String(body?.startsAt ?? ""));
   const endsAt = new Date(String(body?.endsAt ?? ""));
@@ -858,11 +872,12 @@ function manageExam(e: Exam, all?: Exam[], banks?: Record<Track, number>) {
 }
 
 async function notifyPublished(e: Exam) {
-  const where = e.locationMode === "office" ? "asosiy ofisda" : "o‘z filialingizda";
+  const where =
+    e.locationMode === "anywhere" ? "istalgan joydan" : e.locationMode === "office" ? "asosiy ofisda" : "o‘z filialingizda";
   await notifyByRoles({
     roles: [e.track],
     title: "Atestatsiya",
-    text: `«${e.title}» atestatsiyasi: ${fmtDt(e.startsAt)} – ${fmtDt(e.endsAt)}. Test faqat ${where} ochiladi, davomiyligi ${e.durationMinutes} daqiqa.`,
+    text: `«${e.title}» atestatsiyasi: ${fmtDt(e.startsAt)} – ${fmtDt(e.endsAt)}. Test ${where} ochiladi, davomiyligi ${e.durationMinutes} daqiqa.`,
     type: "atestatsiya",
     linkUrl: "/atestatsiya",
   }).catch(() => undefined);
@@ -875,6 +890,61 @@ async function activeLearners(track: Track) {
     .where(and(eq(usersTable.role, track), inArray(usersTable.status, ["active", "on_leave"])))
     .orderBy(asc(usersTable.fullName));
 }
+
+/** Tanlangan bazalardagi savollar preview (admin formasi uchun) */
+router.get("/atestatsiya/manage/bank-questions", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireManager(req, res)) return;
+  const raw = String(req.query.tracks ?? "")
+    .split(",")
+    .map((s) => parseTrack(s.trim()))
+    .filter((t): t is Track => Boolean(t));
+  const tracks = [...new Set(raw)];
+  if (!tracks.length) {
+    res.json({ tracks: [], total: 0 });
+    return;
+  }
+  const exams = await db
+    .select()
+    .from(attestatsiyaExamsTable)
+    .where(inArray(attestatsiyaExamsTable.track, tracks))
+    .orderBy(desc(attestatsiyaExamsTable.startsAt));
+  const byTrack = new Map<Track, Array<{ id: string; text: string; options: string[]; correctIndex: number; sourceTitle: string }>>();
+  const seen = new Map<Track, Set<string>>();
+  for (const t of tracks) {
+    byTrack.set(t, []);
+    seen.set(t, new Set());
+  }
+  for (const e of exams) {
+    const t = parseTrack(e.track);
+    if (!t || !byTrack.has(t)) continue;
+    const list = byTrack.get(t)!;
+    const keys = seen.get(t)!;
+    for (const q of e.questionsJson || []) {
+      const text = String(q.text || "").trim();
+      if (!text) continue;
+      const key = text.toLowerCase();
+      if (keys.has(key)) continue;
+      keys.add(key);
+      list.push({
+        id: `e${e.id}__${q.id}`,
+        text: q.text,
+        options: [...(q.options || [])],
+        correctIndex: q.correctIndex,
+        sourceTitle: e.title,
+      });
+    }
+  }
+  const groups = tracks.map((t) => ({
+    key: t,
+    label: TRACK_LABEL[t],
+    count: byTrack.get(t)?.length ?? 0,
+    questions: (byTrack.get(t) || []).slice(0, 120),
+  }));
+  res.json({
+    tracks: groups,
+    total: groups.reduce((s, g) => s + g.count, 0),
+  });
+});
 
 router.get("/atestatsiya/manage", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireManager(req, res)) return;

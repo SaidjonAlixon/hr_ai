@@ -38,7 +38,7 @@ export type AttestExamCard = {
   passScore: number;
   questionCount: number;
   poolCount?: number;
-  locationMode: "branch" | "office";
+  locationMode: "branch" | "office" | "anywhere";
   locationTarget: string;
   startsAt: string;
   endsAt: string;
@@ -71,7 +71,7 @@ export type AttestExamInput = {
   questionsPerAttempt: number | null;
   /** Qaysi lavozim bazalaridan random savol olinadi */
   poolTracks: AttestTrack[];
-  locationMode: "branch" | "office";
+  locationMode: "branch" | "office" | "anywhere";
   startsAt: string;
   endsAt: string;
   shuffleQuestions: boolean;
@@ -291,7 +291,7 @@ export type AttestResultRow = {
   examId: number;
   examTitle: string;
   passScore: number;
-  locationMode: "branch" | "office";
+  locationMode: "branch" | "office" | "anywhere";
   durationMinutes: number;
   windowStart: string;
   windowEnd: string;
@@ -351,6 +351,26 @@ export function useAttestManage(track: AttestTrack, enabled: boolean) {
     queryKey: [...MANAGE_KEY, track],
     queryFn: () => apiFetch<AttestManage>(`/atestatsiya/manage?track=${track}`),
     enabled,
+  });
+}
+
+export type AttestBankPreview = {
+  tracks: Array<{
+    key: AttestTrack;
+    label: string;
+    count: number;
+    questions: Array<{ id: string; text: string; options: string[]; correctIndex: number; sourceTitle: string }>;
+  }>;
+  total: number;
+};
+
+export function useAttestBankQuestions(tracks: AttestTrack[], enabled: boolean) {
+  const key = [...tracks].sort().join(",");
+  return useQuery({
+    queryKey: [...MANAGE_KEY, "bank-questions", key],
+    queryFn: () => apiFetch<AttestBankPreview>(`/atestatsiya/manage/bank-questions?tracks=${encodeURIComponent(key)}`),
+    enabled: enabled && tracks.length > 0,
+    staleTime: 15_000,
   });
 }
 

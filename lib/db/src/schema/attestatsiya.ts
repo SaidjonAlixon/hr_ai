@@ -34,6 +34,11 @@ export const attestatsiyaExamsTable = pgTable(
     durationMinutes: integer("duration_minutes").notNull().default(30),
     /** Pool dan har bir xodimga nechta savol (null/0 = hammasi) */
     questionsPerAttempt: integer("questions_per_attempt"),
+    /**
+     * Qaysi lavozim bazalaridan savol olinadi (stajyor/farmasevt/mudir).
+     * Bo‘sh/null → faqat shu testning o‘z savollari (track).
+     */
+    poolTracks: jsonb("pool_tracks").$type<string[]>().notNull().default([]),
     locationMode: text("location_mode").notNull().default("branch"),
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
     endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
@@ -64,6 +69,8 @@ export const attestatsiyaAttemptsTable = pgTable(
     questionOrder: jsonb("question_order").$type<string[]>().notNull().default([]),
     /** savolId → asl variant indekslari permutatsiyasi (ko‘rsatilgan tartib) */
     optionOrders: jsonb("option_orders").$type<Record<string, number[]>>().notNull().default({}),
+    /** Urinish boshlanganda tanlangan savollar nusxasi (boshqa bazadan olinganlar uchun) */
+    questionsSnapshot: jsonb("questions_snapshot").$type<AttestatsiyaQuestionRow[] | null>().default(null),
     answersJson: jsonb("answers_json").$type<Record<string, number>>().notNull().default({}),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     deadlineAt: timestamp("deadline_at", { withTimezone: true }).notNull(),

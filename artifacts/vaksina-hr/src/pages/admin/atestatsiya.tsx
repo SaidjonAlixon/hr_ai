@@ -70,6 +70,7 @@ type Draft = {
   passScore: number;
   durationMinutes: number;
   questionsPerAttempt: number | null;
+  poolTracks: AttestTrack[];
   locationMode: "branch" | "office";
   startsAt: string;
   endsAt: string;
@@ -138,6 +139,7 @@ function emptyDraft(): Draft {
     passScore: 50,
     durationMinutes: autoDurationMinutes(startsAt, endsAt, 1),
     questionsPerAttempt: null,
+    poolTracks: [],
     locationMode: "branch",
     startsAt,
     endsAt,
@@ -158,6 +160,7 @@ function fromExam(e: AttestManageExam): Draft {
     passScore: e.passScore,
     durationMinutes: e.durationMinutes,
     questionsPerAttempt: e.questionsPerAttempt ?? null,
+    poolTracks: e.poolTracks?.length ? [...e.poolTracks] : [e.track],
     locationMode: e.locationMode,
     startsAt: isoToLocalInput(e.startsAt),
     endsAt: isoToLocalInput(e.endsAt),
@@ -170,16 +173,47 @@ function fromExam(e: AttestManageExam): Draft {
   };
 }
 
-function ExamEditor({ track, initial, onClose }: { track: AttestTrack; initial: Draft; onClose: () => void }) {
+function ExamEditor({
+  track,
+  initial,
+  onClose,
+  bankCounts,
+}: {
+  track: AttestTrack;
+  initial: Draft;
+  onClose: () => void;
+  bankCounts?: Partial<Record<AttestTrack, number>>;
+}) {
   const { toast } = useToast();
   const save = useSaveAttestExam();
-  const [d, setD] = useState(initial);
+  const [d, setD] = useState(() => ({
+    ...initial,
+    poolTracks: initial.poolTracks.length ? initial.poolTracks : [track],
+  }));
   const setQ = (i: number, patch: Partial<AttestQuestion>) =>
     setD((p) => ({ ...p, questions: p.questions.map((q, n) => (n === i ? { ...q, ...patch } : q)) }));
 
-  const pool = d.questions.length;
+  const selectedPools = d.poolTracks.length ? d.poolTracks : [track];
+  const localPool = d.questions.filter((q) => q.text.trim()).length;
+  const estimatedPool = ATTESTATSIYA_TRACKS.reduce((sum, t) => {
+    if (!selectedPools.includes(t.key)) return sum;
+    if (t.key === track) return sum + Math.max(bankCounts?.[t.key] ?? 0, localPool);
+    return sum + (bankCounts?.[t.key] ?? 0);
+  }, 0);
+  const pool = Math.max(1, estimatedPool || localPool);
   const askCount = d.questionsPerAttempt && d.questionsPerAttempt > 0 && d.questionsPerAttempt < pool ? d.questionsPerAttempt : pool;
   const spanHint = windowSpanLabel(d.startsAt, d.endsAt);
+
+  const togglePool = (key: AttestTrack) => {
+    setD((p) => {
+      const cur = p.poolTracks.length ? p.poolTracks : [track];
+      if (cur.includes(key)) {
+        if (cur.length <= 1) return p;
+        return { ...p, poolTracks: cur.filter((x) => x !== key) };
+      }
+      return { ...p, poolTracks: [...cur, key] };
+    });
+  };
 
   const patchWindow = (patch: Partial<Pick<Draft, "startsAt" | "endsAt" | "questionsPerAttempt" | "questions">>) => {
     setD((p) => {
@@ -216,6 +250,7 @@ function ExamEditor({ track, initial, onClose }: { track: AttestTrack; initial: 
         passScore: d.passScore,
         durationMinutes: d.durationMinutes,
         questionsPerAttempt: d.questionsPerAttempt,
+        poolTracks: selectedPools,
         locationMode: d.locationMode,
         startsAt: localInputToIso(d.startsAt),
         endsAt: localInputToIso(d.endsAt),
@@ -286,10 +321,46 @@ function ExamEditor({ track, initial, onClose }: { track: AttestTrack; initial: 
         </div>
       </div>
 
-      <div className="rounded-2xl border border-sky-200 bg-sky-50/70 p-3 sm:p-4 dark:border-sky-900/50 dark:bg-sky-950/30">
-        <p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">2. Har bir xodimga nechta savol</p>
+      <div className="rounded-2xl border border-violet-200 bg-violet-50/70 p-3 sm:p-4 dark:border-violet-900/40 dark:bg-violet-950/30">
+        <p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">2. Qaysi bazalardan savol kelsin</p>
         <p className="mb-3 text-[11px] text-slate-600 dark:text-slate-400">
-          Poolda {pool} ta savol. Masalan 51 ta bo‘lsa — har bir mudirga 20 tasini tasodifiy berish mumkin. Tartib va variantlar aralashadi.
+          Ptichka qo‘yilgan bazadan random savol keladi. Olib tashlansa — o‘sha bazadan kelmaydi. Har bir xodimga har xil to‘plam.
+        </p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {ATTESTATSIYA_TRACKS.map((t) => {
+            const on = selectedPools.includes(t.key);
+            const count =
+              t.key === track ? Math.max(bankCounts?.[t.key] ?? 0, localPool) : bankCounts?.[t.key] ?? 0;
+            return (
+              <label
+                key={t.key}
+                className={cn(
+                  "flex cursor-pointer items-start gap-2.5 rounded-2xl border px-3 py-2.5 transition",
+                  on
+                    ? "border-violet-500 bg-white shadow-sm dark:bg-slate-900"
+                    : "border-slate-200 bg-white/60 opacity-80 dark:border-white/10 dark:bg-slate-950/40",
+                )}
+              >
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 accent-violet-600"
+                  checked={on}
+                  onChange={() => togglePool(t.key)}
+                />
+                <span className="min-w-0">
+                  <span className="block text-sm font-bold text-slate-900 dark:text-white">{t.label}</span>
+                  <span className="block text-[11px] text-slate-500">{count} ta savol bazada</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-sky-200 bg-sky-50/70 p-3 sm:p-4 dark:border-sky-900/50 dark:bg-sky-950/30">
+        <p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">3. Har bir xodimga nechta savol</p>
+        <p className="mb-3 text-[11px] text-slate-600 dark:text-slate-400">
+          Belgilangan bazalarda ~{pool} ta. Masalan 51 ta bo‘lsa — har biriga 20 tasini tasodifiy berish mumkin.
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
@@ -326,7 +397,7 @@ function ExamEditor({ track, initial, onClose }: { track: AttestTrack; initial: 
         </div>
       </div>
       <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 sm:p-4 dark:border-white/10 dark:bg-white/5">
-        <p className="mb-3 text-sm font-bold text-slate-900 dark:text-white">3. Qayerda ochiladi</p>
+        <p className="mb-3 text-sm font-bold text-slate-900 dark:text-white">4. Qayerda ochiladi</p>
         <div className="grid grid-cols-2 gap-2">
           {(
             [
@@ -355,10 +426,10 @@ function ExamEditor({ track, initial, onClose }: { track: AttestTrack; initial: 
       <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-slate-950">
         <div className="flex items-center justify-between gap-2">
           <Label className="flex items-center gap-2 text-sm font-bold">
-            <ClipboardList className="h-4 w-4 text-sky-600" /> 4. Savollar bazasi ({pool})
+            <ClipboardList className="h-4 w-4 text-sky-600" /> 5. Shu testning o‘z savollari ({localPool})
           </Label>
           <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-[11px] font-semibold text-sky-800 dark:bg-sky-950 dark:text-sky-200">
-            Har biriga {askCount} ta
+            Pool ~{pool} · har biriga {askCount}
           </span>
         </div>
         {d.lockedQuestions ? <p className="text-[11px] text-amber-700">Boshlangan — savollar qulflangan</p> : null}
@@ -984,7 +1055,18 @@ export default function AtestatsiyaAdminPage() {
         ) : (
           <>
             {editing ? (
-              <ExamEditor key={editing.id ?? "new"} track={track} initial={editing} onClose={() => setEditing(null)} />
+              <ExamEditor
+                key={editing.id ?? "new"}
+                track={track}
+                initial={editing}
+                onClose={() => setEditing(null)}
+                bankCounts={
+                  manage.data?.bankCounts ||
+                  (Object.fromEntries((manage.data?.tracks || []).map((t) => [t.key, t.questions ?? 0])) as Partial<
+                    Record<AttestTrack, number>
+                  >)
+                }
+              />
             ) : (
               <Button className="h-11 w-full rounded-2xl bg-sky-600 text-base font-semibold hover:bg-sky-700" onClick={() => setEditing(emptyDraft())}>
                 <Plus className="mr-1.5 h-4 w-4" /> Yangi atestatsiya
@@ -1046,11 +1128,16 @@ export default function AtestatsiyaAdminPage() {
                         </p>
                         <div className="flex flex-wrap gap-2 text-[11px]">
                           <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-semibold text-slate-700 dark:bg-white/10 dark:text-slate-200">
-                            Bazada {e.poolCount} savol
+                            Pool ~{e.poolCount} · har biriga {e.askCount}
                           </span>
-                          <span className="rounded-lg bg-sky-100 px-2.5 py-1 font-semibold text-sky-800 dark:bg-sky-950 dark:text-sky-200">
-                            Har biriga {e.askCount} ta ko‘rinadi
-                          </span>
+                          {(e.poolTracks?.length ? e.poolTracks : [e.track]).map((pt) => (
+                            <span
+                              key={pt}
+                              className="rounded-lg bg-violet-100 px-2.5 py-1 font-semibold text-violet-800 dark:bg-violet-950 dark:text-violet-200"
+                            >
+                              {ATTESTATSIYA_TRACKS.find((t) => t.key === pt)?.label || pt}
+                            </span>
+                          ))}
                           <span className="rounded-lg bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
                             {e.stats.passed}/{e.stats.finished} o‘tdi · {e.stats.inProgress} ishlayapti
                           </span>

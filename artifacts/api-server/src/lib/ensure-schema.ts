@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS attestatsiya_exams (
   pass_score INTEGER NOT NULL DEFAULT 50,
   duration_minutes INTEGER NOT NULL DEFAULT 30,
   questions_per_attempt INTEGER,
+  pool_tracks JSONB NOT NULL DEFAULT '[]'::jsonb,
   location_mode TEXT NOT NULL DEFAULT 'branch',
   starts_at TIMESTAMPTZ NOT NULL,
   ends_at TIMESTAMPTZ NOT NULL,
@@ -147,6 +148,7 @@ CREATE TABLE IF NOT EXISTS attestatsiya_exams (
 CREATE INDEX IF NOT EXISTS attestatsiya_exams_track_idx ON attestatsiya_exams (track, starts_at);
 ALTER TABLE attestatsiya_exams ADD COLUMN IF NOT EXISTS questions_per_attempt INTEGER;
 ALTER TABLE attestatsiya_exams ADD COLUMN IF NOT EXISTS shuffle_options BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE attestatsiya_exams ADD COLUMN IF NOT EXISTS pool_tracks JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE TABLE IF NOT EXISTS attestatsiya_attempts (
   id SERIAL PRIMARY KEY,
@@ -156,6 +158,7 @@ CREATE TABLE IF NOT EXISTS attestatsiya_attempts (
   status TEXT NOT NULL DEFAULT 'in_progress',
   question_order JSONB NOT NULL DEFAULT '[]'::jsonb,
   option_orders JSONB NOT NULL DEFAULT '{}'::jsonb,
+  questions_snapshot JSONB,
   answers_json JSONB NOT NULL DEFAULT '{}'::jsonb,
   started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   deadline_at TIMESTAMPTZ NOT NULL,
@@ -186,6 +189,7 @@ CREATE TABLE IF NOT EXISTS attestatsiya_attempts (
 CREATE INDEX IF NOT EXISTS attestatsiya_attempts_exam_user_idx ON attestatsiya_attempts (exam_id, user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS attestatsiya_attempts_active_uidx ON attestatsiya_attempts (exam_id, user_id) WHERE status = 'in_progress';
 ALTER TABLE attestatsiya_attempts ADD COLUMN IF NOT EXISTS option_orders JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE attestatsiya_attempts ADD COLUMN IF NOT EXISTS questions_snapshot JSONB;
 
 -- Kirish (stajyor o‘quv)
 CREATE TABLE IF NOT EXISTS kirish_progress (

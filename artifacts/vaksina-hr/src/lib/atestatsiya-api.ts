@@ -69,6 +69,8 @@ export type AttestExamInput = {
   durationMinutes: number;
   /** Pool dan har bir xodimga nechta savol (null = hammasi) */
   questionsPerAttempt: number | null;
+  /** Qaysi lavozim bazalaridan random savol olinadi */
+  poolTracks: AttestTrack[];
   locationMode: "branch" | "office";
   startsAt: string;
   endsAt: string;
@@ -93,7 +95,8 @@ export type AttestManage = {
   track: AttestTrack;
   trackLabel: string;
   targets: number;
-  tracks: Array<{ key: AttestTrack; label: string; total: number; open: number }>;
+  bankCounts?: Record<AttestTrack, number>;
+  tracks: Array<{ key: AttestTrack; label: string; total: number; open: number; questions?: number }>;
   exams: AttestManageExam[];
 };
 

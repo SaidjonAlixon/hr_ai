@@ -73,12 +73,75 @@ function isFinished(a: Attempt) {
   return a.status === "submitted" || a.status === "expired";
 }
 
-function grade(exam: Exam, answers: Record<string, number>, questionIds?: string[] | null) {
-  const byId = new Map((exam.questionsJson || []).map((q) => [q.id, q]));
+function normalizePoolTracks(exam: Pick<Exam, "track" | "poolTracks">): Track[] {
+  const raw = Array.isArray(exam.poolTracks) ? exam.poolTracks : [];
+  const parsed = [...new Set(raw.map((t) => parseTrack(t)).filter((t): t is Track => Boolean(t)))];
+  if (parsed.length) return parsed;
+  const own = parseTrack(exam.track);
+  return own ? [own] : ["stajyor"];
+}
+
+function bankCountsFromExams(all: Exam[]): Record<Track, number> {
+  const counts: Record<Track, number> = { stajyor: 0, farmasevt: 0, mudir: 0 };
+  for (const e of all) {
+    const t = parseTrack(e.track);
+    if (!t) continue;
+    counts[t] += (e.questionsJson || []).filter((q) => q.text?.trim()).length;
+  }
+  return counts;
+}
+
+/** Belgilangan bazalardan birlashtirilgan savol pooli (matn bo‘yicha dedupe) */
+async function resolveQuestionPool(exam: Exam): Promise<AttestatsiyaQuestionRow[]> {
+  const tracks = normalizePoolTracks(exam);
+  const sources = await db
+    .select()
+    .from(attestatsiyaExamsTable)
+    .where(inArray(attestatsiyaExamsTable.track, tracks));
+  const byId = new Map(sources.map((e) => [e.id, e]));
+  if (!byId.has(exam.id)) byId.set(exam.id, exam);
+
+  const out: AttestatsiyaQuestionRow[] = [];
+  const seenText = new Set<string>();
+  for (const src of byId.values()) {
+    const t = parseTrack(src.track);
+    if (!t || !tracks.includes(t)) continue;
+    for (const q of src.questionsJson || []) {
+      const text = String(q.text || "").trim();
+      if (!text) continue;
+      const key = text.toLowerCase();
+      if (seenText.has(key)) continue;
+      seenText.add(key);
+      const id = src.id === exam.id ? q.id : `e${src.id}__${q.id}`;
+      out.push({
+        id,
+        text: q.text,
+        options: [...(q.options || [])],
+        correctIndex: q.correctIndex,
+      });
+    }
+  }
+  return out;
+}
+
+function attemptQuestions(a: Attempt | null | undefined, exam: Exam, fallbackPool?: AttestatsiyaQuestionRow[]) {
+  if (a?.questionsSnapshot?.length) return a.questionsSnapshot;
+  if (fallbackPool?.length) return fallbackPool;
+  return exam.questionsJson || [];
+}
+
+function grade(
+  exam: Exam,
+  answers: Record<string, number>,
+  questionIds?: string[] | null,
+  pool?: AttestatsiyaQuestionRow[] | null,
+) {
+  const questions = pool?.length ? pool : exam.questionsJson || [];
+  const byId = new Map(questions.map((q) => [q.id, q]));
   const ids =
     questionIds && questionIds.length
       ? questionIds.filter((id) => byId.has(id))
-      : (exam.questionsJson || []).map((q) => q.id);
+      : questions.map((q) => q.id);
   const total = ids.length;
   let correct = 0;
   for (const id of ids) {
@@ -91,13 +154,13 @@ function grade(exam: Exam, answers: Record<string, number>, questionIds?: string
 
 /** Client ko‘rsatilgan (aralashtirilgan) indeks yuboradi → asl indeksga o‘tkazamiz */
 function sanitizeAnswers(
-  exam: Exam,
+  questions: AttestatsiyaQuestionRow[],
   raw: unknown,
   optionOrders?: Record<string, number[]> | null,
 ): Record<string, number> {
   const out: Record<string, number> = {};
   if (!raw || typeof raw !== "object") return out;
-  const byId = new Map((exam.questionsJson || []).map((q) => [q.id, q]));
+  const byId = new Map(questions.map((q) => [q.id, q]));
   for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
     const q = byId.get(k);
     if (!q) continue;
@@ -120,22 +183,27 @@ function shuffled<T>(arr: T[]): T[] {
 }
 
 /** Pool dan N ta tasodifiy savol + (ixtiyoriy) variant aralashtirish */
-function buildAttemptPaper(exam: Exam): { order: string[]; optionOrders: Record<string, number[]> } {
-  const all = (exam.questionsJson || []).map((q) => q.id);
+function buildAttemptPaper(
+  exam: Exam,
+  pool: AttestatsiyaQuestionRow[],
+): { order: string[]; optionOrders: Record<string, number[]>; questions: AttestatsiyaQuestionRow[] } {
+  const all = pool.map((q) => q.id);
   const want = Math.round(Number(exam.questionsPerAttempt) || 0);
   const take = want > 0 && want < all.length ? want : all.length;
-  const pool = exam.shuffleQuestions !== false || take < all.length ? shuffled(all) : [...all];
-  const order = pool.slice(0, take);
+  const shuffledIds = exam.shuffleQuestions !== false || take < all.length ? shuffled(all) : [...all];
+  const order = shuffledIds.slice(0, take);
+  const byId = new Map(pool.map((q) => [q.id, q]));
   const optionOrders: Record<string, number[]> = {};
-  const byId = new Map((exam.questionsJson || []).map((q) => [q.id, q]));
   const shuffleOpts = exam.shuffleOptions !== false;
+  const questions: AttestatsiyaQuestionRow[] = [];
   for (const id of order) {
     const q = byId.get(id);
     if (!q) continue;
+    questions.push(q);
     const idxs = q.options.map((_, i) => i);
     optionOrders[id] = shuffleOpts ? shuffled(idxs) : idxs;
   }
-  return { order, optionOrders };
+  return { order, optionOrders, questions };
 }
 
 /** Vaqti tugagan, lekin yakunlanmagan urinishlarni saqlangan javoblar bilan yopadi */
@@ -148,7 +216,7 @@ async function finalizeExpired(attempts: Attempt[], examById: Map<number, Exam>)
       out.push(a);
       continue;
     }
-    const g = grade(exam, a.answersJson || {}, a.questionOrder);
+    const g = grade(exam, a.answersJson || {}, a.questionOrder, attemptQuestions(a, exam));
     const [upd] = await db
       .update(attestatsiyaAttemptsTable)
       .set({
@@ -183,12 +251,11 @@ function answeredCount(a: Attempt) {
   return Object.keys(a.answersJson || {}).length;
 }
 
-function learnerAttempt(a: Attempt, exam: Exam, withQuestions: boolean) {
+function learnerAttempt(a: Attempt, exam: Exam, withQuestions: boolean, poolFallback?: AttestatsiyaQuestionRow[]) {
   const reveal = exam.showResult && isFinished(a);
-  const byId = new Map((exam.questionsJson || []).map((q) => [q.id, q]));
-  const order = (a.questionOrder?.length ? a.questionOrder : (exam.questionsJson || []).map((q) => q.id)).filter(
-    (id) => byId.has(id),
-  );
+  const questions = attemptQuestions(a, exam, poolFallback);
+  const byId = new Map(questions.map((q) => [q.id, q]));
+  const order = (a.questionOrder?.length ? a.questionOrder : questions.map((q) => q.id)).filter((id) => byId.has(id));
   return {
     id: a.id,
     attemptNo: a.attemptNo,
@@ -289,7 +356,7 @@ router.get("/atestatsiya/me", requireAuth, async (req: AuthRequest, res): Promis
       const mine = attempts.filter((a) => a.examId === e.id);
       const latest = latestOf(mine);
       const policy = who.preview
-        ? (e.questionsJson || []).length
+        ? (e.questionsJson || []).length || normalizePoolTracks(e).some((t) => t !== e.track)
           ? { canStart: true, canResume: false, reason: null as string | null }
           : { canStart: false, canResume: false, reason: "Testda savollar yo‘q" }
         : startPolicy(e, mine);
@@ -305,6 +372,7 @@ router.get("/atestatsiya/me", requireAuth, async (req: AuthRequest, res): Promis
           return n > 0 && n < pool ? n : pool;
         })(),
         poolCount: (e.questionsJson || []).length,
+        poolTracks: normalizePoolTracks(e),
         locationMode: e.locationMode,
         locationTarget:
           e.locationMode === "office" ? "Asosiy ofis" : branch?.label || "O‘z filialingiz",
@@ -405,8 +473,9 @@ router.post("/atestatsiya/me/exams/:id/start", requireAuth, async (req: AuthRequ
     res.status(409).json({ error: policy.reason || "Testni boshlab bo‘lmaydi" });
     return;
   }
-  if (!(exam.questionsJson || []).length) {
-    res.status(409).json({ error: "Testda savollar yo‘q" });
+  const pool = await resolveQuestionPool(exam);
+  if (!pool.length) {
+    res.status(409).json({ error: "Testda savollar yo‘q (bazalar bo‘sh)" });
     return;
   }
 
@@ -418,13 +487,13 @@ router.post("/atestatsiya/me/exams/:id/start", requireAuth, async (req: AuthRequ
 
   if (policy.canResume) {
     const current = latestOf(mine)!;
-    res.json({ attempt: learnerAttempt(current, exam, true), serverNow: new Date().toISOString(), resumed: true });
+    res.json({ attempt: learnerAttempt(current, exam, true, pool), serverNow: new Date().toISOString(), resumed: true });
     return;
   }
 
   const now = new Date();
   const deadline = new Date(Math.min(now.getTime() + exam.durationMinutes * 60_000, exam.endsAt.getTime()));
-  const paper = buildAttemptPaper(exam);
+  const paper = buildAttemptPaper(exam, pool);
   const body = (req.body || {}) as Record<string, unknown>;
   const [created] = await db
     .insert(attestatsiyaAttemptsTable)
@@ -435,6 +504,7 @@ router.post("/atestatsiya/me/exams/:id/start", requireAuth, async (req: AuthRequ
       status: "in_progress",
       questionOrder: paper.order,
       optionOrders: paper.optionOrders,
+      questionsSnapshot: paper.questions,
       answersJson: {},
       startedAt: now,
       deadlineAt: deadline,
@@ -470,7 +540,7 @@ router.post("/atestatsiya/me/exams/:id/start", requireAuth, async (req: AuthRequ
     res.status(500).json({ error: "Urinish yaratilmadi, qayta urinib ko‘ring" });
     return;
   }
-  res.json({ attempt: learnerAttempt(attempt, exam, true), serverNow: new Date().toISOString(), resumed: !created });
+  res.json({ attempt: learnerAttempt(attempt, exam, true, pool), serverNow: new Date().toISOString(), resumed: !created });
 });
 
 function practiceAttempt(
@@ -478,10 +548,11 @@ function practiceAttempt(
   withQuestions: boolean,
   order: string[],
   optionOrders: Record<string, number[]>,
+  pool: AttestatsiyaQuestionRow[],
 ) {
   const now = new Date();
   const deadline = new Date(now.getTime() + exam.durationMinutes * 60_000);
-  const byId = new Map((exam.questionsJson || []).map((q) => [q.id, q]));
+  const byId = new Map(pool.map((q) => [q.id, q]));
   return {
     id: 0,
     attemptNo: 0,
@@ -521,13 +592,14 @@ router.post("/atestatsiya/preview/exams/:id/start", requireAuth, async (req: Aut
     res.status(404).json({ error: "Test topilmadi" });
     return;
   }
-  if (!(exam.questionsJson || []).length) {
-    res.status(409).json({ error: "Testda savollar yo‘q" });
+  const pool = await resolveQuestionPool(exam);
+  if (!pool.length) {
+    res.status(409).json({ error: "Testda savollar yo‘q (bazalar bo‘sh)" });
     return;
   }
-  const paper = buildAttemptPaper(exam);
+  const paper = buildAttemptPaper(exam, pool);
   res.json({
-    attempt: practiceAttempt(exam, true, paper.order, paper.optionOrders),
+    attempt: practiceAttempt(exam, true, paper.order, paper.optionOrders, paper.questions),
     optionOrders: paper.optionOrders,
     serverNow: new Date().toISOString(),
     practice: true,
@@ -546,11 +618,13 @@ router.post("/atestatsiya/preview/exams/:id/score", requireAuth, async (req: Aut
     req.body?.optionOrders && typeof req.body.optionOrders === "object"
       ? (req.body.optionOrders as Record<string, number[]>)
       : {};
+  const pool = await resolveQuestionPool(exam);
   const order = Array.isArray(req.body?.questionOrder)
     ? (req.body.questionOrder as string[]).filter((id) => typeof id === "string")
-    : (exam.questionsJson || []).map((q) => q.id);
-  const answers = sanitizeAnswers(exam, req.body?.answers, optionOrders);
-  const g = grade(exam, answers, order);
+    : pool.map((q) => q.id);
+  const paperQs = order.map((id) => pool.find((q) => q.id === id)).filter((q): q is AttestatsiyaQuestionRow => Boolean(q));
+  const answers = sanitizeAnswers(paperQs.length ? paperQs : pool, req.body?.answers, optionOrders);
+  const g = grade(exam, answers, order, paperQs.length ? paperQs : pool);
   const now = new Date().toISOString();
   res.json({
     attempt: {
@@ -602,9 +676,10 @@ router.post("/atestatsiya/me/attempts/:id/progress", requireAuth, async (req: Au
     res.status(409).json({ error: "Vaqt tugagan", code: "closed" });
     return;
   }
+  const qs = attemptQuestions(a, exam);
   const answers = {
     ...(a.answersJson || {}),
-    ...sanitizeAnswers(exam, req.body?.answers, a.optionOrders),
+    ...sanitizeAnswers(qs, req.body?.answers, a.optionOrders),
   };
   await db
     .update(attestatsiyaAttemptsTable)
@@ -621,11 +696,12 @@ router.post("/atestatsiya/me/attempts/:id/submit", requireAuth, async (req: Auth
     res.json({ attempt: learnerAttempt(a, exam, false), serverNow: new Date().toISOString() });
     return;
   }
+  const qs = attemptQuestions(a, exam);
   const late = Date.now() > a.deadlineAt.getTime() + SUBMIT_GRACE_MS;
   const answers = late
     ? a.answersJson || {}
-    : { ...(a.answersJson || {}), ...sanitizeAnswers(exam, req.body?.answers, a.optionOrders) };
-  const g = grade(exam, answers, a.questionOrder);
+    : { ...(a.answersJson || {}), ...sanitizeAnswers(qs, req.body?.answers, a.optionOrders) };
+  const g = grade(exam, answers, a.questionOrder, qs);
   const [upd] = await db
     .update(attestatsiyaAttemptsTable)
     .set({
@@ -655,6 +731,7 @@ type ExamInput = {
   passScore: number;
   durationMinutes: number;
   questionsPerAttempt: number | null;
+  poolTracks: Track[];
   locationMode: "branch" | "office";
   startsAt: Date;
   endsAt: Date;
@@ -664,19 +741,26 @@ type ExamInput = {
   published: boolean;
 };
 
-function parseExamBody(body: Record<string, unknown> | undefined): ExamInput | { error: string } {
+function parseExamBody(body: Record<string, unknown> | undefined, examTrack: Track): ExamInput | { error: string } {
   const title = String(body?.title ?? "").trim().slice(0, 200);
   if (!title) return { error: "Atestatsiya nomini yozing" };
   const description = String(body?.description ?? "").trim().slice(0, 3000);
 
+  const rawPool = Array.isArray(body?.poolTracks) ? body!.poolTracks : null;
+  let poolTracks: Track[] = rawPool
+    ? [...new Set(rawPool.map((t) => parseTrack(t)).filter((t): t is Track => Boolean(t)))]
+    : [examTrack];
+  if (!poolTracks.length) poolTracks = [examTrack];
+
   const rawQs = body?.questions;
-  if (!Array.isArray(rawQs) || rawQs.length === 0) return { error: "Kamida 1 ta savol qo‘shing" };
+  if (!Array.isArray(rawQs)) return { error: "Savollar ro‘yxati noto‘g‘ri" };
   const questionsJson: AttestatsiyaQuestionRow[] = [];
   for (let i = 0; i < rawQs.length; i++) {
     const q = rawQs[i] as Record<string, unknown>;
     const text = String(q?.text ?? "").trim();
     const options = Array.isArray(q?.options) ? q.options.map((o) => String(o ?? "").trim()).filter(Boolean) : [];
     const correctIndex = Number(q?.correctIndex);
+    if (!text && !options.length) continue;
     if (!text) return { error: `${i + 1}-savol matnini yozing` };
     if (options.length < 2) return { error: `${i + 1}-savolda kamida 2 ta variant bo‘lsin` };
     if (!Number.isInteger(correctIndex) || correctIndex < 0 || correctIndex >= options.length) {
@@ -684,6 +768,9 @@ function parseExamBody(body: Record<string, unknown> | undefined): ExamInput | {
     }
     const id = String(q?.id ?? "").trim() || `q-${i + 1}-${Date.now()}`;
     questionsJson.push({ id, text, options, correctIndex });
+  }
+  if (!questionsJson.length && !poolTracks.some((t) => t !== examTrack)) {
+    return { error: "Kamida 1 ta savol qo‘shing yoki boshqa bazani belgilang" };
   }
 
   const passScore = Math.round(Number(body?.passScore ?? 50));
@@ -697,10 +784,7 @@ function parseExamBody(body: Record<string, unknown> | undefined): ExamInput | {
   if (rawAsk != null && String(rawAsk).trim() !== "") {
     const n = Math.round(Number(rawAsk));
     if (!Number.isFinite(n) || n < 1) return { error: "Har bir xodimga ko‘rinadigan savol soni 1 dan katta bo‘lsin" };
-    if (n > questionsJson.length) {
-      return { error: `Har biriga ko‘rinadigan savol soni pooldan (${questionsJson.length}) oshmasin` };
-    }
-    questionsPerAttempt = n === questionsJson.length ? null : n;
+    questionsPerAttempt = n;
   }
   const locationMode = body?.locationMode === "office" ? "office" : body?.locationMode === "branch" ? "branch" : null;
   if (!locationMode) return { error: "Joyni tanlang: filial yoki ofis" };
@@ -720,6 +804,7 @@ function parseExamBody(body: Record<string, unknown> | undefined): ExamInput | {
     passScore,
     durationMinutes,
     questionsPerAttempt,
+    poolTracks,
     locationMode,
     startsAt,
     endsAt,
@@ -730,9 +815,24 @@ function parseExamBody(body: Record<string, unknown> | undefined): ExamInput | {
   };
 }
 
-function manageExam(e: Exam) {
-  const pool = (e.questionsJson || []).length;
+function estimatePoolCount(e: Exam, all: Exam[], banks: Record<Track, number>): number {
+  const tracks = normalizePoolTracks(e);
+  let n = 0;
+  for (const t of tracks) {
+    if (t === e.track) {
+      n += all.filter((x) => x.track === t).reduce((s, x) => s + (x.questionsJson || []).filter((q) => q.text?.trim()).length, 0);
+    } else {
+      n += banks[t] || 0;
+    }
+  }
+  return n;
+}
+
+function manageExam(e: Exam, all?: Exam[], banks?: Record<Track, number>) {
+  const local = (e.questionsJson || []).length;
+  const pool = all && banks ? estimatePoolCount(e, all, banks) : local;
   const ask = Math.round(Number(e.questionsPerAttempt) || 0);
+  const poolTracks = normalizePoolTracks(e);
   return {
     id: e.id,
     track: e.track,
@@ -742,6 +842,7 @@ function manageExam(e: Exam) {
     passScore: e.passScore,
     durationMinutes: e.durationMinutes,
     questionsPerAttempt: ask > 0 && ask < pool ? ask : null,
+    poolTracks,
     poolCount: pool,
     askCount: ask > 0 && ask < pool ? ask : pool,
     locationMode: e.locationMode,
@@ -793,16 +894,19 @@ router.get("/atestatsiya/manage", requireAuth, async (req: AuthRequest, res): Pr
       )
     : [];
   const targets = (await activeLearners(track)).length;
+  const banks = bankCountsFromExams(all);
 
   res.json({
     track,
     trackLabel: TRACK_LABEL[track],
     targets,
+    bankCounts: banks,
     tracks: TRACKS.map((t) => ({
       key: t,
       label: TRACK_LABEL[t],
       total: all.filter((e) => e.track === t).length,
       open: all.filter((e) => e.track === t && e.published && windowState(e) === "open").length,
+      questions: banks[t],
     })),
     exams: exams.map((e) => {
       const latestByUser = new Map<number, Attempt>();
@@ -810,7 +914,7 @@ router.get("/atestatsiya/manage", requireAuth, async (req: AuthRequest, res): Pr
       const latest = [...latestByUser.values()];
       const finished = latest.filter(isFinished);
       return {
-        ...manageExam(e),
+        ...manageExam(e, all, banks),
         stats: {
           started: latest.length,
           inProgress: latest.filter((a) => a.status === "in_progress").length,
@@ -927,6 +1031,28 @@ router.get("/atestatsiya/manage/results", requireAuth, async (req: AuthRequest, 
   });
 });
 
+async function clampAskAgainstPool(input: ExamInput, track: Track, examId?: number | null) {
+  const draft = {
+    id: examId ?? 0,
+    track,
+    questionsJson: input.questionsJson,
+    poolTracks: input.poolTracks,
+    questionsPerAttempt: input.questionsPerAttempt,
+  } as Exam;
+  const pool = await resolveQuestionPool(draft);
+  if (!pool.length) {
+    return { error: "Belgilangan bazalarda savol yo‘q. Boshqa bazani belgilang yoki savol qo‘shing." } as const;
+  }
+  let questionsPerAttempt = input.questionsPerAttempt;
+  if (questionsPerAttempt != null) {
+    if (questionsPerAttempt > pool.length) {
+      return { error: `Har biriga ko‘rinadigan savol soni pooldan (${pool.length}) oshmasin` } as const;
+    }
+    if (questionsPerAttempt === pool.length) questionsPerAttempt = null;
+  }
+  return { ...input, questionsPerAttempt, poolSize: pool.length } as const;
+}
+
 router.post("/atestatsiya/manage", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireManager(req, res)) return;
   const track = parseTrack(req.body?.track);
@@ -934,17 +1060,24 @@ router.post("/atestatsiya/manage", requireAuth, async (req: AuthRequest, res): P
     res.status(400).json({ error: "Yo‘nalish noto‘g‘ri" });
     return;
   }
-  const input = parseExamBody(req.body);
+  const parsed = parseExamBody(req.body, track);
+  if ("error" in parsed) {
+    res.status(400).json(parsed);
+    return;
+  }
+  const input = await clampAskAgainstPool(parsed, track, null);
   if ("error" in input) {
     res.status(400).json(input);
     return;
   }
+  const { poolSize: _poolSize, ...values } = input;
   const [created] = await db
     .insert(attestatsiyaExamsTable)
-    .values({ ...input, track, createdById: req.userId!, updatedById: req.userId! })
+    .values({ ...values, track, createdById: req.userId!, updatedById: req.userId! })
     .returning();
   if (created!.published) void notifyPublished(created!);
-  res.json({ exam: manageExam(created!) });
+  const all = await db.select().from(attestatsiyaExamsTable);
+  res.json({ exam: manageExam(created!, all, bankCountsFromExams(all)) });
 });
 
 router.put("/atestatsiya/manage/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -955,7 +1088,13 @@ router.put("/atestatsiya/manage/:id", requireAuth, async (req: AuthRequest, res)
     res.status(404).json({ error: "Atestatsiya topilmadi" });
     return;
   }
-  const input = parseExamBody(req.body);
+  const track = (parseTrack(existing.track) || parseTrack(req.body?.track) || "stajyor") as Track;
+  const parsed = parseExamBody(req.body, track);
+  if ("error" in parsed) {
+    res.status(400).json(parsed);
+    return;
+  }
+  const input = await clampAskAgainstPool(parsed, track, id);
   if ("error" in input) {
     res.status(400).json(input);
     return;
@@ -971,13 +1110,15 @@ router.put("/atestatsiya/manage/:id", requireAuth, async (req: AuthRequest, res)
     });
     return;
   }
+  const { poolSize: _poolSize, ...values } = input;
   const [updated] = await db
     .update(attestatsiyaExamsTable)
-    .set({ ...input, updatedById: req.userId!, updatedAt: new Date() })
+    .set({ ...values, updatedById: req.userId!, updatedAt: new Date() })
     .where(eq(attestatsiyaExamsTable.id, id))
     .returning();
   if (!existing.published && updated!.published) void notifyPublished(updated!);
-  res.json({ exam: manageExam(updated!) });
+  const all = await db.select().from(attestatsiyaExamsTable);
+  res.json({ exam: manageExam(updated!, all, bankCountsFromExams(all)) });
 });
 
 router.patch("/atestatsiya/manage/:id/publish", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -1102,31 +1243,37 @@ router.get("/atestatsiya/manage/:id/monitor", requireAuth, async (req: AuthReque
     { label: "90–100", min: 90, max: 100 },
   ].map((b) => ({ label: b.label, count: scores.filter((s) => s >= b.min && s <= b.max).length }));
 
-  const questionStats = (exam.questionsJson || []).map((q, i) => {
-    let answered = 0;
-    let correct = 0;
-    for (const a of finished) {
+  const statsByKey = new Map<string, { id: string; text: string; answered: number; correct: number }>();
+  for (const a of finished) {
+    const qs = attemptQuestions(a, exam);
+    const byQ = new Map(qs.map((q) => [q.id, q]));
+    for (const id of a.questionOrder?.length ? a.questionOrder : qs.map((q) => q.id)) {
+      const q = byQ.get(id);
+      if (!q) continue;
+      const key = q.text.trim().toLowerCase() || q.id;
+      const row = statsByKey.get(key) || { id: q.id, text: q.text, answered: 0, correct: 0 };
       const v = (a.answersJson || {})[q.id];
-      if (v === undefined) continue;
-      answered += 1;
-      if (v === q.correctIndex) correct += 1;
+      if (v !== undefined) {
+        row.answered += 1;
+        if (v === q.correctIndex) row.correct += 1;
+      }
+      statsByKey.set(key, row);
     }
-    return {
-      number: i + 1,
-      id: q.id,
-      text: q.text,
-      answered,
-      correct,
-      percent: finished.length ? Math.round((correct / finished.length) * 100) : null,
-    };
-  });
+  }
+  const questionStats = [...statsByKey.values()].map((q, i) => ({
+    number: i + 1,
+    id: q.id,
+    text: q.text,
+    answered: q.answered,
+    correct: q.correct,
+    percent: finished.length ? Math.round((q.correct / finished.length) * 100) : null,
+  }));
 
-  const byId = new Map((exam.questionsJson || []).map((q) => [q.id, q]));
   const nameById = new Map(people.map((p) => [p.id, p.fullName]));
   const answerSheets = finished.map((a) => {
-    const order = (a.questionOrder?.length ? a.questionOrder : (exam.questionsJson || []).map((q) => q.id)).filter((id) =>
-      byId.has(id),
-    );
+    const qs = attemptQuestions(a, exam);
+    const byQ = new Map(qs.map((q) => [q.id, q]));
+    const order = (a.questionOrder?.length ? a.questionOrder : qs.map((q) => q.id)).filter((id) => byQ.has(id));
     return {
       userId: a.userId,
       fullName: nameById.get(a.userId) || `ID ${a.userId}`,
@@ -1135,7 +1282,7 @@ router.get("/atestatsiya/manage/:id/monitor", requireAuth, async (req: AuthReque
       total: a.total || order.length,
       passed: a.passed,
       items: order.map((qid, i) => {
-        const q = byId.get(qid)!;
+        const q = byQ.get(qid)!;
         const chosen = (a.answersJson || {})[qid];
         const ok = chosen === q.correctIndex;
         return {
@@ -1228,7 +1375,7 @@ router.post("/atestatsiya/manage/attempts/:id/annul", requireAuth, async (req: A
   const reason = String(req.body?.reason ?? "").trim().slice(0, 400) || null;
   let base = a;
   if (a.status === "in_progress") {
-    const g = grade(exam, a.answersJson || {}, a.questionOrder);
+    const g = grade(exam, a.answersJson || {}, a.questionOrder, attemptQuestions(a, exam));
     base = { ...a, score: g.score, correct: g.correct, total: g.total, passed: g.passed, submittedAt: new Date() };
   }
   await db
@@ -1282,7 +1429,7 @@ router.post("/atestatsiya/manage/attempts/:id/finish", requireAuth, async (req: 
     res.status(409).json({ error: "Urinish allaqachon yakunlangan" });
     return;
   }
-  const g = grade(exam, a.answersJson || {}, a.questionOrder);
+  const g = grade(exam, a.answersJson || {}, a.questionOrder, attemptQuestions(a, exam));
   await db
     .update(attestatsiyaAttemptsTable)
     .set({

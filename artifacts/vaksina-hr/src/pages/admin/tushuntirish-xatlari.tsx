@@ -276,19 +276,19 @@ export default function TushuntirishXatlariPage() {
     }
   };
 
-  /** Tanlangan bosqich: ism-familiya + koordinator hisobot PDF */
+  /** Tanlangan bosqich: to‘liq hisobot (muammo, chora, jarima, sabab, koordinator…) */
   const stageReport = async () => {
     if (stage == null) {
       toast({
         title: "Bosqich tanlang",
-        description: "Avval yuqoridan 1–6 holatni tanlang — shu bosqich hisoboti chiqadi.",
+        description: "Avval yuqoridan 1–6 holatni tanlang — shu bosqich to‘liq hisoboti chiqadi.",
         variant: "destructive",
       });
       return;
     }
     const rows = stageReportRows(list, stage, NO_COORD);
     if (!rows.length) {
-      toast({ title: "Bo‘sh", description: "Bu bosqichda hisobot uchun xodim yo‘q.", variant: "destructive" });
+      toast({ title: "Bo‘sh", description: "Bu bosqichda hisobot uchun yozuv yo‘q.", variant: "destructive" });
       return;
     }
     setReportBusy(true);
@@ -306,7 +306,7 @@ export default function TushuntirishXatlariPage() {
         rows,
         filterNote: filterBits.length ? filterBits.join(" · ") : undefined,
       });
-      toast({ title: "Hisobot tayyor", description: `${stage}-holat · ${rows.length} ta xodim` });
+      toast({ title: "Hisobot tayyor", description: `${stage}-holat · ${rows.length} ta yozuv (to‘liq)` });
     } catch (e) {
       toast({ title: "Hisobot", description: (e as Error).message, variant: "destructive" });
     } finally {
@@ -445,11 +445,11 @@ export default function TushuntirishXatlariPage() {
                 </button>
                 <span className="text-slate-400"> · </span>
                 <span>
-                  «Hisobot» — {stage}-holatdagi ism familiya va koordinator PDF
+                  «Hisobot» — {stage}-holat: muammo, chora, jarima, sabab, koordinator (to‘liq PDF)
                 </span>
               </>
             ) : (
-              "Bosqichni tanlang, keyin «Hisobot» — ism + koordinator PDF"
+              "Bosqichni tanlang, keyin «Hisobot» — rahbarlar uchun to‘liq PDF"
             )}
           </p>
         </div>

@@ -62,6 +62,7 @@ import {
 import { downloadStageRosterPdf, stageReportRows } from "@/lib/explanation-stage-report-pdf";
 import {
   clearAllScannerDocs,
+  deleteScannerDoc,
   fetchScannerDocsInbox,
   formatExpiresIn,
   scannerDocDownloadUrl,
@@ -829,6 +830,7 @@ function ScannerInboxPanel({ enabled }: { enabled: boolean }) {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [confirmClear, setConfirmClear] = useState(false);
+  const [confirmOne, setConfirmOne] = useState<ScannerDoc | null>(null);
   const q = useQuery({
     queryKey: ["scanner-docs", "inbox"],
     queryFn: fetchScannerDocsInbox,
@@ -844,6 +846,17 @@ function ScannerInboxPanel({ enabled }: { enabled: boolean }) {
         title: "Tozalandi",
         description: `${r.deleted} ta skaner PDF bazadan o‘chirildi`,
       });
+    },
+    onError: (e) => {
+      toast({ title: "O‘chirilmadi", description: (e as Error).message, variant: "destructive" });
+    },
+  });
+  const deleteOneMut = useMutation({
+    mutationFn: (id: number) => deleteScannerDoc(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["scanner-docs"] });
+      setConfirmOne(null);
+      toast({ title: "O‘chirildi", description: "Skaner PDF bazadan o‘chirildi" });
     },
     onError: (e) => {
       toast({ title: "O‘chirilmadi", description: (e as Error).message, variant: "destructive" });
@@ -907,6 +920,18 @@ function ScannerInboxPanel({ enabled }: { enabled: boolean }) {
                 <FileDown className="h-3.5 w-3.5" />
                 Yuklash
               </a>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1 rounded-lg border-rose-200 px-2 text-rose-700 hover:bg-rose-50 hover:text-rose-800 dark:border-rose-500/30 dark:text-rose-300"
+                disabled={deleteOneMut.isPending && confirmOne?.id === d.id}
+                onClick={() => setConfirmOne(d)}
+                aria-label="O‘chirish"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                O‘chirish
+              </Button>
             </li>
           ))}
         </ul>
@@ -932,6 +957,36 @@ function ScannerInboxPanel({ enabled }: { enabled: boolean }) {
             >
               {clearMut.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Trash2 className="mr-1.5 h-4 w-4" />}
               Ha, barchasini o‘chirish
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!confirmOne}
+        onOpenChange={(o) => !o && !deleteOneMut.isPending && setConfirmOne(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Shu PDF ni o‘chirish?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmOne
+                ? `«${confirmOne.filename}» bazadan va saqlashdan o‘chiriladi. Qaytarib bo‘lmaydi.`
+                : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteOneMut.isPending}>Bekor</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-rose-600 hover:bg-rose-700"
+              disabled={deleteOneMut.isPending || !confirmOne}
+              onClick={(e) => {
+                e.preventDefault();
+                if (confirmOne) deleteOneMut.mutate(confirmOne.id);
+              }}
+            >
+              {deleteOneMut.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Trash2 className="mr-1.5 h-4 w-4" />}
+              Ha, o‘chirish
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

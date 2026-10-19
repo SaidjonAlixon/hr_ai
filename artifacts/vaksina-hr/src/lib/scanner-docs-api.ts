@@ -64,6 +64,11 @@ export async function clearAllScannerDocs(): Promise<{ ok: boolean; deleted: num
   return apiFetch<{ ok: boolean; deleted: number }>("/scanner-docs", { method: "DELETE" });
 }
 
+/** Bitta skaner PDF ni o‘chirish */
+export async function deleteScannerDoc(id: number): Promise<{ ok: boolean; deleted: number }> {
+  return apiFetch<{ ok: boolean; deleted: number }>(`/scanner-docs/${id}`, { method: "DELETE" });
+}
+
 export async function fetchMyScannerDocs(): Promise<ScannerDoc[]> {
   return apiFetch<ScannerDoc[]>("/scanner-docs/mine");
 }

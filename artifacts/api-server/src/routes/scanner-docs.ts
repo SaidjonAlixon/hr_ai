@@ -239,6 +239,44 @@ router.get("/scanner-docs/mine", requireAuth, async (req: AuthRequest, res): Pro
   res.json(rows.map(mapRow));
 });
 
+/** Bitta skaner PDF — TX/HR yoki fayl egasi */
+router.delete("/scanner-docs/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  await ensureScannerDocsSchema();
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Noto‘g‘ri id" });
+    return;
+  }
+  const { rows } = await pool.query<{ id: number; user_id: number; file_key: string | null }>(
+    `SELECT id, user_id, file_key FROM scanner_docs WHERE id = $1`,
+    [id],
+  );
+  const row = rows[0];
+  if (!row) {
+    res.status(404).json({ error: "Topilmadi" });
+    return;
+  }
+  const mine = row.user_id === req.userId;
+  if (!mine && !canViewTxInbox(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yoʻq" });
+    return;
+  }
+  try {
+    if (row.file_key) {
+      try {
+        await deleteStoredUpload(row.file_key);
+      } catch (err) {
+        logger.warn({ err, id }, "Scanner single file delete failed");
+      }
+    }
+    await pool.query(`DELETE FROM scanner_docs WHERE id = $1`, [id]);
+    res.json({ ok: true, deleted: 1 });
+  } catch (err: any) {
+    logger.error({ err, id }, "Scanner doc delete failed");
+    res.status(500).json({ error: err?.message || "O‘chirish xatosi" });
+  }
+});
+
 /** Yuklab olish — muddati ichida */
 router.get("/scanner-docs/:id/file", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   await ensureScannerDocsSchema();

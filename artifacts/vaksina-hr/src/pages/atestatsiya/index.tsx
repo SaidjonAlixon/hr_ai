@@ -61,16 +61,23 @@ function clock(ms: number) {
   return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`;
 }
 
+function isWindowUpdatedError(e: unknown): e is Error & { code?: string } {
+  return e instanceof Error && (e as Error & { code?: string }).code === "window_updated";
+}
+
 export function ExamRunner({
   attempt,
   serverNow,
   onDone,
+  onRestartFresh,
   practiceExamId,
   practiceMeta,
 }: {
   attempt: AttestLearnerAttempt;
   serverNow: string;
   onDone: (result: AttestLearnerAttempt) => void;
+  /** Test vaqti yangilanganda — eski urinish yopiladi, yangisini boshlash */
+  onRestartFresh?: () => void;
   practiceExamId?: number | null;
   practiceMeta?: { questionOrder?: string[]; optionOrders?: Record<string, number[]> } | null;
 }) {
@@ -81,12 +88,24 @@ export function ExamRunner({
   const [review, setReview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
+  const [mustRefresh, setMustRefresh] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState(
+    "Test vaqti yangilandi — qayta yangilang va boshidan boshlang",
+  );
   const focusLost = useRef(attempt ? 0 : 0);
   const answersRef = useRef(answers);
   answersRef.current = answers;
   const left = useCountdown(attempt.deadlineAt, serverNow);
   const submitted = useRef(false);
   const timerArmed = useRef(false);
+
+  const markWindowUpdated = (e: unknown) => {
+    if (!isWindowUpdatedError(e)) return false;
+    submitted.current = true;
+    setMustRefresh(true);
+    setRefreshMsg(e.message || refreshMsg);
+    return true;
+  };
 
   useEffect(() => {
     const bump = () => {
@@ -107,18 +126,22 @@ export function ExamRunner({
   }, []);
 
   useEffect(() => {
-    if (practiceExamId) return;
+    if (practiceExamId || mustRefresh) return;
     const id = window.setInterval(() => {
       setSaveState("saving");
       void saveAttestProgress(attempt.id, answersRef.current, focusLost.current)
         .then(() => setSaveState("saved"))
-        .catch(() => setSaveState("error"));
+        .catch((e) => {
+          if (markWindowUpdated(e)) return;
+          setSaveState("error");
+        });
     }, 8000);
     return () => window.clearInterval(id);
-  }, [attempt.id, practiceExamId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attempt.id, practiceExamId, mustRefresh]);
 
   const finish = async (auto: boolean) => {
-    if (submitted.current) return;
+    if (submitted.current || mustRefresh) return;
     submitted.current = true;
     setSubmitting(true);
     try {
@@ -130,6 +153,10 @@ export function ExamRunner({
         : await submitAttest(attempt.id, answersRef.current, focusLost.current);
       onDone(res.attempt);
     } catch (e) {
+      if (markWindowUpdated(e)) {
+        setSubmitting(false);
+        return;
+      }
       submitted.current = false;
       setSubmitting(false);
       toast({
@@ -165,18 +192,49 @@ export function ExamRunner({
   );
 
   const pick = (qi: number) => {
-    if (!q) return;
+    if (!q || mustRefresh) return;
     const next = { ...answers, [q.id]: qi };
     setAnswers(next);
     if (practiceExamId) return;
     setSaveState("saving");
     void saveAttestProgress(attempt.id, next, focusLost.current)
       .then(() => setSaveState("saved"))
-      .catch(() => setSaveState("error"));
+      .catch((e) => {
+        if (markWindowUpdated(e)) return;
+        setSaveState("error");
+      });
   };
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
+      {mustRefresh ? (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl border border-amber-200 bg-white p-5 shadow-xl dark:border-amber-900 dark:bg-slate-950">
+            <p className="text-lg font-extrabold tracking-tight text-amber-900 dark:text-amber-100">Qayta yangilang</p>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{refreshMsg}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Joriy urinish yopildi. Natija saqlanmaydi — testni boshidan boshlang.
+            </p>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              {onRestartFresh ? (
+                <Button className="h-11 flex-1 bg-sky-600 hover:bg-sky-700" onClick={() => onRestartFresh()}>
+                  <RotateCcw className="mr-1.5 h-4 w-4" /> Boshidan boshlash
+                </Button>
+              ) : null}
+              <Button
+                variant="outline"
+                className="h-11 flex-1"
+                onClick={() => {
+                  submitted.current = true;
+                  onDone({ ...attempt, status: "annulled", annulReason: refreshMsg });
+                }}
+              >
+                Ro‘yxatga qaytish
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <header className="flex items-center gap-3 border-b border-border px-3 py-2.5 sm:px-5">
         <Timer className={cn("h-5 w-5 shrink-0", urgent ? "text-rose-600" : "text-[#2AABEE]")} />
         <span className={cn("text-xl font-bold tabular-nums", urgent && "text-rose-600")}>{clock(left)}</span>
@@ -401,6 +459,7 @@ export default function AtestatsiyaPage() {
   const [runner, setRunner] = useState<{
     attempt: AttestLearnerAttempt;
     serverNow: string;
+    exam?: AttestExamCard;
     practiceExamId?: number | null;
     practiceMeta?: { questionOrder?: string[]; optionOrders?: Record<string, number[]> };
   } | null>(null);
@@ -423,6 +482,7 @@ export default function AtestatsiyaPage() {
         setRunner({
           attempt: res.attempt,
           serverNow: res.serverNow,
+          exam,
           practiceExamId: exam.id,
           practiceMeta: {
             questionOrder: (res.attempt.questions || []).map((q) => q.id),
@@ -438,12 +498,12 @@ export default function AtestatsiyaPage() {
           longitude: 0,
           accuracy: 0,
         });
-        setRunner({ attempt: res.attempt, serverNow: res.serverNow });
+        setRunner({ attempt: res.attempt, serverNow: res.serverNow, exam });
         return;
       }
       const gps = await readGps();
       const res = await start.mutateAsync({ examId: exam.id, ...gps });
-      setRunner({ attempt: res.attempt, serverNow: res.serverNow });
+      setRunner({ attempt: res.attempt, serverNow: res.serverNow, exam });
     } catch (e) {
       toast({ title: "Test ochilmadi", description: e instanceof Error ? e.message : "", variant: "destructive" });
     } finally {
@@ -459,10 +519,26 @@ export default function AtestatsiyaPage() {
           serverNow={runner.serverNow}
           practiceExamId={runner.practiceExamId}
           practiceMeta={runner.practiceMeta}
+          onRestartFresh={
+            runner.exam && !runner.practiceExamId
+              ? () => {
+                  const exam = runner.exam!;
+                  setRunner(null);
+                  void me.refetch().then(() => void begin(exam));
+                }
+              : undefined
+          }
           onDone={(result) => {
             const practice = Boolean(runner.practiceExamId);
             setRunner(null);
             if (!practice) void me.refetch();
+            if (result.status === "annulled") {
+              toast({
+                title: "Qayta yangilang",
+                description: result.annulReason || "Test vaqti yangilandi — boshidan boshlashingiz mumkin.",
+              });
+              return;
+            }
             toast({
               title: practice
                 ? result.passed

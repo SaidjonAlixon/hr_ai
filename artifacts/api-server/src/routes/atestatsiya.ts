@@ -36,6 +36,8 @@ const GEO_SLACK_M = 15;
 const MAX_ACCURACY_M = 150;
 /** Tarmoq kechikishi uchun: taymer tugagach shuncha vaqt ichida yuborilgan javob qabul qilinadi */
 const SUBMIT_GRACE_MS = 30_000;
+/** Admin startsAt/endsAt/davomiylikni o‘zgartirganda ishlayotganlarga ko‘rsatiladi */
+const WINDOW_REFRESH_REASON = "Test vaqti yangilandi — qayta yangilang va boshidan boshlang";
 
 type Exam = typeof attestatsiyaExamsTable.$inferSelect;
 type Attempt = typeof attestatsiyaAttemptsTable.$inferSelect;
@@ -717,6 +719,13 @@ router.post("/atestatsiya/me/attempts/:id/progress", requireAuth, async (req: Au
   const got = await loadOwnAttempt(req, res);
   if (!got) return;
   const { a, exam } = got;
+  if (a.status === "annulled") {
+    res.status(409).json({
+      error: a.annulReason || WINDOW_REFRESH_REASON,
+      code: "window_updated",
+    });
+    return;
+  }
   if (a.status !== "in_progress" || Date.now() > a.deadlineAt.getTime() + SUBMIT_GRACE_MS) {
     res.status(409).json({ error: "Vaqt tugagan", code: "closed" });
     return;
@@ -737,6 +746,13 @@ router.post("/atestatsiya/me/attempts/:id/submit", requireAuth, async (req: Auth
   const got = await loadOwnAttempt(req, res);
   if (!got) return;
   const { a, exam } = got;
+  if (a.status === "annulled") {
+    res.status(409).json({
+      error: a.annulReason || WINDOW_REFRESH_REASON,
+      code: "window_updated",
+    });
+    return;
+  }
   if (a.status !== "in_progress") {
     res.json({ attempt: learnerAttempt(a, exam, false), serverNow: new Date().toISOString() });
     return;
@@ -932,6 +948,93 @@ async function notifyPublished(e: Exam) {
     type: "atestatsiya",
     linkUrl: "/atestatsiya",
   }).catch(() => undefined);
+}
+
+function examWindowChanged(
+  before: Pick<Exam, "startsAt" | "endsAt" | "durationMinutes">,
+  after: Pick<ExamInput, "startsAt" | "endsAt" | "durationMinutes">,
+) {
+  return (
+    before.startsAt.getTime() !== after.startsAt.getTime() ||
+    before.endsAt.getTime() !== after.endsAt.getTime() ||
+    before.durationMinutes !== after.durationMinutes
+  );
+}
+
+async function targetLearners(exam: Exam) {
+  const roles = normalizeTargetTracks(exam);
+  return db
+    .select({ id: usersTable.id, fullName: usersTable.fullName, phone: usersTable.phone })
+    .from(usersTable)
+    .where(and(inArray(usersTable.role, roles), inArray(usersTable.status, ["active", "on_leave"])))
+    .orderBy(asc(usersTable.fullName));
+}
+
+/**
+ * Vaqt/davomiylik o‘zgarganda:
+ *  - ishlayotgan urinishlar bekor (qayta boshlash uchun);
+ *  - o‘tmaganlarga retake;
+ *  - o‘tmagan / ishlamaganlarga bildirishnoma (o‘tganlarga yo‘q).
+ */
+async function applyWindowChangeEffects(exam: Exam, actorId: number) {
+  const now = new Date();
+  const inProg = await db
+    .select()
+    .from(attestatsiyaAttemptsTable)
+    .where(and(eq(attestatsiyaAttemptsTable.examId, exam.id), eq(attestatsiyaAttemptsTable.status, "in_progress")));
+  for (const a of inProg) {
+    await db
+      .update(attestatsiyaAttemptsTable)
+      .set({
+        status: "annulled",
+        submittedAt: now,
+        passed: false,
+        retakeAllowed: true,
+        retakeGrantedById: actorId,
+        retakeGrantedAt: now,
+        annulledById: actorId,
+        annulledAt: now,
+        annulReason: WINDOW_REFRESH_REASON,
+        updatedAt: now,
+      })
+      .where(and(eq(attestatsiyaAttemptsTable.id, a.id), eq(attestatsiyaAttemptsTable.status, "in_progress")));
+  }
+
+  const all = await loadAttempts(eq(attestatsiyaAttemptsTable.examId, exam.id));
+  const latestByUser = new Map<number, Attempt>();
+  for (const a of all) latestByUser.set(a.userId, a);
+  for (const a of latestByUser.values()) {
+    if (isFinished(a) && a.passed === true) continue;
+    if (a.retakeAllowed) continue;
+    await db
+      .update(attestatsiyaAttemptsTable)
+      .set({
+        retakeAllowed: true,
+        retakeGrantedById: actorId,
+        retakeGrantedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(attestatsiyaAttemptsTable.id, a.id));
+  }
+
+  if (!exam.published) return;
+
+  const users = await targetLearners(exam);
+  const refreshed = await loadAttempts(eq(attestatsiyaAttemptsTable.examId, exam.id));
+  const latestAfter = new Map<number, Attempt>();
+  for (const a of refreshed) latestAfter.set(a.userId, a);
+  const text = `«${exam.title}» atestatsiyasi vaqti yangilandi: ${fmtDt(exam.startsAt)} – ${fmtDt(exam.endsAt)} (${exam.durationMinutes} daq). Ishlamagan yoki o‘tmaganlar qayta topshirishi mumkin. Agar test ochiq bo‘lsa — sahifani yangilang va boshidan boshlang.`;
+  for (const u of users) {
+    const latest = latestAfter.get(u.id);
+    if (latest && isFinished(latest) && latest.passed === true) continue;
+    void notifyUser({
+      userId: u.id,
+      title: "Atestatsiya",
+      text,
+      type: "atestatsiya",
+      linkUrl: "/atestatsiya",
+    }).catch(() => undefined);
+  }
 }
 
 async function activeLearners(track: Track) {
@@ -1232,14 +1335,21 @@ router.put("/atestatsiya/manage/:id", requireAuth, async (req: AuthRequest, res)
     return;
   }
   const { poolSize: _poolSize, ...values } = input;
+  const windowChanged = examWindowChanged(existing, input);
   const [updated] = await db
     .update(attestatsiyaExamsTable)
     .set({ ...values, updatedById: req.userId!, updatedAt: new Date() })
     .where(eq(attestatsiyaExamsTable.id, id))
     .returning();
+  if (windowChanged) {
+    await applyWindowChangeEffects(updated!, req.userId!);
+  }
   if (!existing.published && updated!.published) void notifyPublished(updated!);
   const all = await db.select().from(attestatsiyaExamsTable);
-  res.json({ exam: manageExam(updated!, all, bankCountsFromExams(all)) });
+  res.json({
+    exam: manageExam(updated!, all, bankCountsFromExams(all)),
+    windowChanged,
+  });
 });
 
 router.patch("/atestatsiya/manage/:id/publish", requireAuth, async (req: AuthRequest, res): Promise<void> => {

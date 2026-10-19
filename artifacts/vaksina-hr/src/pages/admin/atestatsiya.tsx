@@ -286,7 +286,7 @@ function ExamEditor({
       };
     });
     try {
-      await save.mutateAsync({
+      const saved = await save.mutateAsync({
         id: d.id,
         track,
         title: d.title.trim(),
@@ -306,7 +306,12 @@ function ExamEditor({
         retakeIfFailed: d.retakeIfFailed,
         published: d.published,
       });
-      toast({ title: d.id ? "Atestatsiya yangilandi" : "Atestatsiya yaratildi" });
+      toast({
+        title: d.id ? "Atestatsiya yangilandi" : "Atestatsiya yaratildi",
+        description: saved.windowChanged
+          ? "Vaqt o‘zgardi: ishlayotganlar qayta boshlashi kerak. Ishlamagan/o‘tmaganlarga bildirishnoma yuborildi."
+          : undefined,
+      });
       onClose();
     } catch (e) {
       toast({ title: "Saqlanmadi", description: e instanceof Error ? e.message : "", variant: "destructive" });
@@ -336,7 +341,11 @@ function ExamEditor({
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 sm:p-4 dark:border-white/10 dark:bg-white/5">
-        <p className="mb-3 text-sm font-bold text-slate-900 dark:text-white">1. Ochiq muddat va test vaqti</p>
+        <p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">1. Ochiq muddat va test vaqti</p>
+        <p className="mb-3 text-[11px] leading-snug text-slate-500">
+          Vaqt yoki davomiylikni o‘zgartirsangiz: ishlayotganlarga «qayta yangilang» chiqadi va boshidan boshlashi mumkin;
+          ishlamagan / o‘tmaganlarga bildirishnoma ketadi. O‘tganlarga qayta chiqmaydi.
+        </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label>Boshlanish</Label>

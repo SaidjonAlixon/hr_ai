@@ -399,10 +399,13 @@ function useManageMut<V>(fn: (v: V) => Promise<unknown>) {
 
 export function useSaveAttestExam() {
   return useManageMut(({ id, ...input }: AttestExamInput & { id?: number | null }) =>
-    apiFetch<{ exam: AttestManageExam }>(id ? `/atestatsiya/manage/${id}` : "/atestatsiya/manage", {
-      method: id ? "PUT" : "POST",
-      body: JSON.stringify(input),
-    }),
+    apiFetch<{ exam: AttestManageExam; windowChanged?: boolean }>(
+      id ? `/atestatsiya/manage/${id}` : "/atestatsiya/manage",
+      {
+        method: id ? "PUT" : "POST",
+        body: JSON.stringify(input),
+      },
+    ),
   );
 }
 

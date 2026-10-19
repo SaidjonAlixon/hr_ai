@@ -179,6 +179,13 @@ export function canManageSettings(role?: string | null): boolean {
   return hasFullPlatformAccess(role) || isDirectorRole(role);
 }
 
+/** Hujjat skaneri (Tizim → Skaner) — barcha xodimlar; o‘quvchi emas */
+export function canUseDocumentScanner(role?: string | null): boolean {
+  const r = normalizeUserRole(role);
+  if (!r || isStudentRole(r)) return false;
+  return true;
+}
+
 /** Kirish materiallari va Preboarding — HR direktor ham to‘liq ochadi */
 export function canManageOnboardingContent(role?: string | null): boolean {
   const r = normalizeUserRole(role);

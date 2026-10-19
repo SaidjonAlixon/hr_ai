@@ -92,7 +92,7 @@ import { useCall } from '@/lib/calls/engine';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
 import { VerifiedBadge, VerifiedName } from "@/components/VerifiedBadge";
-import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewEmployeesFull, canViewDavomat, canViewDavomatXatoliklar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome, isSbRole, canManageSmenaFilial, canManageStudents, canSeeAbet } from "@/lib/roles";
+import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewEmployeesFull, canViewDavomat, canViewDavomatXatoliklar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome, isSbRole, canManageSmenaFilial, canManageStudents, canSeeAbet, canUseDocumentScanner } from "@/lib/roles";
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -993,11 +993,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (location.startsWith('/admin/test') && !canManageSettings(user.role)) {
       setLocation('/dashboard');
     }
-    if (
-      location.startsWith('/admin/scanner') &&
-      !canManageSettings(user.role) &&
-      !canViewEmployeesFull(user.role)
-    ) {
+    if (location.startsWith('/admin/scanner') && !canUseDocumentScanner(user.role)) {
       setLocation('/dashboard');
     }
     if (location.startsWith('/oquvchilar') && !canManageStudents(user.role)) {
@@ -1014,6 +1010,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         location.startsWith('/it') ||
         location.startsWith('/qongiroq') ||
         location.startsWith('/abet') ||
+        location.startsWith('/admin/scanner') ||
         location === '/notifications';
       if (!allowed) {
         setLocation('/vazifalar');
@@ -1095,6 +1092,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     // AyTi zayavka — barcha rollar (farmasevt, mudir, ofis, ...)
     if (!next.some((i) => i.path === '/it')) {
       next = [...next, itNav];
+    }
+    // Tizim → Skaner — barcha xodimlar
+    if (canUseDocumentScanner(role) && !next.some((i) => i.path === '/admin/scanner')) {
+      next = [...next, { name: 'Skaner', path: '/admin/scanner', icon: ScanLine }];
     }
     if (isLimitedOfficeStaffRole(role)) {
       if (!next.some((i) => i.path === '/javob-olish')) {

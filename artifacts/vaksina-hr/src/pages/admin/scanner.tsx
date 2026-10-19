@@ -6,7 +6,7 @@ import { DocumentScanner } from "@/components/scanner/DocumentScanner";
 import { deliverFile } from "@/lib/tg-download";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { canManageSettings, canViewEmployeesFull } from "@/lib/roles";
+import { canUseDocumentScanner } from "@/lib/roles";
 
 export default function AdminScannerPage() {
   const { user } = useAuth();
@@ -15,8 +15,7 @@ export default function AdminScannerPage() {
   const [lastUrl, setLastUrl] = useState<string | null>(null);
   const [lastName, setLastName] = useState<string | null>(null);
 
-  const allowed =
-    canManageSettings(user?.role) || canViewEmployeesFull(user?.role);
+  const allowed = canUseDocumentScanner(user?.role);
 
   if (!allowed) {
     return (

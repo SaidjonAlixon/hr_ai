@@ -133,6 +133,7 @@ CREATE TABLE IF NOT EXISTS attestatsiya_exams (
   duration_minutes INTEGER NOT NULL DEFAULT 30,
   questions_per_attempt INTEGER,
   pool_tracks JSONB NOT NULL DEFAULT '[]'::jsonb,
+  target_tracks JSONB NOT NULL DEFAULT '[]'::jsonb,
   location_mode TEXT NOT NULL DEFAULT 'branch',
   starts_at TIMESTAMPTZ NOT NULL,
   ends_at TIMESTAMPTZ NOT NULL,
@@ -149,6 +150,7 @@ CREATE INDEX IF NOT EXISTS attestatsiya_exams_track_idx ON attestatsiya_exams (t
 ALTER TABLE attestatsiya_exams ADD COLUMN IF NOT EXISTS questions_per_attempt INTEGER;
 ALTER TABLE attestatsiya_exams ADD COLUMN IF NOT EXISTS shuffle_options BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE attestatsiya_exams ADD COLUMN IF NOT EXISTS pool_tracks JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE attestatsiya_exams ADD COLUMN IF NOT EXISTS target_tracks JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE TABLE IF NOT EXISTS attestatsiya_attempts (
   id SERIAL PRIMARY KEY,

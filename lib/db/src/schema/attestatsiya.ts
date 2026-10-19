@@ -39,6 +39,11 @@ export const attestatsiyaExamsTable = pgTable(
      * Bo‘sh/null → faqat shu testning o‘z savollari (track).
      */
     poolTracks: jsonb("pool_tracks").$type<string[]>().notNull().default([]),
+    /**
+     * Kimga e’lon qilinadi / kim topshiradi.
+     * Bo‘sh → faqat exam.track (masalan mudir).
+     */
+    targetTracks: jsonb("target_tracks").$type<string[]>().notNull().default([]),
     locationMode: text("location_mode").notNull().default("branch"),
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
     endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),

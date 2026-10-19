@@ -6,6 +6,7 @@ import {
   BarChart3,
   Building2,
   ClipboardList,
+  Copy,
   Eye,
   FileDown,
   FileSpreadsheet,
@@ -17,6 +18,7 @@ import {
   Plus,
   Save,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -74,6 +76,7 @@ type Draft = {
   durationMinutes: number;
   questionsPerAttempt: number | null;
   poolTracks: AttestTrack[];
+  targetTracks: AttestTrack[];
   locationMode: "branch" | "office" | "anywhere";
   startsAt: string;
   endsAt: string;
@@ -143,13 +146,14 @@ function emptyDraft(): Draft {
     durationMinutes: autoDurationMinutes(startsAt, endsAt, 1),
     questionsPerAttempt: null,
     poolTracks: [],
+    targetTracks: [],
     locationMode: "branch",
     startsAt,
     endsAt,
     shuffleQuestions: true,
     shuffleOptions: true,
     showResult: true,
-    published: true,
+    published: false,
     questions: [emptyQuestion()],
     lockedQuestions: false,
   };
@@ -164,6 +168,7 @@ function fromExam(e: AttestManageExam): Draft {
     durationMinutes: e.durationMinutes,
     questionsPerAttempt: e.questionsPerAttempt ?? null,
     poolTracks: e.poolTracks?.length ? [...e.poolTracks] : [e.track],
+    targetTracks: e.targetTracks?.length ? [...e.targetTracks] : [e.track],
     locationMode: e.locationMode,
     startsAt: isoToLocalInput(e.startsAt),
     endsAt: isoToLocalInput(e.endsAt),
@@ -173,6 +178,20 @@ function fromExam(e: AttestManageExam): Draft {
     published: e.published,
     questions: e.questions.map((q) => ({ ...q, options: [...q.options] })),
     lockedQuestions: e.stats.hasAttempts,
+  };
+}
+
+/** Mavjud testdan yangi nusxa (id yo‘q, e’lon yopiq) */
+function copyAsNew(e: AttestManageExam, forTrack: AttestTrack): Draft {
+  const base = fromExam(e);
+  return {
+    ...base,
+    id: null,
+    title: `${e.title} (nusxa)`.slice(0, 200),
+    published: false,
+    lockedQuestions: false,
+    targetTracks: base.targetTracks.includes("mudir") ? base.targetTracks : [...base.targetTracks, "mudir"],
+    poolTracks: base.poolTracks.length ? base.poolTracks : [forTrack],
   };
 }
 
@@ -192,12 +211,14 @@ function ExamEditor({
   const [d, setD] = useState(() => ({
     ...initial,
     poolTracks: initial.poolTracks.length ? initial.poolTracks : [track],
+    targetTracks: initial.targetTracks.length ? initial.targetTracks : [track],
   }));
   const [bankTab, setBankTab] = useState<AttestTrack | "all">("all");
   const setQ = (i: number, patch: Partial<AttestQuestion>) =>
     setD((p) => ({ ...p, questions: p.questions.map((q, n) => (n === i ? { ...q, ...patch } : q)) }));
 
   const selectedPools = d.poolTracks.length ? d.poolTracks : [track];
+  const selectedTargets = d.targetTracks.length ? d.targetTracks : [track];
   const bankQ = useAttestBankQuestions(selectedPools, true);
   const localPool = d.questions.filter((q) => q.text.trim()).length;
   useEffect(() => {
@@ -222,6 +243,17 @@ function ExamEditor({
         return { ...p, poolTracks: cur.filter((x) => x !== key) };
       }
       return { ...p, poolTracks: [...cur, key] };
+    });
+  };
+
+  const toggleTarget = (key: AttestTrack) => {
+    setD((p) => {
+      const cur = p.targetTracks.length ? p.targetTracks : [track];
+      if (cur.includes(key)) {
+        if (cur.length <= 1) return p;
+        return { ...p, targetTracks: cur.filter((x) => x !== key) };
+      }
+      return { ...p, targetTracks: [...cur, key] };
     });
   };
 
@@ -261,6 +293,7 @@ function ExamEditor({
         durationMinutes: d.durationMinutes,
         questionsPerAttempt: d.questionsPerAttempt,
         poolTracks: selectedPools,
+        targetTracks: selectedTargets,
         locationMode: d.locationMode,
         startsAt: localInputToIso(d.startsAt),
         endsAt: localInputToIso(d.endsAt),
@@ -442,8 +475,48 @@ function ExamEditor({
         ) : null}
       </div>
 
+      <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3 sm:p-4 dark:border-emerald-900/40 dark:bg-emerald-950/30">
+        <p className="mb-1 flex items-center gap-1.5 text-sm font-bold text-slate-900 dark:text-white">
+          <Users className="h-4 w-4 text-emerald-600" /> 3. Kimga e’lon qilinadi
+        </p>
+        <p className="mb-3 text-[11px] text-slate-600 dark:text-slate-400">
+          Ptichka qo‘yilgan lavozimlar testni ko‘radi va topshiradi. E’lon qilinganda ularga bildirishnoma boradi (masalan barcha mudirlar).
+        </p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {ATTESTATSIYA_TRACKS.map((t) => {
+            const on = selectedTargets.includes(t.key);
+            return (
+              <label
+                key={t.key}
+                className={cn(
+                  "flex cursor-pointer items-start gap-2.5 rounded-2xl border px-3 py-2.5 transition",
+                  on
+                    ? t.key === "mudir"
+                      ? "border-emerald-500 bg-white shadow-sm ring-1 ring-emerald-200 dark:bg-slate-900"
+                      : "border-emerald-400 bg-white shadow-sm dark:bg-slate-900"
+                    : "border-slate-200 bg-white/60 opacity-80 dark:border-white/10 dark:bg-slate-950/40",
+                )}
+              >
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 accent-emerald-600"
+                  checked={on}
+                  onChange={() => toggleTarget(t.key)}
+                />
+                <span className="min-w-0">
+                  <span className="block text-sm font-bold text-slate-900 dark:text-white">{t.label}</span>
+                  <span className="block text-[11px] text-slate-500">
+                    {t.key === "mudir" ? "Barcha mudirlarga boradi" : `Barcha ${t.label.toLowerCase()}larga`}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="rounded-2xl border border-sky-200 bg-sky-50/70 p-3 sm:p-4 dark:border-sky-900/50 dark:bg-sky-950/30">
-        <p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">3. Har bir xodimga nechta savol</p>
+        <p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">4. Har bir xodimga nechta savol</p>
         <p className="mb-3 text-[11px] text-slate-600 dark:text-slate-400">
           Belgilangan bazalarda ~{pool} ta. Masalan 51 ta bo‘lsa — har biriga 20 tasini tasodifiy berish mumkin.
         </p>
@@ -482,7 +555,7 @@ function ExamEditor({
         </div>
       </div>
       <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 sm:p-4 dark:border-white/10 dark:bg-white/5">
-        <p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">4. Qayerda ochiladi</p>
+        <p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">5. Qayerda ochiladi</p>
         <p className="mb-3 text-[11px] text-slate-500">
           «Istalgan joy» — aptekada bo‘lmaganlar ham GPS’siz test ishlay oladi.
         </p>
@@ -519,7 +592,7 @@ function ExamEditor({
       <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-slate-950">
         <div className="flex items-center justify-between gap-2">
           <Label className="flex items-center gap-2 text-sm font-bold">
-            <ClipboardList className="h-4 w-4 text-sky-600" /> 5. Shu testning o‘z savollari ({localPool})
+            <ClipboardList className="h-4 w-4 text-sky-600" /> 6. Shu testning o‘z savollari ({localPool})
           </Label>
           <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-[11px] font-semibold text-sky-800 dark:bg-sky-950 dark:text-sky-200">
             Pool ~{pool} · har biriga {askCount}
@@ -573,8 +646,8 @@ function ExamEditor({
               <span className="block text-sm font-semibold">{d.published ? "E’lon qilingan" : "Hali e’lon qilinmagan"}</span>
               <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
                 {d.published
-                  ? `Saqlangach test ${audienceTo(track)} ko‘rinadi. Ular muddat ichida topshiradi.`
-                  : `Saqlangach test faqat sizda qoladi. ${audienceTo(track)} chiqmaydi. Tayyor bo‘lgach e’lon qilasiz.`}
+                  ? `Saqlangach test ${selectedTargets.map((k) => ATTESTATSIYA_TRACKS.find((t) => t.key === k)?.label || k).join(", ")} ga chiqadi.`
+                  : `Saqlangach e’lon yopiq qoladi. Tayyor bo‘lgach «E’lon qilish» — belgilangan lavozimlarga (jumladan mudir) boradi.`}
               </span>
             </span>
             <Switch checked={d.published} onCheckedChange={(v) => setD({ ...d, published: v })} />
@@ -1154,9 +1227,13 @@ export default function AtestatsiyaAdminPage() {
           <Monitor examId={monitorId} onBack={() => setMonitorId(null)} />
         ) : (
           <>
-            {editing ? (
+            {!editing ? (
+              <Button className="h-11 w-full rounded-2xl bg-sky-600 text-base font-semibold hover:bg-sky-700" onClick={() => setEditing(emptyDraft())}>
+                <Plus className="mr-1.5 h-4 w-4" /> Yangi atestatsiya
+              </Button>
+            ) : (
               <ExamEditor
-                key={editing.id ?? "new"}
+                key={editing.id ?? `new-${editing.title}`}
                 track={track}
                 initial={editing}
                 onClose={() => setEditing(null)}
@@ -1167,10 +1244,6 @@ export default function AtestatsiyaAdminPage() {
                   >)
                 }
               />
-            ) : (
-              <Button className="h-11 w-full rounded-2xl bg-sky-600 text-base font-semibold hover:bg-sky-700" onClick={() => setEditing(emptyDraft())}>
-                <Plus className="mr-1.5 h-4 w-4" /> Yangi atestatsiya
-              </Button>
             )}
             {trial ? (
               <div
@@ -1230,14 +1303,16 @@ export default function AtestatsiyaAdminPage() {
                           <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-semibold text-slate-700 dark:bg-white/10 dark:text-slate-200">
                             Pool ~{e.poolCount} · har biriga {e.askCount}
                           </span>
-                          {(e.poolTracks?.length ? e.poolTracks : [e.track]).map((pt) => (
-                            <span
-                              key={pt}
-                              className="rounded-lg bg-violet-100 px-2.5 py-1 font-semibold text-violet-800 dark:bg-violet-950 dark:text-violet-200"
-                            >
-                              {ATTESTATSIYA_TRACKS.find((t) => t.key === pt)?.label || pt}
-                            </span>
-                          ))}
+                          <span className="rounded-lg bg-slate-50 px-2.5 py-1 font-semibold text-slate-600 dark:bg-white/5">
+                            Baza: {(e.poolTracks?.length ? e.poolTracks : [e.track])
+                              .map((pt) => ATTESTATSIYA_TRACKS.find((t) => t.key === pt)?.label || pt)
+                              .join(", ")}
+                          </span>
+                          <span className="rounded-lg bg-emerald-100 px-2.5 py-1 font-semibold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
+                            Kimga: {(e.targetTracks?.length ? e.targetTracks : [e.track])
+                              .map((pt) => ATTESTATSIYA_TRACKS.find((t) => t.key === pt)?.label || pt)
+                              .join(", ")}
+                          </span>
                           <span className="rounded-lg bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
                             {e.stats.passed}/{e.stats.finished} o‘tdi · {e.stats.inProgress} ishlayapti
                           </span>
@@ -1254,7 +1329,9 @@ export default function AtestatsiyaAdminPage() {
                             </p>
                             <p className="text-[11px] leading-snug text-slate-600">
                               {e.published
-                                ? `Test ${audienceTo(track)} ko‘rinadi.`
+                                ? `Test ${(e.targetTracks?.length ? e.targetTracks : [e.track])
+                                    .map((k) => ATTESTATSIYA_TRACKS.find((t) => t.key === k)?.label || k)
+                                    .join(", ")} ga chiqadi.`
                                 : "Xodimlarga chiqmaydi. Sinab ko‘rish mumkin — natija saqlanmaydi."}
                             </p>
                           </div>
@@ -1272,7 +1349,9 @@ export default function AtestatsiyaAdminPage() {
                                     title: e.published ? "E’lon yopildi" : "E’lon qilindi",
                                     description: e.published
                                       ? "Test yana faqat trenerda."
-                                      : `Test ${audienceTo(track)} ko‘rinadi.`,
+                                      : `Bildirishnoma: ${(e.targetTracks?.length ? e.targetTracks : [e.track])
+                                          .map((k) => ATTESTATSIYA_TRACKS.find((t) => t.key === k)?.label || k)
+                                          .join(", ")}.`,
                                   }),
                                 )
                                 .catch((err: Error) => toast({ title: err.message, variant: "destructive" }))
@@ -1295,6 +1374,17 @@ export default function AtestatsiyaAdminPage() {
                         </Button>
                         <Button size="sm" variant="outline" className="h-9" onClick={() => setMonitorId(e.id)}>
                           <BarChart3 className="mr-1 h-3.5 w-3.5" /> Natija
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-9"
+                          onClick={() => {
+                            setEditing(copyAsNew(e, track));
+                            toast({ title: "Nusxa ochildi", description: "Yangidan saqlang — alohida atestatsiya bo‘ladi." });
+                          }}
+                        >
+                          <Copy className="mr-1 h-3.5 w-3.5" /> Yangidan
                         </Button>
                         <div className="flex gap-1">
                           <Button size="icon" variant="ghost" onClick={() => setEditing(fromExam(e))} aria-label="Tahrirlash">

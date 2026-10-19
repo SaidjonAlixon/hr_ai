@@ -6,7 +6,7 @@
  *  - Admin / direktor / trener: kiritadi, jonli kuzatadi, natijani bekor qiladi yoki qayta topshirishga ruxsat beradi.
  */
 import { Router, type IRouter, type Response } from "express";
-import { and, asc, desc, eq, inArray, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import {
   db,
   attestatsiyaAttemptsTable,
@@ -79,6 +79,19 @@ function normalizePoolTracks(exam: Pick<Exam, "track" | "poolTracks">): Track[] 
   if (parsed.length) return parsed;
   const own = parseTrack(exam.track);
   return own ? [own] : ["stajyor"];
+}
+
+/** Kim testni ko‘radi / topshiradi */
+function normalizeTargetTracks(exam: Pick<Exam, "track" | "targetTracks">): Track[] {
+  const raw = Array.isArray(exam.targetTracks) ? exam.targetTracks : [];
+  const parsed = [...new Set(raw.map((t) => parseTrack(t)).filter((t): t is Track => Boolean(t)))];
+  if (parsed.length) return parsed;
+  const own = parseTrack(exam.track);
+  return own ? [own] : ["stajyor"];
+}
+
+function examVisibleTo(exam: Pick<Exam, "track" | "targetTracks">, role: Track): boolean {
+  return normalizeTargetTracks(exam).includes(role);
 }
 
 function bankCountsFromExams(all: Exam[]): Record<Track, number> {
@@ -324,16 +337,21 @@ function resolveLearner(req: AuthRequest, res: Response): { track: Track; previe
 router.get("/atestatsiya/me", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const who = resolveLearner(req, res);
   if (!who) return;
+  const roleJson = JSON.stringify([who.track]);
+  const forRole = or(
+    and(
+      sql`COALESCE(jsonb_array_length(${attestatsiyaExamsTable.targetTracks}), 0) = 0`,
+      eq(attestatsiyaExamsTable.track, who.track),
+    ),
+    sql`${attestatsiyaExamsTable.targetTracks} @> ${roleJson}::jsonb`,
+    eq(attestatsiyaExamsTable.track, who.track),
+  );
   const exams = await db
     .select()
     .from(attestatsiyaExamsTable)
-    .where(
-      who.preview
-        ? eq(attestatsiyaExamsTable.track, who.track)
-        : and(eq(attestatsiyaExamsTable.track, who.track), eq(attestatsiyaExamsTable.published, true)),
-    )
+    .where(who.preview ? forRole : and(forRole, eq(attestatsiyaExamsTable.published, true)))
     .orderBy(desc(attestatsiyaExamsTable.startsAt))
-    .limit(60);
+    .limit(80);
   const examById = new Map(exams.map((e) => [e.id, e]));
   let attempts: Attempt[] = [];
   if (!who.preview && exams.length) {
@@ -466,7 +484,7 @@ router.post("/atestatsiya/me/exams/:id/start", requireAuth, async (req: AuthRequ
   }
   const examId = Number(req.params.id);
   const [exam] = await db.select().from(attestatsiyaExamsTable).where(eq(attestatsiyaExamsTable.id, examId)).limit(1);
-  if (!exam || !exam.published || exam.track !== track) {
+  if (!exam || !exam.published || !examVisibleTo(exam, track)) {
     res.status(404).json({ error: "Test topilmadi" });
     return;
   }
@@ -739,6 +757,7 @@ type ExamInput = {
   durationMinutes: number;
   questionsPerAttempt: number | null;
   poolTracks: Track[];
+  targetTracks: Track[];
   locationMode: "branch" | "office" | "anywhere";
   startsAt: Date;
   endsAt: Date;
@@ -758,6 +777,12 @@ function parseExamBody(body: Record<string, unknown> | undefined, examTrack: Tra
     ? [...new Set(rawPool.map((t) => parseTrack(t)).filter((t): t is Track => Boolean(t)))]
     : [examTrack];
   if (!poolTracks.length) poolTracks = [examTrack];
+
+  const rawTargets = Array.isArray(body?.targetTracks) ? body!.targetTracks : null;
+  let targetTracks: Track[] = rawTargets
+    ? [...new Set(rawTargets.map((t) => parseTrack(t)).filter((t): t is Track => Boolean(t)))]
+    : [examTrack];
+  if (!targetTracks.length) targetTracks = [examTrack];
 
   const rawQs = body?.questions;
   if (!Array.isArray(rawQs)) return { error: "Savollar ro‘yxati noto‘g‘ri" };
@@ -819,6 +844,7 @@ function parseExamBody(body: Record<string, unknown> | undefined, examTrack: Tra
     durationMinutes,
     questionsPerAttempt,
     poolTracks,
+    targetTracks,
     locationMode,
     startsAt,
     endsAt,
@@ -857,6 +883,7 @@ function manageExam(e: Exam, all?: Exam[], banks?: Record<Track, number>) {
     durationMinutes: e.durationMinutes,
     questionsPerAttempt: ask > 0 && ask < pool ? ask : null,
     poolTracks,
+    targetTracks: normalizeTargetTracks(e),
     poolCount: pool,
     askCount: ask > 0 && ask < pool ? ask : pool,
     locationMode: e.locationMode,
@@ -874,8 +901,9 @@ function manageExam(e: Exam, all?: Exam[], banks?: Record<Track, number>) {
 async function notifyPublished(e: Exam) {
   const where =
     e.locationMode === "anywhere" ? "istalgan joydan" : e.locationMode === "office" ? "asosiy ofisda" : "o‘z filialingizda";
+  const roles = normalizeTargetTracks(e);
   await notifyByRoles({
-    roles: [e.track],
+    roles,
     title: "Atestatsiya",
     text: `«${e.title}» atestatsiyasi: ${fmtDt(e.startsAt)} – ${fmtDt(e.endsAt)}. Test ${where} ochiladi, davomiyligi ${e.durationMinutes} daqiqa.`,
     type: "atestatsiya",
@@ -1234,7 +1262,13 @@ router.get("/atestatsiya/manage/:id/monitor", requireAuth, async (req: AuthReque
     await loadAttempts(eq(attestatsiyaAttemptsTable.examId, id)),
     new Map([[exam.id, exam]]),
   );
-  const learners = await activeLearners(track);
+  const targetRoles = normalizeTargetTracks(exam);
+  const learnerLists = await Promise.all(targetRoles.map((t) => activeLearners(t)));
+  const learnersById = new Map<number, { id: number; fullName: string; phone: string | null }>();
+  for (const list of learnerLists) {
+    for (const u of list) learnersById.set(u.id, u);
+  }
+  const learners = [...learnersById.values()];
   const knownIds = new Set(learners.map((u) => u.id));
   const extraIds = [...new Set(attempts.map((a) => a.userId))].filter((uid) => !knownIds.has(uid));
   const extra = extraIds.length

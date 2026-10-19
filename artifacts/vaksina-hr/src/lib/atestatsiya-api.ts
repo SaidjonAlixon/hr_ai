@@ -71,6 +71,8 @@ export type AttestExamInput = {
   questionsPerAttempt: number | null;
   /** Qaysi lavozim bazalaridan random savol olinadi */
   poolTracks: AttestTrack[];
+  /** Kimga e’lon / kim topshiradi */
+  targetTracks: AttestTrack[];
   locationMode: "branch" | "office" | "anywhere";
   startsAt: string;
   endsAt: string;

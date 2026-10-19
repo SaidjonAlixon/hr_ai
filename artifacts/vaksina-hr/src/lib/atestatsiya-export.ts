@@ -67,6 +67,28 @@ export async function exportAttestExcel(data: AttestMonitor) {
  <Row>${["№", "Savol", "Javob bergan", "To‘g‘ri", "%"].map((h) => `<Cell ss:StyleID="sHead"><Data ss:Type="String">${esc(h)}</Data></Cell>`).join("")}</Row>
  ${data.questionStats.map((q) => `<Row>${cell(q.number)}${cell(q.text)}${cell(q.answered)}${cell(q.correct)}${cell(q.percent ?? "")}</Row>`).join("")}
 </Table></Worksheet>
+<Worksheet ss:Name="Har bir javob"><Table>
+ <Row>${["Xodim", "Ball %", "To‘g‘ri", "Jami", "Natija", "№", "Savol", "Tanlagan javob", "To‘g‘ri javob", "Holat"].map((h) => `<Cell ss:StyleID="sHead"><Data ss:Type="String">${esc(h)}</Data></Cell>`).join("")}</Row>
+ ${(data.answerSheets || [])
+   .flatMap((sheet) =>
+     sheet.items.map(
+       (it) =>
+         `<Row>${[
+           cell(sheet.fullName),
+           cell(sheet.score ?? ""),
+           cell(sheet.correct ?? ""),
+           cell(sheet.total),
+           cell(sheet.passed == null ? "—" : sheet.passed ? "O‘tdi" : "O‘tmadi"),
+           cell(it.number),
+           cell(it.question),
+           cell(it.chosenText),
+           cell(it.correctText),
+           cell(it.ok ? "To‘g‘ri" : "Noto‘g‘ri"),
+         ].join("")}</Row>`,
+     ),
+   )
+   .join("\n")}
+</Table></Worksheet>
 </Workbook>`;
   await deliverFile(new Blob(["\uFEFF" + xml], { type: "application/vnd.ms-excel;charset=utf-8" }), `atestatsiya-${stamp}.xls`);
 }

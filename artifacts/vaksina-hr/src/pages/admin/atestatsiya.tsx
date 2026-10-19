@@ -69,15 +69,50 @@ type Draft = {
   description: string;
   passScore: number;
   durationMinutes: number;
+  questionsPerAttempt: number | null;
   locationMode: "branch" | "office";
   startsAt: string;
   endsAt: string;
   shuffleQuestions: boolean;
+  shuffleOptions: boolean;
   showResult: boolean;
   published: boolean;
   questions: AttestQuestion[];
   lockedQuestions: boolean;
 };
+
+/** Qisqa oyna (≤10 soat) → davomiylik = oyna; aks holda ~1 daq/savol (oynadan oshmasin) */
+function autoDurationMinutes(startsAt: string, endsAt: string, askCount: number): number {
+  const byAsk = Math.max(15, Math.min(180, Math.max(1, askCount) * 1));
+  try {
+    const a = new Date(localInputToIso(startsAt)).getTime();
+    const b = new Date(localInputToIso(endsAt)).getTime();
+    const span = Math.round((b - a) / 60_000);
+    if (!Number.isFinite(span) || span < 1) return byAsk;
+    if (span <= 600) return span;
+    return Math.min(byAsk, span);
+  } catch {
+    return byAsk;
+  }
+}
+
+function windowSpanLabel(startsAt: string, endsAt: string): string {
+  try {
+    const a = new Date(localInputToIso(startsAt)).getTime();
+    const b = new Date(localInputToIso(endsAt)).getTime();
+    const min = Math.round((b - a) / 60_000);
+    if (!Number.isFinite(min) || min <= 0) return "";
+    if (min < 60) return `${min} daqiqa ochiq`;
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    if (h < 48) return m ? `${h} soat ${m} daq ochiq` : `${h} soat ochiq`;
+    const d = Math.floor(h / 24);
+    const rh = h % 24;
+    return rh ? `${d} kun ${rh} soat ochiq` : `${d} kun ochiq`;
+  } catch {
+    return "";
+  }
+}
 
 function audienceTo(track: AttestTrack): string {
   if (track === "farmasevt") return "barcha farmasevtlarga";
@@ -94,16 +129,20 @@ function emptyDraft(): Draft {
   start.setMinutes(0, 0, 0);
   start.setHours(start.getHours() + 1);
   const end = new Date(start.getTime() + 3 * 3_600_000);
+  const startsAt = isoToLocalInput(start.toISOString());
+  const endsAt = isoToLocalInput(end.toISOString());
   return {
     id: null,
     title: "",
     description: "",
     passScore: 50,
-    durationMinutes: 30,
+    durationMinutes: autoDurationMinutes(startsAt, endsAt, 1),
+    questionsPerAttempt: null,
     locationMode: "branch",
-    startsAt: isoToLocalInput(start.toISOString()),
-    endsAt: isoToLocalInput(end.toISOString()),
+    startsAt,
+    endsAt,
     shuffleQuestions: true,
+    shuffleOptions: true,
     showResult: true,
     published: true,
     questions: [emptyQuestion()],
@@ -118,10 +157,12 @@ function fromExam(e: AttestManageExam): Draft {
     description: e.description,
     passScore: e.passScore,
     durationMinutes: e.durationMinutes,
+    questionsPerAttempt: e.questionsPerAttempt ?? null,
     locationMode: e.locationMode,
     startsAt: isoToLocalInput(e.startsAt),
     endsAt: isoToLocalInput(e.endsAt),
     shuffleQuestions: e.shuffleQuestions,
+    shuffleOptions: e.shuffleOptions !== false,
     showResult: e.showResult,
     published: e.published,
     questions: e.questions.map((q) => ({ ...q, options: [...q.options] })),
@@ -135,6 +176,25 @@ function ExamEditor({ track, initial, onClose }: { track: AttestTrack; initial: 
   const [d, setD] = useState(initial);
   const setQ = (i: number, patch: Partial<AttestQuestion>) =>
     setD((p) => ({ ...p, questions: p.questions.map((q, n) => (n === i ? { ...q, ...patch } : q)) }));
+
+  const pool = d.questions.length;
+  const askCount = d.questionsPerAttempt && d.questionsPerAttempt > 0 && d.questionsPerAttempt < pool ? d.questionsPerAttempt : pool;
+  const spanHint = windowSpanLabel(d.startsAt, d.endsAt);
+
+  const patchWindow = (patch: Partial<Pick<Draft, "startsAt" | "endsAt" | "questionsPerAttempt" | "questions">>) => {
+    setD((p) => {
+      const next = { ...p, ...patch };
+      const nextPool = (patch.questions || next.questions).length;
+      const nextAsk =
+        next.questionsPerAttempt && next.questionsPerAttempt > 0 && next.questionsPerAttempt < nextPool
+          ? next.questionsPerAttempt
+          : nextPool;
+      return {
+        ...next,
+        durationMinutes: autoDurationMinutes(next.startsAt, next.endsAt, nextAsk),
+      };
+    });
+  };
 
   const onSave = async () => {
     const questions = d.questions.map((q) => {
@@ -155,10 +215,12 @@ function ExamEditor({ track, initial, onClose }: { track: AttestTrack; initial: 
         questions,
         passScore: d.passScore,
         durationMinutes: d.durationMinutes,
+        questionsPerAttempt: d.questionsPerAttempt,
         locationMode: d.locationMode,
         startsAt: localInputToIso(d.startsAt),
         endsAt: localInputToIso(d.endsAt),
         shuffleQuestions: d.shuffleQuestions,
+        shuffleOptions: d.shuffleOptions,
         showResult: d.showResult,
         published: d.published,
       });
@@ -170,82 +232,154 @@ function ExamEditor({ track, initial, onClose }: { track: AttestTrack; initial: 
   };
 
   return (
-    <div className="space-y-4 rounded-3xl border border-[#2AABEE]/40 bg-card p-4 sm:p-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold">{d.id ? "Atestatsiyani tahrirlash" : "Yangi atestatsiya"}</h2>
+    <div className="space-y-5 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 dark:border-white/10 dark:bg-slate-950">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-extrabold tracking-tight text-slate-900 dark:text-white">
+            {d.id ? "Atestatsiyani tahrirlash" : "Yangi atestatsiya"}
+          </h2>
+          <p className="text-xs text-slate-500">{audienceTo(track)} · aniq va sodda sozlama</p>
+        </div>
         <Button variant="ghost" size="icon" onClick={onClose} aria-label="Yopish">
           <X className="h-4 w-4" />
         </Button>
       </div>
       <div className="space-y-1.5">
         <Label>Nomi *</Label>
-        <Input value={d.title} maxLength={200} onChange={(e) => setD({ ...d, title: e.target.value })} placeholder="Masalan: Sentyabr atestatsiyasi" />
+        <Input value={d.title} maxLength={200} onChange={(e) => setD({ ...d, title: e.target.value })} placeholder="Masalan: Mudirlar uchun atestatsiya" />
       </div>
       <div className="space-y-1.5">
         <Label>Tavsif</Label>
         <Textarea rows={2} value={d.description} maxLength={3000} onChange={(e) => setD({ ...d, description: e.target.value })} />
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label>Boshlanish</Label>
-          <Input type="datetime-local" value={d.startsAt} onChange={(e) => setD({ ...d, startsAt: e.target.value })} />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Tugash</Label>
-          <Input type="datetime-local" value={d.endsAt} onChange={(e) => setD({ ...d, endsAt: e.target.value })} />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Test davomiyligi, daqiqa</Label>
-          <Input type="number" min={1} max={600} value={d.durationMinutes} onChange={(e) => setD({ ...d, durationMinutes: Math.round(Number(e.target.value) || 0) })} />
-        </div>
-        <div className="space-y-1.5">
-          <Label>O‘tish bali, %</Label>
-          <Input type="number" min={1} max={100} value={d.passScore} onChange={(e) => setD({ ...d, passScore: Math.round(Number(e.target.value) || 0) })} />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        {(
-          [
-            ["branch", "O‘z filialida", "Xodim faqat biriktirilgan filial hududida boshlaydi"],
-            ["office", "Asosiy ofisda", "Xodim faqat ofis hududida boshlaydi"],
-          ] as const
-        ).map(([key, label, hint]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setD({ ...d, locationMode: key })}
-            className={cn(
-              "rounded-2xl border p-3 text-left",
-              d.locationMode === key ? "border-[#2AABEE] bg-[#2AABEE]/10" : "border-border",
-            )}
-          >
-            <p className="flex items-center gap-1.5 text-sm font-semibold">
-              <MapPin className="h-4 w-4 text-[#2AABEE]" /> {label}
+
+      <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 sm:p-4 dark:border-white/10 dark:bg-white/5">
+        <p className="mb-3 text-sm font-bold text-slate-900 dark:text-white">1. Ochiq muddat va test vaqti</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label>Boshlanish</Label>
+            <Input type="datetime-local" value={d.startsAt} onChange={(e) => patchWindow({ startsAt: e.target.value })} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Tugash</Label>
+            <Input type="datetime-local" value={d.endsAt} onChange={(e) => patchWindow({ endsAt: e.target.value })} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Test davomiyligi (avto), daqiqa</Label>
+            <Input
+              type="number"
+              min={1}
+              max={600}
+              value={d.durationMinutes}
+              onChange={(e) => setD({ ...d, durationMinutes: Math.round(Number(e.target.value) || 0) })}
+            />
+            <p className="text-[11px] leading-snug text-slate-500">
+              {spanHint
+                ? `Oyna: ${spanHint}. Qisqa oyna (≤10 soat) bo‘lsa davomiylik oynadan, aks holda ${askCount} savol × 1 daq.`
+                : `Davomiylik avtomatik: ${askCount} savol × ~1 daqiqa (o‘zgartirish mumkin).`}
             </p>
-            <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>
-          </button>
-        ))}
+          </div>
+          <div className="space-y-1.5">
+            <Label>O‘tish bali, %</Label>
+            <Input type="number" min={1} max={100} value={d.passScore} onChange={(e) => setD({ ...d, passScore: Math.round(Number(e.target.value) || 0) })} />
+          </div>
+        </div>
       </div>
 
-      <div className="space-y-3 rounded-2xl border border-border p-3">
-        <div className="flex items-center justify-between">
-          <Label className="flex items-center gap-2">
-            <ClipboardList className="h-4 w-4 text-[#2AABEE]" /> Savollar ({d.questions.length})
-          </Label>
-          {d.lockedQuestions ? <span className="text-[11px] text-amber-700">Boshlangan — savollar qulflangan</span> : null}
+      <div className="rounded-2xl border border-sky-200 bg-sky-50/70 p-3 sm:p-4 dark:border-sky-900/50 dark:bg-sky-950/30">
+        <p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">2. Har bir xodimga nechta savol</p>
+        <p className="mb-3 text-[11px] text-slate-600 dark:text-slate-400">
+          Poolda {pool} ta savol. Masalan 51 ta bo‘lsa — har bir mudirga 20 tasini tasodifiy berish mumkin. Tartib va variantlar aralashadi.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label>Ko‘rinadigan savol soni</Label>
+            <Input
+              type="number"
+              min={1}
+              max={Math.max(1, pool)}
+              placeholder={String(pool || 1)}
+              value={d.questionsPerAttempt ?? ""}
+              onChange={(e) => {
+                const v = e.target.value.trim();
+                if (!v) {
+                  patchWindow({ questionsPerAttempt: null });
+                  return;
+                }
+                patchWindow({ questionsPerAttempt: Math.round(Number(v) || 0) });
+              }}
+            />
+            <p className="text-[11px] text-slate-500">
+              Bo‘sh = hammasi ({pool}). Hozir har biriga: <b>{askCount}</b> ta
+            </p>
+          </div>
+          <div className="flex flex-col justify-end gap-2 text-sm">
+            <label className="flex items-center gap-2 rounded-xl border border-white/60 bg-white/80 px-3 py-2 dark:bg-slate-900/60">
+              <Switch checked={d.shuffleQuestions} onCheckedChange={(v) => setD({ ...d, shuffleQuestions: v })} />
+              Savollar aralashsin
+            </label>
+            <label className="flex items-center gap-2 rounded-xl border border-white/60 bg-white/80 px-3 py-2 dark:bg-slate-900/60">
+              <Switch checked={d.shuffleOptions} onCheckedChange={(v) => setD({ ...d, shuffleOptions: v })} />
+              Javob variantlari aralashsin
+            </label>
+          </div>
         </div>
+      </div>
+      <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 sm:p-4 dark:border-white/10 dark:bg-white/5">
+        <p className="mb-3 text-sm font-bold text-slate-900 dark:text-white">3. Qayerda ochiladi</p>
+        <div className="grid grid-cols-2 gap-2">
+          {(
+            [
+              ["branch", "O‘z filialida", "Faqat biriktirilgan filial hududida"],
+              ["office", "Asosiy ofisda", "Faqat ofis hududida"],
+            ] as const
+          ).map(([key, label, hint]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setD({ ...d, locationMode: key })}
+              className={cn(
+                "rounded-2xl border p-3 text-left transition",
+                d.locationMode === key ? "border-sky-500 bg-sky-50 shadow-sm dark:bg-sky-950/40" : "border-slate-200 bg-white dark:border-white/10 dark:bg-slate-900",
+              )}
+            >
+              <p className="flex items-center gap-1.5 text-sm font-semibold">
+                <MapPin className="h-4 w-4 text-sky-600" /> {label}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">{hint}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-slate-950">
+        <div className="flex items-center justify-between gap-2">
+          <Label className="flex items-center gap-2 text-sm font-bold">
+            <ClipboardList className="h-4 w-4 text-sky-600" /> 4. Savollar bazasi ({pool})
+          </Label>
+          <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-[11px] font-semibold text-sky-800 dark:bg-sky-950 dark:text-sky-200">
+            Har biriga {askCount} ta
+          </span>
+        </div>
+        {d.lockedQuestions ? <p className="text-[11px] text-amber-700">Boshlangan — savollar qulflangan</p> : null}
         {d.questions.map((q, qi) => (
-          <div key={q.id} className="space-y-2 rounded-xl border border-border bg-muted/30 p-3">
+          <div key={q.id} className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3 dark:border-white/10 dark:bg-white/5">
             <div className="flex gap-2">
-              <span className="mt-2 text-sm font-bold text-[#2AABEE]">{qi + 1}.</span>
+              <span className="mt-2 text-sm font-bold text-sky-600">{qi + 1}.</span>
               <Textarea rows={2} disabled={d.lockedQuestions} value={q.text} placeholder="Savol" onChange={(e) => setQ(qi, { text: e.target.value })} />
-              <Button variant="ghost" size="icon" className="text-red-600" disabled={d.lockedQuestions} onClick={() => setD({ ...d, questions: d.questions.filter((_, i) => i !== qi) })}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-red-600"
+                disabled={d.lockedQuestions || d.questions.length <= 1}
+                onClick={() => patchWindow({ questions: d.questions.filter((_, i) => i !== qi) })}
+              >
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               {q.options.map((opt, oi) => (
-                <label key={oi} className={cn("flex items-center gap-2 rounded-lg border bg-card px-2 py-1.5", q.correctIndex === oi && "border-emerald-500")}>
+                <label key={oi} className={cn("flex items-center gap-2 rounded-lg border bg-white px-2 py-1.5 dark:bg-slate-900", q.correctIndex === oi && "border-emerald-500")}>
                   <input type="radio" disabled={d.lockedQuestions} name={`c-${q.id}`} checked={q.correctIndex === oi} onChange={() => setQ(qi, { correctIndex: oi })} className="accent-emerald-600" />
                   <span className="text-xs font-bold text-muted-foreground">{String.fromCharCode(65 + oi)}</span>
                   <input className="min-w-0 flex-1 bg-transparent text-sm outline-none" disabled={d.lockedQuestions} value={opt} placeholder={`Variant ${String.fromCharCode(65 + oi)}`} onChange={(e) => setQ(qi, { options: q.options.map((o, i) => (i === oi ? e.target.value : o)) })} />
@@ -254,31 +388,38 @@ function ExamEditor({ track, initial, onClose }: { track: AttestTrack; initial: 
             </div>
           </div>
         ))}
-        <Button variant="outline" className="w-full border-dashed" disabled={d.lockedQuestions} onClick={() => setD({ ...d, questions: [...d.questions, emptyQuestion()] })}>
+        <Button
+          variant="outline"
+          className="w-full border-dashed"
+          disabled={d.lockedQuestions}
+          onClick={() => patchWindow({ questions: [...d.questions, emptyQuestion()] })}
+        >
           <Plus className="mr-1.5 h-4 w-4" /> Savol qo‘shish
         </Button>
       </div>
 
-      <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap sm:items-center">
-        <label className="flex items-center gap-2"><Switch checked={d.shuffleQuestions} onCheckedChange={(v) => setD({ ...d, shuffleQuestions: v })} /> Savollar aralashsin</label>
-        <label className="flex items-center gap-2"><Switch checked={d.showResult} onCheckedChange={(v) => setD({ ...d, showResult: v })} /> Natijani xodim ko‘rsin</label>
-        <div className={cn("w-full rounded-2xl border px-3 py-2.5 sm:basis-full", d.published ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50")}>
+      <div className="flex flex-col gap-2 text-sm">
+        <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-white/10 dark:bg-white/5">
+          <Switch checked={d.showResult} onCheckedChange={(v) => setD({ ...d, showResult: v })} />
+          Natijani xodim ko‘rsin (foiz va o‘tdi/o‘tmadi)
+        </label>
+        <div className={cn("w-full rounded-2xl border px-3 py-2.5", d.published ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50")}>
           <label className="flex items-start justify-between gap-3">
             <span>
               <span className="block text-sm font-semibold">{d.published ? "E’lon qilingan" : "Hali e’lon qilinmagan"}</span>
               <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
                 {d.published
                   ? `Saqlangach test ${audienceTo(track)} ko‘rinadi. Ular muddat ichida topshiradi.`
-                  : `Saqlangach test faqat sizda (trenerda) qoladi. ${audienceTo(track)} chiqmaydi. Tayyor bo‘lgach e’lon qilasiz.`}
+                  : `Saqlangach test faqat sizda qoladi. ${audienceTo(track)} chiqmaydi. Tayyor bo‘lgach e’lon qilasiz.`}
               </span>
             </span>
             <Switch checked={d.published} onCheckedChange={(v) => setD({ ...d, published: v })} />
           </label>
         </div>
       </div>
-      <div className="flex justify-end gap-2 border-t border-border/60 pt-3">
+      <div className="flex justify-end gap-2 border-t border-slate-200 pt-3 dark:border-white/10">
         <Button variant="outline" onClick={onClose}>Bekor</Button>
-        <Button className="bg-[#2AABEE] hover:bg-[#229ED9]" disabled={save.isPending} onClick={() => void onSave()}>
+        <Button className="bg-sky-600 hover:bg-sky-700" disabled={save.isPending} onClick={() => void onSave()}>
           <Save className="mr-1.5 h-4 w-4" /> {save.isPending ? "Saqlanmoqda…" : "Saqlash"}
         </Button>
       </div>
@@ -307,6 +448,7 @@ function Monitor({ examId, onBack }: { examId: number; onBack: () => void }) {
   const [annulFor, setAnnulFor] = useState<AttestMonitorRow | null>(null);
   const [reason, setReason] = useState("");
   const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
+  const [openSheet, setOpenSheet] = useState<number | null>(null);
   const data = q.data;
 
   const rows = useMemo(() => {
@@ -363,7 +505,8 @@ function Monitor({ examId, onBack }: { examId: number; onBack: () => void }) {
       </div>
       <p className="text-xs text-muted-foreground">
         {data.trackLabel} · {formatAttestDt(data.exam.startsAt)} – {formatAttestDt(data.exam.endsAt)} · {data.exam.durationMinutes} daq ·{" "}
-        {data.exam.locationMode === "office" ? "Asosiy ofis" : "O‘z filiali"} · har 10 soniyada yangilanadi
+        {data.exam.locationMode === "office" ? "Asosiy ofis" : "O‘z filiali"} · pool {data.exam.poolCount} · har biriga {data.exam.askCount} savol ·
+        Excelda har bir xodimning foizi va har bir javobi bor · har 10 soniyada yangilanadi
       </p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
         {[
@@ -435,45 +578,81 @@ function Monitor({ examId, onBack }: { examId: number; onBack: () => void }) {
       </div>
 
       <div className="space-y-2">
-        {rows.map((r) => (
-          <div key={r.userId} className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card p-3">
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-semibold">{r.fullName}</p>
-              <p className="truncate text-[11px] text-muted-foreground">
-                {r.branchLabel || "Filialsiz"}
-                {r.locationLabel ? ` · ${r.locationLabel}${r.distanceM != null ? ` (${r.distanceM} m)` : ""}` : ""}
-                {r.focusLost ? ` · fokus ${r.focusLost}` : ""}
-              </p>
+        {rows.map((r) => {
+          const sheet = (data.answerSheets || []).find((s) => s.userId === r.userId);
+          const opened = openSheet === r.userId;
+          return (
+            <div key={r.userId} className="rounded-2xl border border-border bg-card p-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold">{r.fullName}</p>
+                  <p className="truncate text-[11px] text-muted-foreground">
+                    {r.branchLabel || "Filialsiz"}
+                    {r.locationLabel ? ` · ${r.locationLabel}${r.distanceM != null ? ` (${r.distanceM} m)` : ""}` : ""}
+                    {r.focusLost ? ` · fokus ${r.focusLost}` : ""}
+                  </p>
+                </div>
+                <div className="text-right text-xs">
+                  <p className={cn("text-base font-bold tabular-nums", r.passed ? "text-emerald-700" : r.passed === false ? "text-rose-700" : "text-foreground")}>
+                    {r.score != null ? `${r.score}%` : ATTEST_STATUS_LABEL[r.status]}
+                  </p>
+                  <p className="text-muted-foreground">
+                    {r.correct != null ? `${r.correct}/${r.total} to‘g‘ri` : r.status === "in_progress" && r.remainingSec != null
+                      ? `${Math.ceil(r.remainingSec / 60)} daq · ${r.answeredCount}/${r.total}`
+                      : r.attemptsCount
+                        ? `${r.attemptsCount}-urinish`
+                        : "—"}
+                    {r.retakeAllowed ? " · qayta" : ""}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {sheet?.items.length ? (
+                    <Button size="sm" variant="outline" className="h-8" onClick={() => setOpenSheet(opened ? null : r.userId)}>
+                      {opened ? "Yopish" : "Javoblar"}
+                    </Button>
+                  ) : null}
+                  {r.status === "in_progress" && r.attemptId ? (
+                    <Button size="sm" variant="outline" className="h-8" disabled={finish.isPending} onClick={() => void act(() => finish.mutateAsync(r.attemptId!), "Yakunlandi")}>Yakunlash</Button>
+                  ) : null}
+                  {r.status !== "not_started" && r.status !== "in_progress" ? (
+                    <Button size="sm" variant="outline" className="h-8" disabled={retake.isPending} onClick={() => void act(() => retake.mutateAsync({ examId, userId: r.userId }), "Qayta topshirishga ruxsat berildi")}>Qayta</Button>
+                  ) : null}
+                  {r.status === "annulled" && r.attemptId ? (
+                    <Button size="sm" variant="outline" className="h-8" onClick={() => void act(() => restore.mutateAsync(r.attemptId!), "Natija tiklandi")}>Tiklash</Button>
+                  ) : null}
+                  {r.attemptId && r.status !== "annulled" ? (
+                    <Button size="sm" variant="ghost" className="h-8 text-rose-600" onClick={() => { setReason(""); setAnnulFor(r); }}>Bekor</Button>
+                  ) : null}
+                </div>
+              </div>
+              {opened && sheet ? (
+                <div className="mt-3 space-y-1.5 border-t border-border/70 pt-3">
+                  <p className="mb-1 text-[11px] font-semibold text-muted-foreground">
+                    {sheet.fullName} · {sheet.score ?? "—"}% · {sheet.correct ?? "—"}/{sheet.total}
+                    {sheet.passed == null ? "" : sheet.passed ? " · O‘tdi" : " · O‘tmadi"}
+                  </p>
+                  {sheet.items.map((it) => (
+                    <div
+                      key={`${sheet.userId}-${it.number}`}
+                      className={cn(
+                        "rounded-xl px-3 py-2 text-xs",
+                        it.ok ? "bg-emerald-50 text-emerald-950" : "bg-rose-50 text-rose-950",
+                      )}
+                    >
+                      <p className="font-semibold">
+                        {it.number}. {it.question}
+                      </p>
+                      <p className="mt-0.5 opacity-90">
+                        Tanlagan: {it.chosenText}
+                        {!it.ok ? ` · To‘g‘ri: ${it.correctText}` : ""}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
-            <div className="text-right text-xs">
-              <p className={cn("font-semibold", r.passed ? "text-emerald-700" : r.passed === false ? "text-rose-700" : "text-foreground")}>
-                {r.score != null ? `${r.score}%` : ATTEST_STATUS_LABEL[r.status]}
-              </p>
-              <p className="text-muted-foreground">
-                {r.status === "in_progress" && r.remainingSec != null
-                  ? `${Math.ceil(r.remainingSec / 60)} daq qoldi · ${r.answeredCount}/${r.total}`
-                  : r.attemptsCount
-                    ? `${r.attemptsCount}-urinish`
-                    : "—"}
-                {r.retakeAllowed ? " · qayta ruxsat" : ""}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {r.status === "in_progress" && r.attemptId ? (
-                <Button size="sm" variant="outline" className="h-8" disabled={finish.isPending} onClick={() => void act(() => finish.mutateAsync(r.attemptId!), "Yakunlandi")}>Yakunlash</Button>
-              ) : null}
-              {r.status !== "not_started" && r.status !== "in_progress" ? (
-                <Button size="sm" variant="outline" className="h-8" disabled={retake.isPending} onClick={() => void act(() => retake.mutateAsync({ examId, userId: r.userId }), "Qayta topshirishga ruxsat berildi")}>Qayta</Button>
-              ) : null}
-              {r.status === "annulled" && r.attemptId ? (
-                <Button size="sm" variant="outline" className="h-8" onClick={() => void act(() => restore.mutateAsync(r.attemptId!), "Natija tiklandi")}>Tiklash</Button>
-              ) : null}
-              {r.attemptId && r.status !== "annulled" ? (
-                <Button size="sm" variant="ghost" className="h-8 text-rose-600" onClick={() => { setReason(""); setAnnulFor(r); }}>Bekor</Button>
-              ) : null}
-            </div>
-          </div>
-        ))}
+          );
+        })}
         {!rows.length ? <p className="py-8 text-center text-sm text-muted-foreground">Hech kim topilmadi</p> : null}
       </div>
 
@@ -639,7 +818,9 @@ function ResultsBoard({ track }: { track: AttestTrack }) {
         </table>
         {!rows.length ? <p className="py-8 text-center text-sm text-muted-foreground">Natija topilmadi</p> : null}
       </div>
-      <p className="text-[11px] text-muted-foreground">Excelda telefon, GPS aniqligi, bekor sababi va test oynasi ham bor. PDF joriy filtrlangan jadvalni yuklaydi.</p>
+      <p className="text-[11px] text-muted-foreground">
+        Excelda foiz, to‘g‘ri/noto‘g‘ri, telefon, GPS va bekor sababi bor. Bitta atestatsiya «Natija» orqali ochilsa — har bir javob ham Excelda chiqadi.
+      </p>
     </div>
   );
 }
@@ -659,6 +840,7 @@ export default function AtestatsiyaAdminPage() {
     attempt: AttestLearnerAttempt;
     serverNow: string;
     examId: number;
+    practiceMeta: { questionOrder?: string[]; optionOrders?: Record<string, number[]> };
   } | null>(null);
   const [trial, setTrial] = useState<{
     title: string;
@@ -690,7 +872,16 @@ export default function AtestatsiyaAdminPage() {
     try {
       const res = await startAttestPreview(exam.id);
       setTrial(null);
-      setPractice({ title: exam.title, attempt: res.attempt, serverNow: res.serverNow, examId: exam.id });
+      setPractice({
+        title: exam.title,
+        attempt: res.attempt,
+        serverNow: res.serverNow,
+        examId: exam.id,
+        practiceMeta: {
+          questionOrder: (res.attempt.questions || []).map((q) => q.id),
+          optionOrders: res.optionOrders,
+        },
+      });
     } catch (err) {
       toast({ title: "Test ochilmadi", description: err instanceof Error ? err.message : "", variant: "destructive" });
     } finally {
@@ -699,12 +890,13 @@ export default function AtestatsiyaAdminPage() {
   };
 
   return (
-    <div className="h-full min-h-0 overflow-y-auto">
+    <div className="h-full min-h-0 overflow-y-auto bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
       {practice ? (
         <ExamRunner
           attempt={practice.attempt}
           serverNow={practice.serverNow}
           practiceExamId={practice.examId}
+          practiceMeta={practice.practiceMeta}
           onDone={(result) => {
             const title = practice.title;
             setPractice(null);
@@ -726,9 +918,9 @@ export default function AtestatsiyaAdminPage() {
                 <BadgeCheck className="h-6 w-6" />
               </span>
               <div>
-                <h1 className="text-xl font-bold sm:text-2xl">Atestatsiya joylash</h1>
+                <h1 className="text-xl font-bold sm:text-2xl">Atestatsiya</h1>
                 <p className="mt-1 max-w-xl text-sm opacity-80">
-                  Stajyor, farmasevt va mudir uchun alohida test. Joy, vaqt va davomiylikni belgilang, natijalarni jonli kuzating.
+                  Muddat, avto davomiylik, har biriga nechta savol, tasodifiy tartib — natija foizi va Excel to‘liq.
                 </p>
               </div>
             </div>
@@ -742,7 +934,17 @@ export default function AtestatsiyaAdminPage() {
           {ATTESTATSIYA_TRACKS.map((t) => {
             const c = counts.get(t.key);
             return (
-              <button key={t.key} type="button" onClick={() => setTrack(t.key)} className={cn("rounded-2xl border p-3 text-left", track === t.key ? "border-[#2AABEE] bg-[#2AABEE]/10" : "border-border bg-card")}>
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTrack(t.key)}
+                className={cn(
+                  "rounded-2xl border p-3 text-left transition",
+                  track === t.key
+                    ? "border-sky-500 bg-sky-50 shadow-sm dark:bg-sky-950/40"
+                    : "border-slate-200 bg-white dark:border-white/10 dark:bg-slate-950",
+                )}
+              >
                 <p className="text-sm font-bold">{t.label}</p>
                 <p className="text-xs text-muted-foreground">{c ? `${c.open} ochiq / ${c.total}` : "—"}</p>
               </button>
@@ -784,7 +986,7 @@ export default function AtestatsiyaAdminPage() {
             {editing ? (
               <ExamEditor key={editing.id ?? "new"} track={track} initial={editing} onClose={() => setEditing(null)} />
             ) : (
-              <Button className="h-11 w-full rounded-2xl bg-[#2AABEE] hover:bg-[#229ED9]" onClick={() => setEditing(emptyDraft())}>
+              <Button className="h-11 w-full rounded-2xl bg-sky-600 text-base font-semibold hover:bg-sky-700" onClick={() => setEditing(emptyDraft())}>
                 <Plus className="mr-1.5 h-4 w-4" /> Yangi atestatsiya
               </Button>
             )}
@@ -810,73 +1012,118 @@ export default function AtestatsiyaAdminPage() {
             ) : manage.isError ? (
               <p className="rounded-2xl bg-red-50 p-4 text-sm text-red-700">{(manage.error as Error).message}</p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {(manage.data?.exams ?? []).map((e) => (
-                  <div key={e.id} className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card p-3 sm:p-4">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-semibold">{e.title}</p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {formatAttestDt(e.startsAt)} – {formatAttestDt(e.endsAt)} · {e.durationMinutes} daq · {e.locationMode === "office" ? "Ofis" : "Filial"} · {e.questions.length} savol · o‘tish {e.passScore}%
-                      </p>
-                      <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
-                        <span className={cn("rounded-full px-2 py-0.5 font-semibold", e.window === "open" ? "bg-sky-100 text-sky-800" : e.window === "upcoming" ? "bg-slate-100 text-slate-700" : "bg-muted text-muted-foreground")}>
-                          {e.window === "open" ? "Muddat ichida" : e.window === "upcoming" ? "Muddat hali boshlanmagan" : "Muddat tugagan"}
-                        </span>
-                        <span className="text-muted-foreground">{e.stats.passed}/{e.stats.finished} o‘tdi · {e.stats.inProgress} ishlayapti</span>
-                      </p>
-                      <div className={cn("mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2", e.published ? "bg-emerald-50" : "bg-amber-50")}>
-                        <div className="min-w-0">
-                          <p className={cn("text-xs font-semibold", e.published ? "text-emerald-800" : "text-amber-900")}>
-                            {e.published ? "E’lon qilingan" : "E’lon qilinmagan"}
-                          </p>
-                          <p className="text-[11px] leading-snug text-muted-foreground">
-                            {e.published
-                              ? `Test ${audienceTo(track)} ko‘rinadi. Muddat ichida topshirishlari mumkin.`
-                              : `Xodimlarga chiqmaydi. Sinab ko‘rish mumkin — natija saqlanmaydi va ro‘yxatga tushmaydi.`}
-                          </p>
+                  <div
+                    key={e.id}
+                    className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-950"
+                  >
+                    <div className="flex flex-wrap items-start gap-3 p-4 sm:p-5">
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-base font-extrabold tracking-tight text-slate-900 dark:text-white">{e.title}</p>
+                          <span
+                            className={cn(
+                              "rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
+                              e.window === "open"
+                                ? "bg-sky-100 text-sky-800"
+                                : e.window === "upcoming"
+                                  ? "bg-slate-100 text-slate-700"
+                                  : "bg-slate-100 text-slate-500",
+                            )}
+                          >
+                            {e.window === "open" ? "Muddat ichida" : e.window === "upcoming" ? "Hali ochilmagan" : "Tugagan"}
+                          </span>
                         </div>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={e.published ? "outline" : "default"}
-                          className={cn("h-8 shrink-0", !e.published && "bg-amber-600 text-white hover:bg-amber-700")}
-                          disabled={publish.isPending}
-                          onClick={() =>
-                            void publish
-                              .mutateAsync({ id: e.id, published: !e.published })
-                              .then(() =>
-                                toast({
-                                  title: e.published ? "E’lon yopildi" : "E’lon qilindi",
-                                  description: e.published
-                                    ? "Test yana faqat trenerda. Xodimlar ko‘rmaydi."
-                                    : `Test ${audienceTo(track)} ko‘rinadi.`,
-                                }),
-                              )
-                              .catch((err: Error) => toast({ title: err.message, variant: "destructive" }))
-                          }
+                        <p className="text-[12px] leading-relaxed text-slate-500">
+                          {formatAttestDt(e.startsAt)} – {formatAttestDt(e.endsAt)}
+                          <span className="mx-1.5 text-slate-300">·</span>
+                          {e.durationMinutes} daq
+                          <span className="mx-1.5 text-slate-300">·</span>
+                          {e.locationMode === "office" ? "Ofis" : "Filial"}
+                          <span className="mx-1.5 text-slate-300">·</span>
+                          o‘tish {e.passScore}%
+                        </p>
+                        <div className="flex flex-wrap gap-2 text-[11px]">
+                          <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-semibold text-slate-700 dark:bg-white/10 dark:text-slate-200">
+                            Bazada {e.poolCount} savol
+                          </span>
+                          <span className="rounded-lg bg-sky-100 px-2.5 py-1 font-semibold text-sky-800 dark:bg-sky-950 dark:text-sky-200">
+                            Har biriga {e.askCount} ta ko‘rinadi
+                          </span>
+                          <span className="rounded-lg bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
+                            {e.stats.passed}/{e.stats.finished} o‘tdi · {e.stats.inProgress} ishlayapti
+                          </span>
+                        </div>
+                        <div
+                          className={cn(
+                            "flex flex-wrap items-center justify-between gap-2 rounded-2xl px-3 py-2.5",
+                            e.published ? "bg-emerald-50" : "bg-amber-50",
+                          )}
                         >
-                          {e.published ? "E’lonni yopish" : "E’lon qilish"}
-                        </Button>
+                          <div className="min-w-0">
+                            <p className={cn("text-xs font-semibold", e.published ? "text-emerald-800" : "text-amber-900")}>
+                              {e.published ? "E’lon qilingan" : "E’lon qilinmagan"}
+                            </p>
+                            <p className="text-[11px] leading-snug text-slate-600">
+                              {e.published
+                                ? `Test ${audienceTo(track)} ko‘rinadi.`
+                                : "Xodimlarga chiqmaydi. Sinab ko‘rish mumkin — natija saqlanmaydi."}
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={e.published ? "outline" : "default"}
+                            className={cn("h-8 shrink-0", !e.published && "bg-amber-600 text-white hover:bg-amber-700")}
+                            disabled={publish.isPending}
+                            onClick={() =>
+                              void publish
+                                .mutateAsync({ id: e.id, published: !e.published })
+                                .then(() =>
+                                  toast({
+                                    title: e.published ? "E’lon yopildi" : "E’lon qilindi",
+                                    description: e.published
+                                      ? "Test yana faqat trenerda."
+                                      : `Test ${audienceTo(track)} ko‘rinadi.`,
+                                  }),
+                                )
+                                .catch((err: Error) => toast({ title: err.message, variant: "destructive" }))
+                            }
+                          >
+                            {e.published ? "E’lonni yopish" : "E’lon qilish"}
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8"
-                        disabled={tryingId === e.id || !e.questions.length}
-                        onClick={() => void beginTrial(e)}
-                      >
-                        {tryingId === e.id ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-1 h-3.5 w-3.5" />}
-                        Sinab ko‘rish
-                      </Button>
-                      <Button size="sm" variant="outline" className="h-8" onClick={() => setMonitorId(e.id)}><BarChart3 className="mr-1 h-3.5 w-3.5" /> Natija</Button>
-                      <Button size="icon" variant="ghost" onClick={() => setEditing(fromExam(e))} aria-label="Tahrirlash"><Pencil className="h-4 w-4" /></Button>
-                      <Button size="icon" variant="ghost" className="text-red-600" onClick={() => setToDelete(e)} aria-label="O‘chirish"><Trash2 className="h-4 w-4" /></Button>
+                      <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto sm:flex-col sm:items-stretch">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-9"
+                          disabled={tryingId === e.id || !e.questions.length}
+                          onClick={() => void beginTrial(e)}
+                        >
+                          {tryingId === e.id ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-1 h-3.5 w-3.5" />}
+                          Sinab ko‘rish
+                        </Button>
+                        <Button size="sm" variant="outline" className="h-9" onClick={() => setMonitorId(e.id)}>
+                          <BarChart3 className="mr-1 h-3.5 w-3.5" /> Natija
+                        </Button>
+                        <div className="flex gap-1">
+                          <Button size="icon" variant="ghost" onClick={() => setEditing(fromExam(e))} aria-label="Tahrirlash">
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button size="icon" variant="ghost" className="text-red-600" onClick={() => setToDelete(e)} aria-label="O‘chirish">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ))}
-                {!manage.data?.exams.length ? <p className="py-8 text-center text-sm text-muted-foreground">Bu yo‘nalishda atestatsiya yo‘q.</p> : null}
+                {!manage.data?.exams.length ? (
+                  <p className="py-10 text-center text-sm text-slate-500">Bu yo‘nalishda atestatsiya yo‘q.</p>
+                ) : null}
               </div>
             )}
           </>

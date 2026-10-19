@@ -73,23 +73,39 @@ function isFinished(a: Attempt) {
   return a.status === "submitted" || a.status === "expired";
 }
 
-function grade(exam: Exam, answers: Record<string, number>) {
-  const qs = exam.questionsJson || [];
-  const total = qs.length;
+function grade(exam: Exam, answers: Record<string, number>, questionIds?: string[] | null) {
+  const byId = new Map((exam.questionsJson || []).map((q) => [q.id, q]));
+  const ids =
+    questionIds && questionIds.length
+      ? questionIds.filter((id) => byId.has(id))
+      : (exam.questionsJson || []).map((q) => q.id);
+  const total = ids.length;
   let correct = 0;
-  for (const q of qs) if (answers[q.id] === q.correctIndex) correct += 1;
+  for (const id of ids) {
+    const q = byId.get(id)!;
+    if (answers[id] === q.correctIndex) correct += 1;
+  }
   const score = total ? Math.round((correct / total) * 100) : 0;
   return { total, correct, score, passed: score >= (exam.passScore || 50) };
 }
 
-function sanitizeAnswers(exam: Exam, raw: unknown): Record<string, number> {
+/** Client ko‘rsatilgan (aralashtirilgan) indeks yuboradi → asl indeksga o‘tkazamiz */
+function sanitizeAnswers(
+  exam: Exam,
+  raw: unknown,
+  optionOrders?: Record<string, number[]> | null,
+): Record<string, number> {
   const out: Record<string, number> = {};
   if (!raw || typeof raw !== "object") return out;
   const byId = new Map((exam.questionsJson || []).map((q) => [q.id, q]));
   for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
     const q = byId.get(k);
+    if (!q) continue;
     const n = Number(v);
-    if (q && Number.isInteger(n) && n >= 0 && n < q.options.length) out[k] = n;
+    const perm = optionOrders?.[k];
+    const max = perm?.length || q.options.length;
+    if (!Number.isInteger(n) || n < 0 || n >= max) continue;
+    out[k] = perm ? (perm[n] ?? n) : n;
   }
   return out;
 }
@@ -103,6 +119,25 @@ function shuffled<T>(arr: T[]): T[] {
   return a;
 }
 
+/** Pool dan N ta tasodifiy savol + (ixtiyoriy) variant aralashtirish */
+function buildAttemptPaper(exam: Exam): { order: string[]; optionOrders: Record<string, number[]> } {
+  const all = (exam.questionsJson || []).map((q) => q.id);
+  const want = Math.round(Number(exam.questionsPerAttempt) || 0);
+  const take = want > 0 && want < all.length ? want : all.length;
+  const pool = exam.shuffleQuestions !== false || take < all.length ? shuffled(all) : [...all];
+  const order = pool.slice(0, take);
+  const optionOrders: Record<string, number[]> = {};
+  const byId = new Map((exam.questionsJson || []).map((q) => [q.id, q]));
+  const shuffleOpts = exam.shuffleOptions !== false;
+  for (const id of order) {
+    const q = byId.get(id);
+    if (!q) continue;
+    const idxs = q.options.map((_, i) => i);
+    optionOrders[id] = shuffleOpts ? shuffled(idxs) : idxs;
+  }
+  return { order, optionOrders };
+}
+
 /** Vaqti tugagan, lekin yakunlanmagan urinishlarni saqlangan javoblar bilan yopadi */
 async function finalizeExpired(attempts: Attempt[], examById: Map<number, Exam>): Promise<Attempt[]> {
   const now = Date.now();
@@ -113,7 +148,7 @@ async function finalizeExpired(attempts: Attempt[], examById: Map<number, Exam>)
       out.push(a);
       continue;
     }
-    const g = grade(exam, a.answersJson || {});
+    const g = grade(exam, a.answersJson || {}, a.questionOrder);
     const [upd] = await db
       .update(attestatsiyaAttemptsTable)
       .set({
@@ -173,10 +208,28 @@ function learnerAttempt(a: Attempt, exam: Exam, withQuestions: boolean) {
     questions: withQuestions
       ? order.map((id) => {
           const q = byId.get(id)!;
-          return { id: q.id, text: q.text, options: q.options };
+          const perm = (a.optionOrders || {})[id];
+          const options = perm?.length ? perm.map((i) => q.options[i]!).filter((x) => x != null) : q.options;
+          return { id: q.id, text: q.text, options };
         })
       : undefined,
-    answers: withQuestions ? a.answersJson || {} : undefined,
+    /** Javoblar asl indeksda saqlanadi — UI uchun ko‘rsatilgan indeksga qayta map */
+    answers: withQuestions
+      ? (() => {
+          const raw = a.answersJson || {};
+          const mapped: Record<string, number> = {};
+          for (const [qid, orig] of Object.entries(raw)) {
+            const perm = (a.optionOrders || {})[qid];
+            if (!perm?.length) {
+              mapped[qid] = orig;
+              continue;
+            }
+            const display = perm.indexOf(orig);
+            if (display >= 0) mapped[qid] = display;
+          }
+          return mapped;
+        })()
+      : undefined,
   };
 }
 
@@ -246,7 +299,12 @@ router.get("/atestatsiya/me", requireAuth, async (req: AuthRequest, res): Promis
         description: e.description,
         durationMinutes: e.durationMinutes,
         passScore: e.passScore,
-        questionCount: (e.questionsJson || []).length,
+        questionCount: (() => {
+          const pool = (e.questionsJson || []).length;
+          const n = Math.round(Number(e.questionsPerAttempt) || 0);
+          return n > 0 && n < pool ? n : pool;
+        })(),
+        poolCount: (e.questionsJson || []).length,
         locationMode: e.locationMode,
         locationTarget:
           e.locationMode === "office" ? "Asosiy ofis" : branch?.label || "O‘z filialingiz",
@@ -366,7 +424,7 @@ router.post("/atestatsiya/me/exams/:id/start", requireAuth, async (req: AuthRequ
 
   const now = new Date();
   const deadline = new Date(Math.min(now.getTime() + exam.durationMinutes * 60_000, exam.endsAt.getTime()));
-  const ids = (exam.questionsJson || []).map((q) => q.id);
+  const paper = buildAttemptPaper(exam);
   const body = (req.body || {}) as Record<string, unknown>;
   const [created] = await db
     .insert(attestatsiyaAttemptsTable)
@@ -375,11 +433,12 @@ router.post("/atestatsiya/me/exams/:id/start", requireAuth, async (req: AuthRequ
       userId: req.userId!,
       attemptNo: (latestOf(mine)?.attemptNo ?? 0) + 1,
       status: "in_progress",
-      questionOrder: exam.shuffleQuestions ? shuffled(ids) : ids,
+      questionOrder: paper.order,
+      optionOrders: paper.optionOrders,
       answersJson: {},
       startedAt: now,
       deadlineAt: deadline,
-      total: ids.length,
+      total: paper.order.length,
       locationMode: exam.locationMode,
       locationLabel: geo.label,
       branchId: geo.branchId,
@@ -414,7 +473,12 @@ router.post("/atestatsiya/me/exams/:id/start", requireAuth, async (req: AuthRequ
   res.json({ attempt: learnerAttempt(attempt, exam, true), serverNow: new Date().toISOString(), resumed: !created });
 });
 
-function practiceAttempt(exam: Exam, withQuestions: boolean, order: string[]) {
+function practiceAttempt(
+  exam: Exam,
+  withQuestions: boolean,
+  order: string[],
+  optionOrders: Record<string, number[]>,
+) {
   const now = new Date();
   const deadline = new Date(now.getTime() + exam.durationMinutes * 60_000);
   const byId = new Map((exam.questionsJson || []).map((q) => [q.id, q]));
@@ -438,7 +502,11 @@ function practiceAttempt(exam: Exam, withQuestions: boolean, order: string[]) {
       ? order
           .map((id) => byId.get(id))
           .filter((q): q is NonNullable<typeof q> => Boolean(q))
-          .map((q) => ({ id: q.id, text: q.text, options: q.options }))
+          .map((q) => {
+            const perm = optionOrders[q.id];
+            const options = perm?.length ? perm.map((i) => q.options[i]!).filter((x) => x != null) : q.options;
+            return { id: q.id, text: q.text, options };
+          })
       : undefined,
     answers: {} as Record<string, number>,
   };
@@ -453,14 +521,14 @@ router.post("/atestatsiya/preview/exams/:id/start", requireAuth, async (req: Aut
     res.status(404).json({ error: "Test topilmadi" });
     return;
   }
-  const ids = (exam.questionsJson || []).map((q) => q.id);
-  if (!ids.length) {
+  if (!(exam.questionsJson || []).length) {
     res.status(409).json({ error: "Testda savollar yo‘q" });
     return;
   }
-  const order = exam.shuffleQuestions ? shuffled(ids) : ids;
+  const paper = buildAttemptPaper(exam);
   res.json({
-    attempt: practiceAttempt(exam, true, order),
+    attempt: practiceAttempt(exam, true, paper.order, paper.optionOrders),
+    optionOrders: paper.optionOrders,
     serverNow: new Date().toISOString(),
     practice: true,
   });
@@ -474,8 +542,15 @@ router.post("/atestatsiya/preview/exams/:id/score", requireAuth, async (req: Aut
     res.status(404).json({ error: "Test topilmadi" });
     return;
   }
-  const answers = sanitizeAnswers(exam, req.body?.answers);
-  const g = grade(exam, answers);
+  const optionOrders =
+    req.body?.optionOrders && typeof req.body.optionOrders === "object"
+      ? (req.body.optionOrders as Record<string, number[]>)
+      : {};
+  const order = Array.isArray(req.body?.questionOrder)
+    ? (req.body.questionOrder as string[]).filter((id) => typeof id === "string")
+    : (exam.questionsJson || []).map((q) => q.id);
+  const answers = sanitizeAnswers(exam, req.body?.answers, optionOrders);
+  const g = grade(exam, answers, order);
   const now = new Date().toISOString();
   res.json({
     attempt: {
@@ -527,7 +602,10 @@ router.post("/atestatsiya/me/attempts/:id/progress", requireAuth, async (req: Au
     res.status(409).json({ error: "Vaqt tugagan", code: "closed" });
     return;
   }
-  const answers = { ...(a.answersJson || {}), ...sanitizeAnswers(exam, req.body?.answers) };
+  const answers = {
+    ...(a.answersJson || {}),
+    ...sanitizeAnswers(exam, req.body?.answers, a.optionOrders),
+  };
   await db
     .update(attestatsiyaAttemptsTable)
     .set({ answersJson: answers, focusLost: focusValue(req.body?.focusLost, a.focusLost), updatedAt: new Date() })
@@ -544,8 +622,10 @@ router.post("/atestatsiya/me/attempts/:id/submit", requireAuth, async (req: Auth
     return;
   }
   const late = Date.now() > a.deadlineAt.getTime() + SUBMIT_GRACE_MS;
-  const answers = late ? a.answersJson || {} : { ...(a.answersJson || {}), ...sanitizeAnswers(exam, req.body?.answers) };
-  const g = grade(exam, answers);
+  const answers = late
+    ? a.answersJson || {}
+    : { ...(a.answersJson || {}), ...sanitizeAnswers(exam, req.body?.answers, a.optionOrders) };
+  const g = grade(exam, answers, a.questionOrder);
   const [upd] = await db
     .update(attestatsiyaAttemptsTable)
     .set({
@@ -574,10 +654,12 @@ type ExamInput = {
   questionsJson: AttestatsiyaQuestionRow[];
   passScore: number;
   durationMinutes: number;
+  questionsPerAttempt: number | null;
   locationMode: "branch" | "office";
   startsAt: Date;
   endsAt: Date;
   shuffleQuestions: boolean;
+  shuffleOptions: boolean;
   showResult: boolean;
   published: boolean;
 };
@@ -610,6 +692,16 @@ function parseExamBody(body: Record<string, unknown> | undefined): ExamInput | {
   if (!Number.isFinite(durationMinutes) || durationMinutes < 1 || durationMinutes > 600) {
     return { error: "Test davomiyligi 1–600 daqiqa bo‘lsin" };
   }
+  const rawAsk = body?.questionsPerAttempt;
+  let questionsPerAttempt: number | null = null;
+  if (rawAsk != null && String(rawAsk).trim() !== "") {
+    const n = Math.round(Number(rawAsk));
+    if (!Number.isFinite(n) || n < 1) return { error: "Har bir xodimga ko‘rinadigan savol soni 1 dan katta bo‘lsin" };
+    if (n > questionsJson.length) {
+      return { error: `Har biriga ko‘rinadigan savol soni pooldan (${questionsJson.length}) oshmasin` };
+    }
+    questionsPerAttempt = n === questionsJson.length ? null : n;
+  }
   const locationMode = body?.locationMode === "office" ? "office" : body?.locationMode === "branch" ? "branch" : null;
   if (!locationMode) return { error: "Joyni tanlang: filial yoki ofis" };
 
@@ -627,16 +719,20 @@ function parseExamBody(body: Record<string, unknown> | undefined): ExamInput | {
     questionsJson,
     passScore,
     durationMinutes,
+    questionsPerAttempt,
     locationMode,
     startsAt,
     endsAt,
     shuffleQuestions: body?.shuffleQuestions !== false,
+    shuffleOptions: body?.shuffleOptions !== false,
     showResult: body?.showResult !== false,
     published: body?.published !== false,
   };
 }
 
 function manageExam(e: Exam) {
+  const pool = (e.questionsJson || []).length;
+  const ask = Math.round(Number(e.questionsPerAttempt) || 0);
   return {
     id: e.id,
     track: e.track,
@@ -645,10 +741,14 @@ function manageExam(e: Exam) {
     questions: e.questionsJson || [],
     passScore: e.passScore,
     durationMinutes: e.durationMinutes,
+    questionsPerAttempt: ask > 0 && ask < pool ? ask : null,
+    poolCount: pool,
+    askCount: ask > 0 && ask < pool ? ask : pool,
     locationMode: e.locationMode,
     startsAt: e.startsAt.toISOString(),
     endsAt: e.endsAt.toISOString(),
     shuffleQuestions: e.shuffleQuestions,
+    shuffleOptions: e.shuffleOptions !== false,
     showResult: e.showResult,
     published: e.published,
     window: windowState(e),
@@ -1021,6 +1121,37 @@ router.get("/atestatsiya/manage/:id/monitor", requireAuth, async (req: AuthReque
     };
   });
 
+  const byId = new Map((exam.questionsJson || []).map((q) => [q.id, q]));
+  const nameById = new Map(people.map((p) => [p.id, p.fullName]));
+  const answerSheets = finished.map((a) => {
+    const order = (a.questionOrder?.length ? a.questionOrder : (exam.questionsJson || []).map((q) => q.id)).filter((id) =>
+      byId.has(id),
+    );
+    return {
+      userId: a.userId,
+      fullName: nameById.get(a.userId) || `ID ${a.userId}`,
+      score: a.score,
+      correct: a.correct,
+      total: a.total || order.length,
+      passed: a.passed,
+      items: order.map((qid, i) => {
+        const q = byId.get(qid)!;
+        const chosen = (a.answersJson || {})[qid];
+        const ok = chosen === q.correctIndex;
+        return {
+          number: i + 1,
+          questionId: q.id,
+          question: q.text,
+          chosenIndex: chosen ?? null,
+          chosenText: chosen != null && q.options[chosen] != null ? q.options[chosen]! : "—",
+          correctIndex: q.correctIndex,
+          correctText: q.options[q.correctIndex] ?? "—",
+          ok,
+        };
+      }),
+    };
+  });
+
   const branchMap = new Map<string, { label: string; total: number; finished: number; passed: number; sum: number }>();
   for (const r of rows) {
     const key = r.branchLabel || (exam.locationMode === "office" ? "Filial ko‘rsatilmagan" : "Filialsiz");
@@ -1056,6 +1187,7 @@ router.get("/atestatsiya/manage/:id/monitor", requireAuth, async (req: AuthReque
       buckets,
     },
     questionStats,
+    answerSheets,
     branches: [...branchMap.values()]
       .map((b) => ({
         label: b.label,
@@ -1096,7 +1228,7 @@ router.post("/atestatsiya/manage/attempts/:id/annul", requireAuth, async (req: A
   const reason = String(req.body?.reason ?? "").trim().slice(0, 400) || null;
   let base = a;
   if (a.status === "in_progress") {
-    const g = grade(exam, a.answersJson || {});
+    const g = grade(exam, a.answersJson || {}, a.questionOrder);
     base = { ...a, score: g.score, correct: g.correct, total: g.total, passed: g.passed, submittedAt: new Date() };
   }
   await db
@@ -1150,7 +1282,7 @@ router.post("/atestatsiya/manage/attempts/:id/finish", requireAuth, async (req: 
     res.status(409).json({ error: "Urinish allaqachon yakunlangan" });
     return;
   }
-  const g = grade(exam, a.answersJson || {});
+  const g = grade(exam, a.answersJson || {}, a.questionOrder);
   await db
     .update(attestatsiyaAttemptsTable)
     .set({

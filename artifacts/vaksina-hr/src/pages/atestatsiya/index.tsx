@@ -66,11 +66,13 @@ export function ExamRunner({
   serverNow,
   onDone,
   practiceExamId,
+  practiceMeta,
 }: {
   attempt: AttestLearnerAttempt;
   serverNow: string;
   onDone: (result: AttestLearnerAttempt) => void;
   practiceExamId?: number | null;
+  practiceMeta?: { questionOrder?: string[]; optionOrders?: Record<string, number[]> } | null;
 }) {
   const { toast } = useToast();
   const questions = attempt.questions || [];
@@ -121,7 +123,10 @@ export function ExamRunner({
     setSubmitting(true);
     try {
       const res = practiceExamId
-        ? await scoreAttestPreview(practiceExamId, answersRef.current)
+        ? await scoreAttestPreview(practiceExamId, answersRef.current, {
+            questionOrder: practiceMeta?.questionOrder || questions.map((q) => q.id),
+            optionOrders: practiceMeta?.optionOrders,
+          })
         : await submitAttest(attempt.id, answersRef.current, focusLost.current);
       onDone(res.attempt);
     } catch (e) {
@@ -385,6 +390,7 @@ export default function AtestatsiyaPage() {
     attempt: AttestLearnerAttempt;
     serverNow: string;
     practiceExamId?: number | null;
+    practiceMeta?: { questionOrder?: string[]; optionOrders?: Record<string, number[]> };
   } | null>(null);
 
   if (!isLearner && !isManager) {
@@ -402,7 +408,15 @@ export default function AtestatsiyaPage() {
     try {
       if (data?.preview) {
         const res = await startAttestPreview(exam.id);
-        setRunner({ attempt: res.attempt, serverNow: res.serverNow, practiceExamId: exam.id });
+        setRunner({
+          attempt: res.attempt,
+          serverNow: res.serverNow,
+          practiceExamId: exam.id,
+          practiceMeta: {
+            questionOrder: (res.attempt.questions || []).map((q) => q.id),
+            optionOrders: res.optionOrders,
+          },
+        });
         return;
       }
       const gps = await readGps();
@@ -422,6 +436,7 @@ export default function AtestatsiyaPage() {
           attempt={runner.attempt}
           serverNow={runner.serverNow}
           practiceExamId={runner.practiceExamId}
+          practiceMeta={runner.practiceMeta}
           onDone={(result) => {
             const practice = Boolean(runner.practiceExamId);
             setRunner(null);
@@ -542,7 +557,14 @@ export default function AtestatsiyaPage() {
                     { icon: Clock, label: "Vaqt", value: `${formatAttestDt(exam.startsAt)} – ${formatAttestDt(exam.endsAt)}` },
                     { icon: Timer, label: "Davomiylik", value: `${exam.durationMinutes} daqiqa` },
                     { icon: MapPin, label: exam.locationMode === "office" ? "Ofis" : "Filial", value: exam.locationTarget },
-                    { icon: Award, label: "O‘tish", value: `${exam.passScore}% · ${exam.questionCount} savol` },
+                    {
+                      icon: Award,
+                      label: "O‘tish / savol",
+                      value:
+                        exam.poolCount && exam.poolCount > exam.questionCount
+                          ? `${exam.passScore}% · sizga ${exam.questionCount}/${exam.poolCount}`
+                          : `${exam.passScore}% · ${exam.questionCount} savol`,
+                    },
                   ].map((x) => (
                     <div key={x.label} className="rounded-xl bg-muted/50 px-2.5 py-2">
                       <p className="flex items-center gap-1 text-muted-foreground">

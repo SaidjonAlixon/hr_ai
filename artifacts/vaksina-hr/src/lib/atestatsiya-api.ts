@@ -37,6 +37,7 @@ export type AttestExamCard = {
   durationMinutes: number;
   passScore: number;
   questionCount: number;
+  poolCount?: number;
   locationMode: "branch" | "office";
   locationTarget: string;
   startsAt: string;
@@ -66,10 +67,13 @@ export type AttestExamInput = {
   questions: AttestQuestion[];
   passScore: number;
   durationMinutes: number;
+  /** Pool dan har bir xodimga nechta savol (null = hammasi) */
+  questionsPerAttempt: number | null;
   locationMode: "branch" | "office";
   startsAt: string;
   endsAt: string;
   shuffleQuestions: boolean;
+  shuffleOptions: boolean;
   showResult: boolean;
   published: boolean;
 };
@@ -78,6 +82,8 @@ export type AttestManageExam = Omit<AttestExamInput, "track" | "questions"> & {
   id: number;
   track: AttestTrack;
   questions: AttestQuestion[];
+  poolCount: number;
+  askCount: number;
   window: AttestWindow;
   updatedAt: string;
   stats: { started: number; inProgress: number; finished: number; passed: number; annulled: number; hasAttempts: boolean };
@@ -142,6 +148,24 @@ export type AttestMonitor = {
     buckets: Array<{ label: string; count: number }>;
   };
   questionStats: Array<{ number: number; id: string; text: string; answered: number; correct: number; percent: number | null }>;
+  answerSheets: Array<{
+    userId: number;
+    fullName: string;
+    score: number | null;
+    correct: number | null;
+    total: number;
+    passed: boolean | null;
+    items: Array<{
+      number: number;
+      questionId: string;
+      question: string;
+      chosenIndex: number | null;
+      chosenText: string;
+      correctIndex: number;
+      correctText: string;
+      ok: boolean;
+    }>;
+  }>;
   branches: Array<{ label: string; total: number; finished: number; passed: number; avgScore: number | null }>;
   rows: AttestMonitorRow[];
 };
@@ -208,16 +232,29 @@ export function readGps(): Promise<{ latitude: number; longitude: number; accura
 }
 
 export function startAttestPreview(examId: number) {
-  return apiFetch<{ attempt: AttestLearnerAttempt; serverNow: string; practice: boolean }>(
-    `/atestatsiya/preview/exams/${examId}/start`,
-    { method: "POST", body: "{}" },
-  );
+  return apiFetch<{
+    attempt: AttestLearnerAttempt;
+    serverNow: string;
+    practice: boolean;
+    optionOrders?: Record<string, number[]>;
+  }>(`/atestatsiya/preview/exams/${examId}/start`, { method: "POST", body: "{}" });
 }
 
-export function scoreAttestPreview(examId: number, answers: Record<string, number>) {
+export function scoreAttestPreview(
+  examId: number,
+  answers: Record<string, number>,
+  meta?: { questionOrder?: string[]; optionOrders?: Record<string, number[]> },
+) {
   return apiFetch<{ attempt: AttestLearnerAttempt; serverNow: string }>(
     `/atestatsiya/preview/exams/${examId}/score`,
-    { method: "POST", body: JSON.stringify({ answers }) },
+    {
+      method: "POST",
+      body: JSON.stringify({
+        answers,
+        questionOrder: meta?.questionOrder,
+        optionOrders: meta?.optionOrders,
+      }),
+    },
   );
 }
 

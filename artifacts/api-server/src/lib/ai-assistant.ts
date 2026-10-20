@@ -1,10 +1,11 @@
 /**
- * Yordamchi AI — @vaksinahrbot orqali xodimlar bilan suhbat.
+ * Yordamchi AI — @vaksinahrbot orqali suhbat.
  *
- * Qoidalar:
- *  - Platforma bazasidan FAQAT o‘qiydi (davomat, atestatsiya, javob olish, profil).
- *  - Hech qanday o‘zgarishni o‘zi bajarmaydi: amal kerak bo‘lsa «taklif» tayyorlaydi,
- *    admin «Yordamchi AI» bo‘limida tasdiqlasa — shundagina bajariladi va xodimga javob ketadi.
+ * Qoidalar (egasi talabi):
+ *  - XODIMLAR: faqat standart so‘rovlar — o‘z davomati (kirdi-chiqdi), test holati/natijasi,
+ *    javob olish holati, platforma qo‘llanmasi. Chat/vazifa/amal — YO‘Q, taklif ham yaratilmaydi.
+ *  - ADMIN (yagona boshqaruvchi): nima desa — jonli bazadan javob, amal darhol bajariladi
+ *    (test qayta ochish, davomat tuzatish, xabar yuborish), so‘rasa PDF/Excel fayl ham tayyorlab yuboriladi.
  *  - Xodim qaysi tilda / yozuvda (lotin, kirill, rus) yozsa — javob ham o‘shanda.
  *  - Ovozli xabar: eshitolmasligini aytib, yozib yuborishni so‘raydi.
  *  - Parol so‘ramaydi; yuborilsa — ogohlantiradi.
@@ -23,7 +24,8 @@ import {
 import { loadPlatformHelpKnowledge } from "./platform-help-kb";
 import { resolveUserBranches } from "./employee-branch";
 import { logger } from "./logger";
-import { sendMessage, type TelegramMessage } from "./telegram";
+import { sendDocument, sendMessage, type TelegramMessage } from "./telegram";
+import type { AssistantFileRequest } from "./ai-assistant-files";
 
 /* ------------------------------------------------------------------ schema */
 
@@ -102,6 +104,10 @@ export type AiTurnResult = {
     payload: Record<string, unknown>;
     completionText?: string;
   } | null;
+  /** Faqat admin rejimida: tayyorlanadigan fayl so'rovi (PDF/Excel) */
+  file?: AssistantFileRequest | null;
+  /** Web chat uchun tayyor fayl (base64) — Telegramda to'g'ridan-to'g'ri yuboriladi */
+  fileData?: { name: string; mime: string; base64: string } | null;
 };
 
 type ConvRow = {
@@ -650,15 +656,20 @@ async function callAi(opts: {
     "O‘zingni bot deb tanishtirma. Lekin to‘g‘ridan-to‘g‘ri «siz botmisiz / robotmisiz / odammisiz?» deb so‘ralsa, rostini ayt: admin jamoasining AI yordamchisiman, admin nazoratida ishlayman.",
     "PAROL so‘rama va qabul qilma. Login kerak bo‘lsa faqat loginni (parolsiz) so‘ra.",
     opts.adminMode
-      ? "ADMIN REJIMI: suhbatdosh — platformaning egasi (admin). U kimnidir yozib ma’lumot so‘rasa, JONLI BAZADAN to‘liq va aniq javob ber. Biror amal buyursa (testni qayta och, davomatni tuzat, xodimga xabar yubor) va ma’lumot yetarli bo‘lsa — proposal maydoniga amalni yoz, u DARHOL bajariladi (tasdiq kutilmaydi). reply da faqat qisqa izoh yoz («tekshirdim», nima topding) — «bajarildi» qismini tizim natija bilan qo‘shadi. Ma’lumot yetishmasa yoki xodim aniq topilmasa — proposal YARATMA, aniqlashtiruvchi savol ber."
-      : "BAZANI O‘ZGARTIRMA: sen hech qanday o‘zgarish qila olmaysiz. Amal kerak bo‘lsa (davomat tuzatish, testni qayta ochish va h.k.) taklif tayyorla — admin tasdiqlasa bajariladi. Xodimga: muammoni o‘rganib chiqdim, tayyorlab qo‘yaman, admin tasdiqlashi bilan hal bo‘ladi, tez orada javob yozaman — deb umid ber.",
+      ? "ADMIN REJIMI: suhbatdosh — platformaning egasi (admin), u botning yagona boshqaruvchisi. Nima desa — shuni to‘liq bajar: kimnidir yozib ma’lumot so‘rasa, JONLI BAZADAN to‘liq va aniq javob ber. Biror amal buyursa (testni qayta och, davomatni tuzat, xodimga xabar yubor) va ma’lumot yetarli bo‘lsa — proposal maydoniga amalni yoz, u DARHOL bajariladi (tasdiq kutilmaydi). reply da faqat qisqa izoh yoz («tekshirdim», nima topding) — «bajarildi» qismini tizim natija bilan qo‘shadi. Ma’lumot yetishmasa yoki xodim aniq topilmasa — proposal YARATMA, aniqlashtiruvchi savol ber."
+      : "XODIM REJIMI (QAT’IY): sen FAQAT standart so‘rovlarga javob berasan: (1) o‘z davomati — qachon keldim/ketdim, qaysi kuni kelgan-kelmagani; (2) o‘z testlari — ball, o‘tgan/o‘tmagani, jadvali; (3) javob olish so‘rovi holati; (4) platforma qanday ishlatiladi (bilim bazasidan qisqa ko‘rsatma). Boshqa hech narsa QILMA: erkin suhbat/chat, vazifa qabul qilish, ma’lumot o‘zgartirish yoki biror ishni bajarishni va’da qilish TAQIQLANGAN. proposal va file HAR DOIM null bo‘lsin. O‘zgartirish/amal so‘ralsa yoki mavzudan tashqari gap bo‘lsa — xodim yozgan tilda bitta qisqa javob ber: bu ishlarni faqat admin bajaradi, admin bilan bog‘laning; o‘zing esa faqat davomat/test/platforma bo‘yicha standart ma’lumot bera olasan. Boshqa odamlar haqida ma’lumot BERMA.",
+    opts.adminMode
+      ? "FAYL BUYRUG‘I: admin «PDF qilib ber», «Excel qilib ber», «ro‘yxatni fayl qilib yubor» desa — file maydonini to‘ldir va reply da qisqa «Tayyorlayapman» deb yoz (faylni tizim o‘zi yuboradi, «yubordim» deb o‘zing yozma). Tayyor bazaviy datasetlar: employees (barcha xodimlar ro‘yxati), davomat_today, davomat_month, atestatsiya_results. Admin aynan ko‘rib turgan/snapshotdagi jadvalni fayl qilishni so‘rasa — dataset=custom_table qilib columns va rows ni O‘ZING to‘ldir (faqat bazada/suhbatda aniq ko‘ringan faktlar bilan, uydirma qo‘shma)."
+      : "",
     "Noqonuniy/for qalbakilashtirish so‘ralsa (masalan kelmagan kunga davomat yozib berish): rad et, sababini odamdek tushuntir va qonuniy yo‘lni ayt (javob olish so‘rovi, koordinatordan tasdiq). Bunday so‘rov uchun taklif YARATMA.",
-    "Ma’lumot yetishmasa bitta-ikkita aniq savol ber: ism-familiya, filial, sana/vaqt, qanday xato chiqyapti. Hamma ma’lumot yig‘ilgach va xodim aniq amal so‘ragach — proposal yarat.",
+    opts.adminMode
+      ? "Ma’lumot yetishmasa bitta-ikkita aniq savol ber: ism-familiya, filial, sana/vaqt, qanday xato chiqyapti. Hamma ma’lumot yig‘ilgach va admin aniq amal so‘ragach — proposal yarat."
+      : "Standart so‘rovga ma’lumot yetishmasa (masalan qaysi sana nazarda tutilgani) — bitta aniq savol ber. Amal so‘roviga esa savol berma — darhol standart rad javobini ber.",
     "Savol faqat ma’lumot so‘rasa (test qayerdan, qanday ishlanadi, smena, kirish...): bazadagi faktlar + jonli holat asosida to‘liq javob ber, proposal kerak emas.",
     "FAKT QOIDASI (eng muhim): sana, vaqt, ball, holat, filial, test nomi kabi aniq ma’lumotni FAQAT «JONLI BAZA HOLATI»da yozilganidan ol. U yerda yo‘q bo‘lsa — HECH QACHON uydirma (masalan «soat 10:00 da test bor» deb aytma). Buning o‘rniga: «Bazada hozir bunday ma’lumot ko‘rinmayapti, adminga aniqlashtirib beraman» deb ayt. «Jadvalda YO‘Q» deb yozilgan bo‘lsa — test yo‘qligini aniq ayt.",
     "Javob uzunligi: odatda 2–6 jumla, ro‘yxat kerak bo‘lsa qisqa ro‘yxat. Ortiqcha rasmiyatchilik qilma.",
     "",
-    'Faqat JSON qaytar: {"reply":"...","intent":"davomat|atestatsiya|login|javob|smena|savol|boshqa","proposal":null yoki {"kind":"davomat_fix|atestatsiya_retake|account_help|admin_task|notify_user","title":"qisqa sarlavha","summary":"kim, nima, sabab, tekshirilgan faktlar","payload":{"userId":123,"workDate":"2026-10-20","examId":1,"message":"xodimga matn","note":"..."},"completionText":"amal bajarilgach xodimga yuboriladigan yakuniy xabar"}}',
+    'Faqat JSON qaytar: {"reply":"...","intent":"davomat|atestatsiya|login|javob|smena|savol|boshqa","proposal":null yoki {"kind":"davomat_fix|atestatsiya_retake|account_help|admin_task|notify_user","title":"qisqa sarlavha","summary":"kim, nima, sabab, tekshirilgan faktlar","payload":{"userId":123,"workDate":"2026-10-20","examId":1,"message":"xodimga matn","note":"..."},"completionText":"amal bajarilgach xodimga yuboriladigan yakuniy xabar"},"file":null yoki {"format":"pdf"|"excel","dataset":"employees"|"davomat_today"|"davomat_month"|"atestatsiya_results"|"custom_table","title":"fayl sarlavhasi","columns":["ustun"],"rows":[["qiymat"]]}. file FAQAT admin rejimida va faqat admin fayl so‘raganda to‘ldiriladi; xodim rejimida file DOIM null.',
     "davomat_fix payload da iloji bo‘lsa workDate va tuzatiladigan vaqtlarni yoz. atestatsiya_retake da examId ni yoz (bilinmasa summary da test nomini yoz). notify_user da payload.message — xodimga yuboriladigan matn.",
     "",
     opts.snapshot ? `=== JONLI BAZA HOLATI ===\n${opts.snapshot}` : "=== JONLI BAZA: xodim hali aniqlanmadi (ism-familiya/filial so‘ra) ===",
@@ -707,7 +718,27 @@ async function callAi(opts: {
         completionText: p.completionText ? String(p.completionText).slice(0, 1000) : undefined,
       };
     }
-    return { reply: reply.slice(0, 3000), intent: String(parsed.intent || "boshqa").slice(0, 40), proposal };
+    // Fayl so'rovi — FAQAT admin rejimida qabul qilinadi (xodimlarda kod darajasida kesiladi)
+    let file: AssistantFileRequest | null = null;
+    const f = parsed.file as Record<string, unknown> | null;
+    if (opts.adminMode && f && typeof f === "object") {
+      const formats = ["pdf", "excel"];
+      const datasets = ["employees", "davomat_today", "davomat_month", "atestatsiya_results", "custom_table"];
+      const format = formats.includes(String(f.format)) ? (String(f.format) as "pdf" | "excel") : "excel";
+      const dataset = datasets.includes(String(f.dataset))
+        ? (String(f.dataset) as AssistantFileRequest["dataset"])
+        : "custom_table";
+      file = {
+        format,
+        dataset,
+        title: f.title ? String(f.title).slice(0, 120) : undefined,
+        columns: Array.isArray(f.columns) ? f.columns.map((c) => String(c)) : undefined,
+        rows: Array.isArray(f.rows)
+          ? (f.rows as unknown[]).map((r) => (Array.isArray(r) ? r.map((c) => String(c ?? "")) : []))
+          : undefined,
+      };
+    }
+    return { reply: reply.slice(0, 3000), intent: String(parsed.intent || "boshqa").slice(0, 40), proposal, file };
   } catch (err) {
     logger.warn({ err }, "ai-assistant: openai failed");
     return null;
@@ -718,11 +749,11 @@ function fallbackTurn(userText: string, snapshot: string | null, displayName: st
   const cyrl = detectScript(userText) === "cyrl";
   const reply = snapshot
     ? cyrl
-      ? `Тушундим, ${displayName}. Муаммонгизни кўриб чиқяпман — маълумотларни текширдим. Аниқроқ бўлиши учун сана/вақт ва қандай хато чиқаётганини ёзсангиз, тайёрлаб қўяман — админ тасдиқлаши билан ҳал бўлади.`
-      : `Tushundim, ${displayName}. Muammoingizni ko‘rib chiqyapman — ma’lumotlarni tekshirdim. Aniqroq bo‘lishi uchun sana/vaqt va qanday xato chiqayotganini yozsangiz, tayyorlab qo‘yaman — admin tasdiqlashi bilan hal bo‘ladi.`
+      ? `Тушундим, ${displayName}. Мен фақат стандарт сўровларга жавоб бера оламан: давоматингиз (қачон келдингиз/кетдингиз), тестларингиз натижаси ва жадвали, платформадан фойдаланиш бўйича кўрсатма. Масалан: «бугун соат нечида келдим?» деб ёзинг. Ўзгартириш керак бўлса — фақат админ бажаради, админ билан боғланинг.`
+      : `Tushundim, ${displayName}. Men faqat standart so‘rovlarga javob bera olaman: davomatingiz (qachon keldingiz/ketdingiz), testlaringiz natijasi va jadvali, platformadan foydalanish bo‘yicha ko‘rsatma. Masalan: «bugun soat nechida keldim?» deb yozing. O‘zgartirish kerak bo‘lsa — faqat admin bajaradi, admin bilan bog‘laning.`
     : cyrl
-      ? `Салом, ${displayName}! Ёрдам бераман. Аввал исм-фамилиянгиз ва филиалингизни ёзинг, кейин муаммони қисқа ёзинг — текшириб, тайёрлаб қўяман.`
-      : `Salom, ${displayName}! Yordam beraman. Avval ism-familiyangiz va filialingizni yozing, keyin muammoni qisqa yozing — tekshirib, tayyorlab qo‘yaman.`;
+      ? `Салом, ${displayName}! Аввал исм-фамилиянгиз ва филиалингизни ёзинг. Кейин стандарт сўров ёзинг: давоматим, тест натижам ёки платформа бўйича савол.`
+      : `Salom, ${displayName}! Avval ism-familiyangiz va filialingizni yozing. Keyin standart so‘rov yozing: davomatim, test natijam yoki platforma bo‘yicha savol.`;
   return { reply, intent: "boshqa", proposal: null };
 }
 
@@ -923,6 +954,23 @@ export async function handleAiAssistantMessage(
         reply = `${reply}\n\n⚠️ Bajarilmadi: ${rec.error}. Ma’lumotni aniqlashtirib qayta yozing.`;
       }
     }
+    // Admin fayl so'ragan bo'lsa (PDF/Excel) — jonli bazadan tayyorlab, shu chatga yuboramiz
+    if (result.file) {
+      try {
+        const { buildAssistantFile } = await import("./ai-assistant-files");
+        const built = await buildAssistantFile(result.file);
+        await sendDocument(chatId, built.buffer, built.filename, {
+          mimeType: built.mime,
+          caption: `📊 ${built.title} · ${built.rowCount} qator`,
+          businessConnectionId: businessConnectionId || undefined,
+        });
+        reply = `${reply}\n\n📎 Fayl yuborildi: ${built.filename} (${built.rowCount} qator)`;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "noma'lum xato";
+        logger.warn({ err }, "ai-assistant admin file failed");
+        reply = `${reply}\n\n⚠️ Fayl tayyorlanmadi: ${msg}. Qaysi ma’lumot kerakligini aniqroq yozing.`;
+      }
+    }
     await saveMessage(conv.id, "assistant", reply);
     await pool.query(`UPDATE ai_assistant_conversations SET intent = $2, updated_at = NOW() WHERE id = $1`, [
       conv.id,
@@ -959,10 +1007,8 @@ export async function handleAiAssistantMessage(
     result.intent,
   ]);
 
-  if (result.proposal) {
-    const rec = await recordProposal(conv, platformUser?.id ?? null, result.proposal, "pending");
-    void notifyAdminsAboutProposal(rec.id, conv, result.proposal);
-  }
+  // Xodim rejimi: taklif/amal yaratilmaydi — yozish va bajarish faqat adminda.
+  // Xodim faqat standart ma'lumot oladi (davomat, test, platforma ko'rsatmasi).
 
   await sendMessage(chatId, result.reply, sendOpts).catch((err) => {
     logger.warn({ err }, "ai-assistant: sendMessage failed");
@@ -971,8 +1017,8 @@ export async function handleAiAssistantMessage(
 }
 
 /**
- * Platforma ichidagi chat (login qilgan xodim): Telegram oqimi bilan bir xil —
- * jonli baza snapshot, suhbat tarixi, kerak bo‘lsa adminga taklif.
+ * Platforma ichidagi chat (login qilgan foydalanuvchi): Telegram oqimi bilan bir xil —
+ * xodimga faqat standart ma'lumot, adminga to'liq boshqaruv + fayl (PDF/Excel).
  */
 export async function webAssistantTurn(opts: {
   userId: number;
@@ -1047,14 +1093,28 @@ export async function webAssistantTurn(opts: {
       proposal: null as AiTurnResult["proposal"],
     };
     let reply = result.reply;
+    let fileData: AiTurnResult["fileData"] = null;
     if (result.proposal) {
       const rec = await recordProposal(conv, effective.id, result.proposal, "executed", platformUser.id);
       if (rec.executionResult) reply = `${reply}\n\n✅ Bajarildi: ${rec.executionResult}`;
       else if (rec.error) reply = `${reply}\n\n⚠️ Bajarilmadi: ${rec.error}. Ma’lumotni aniqlashtirib qayta yozing.`;
     }
+    // Admin fayl so'ragan bo'lsa (PDF/Excel) — tayyorlab beramiz, web chatda yuklab olinadi
+    if (result.file) {
+      try {
+        const { buildAssistantFile } = await import("./ai-assistant-files");
+        const built = await buildAssistantFile(result.file);
+        fileData = { name: built.filename, mime: built.mime, base64: built.buffer.toString("base64") };
+        reply = `${reply}\n\n📎 Fayl tayyor: ${built.filename} (${built.rowCount} qator) — yuklab olish avtomatik boshlanadi.`;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "noma'lum xato";
+        logger.warn({ err }, "ai-assistant web admin file failed");
+        reply = `${reply}\n\n⚠️ Fayl tayyorlanmadi: ${msg}. Qaysi ma’lumot kerakligini aniqroq yozing.`;
+      }
+    }
     await saveMessage(conv.id, "assistant", reply);
     await pool.query(`UPDATE ai_assistant_conversations SET intent=$2, updated_at=NOW() WHERE id=$1`, [conv.id, result.intent]);
-    return { ...result, reply };
+    return { ...result, reply, fileData };
   }
 
   const snapshot = platformUser ? await buildUserSnapshot(platformUser).catch(() => null) : null;
@@ -1069,11 +1129,8 @@ export async function webAssistantTurn(opts: {
   const result = turn ?? fallbackTurn(opts.userText, snapshot, platformUser?.fullName || "Xodim");
   await saveMessage(conv.id, "assistant", result.reply);
   await pool.query(`UPDATE ai_assistant_conversations SET intent=$2, updated_at=NOW() WHERE id=$1`, [conv.id, result.intent]);
-  if (result.proposal) {
-    const rec = await recordProposal(conv, opts.userId, result.proposal, "pending");
-    void notifyAdminsAboutProposal(rec.id, conv, result.proposal);
-  }
-  return result;
+  // Xodim rejimi: taklif/amal yaratilmaydi — yozish va bajarish faqat adminda.
+  return { ...result, proposal: null, file: null, fileData: null };
 }
 
 /** Admin qaroridan keyin xodimga xabar (tasdiq/rad) */

@@ -200,7 +200,13 @@ export async function sendDocument(
   chatId: number | string,
   file: Buffer,
   filename: string,
-  opts?: { mimeType?: string; caption?: string; parseMode?: "HTML"; messageThreadId?: number | null },
+  opts?: {
+    mimeType?: string;
+    caption?: string;
+    parseMode?: "HTML";
+    messageThreadId?: number | null;
+    businessConnectionId?: string;
+  },
 ) {
   if (!botToken()) throw new Error("TELEGRAM_BOT_TOKEN sozlanmagan");
   if (!file?.length) throw new Error("Fayl bo‘sh");
@@ -218,6 +224,7 @@ export async function sendDocument(
     if (opts?.caption) form.append("caption", opts.caption.slice(0, 1024));
     if (opts?.parseMode) form.append("parse_mode", opts.parseMode);
     if (opts?.messageThreadId) form.append("message_thread_id", String(opts.messageThreadId));
+    if (opts?.businessConnectionId) form.append("business_connection_id", opts.businessConnectionId);
     return { method: "POST", body: form };
   });
   return { ok: true as const, result };

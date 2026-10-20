@@ -336,7 +336,7 @@ router.post("/help/chat", optionalAuth, async (req: AuthRequest, res): Promise<v
       return;
     }
 
-    // Login qilgan xodim — to‘liq Yordamchi AI: jonli baza + adminga taklif tayyorlash
+    // Login qilgan foydalanuvchi — Yordamchi AI: xodimga standart ma'lumot, adminga to'liq boshqaruv
     if (req.userId && message && !imageDataUrl) {
       const history = Array.isArray(req.body?.history)
         ? (req.body.history as Array<Record<string, unknown>>)
@@ -352,6 +352,7 @@ router.post("/help/chat", optionalAuth, async (req: AuthRequest, res): Promise<v
         reply: turn.reply,
         source: "ai-assistant",
         proposalCreated: Boolean(turn.proposal),
+        file: turn.fileData || undefined,
         showContacts: false,
         locale,
       });

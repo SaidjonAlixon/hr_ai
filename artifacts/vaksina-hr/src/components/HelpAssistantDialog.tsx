@@ -51,8 +51,28 @@ type HelpChatResponse = {
   telegram?: string;
   telegramUrl?: string;
   links?: HelpLink[];
+  /** Admin so'ragan tayyor fayl (PDF/Excel) — avtomatik yuklab olinadi */
+  file?: { name: string; mime: string; base64: string };
   error?: string;
 };
+
+function downloadBase64File(file: { name: string; mime: string; base64: string }) {
+  try {
+    const bin = atob(file.base64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([bytes], { type: file.mime }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch {
+    /* ignore */
+  }
+}
 
 async function postHelpChat(
   opts: {
@@ -257,6 +277,7 @@ export function HelpAssistantDialog({
   }, [messages, open, loading, needPhoto]);
 
   const applyReply = (data: HelpChatResponse) => {
+    if (data.file) downloadBase64File(data.file);
     setNeedPhoto(Boolean(data.needPhoto));
     const links = data.links?.map((l) => ({
       ...l,

@@ -321,6 +321,78 @@ export async function buildUserSnapshot(user: PlatformUser): Promise<string> {
     }
   } catch { /* ignore */ }
 
+  // Atestatsiya JADVALI (real vaqt) — sana/vaqt faqat shu yerdan olinadi
+  try {
+    const track = (["stajyor", "farmasevt", "mudir"] as const).find((t) => t === user.role);
+    const fmt = new Intl.DateTimeFormat("ru-RU", {
+      timeZone: "Asia/Tashkent",
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const now = new Date();
+    const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tashkent" }).format(now);
+    parts.push(`Hozir (Toshkent): ${fmt.format(now)}, sana ${todayStr}`);
+    if (track) {
+      const roleJson = JSON.stringify([track]);
+      const exams = await db
+        .select()
+        .from(attestatsiyaExamsTable)
+        .where(
+          and(
+            eq(attestatsiyaExamsTable.published, true),
+            or(
+              and(
+                sql`COALESCE(jsonb_array_length(${attestatsiyaExamsTable.targetTracks}), 0) = 0`,
+                eq(attestatsiyaExamsTable.track, track),
+              ),
+              sql`${attestatsiyaExamsTable.targetTracks} @> ${roleJson}::jsonb`,
+              eq(attestatsiyaExamsTable.track, track),
+            ),
+          ),
+        )
+        .orderBy(attestatsiyaExamsTable.startsAt);
+      const myAttempts = await db
+        .select()
+        .from(attestatsiyaAttemptsTable)
+        .where(eq(attestatsiyaAttemptsTable.userId, user.id));
+      const latestByExam = new Map<number, (typeof myAttempts)[number]>();
+      for (const a of myAttempts) latestByExam.set(a.examId, a);
+      const relevant = exams
+        .filter((e) => e.endsAt.getTime() > now.getTime() - 24 * 3600_000)
+        .slice(0, 10);
+      if (!relevant.length) {
+        parts.push(
+          "Atestatsiya jadvali: BAZADA BU XODIMGA TEGISHLI E'LON QILINGAN TEST YO‘Q. Hech qanday sana/vaqt aytma — «bazada rejalashtirilgan test ko‘rinmayapti» deb ayt.",
+        );
+      } else {
+        parts.push(
+          "Atestatsiya jadvali (bazadan, real): " +
+            relevant
+              .map((e) => {
+                const state = now < e.startsAt ? "hali boshlanmagan" : now >= e.endsAt ? "yopilgan" : "HOZIR OCHIQ";
+                const mine = latestByExam.get(e.id);
+                const mineTxt = mine
+                  ? `, mening holatim: ${mine.status}${mine.passed != null ? `, o'tdi=${mine.passed}` : ""}`
+                  : ", hali boshlamaganman";
+                return `«${e.title}» (examId=${e.id}) ${fmt.format(e.startsAt)} – ${fmt.format(e.endsAt)}, ${e.durationMinutes} daq, holat=${state}${mineTxt}`;
+              })
+              .join("; "),
+        );
+        const todayExams = relevant.filter(
+          (e) =>
+            new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tashkent" }).format(e.startsAt) === todayStr,
+        );
+        parts.push(
+          todayExams.length
+            ? `Bugunga rejalashtirilgan: ${todayExams.map((e) => `«${e.title}» ${fmt.format(e.startsAt)}`).join(", ")}`
+            : "Bugunga rejalashtirilgan test YO‘Q (yuqoridagi jadvalda eng yaqini ko‘rsatilgan).",
+        );
+      }
+    }
+  } catch { /* ignore */ }
+
   try {
     const reqs = await db
       .select()
@@ -371,6 +443,7 @@ async function callAi(opts: {
     "Noqonuniy/for qalbakilashtirish so‘ralsa (masalan kelmagan kunga davomat yozib berish): rad et, sababini odamdek tushuntir va qonuniy yo‘lni ayt (javob olish so‘rovi, koordinatordan tasdiq). Bunday so‘rov uchun taklif YARATMA.",
     "Ma’lumot yetishmasa bitta-ikkita aniq savol ber: ism-familiya, filial, sana/vaqt, qanday xato chiqyapti. Hamma ma’lumot yig‘ilgach va xodim aniq amal so‘ragach — proposal yarat.",
     "Savol faqat ma’lumot so‘rasa (test qayerdan, qanday ishlanadi, smena, kirish...): bazadagi faktlar + jonli holat asosida to‘liq javob ber, proposal kerak emas.",
+    "FAKT QOIDASI (eng muhim): sana, vaqt, ball, holat, filial, test nomi kabi aniq ma’lumotni FAQAT «JONLI BAZA HOLATI»da yozilganidan ol. U yerda yo‘q bo‘lsa — HECH QACHON uydirma (masalan «soat 10:00 da test bor» deb aytma). Buning o‘rniga: «Bazada hozir bunday ma’lumot ko‘rinmayapti, adminga aniqlashtirib beraman» deb ayt. «Jadvalda YO‘Q» deb yozilgan bo‘lsa — test yo‘qligini aniq ayt.",
     "Javob uzunligi: odatda 2–6 jumla, ro‘yxat kerak bo‘lsa qisqa ro‘yxat. Ortiqcha rasmiyatchilik qilma.",
     "",
     'Faqat JSON qaytar: {"reply":"...","intent":"davomat|atestatsiya|login|javob|smena|savol|boshqa","proposal":null yoki {"kind":"davomat_fix|atestatsiya_retake|account_help|admin_task","title":"qisqa sarlavha","summary":"adminga: kim, nima, sabab, tekshirilgan faktlar","payload":{"userId":123,"workDate":"2026-10-20","examId":1,"note":"..."},"completionText":"admin tasdiqlasa xodimga yuboriladigan yakuniy xabar (xodim tilida)"}}',

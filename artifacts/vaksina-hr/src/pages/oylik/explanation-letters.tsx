@@ -183,7 +183,15 @@ export function MyLettersCard() {
 type Tab = "waiting" | "decide" | "approved" | "cancelled" | "all";
 
 /** Admin/HR: oy bo‘yicha barcha tushuntirish xatlari */
-export function LettersAdminPanel({ month }: { month: string }) {
+export function LettersAdminPanel({
+  month,
+  group: groupProp,
+  onGroupChange,
+}: {
+  month: string;
+  group?: StaffGroup;
+  onGroupChange?: (g: StaffGroup) => void;
+}) {
   const { toast } = useToast();
   const q = useMonthLetters(month, true);
   // Ofis holati — umumiy jarima kaliti (Intizom nazorati bilan bitta manba); dorixona doim o‘chiq
@@ -191,7 +199,12 @@ export function LettersAdminPanel({ month }: { month: string }) {
   const officeJarimaOn = discipline.data?.jarima?.enabled;
   const review = useReviewLetter();
   const [tab, setTab] = useState<Tab>("waiting");
-  const [group, setGroup] = useState<StaffGroup>("pharmacy");
+  const [groupInternal, setGroupInternal] = useState<StaffGroup>("pharmacy");
+  const group = groupProp ?? groupInternal;
+  const setGroup = (g: StaffGroup) => {
+    setGroupInternal(g);
+    onGroupChange?.(g);
+  };
   const [stage, setStage] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<number | null>(null);

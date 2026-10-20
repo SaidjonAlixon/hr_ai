@@ -120,16 +120,16 @@ export function DisciplinePanel({ month, place }: { month: string; place?: strin
 
   const toggleJarima = (next: boolean) => {
     const ask = next
-      ? "Jarima tizimi yoqilsinmi? Bugundan boshlab kechikish va kelmasliklar uchun jarima, tushuntirish xati va blok hammaga ishlaydi."
-      : "Jarima tizimi o‘chirilsinmi? Hech kimga jarima yozilmaydi, tushuntirish xati so‘ralmaydi va hech kim bloklanmaydi. Davomat odatdagidek ishlayveradi.";
+      ? "Jarima tizimi OFIS uchun yoqilsinmi? Bugundan boshlab ofis xodimlariga kechikish va kelmaslik uchun jarima, tushuntirish xati va blok ishlaydi. Dorixona uchun har doim o‘chiq qoladi."
+      : "Jarima tizimi OFIS uchun o‘chirilsinmi? Ofis xodimlariga jarima yozilmaydi, tushuntirish xati so‘ralmaydi va hech kim bloklanmaydi. Dorixona uchun har doim o‘chiq. Davomat odatdagidek ishlayveradi.";
     if (!window.confirm(ask)) return;
     setJarima.mutate(next, {
       onSuccess: (s) =>
         toast({
-          title: s.enabled ? "Jarima yoqildi" : "Jarima o‘chirildi",
+          title: s.enabled ? "Jarima yoqildi (Ofis)" : "Jarima o‘chirildi (Ofis)",
           description: s.enabled
-            ? "Jarima, tushuntirish xati va bloklar hammaga ishlaydi."
-            : "Jarima, tushuntirish xati va bloklar hech kimda ishlamaydi.",
+            ? "Jarima, tushuntirish xati va bloklar faqat ofis xodimlariga ishlaydi. Dorixona — har doim o‘chiq."
+            : "Ofisda ham jarima, tushuntirish xati va bloklar ishlamaydi. Dorixona — har doim o‘chiq.",
         }),
       onError: (e) => toast({ title: "Xato", description: (e as Error).message, variant: "destructive" }),
     });
@@ -161,7 +161,13 @@ export function DisciplinePanel({ month, place }: { month: string; place?: strin
             )}
           >
             {setJarima.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-            {isPharmacy ? "Dorixona: jarima o‘chiq" : jarimaOn ? "Jarima yoqiq" : "Jarima o‘chiq"}
+            {isPharmacy
+              ? "Dorixona: jarima o‘chiq"
+              : isOffice
+                ? `Ofis: jarima ${jarimaOn ? "yoqiq" : "o‘chiq"}`
+                : jarimaOn
+                  ? "Jarima yoqiq"
+                  : "Jarima o‘chiq"}
             <Switch
               checked={jarimaOn}
               disabled={isPharmacy || summary.isLoading || setJarima.isPending}

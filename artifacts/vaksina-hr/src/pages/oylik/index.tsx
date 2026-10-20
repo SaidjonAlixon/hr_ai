@@ -33,6 +33,7 @@ import { FiksaDialog } from "./fiksa-dialog";
 import { DisciplinePanel } from "./discipline-panel";
 import { LettersAdminPanel, MyLettersCard } from "./explanation-letters";
 import { canManageLetters } from "@/lib/explanation-letters-api";
+import type { StaffGroup } from "@/components/explanation-letter/StaffGroupTabs";
 import { ShiftScheduleDialog } from "./shift-schedule";
 import { PeriodPicker, ScheduleHint, ScheduleStrip, ShiftCards } from "./selection-panels";
 import { canSeeDiscipline } from "@/lib/discipline-api";
@@ -341,6 +342,10 @@ export default function OylikPage() {
   const toggleDay = useToggleWorkDay();
   const [exporting, setExporting] = useState(false);
   const [place, setPlace] = useState<StaffWorkplace | "">("");
+  /** Bitta umumiy guruh tanlovi: Intizom kaliti, Tushuntirish xatlari va bo‘lim — hammasi sinxron.
+      Boshlanishiga Dorixona (jarima o‘chiq) turadi; Ofisga o‘tilsa kalit yoniq ko‘rinadi. */
+  const [letterGroup, setLetterGroup] = useState<StaffGroup>("pharmacy");
+  const [activeGroup, setActiveGroup] = useState<StaffWorkplace>("dorixona");
   const [shift, setShift] = useState("");
   const [statusFilter, setStatusFilter] = useState<"" | "approved" | "draft" | "returned">("");
   const [fiksaFilter, setFiksaFilter] = useState<"" | "written" | "empty">("");
@@ -558,11 +563,21 @@ export default function OylikPage() {
   };
 
   const pickPlace = (next: StaffWorkplace) => {
-    setPlace(place === next ? "" : next);
+    const toggledOff = place === next;
+    setPlace(toggledOff ? "" : next);
+    if (!toggledOff) {
+      setActiveGroup(next);
+      setLetterGroup(next === "dorixona" ? "pharmacy" : "office");
+    }
     setShift("");
     setSelected([]);
     setCalOpen(false);
     resetFilters();
+  };
+
+  const handleLetterGroup = (g: StaffGroup) => {
+    setLetterGroup(g);
+    setActiveGroup(g === "pharmacy" ? "dorixona" : "ofis");
   };
 
   const exportExcel = async () => {
@@ -675,8 +690,10 @@ export default function OylikPage() {
         </div>
 
       <div className="dept-page-inner !mx-0 w-full !max-w-none space-y-3 !px-2 sm:!px-3 md:!px-4">
-        {canSeeDiscipline(user?.role) ? <DisciplinePanel month={month} place={place} /> : null}
-        {canManageLetters(user?.role) ? <LettersAdminPanel month={month} /> : null}
+        {canSeeDiscipline(user?.role) ? <DisciplinePanel month={month} place={activeGroup} /> : null}
+        {canManageLetters(user?.role) ? (
+          <LettersAdminPanel month={month} group={letterGroup} onGroupChange={handleLetterGroup} />
+        ) : null}
         {!manage ? (
           <>
             <MyLettersCard />

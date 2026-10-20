@@ -2,9 +2,9 @@
  * Yordamchi AI — @vaksinahrbot orqali suhbat.
  *
  * Qoidalar (egasi talabi):
- *  - XODIMLAR: faqat standart so‘rovlar — o‘z davomati (kirdi-chiqdi), test holati/natijasi,
- *    javob olish holati, platforma qo‘llanmasi. Chat/vazifa/amal — YO‘Q, taklif ham yaratilmaydi.
- *  - ADMIN (yagona boshqaruvchi): nima desa — jonli bazadan javob, amal darhol bajariladi
+ *  - XODIMLAR: AI (OpenAI) UMUMAN ishlatilmaydi — javob faqat bazadan, kod bilan tayyorlanadi:
+ *    o‘z davomati (kirdi-chiqdi), test holati/jadvali, javob olish holati. Chat/vazifa/amal — YO‘Q.
+ *  - ADMIN (yagona boshqaruvchi): AI faqat u yozganda «o‘ylash» uchun ishlatiladi; nima desa — jonli bazadan javob, amal darhol bajariladi
  *    (test qayta ochish, davomat tuzatish, xabar yuborish), so‘rasa PDF/Excel fayl ham tayyorlab yuboriladi.
  *  - Xodim qaysi tilda / yozuvda (lotin, kirill, rus) yozsa — javob ham o‘shanda.
  *  - Ovozli xabar: eshitolmasligini aytib, yozib yuborishni so‘raydi.
@@ -745,16 +745,250 @@ async function callAi(opts: {
   }
 }
 
-function fallbackTurn(userText: string, snapshot: string | null, displayName: string): AiTurnResult {
-  const cyrl = detectScript(userText) === "cyrl";
-  const reply = snapshot
-    ? cyrl
-      ? `Тушундим, ${displayName}. Мен фақат стандарт сўровларга жавоб бера оламан: давоматингиз (қачон келдингиз/кетдингиз), тестларингиз натижаси ва жадвали, платформадан фойдаланиш бўйича кўрсатма. Масалан: «бугун соат нечида келдим?» деб ёзинг. Ўзгартириш керак бўлса — фақат админ бажаради, админ билан боғланинг.`
-      : `Tushundim, ${displayName}. Men faqat standart so‘rovlarga javob bera olaman: davomatingiz (qachon keldingiz/ketdingiz), testlaringiz natijasi va jadvali, platformadan foydalanish bo‘yicha ko‘rsatma. Masalan: «bugun soat nechida keldim?» deb yozing. O‘zgartirish kerak bo‘lsa — faqat admin bajaradi, admin bilan bog‘laning.`
-    : cyrl
-      ? `Салом, ${displayName}! Аввал исм-фамилиянгиз ва филиалингизни ёзинг. Кейин стандарт сўров ёзинг: давоматим, тест натижам ёки платформа бўйича савол.`
-      : `Salom, ${displayName}! Avval ism-familiyangiz va filialingizni yozing. Keyin standart so‘rov yozing: davomatim, test natijam yoki platforma bo‘yicha savol.`;
-  return { reply, intent: "boshqa", proposal: null };
+/* ------------------------------------------------- xodim: AI-siz standart javob */
+
+/**
+ * XODIMLARGA AI (OpenAI) UMUMAN ISHLATILMAYDI.
+ * Javob faqat jonli bazadan, kod bilan tayyorlanadi: davomat (kirdi-chiqdi),
+ * test holati/jadvali, javob olish holati. Boshqa gapga — standart menyu.
+ * AI «o'ylash» faqat admin yozganda ishlatiladi.
+ */
+type StdLoc = "latn" | "cyrl" | "ru";
+
+function detectStdLoc(text: string): StdLoc {
+  if (!CYRILLIC_RE.test(text)) return "latn";
+  if (/[ўқғҳЎҚҒҲ]/.test(text)) return "cyrl";
+  if (
+    /(когда|во сколько|приш[её]л|пришла|уш[её]л|ушла|опозд|результат|здравств|привет|пожалуйста|посеща|мой|моя|можно|сегодня)/i.test(
+      text,
+    )
+  )
+    return "ru";
+  return "cyrl";
+}
+
+const STD_TEXT = {
+  latn: {
+    askId: (n: string) =>
+      `Salom${n ? `, ${n}` : ""}! Avval ism-familiyangiz va filialingizni yozing — keyin «davomatim» yoki «testim» deb yozsangiz, ma’lumot beraman.`,
+    menu: (n: string) =>
+      `Salom, ${n}! Men faqat standart ma’lumot bera olaman:\n• «Davomatim» — qachon kelgan/ketganingiz\n• «Testim» — test natijasi va jadvali\n• «Javob olish» — so‘rovingiz holati\nShulardan birini yozing. Biror o‘zgartirish kerak bo‘lsa — faqat admin bajaradi, admin bilan bog‘laning.`,
+    davomat: "📋 Davomatingiz (oxirgi kunlar):",
+    noDavomat: "📋 Davomat yozuvlari topilmadi.",
+    came: "keldi",
+    went: "ketdi",
+    tests: "📝 Testlaringiz:",
+    attempts: "Urinishlar:",
+    schedule: "Jadval:",
+    ball: "ball",
+    passed: "o‘tdi",
+    failed: "o‘tmadi",
+    open: "hozir ochiq",
+    upcoming: "hali boshlanmagan",
+    closed: "yopilgan",
+    noTests: "📝 Test ma’lumoti topilmadi.",
+    javob: "📌 Javob olish so‘rovlari:",
+    noJavob: "📌 Javob olish so‘rovi topilmadi.",
+  },
+  cyrl: {
+    askId: (n: string) =>
+      `Салом${n ? `, ${n}` : ""}! Аввал исм-фамилиянгиз ва филиалингизни ёзинг — кейин «давоматим» ёки «тестим» деб ёзсангиз, маълумот бераман.`,
+    menu: (n: string) =>
+      `Салом, ${n}! Мен фақат стандарт маълумот бера оламан:\n• «Давоматим» — қачон келган/кетганингиз\n• «Тестим» — тест натижаси ва жадвали\n• «Жавоб олиш» — сўровингиз ҳолати\nШулардан бирини ёзинг. Бирор ўзгартириш керак бўлса — фақат админ бажаради, админ билан боғланинг.`,
+    davomat: "📋 Давоматингиз (охирги кунлар):",
+    noDavomat: "📋 Давомат ёзувлари топилмади.",
+    came: "келди",
+    went: "кетди",
+    tests: "📝 Тестларингиз:",
+    attempts: "Уринишлар:",
+    schedule: "Жадвал:",
+    ball: "балл",
+    passed: "ўтди",
+    failed: "ўтмади",
+    open: "ҳозир очиқ",
+    upcoming: "ҳали бошланмаган",
+    closed: "ёпилган",
+    noTests: "📝 Тест маълумоти топилмади.",
+    javob: "📌 Жавоб олиш сўровлари:",
+    noJavob: "📌 Жавоб олиш сўрови топилмади.",
+  },
+  ru: {
+    askId: (n: string) =>
+      `Здравствуйте${n ? `, ${n}` : ""}! Сначала напишите имя, фамилию и филиал — затем напишите «посещаемость» или «тест», и я дам информацию.`,
+    menu: (n: string) =>
+      `Здравствуйте, ${n}! Я могу дать только стандартную информацию:\n• «Посещаемость» — когда вы пришли/ушли\n• «Тест» — результат и расписание теста\n• «Отпрос» — статус вашего запроса\nНапишите одно из этих слов. Если нужно что-то изменить — это делает только админ, свяжитесь с админом.`,
+    davomat: "📋 Ваша посещаемость (последние дни):",
+    noDavomat: "📋 Записи посещаемости не найдены.",
+    came: "приход",
+    went: "уход",
+    tests: "📝 Ваши тесты:",
+    attempts: "Попытки:",
+    schedule: "Расписание:",
+    ball: "балл",
+    passed: "сдал",
+    failed: "не сдал",
+    open: "сейчас открыт",
+    upcoming: "ещё не начался",
+    closed: "закрыт",
+    noTests: "📝 Информация о тестах не найдена.",
+    javob: "📌 Запросы на отпрос:",
+    noJavob: "📌 Запросы на отпрос не найдены.",
+  },
+} as const;
+
+async function employeeStandardReply(
+  user: PlatformUser | null,
+  userText: string,
+  displayName: string,
+): Promise<AiTurnResult> {
+  const loc = detectStdLoc(userText);
+  const L = STD_TEXT[loc];
+  if (!user) {
+    return { reply: L.askId(displayName), intent: "identity", proposal: null, file: null };
+  }
+  const t = userText.toLowerCase();
+  const isDavomat =
+    /davomat|keldim|ketdim|kelgan|kelmad|kechik|kirdi|chiqdi|давомат|келдим|кетдим|келган|келма|кечик|приш|пришел|пришла|уш[её]л|ушла|опозд|во сколько|посеща/.test(t);
+  const isTest = /test|attest|atest|ball|imtihon|тест|аттеста|балл|натиж|экзамен|результат/.test(t);
+  const isJavob = /javob|ruxsat|жавоб|жавоп|отпрос|отгул/.test(t);
+
+  if (!isDavomat && !isTest && !isJavob) {
+    return { reply: L.menu(user.fullName), intent: "savol", proposal: null, file: null };
+  }
+
+  const fmtTime = new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Asia/Tashkent",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const fmtDay = new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Asia/Tashkent",
+    day: "2-digit",
+    month: "2-digit",
+  });
+  const sections: string[] = [];
+
+  if (isDavomat) {
+    try {
+      const [emp] = await db
+        .select({ id: employeesTable.id })
+        .from(employeesTable)
+        .where(eq(employeesTable.userId, user.id))
+        .limit(1);
+      const recs = await db
+        .select()
+        .from(attendanceRecordsTable)
+        .where(
+          or(
+            eq(attendanceRecordsTable.userId, user.id),
+            emp ? eq(attendanceRecordsTable.employeeId, emp.id) : sql`false`,
+          ),
+        )
+        .orderBy(desc(attendanceRecordsTable.workDate))
+        .limit(5);
+      if (!recs.length) {
+        sections.push(L.noDavomat);
+      } else {
+        const lines = recs.map(
+          (r) =>
+            `• ${r.workDate}: ${L.came} ${r.checkInAt ? fmtTime.format(new Date(r.checkInAt)) : "—"}, ${L.went} ${r.checkOutAt ? fmtTime.format(new Date(r.checkOutAt)) : "—"} (${r.status})`,
+        );
+        sections.push([L.davomat, ...lines].join("\n"));
+      }
+    } catch {
+      sections.push(L.noDavomat);
+    }
+  }
+
+  if (isTest) {
+    try {
+      const attempts = await db
+        .select({
+          status: attestatsiyaAttemptsTable.status,
+          score: attestatsiyaAttemptsTable.score,
+          passed: attestatsiyaAttemptsTable.passed,
+          startedAt: attestatsiyaAttemptsTable.startedAt,
+          title: attestatsiyaExamsTable.title,
+        })
+        .from(attestatsiyaAttemptsTable)
+        .innerJoin(attestatsiyaExamsTable, eq(attestatsiyaAttemptsTable.examId, attestatsiyaExamsTable.id))
+        .where(eq(attestatsiyaAttemptsTable.userId, user.id))
+        .orderBy(desc(attestatsiyaAttemptsTable.startedAt))
+        .limit(5);
+      const track = (["stajyor", "farmasevt", "mudir"] as const).find((x) => x === user.role);
+      const now = new Date();
+      let scheduleLines: string[] = [];
+      if (track) {
+        const roleJson = JSON.stringify([track]);
+        const exams = await db
+          .select()
+          .from(attestatsiyaExamsTable)
+          .where(
+            and(
+              eq(attestatsiyaExamsTable.published, true),
+              or(
+                and(
+                  sql`COALESCE(jsonb_array_length(${attestatsiyaExamsTable.targetTracks}), 0) = 0`,
+                  eq(attestatsiyaExamsTable.track, track),
+                ),
+                sql`${attestatsiyaExamsTable.targetTracks} @> ${roleJson}::jsonb`,
+                eq(attestatsiyaExamsTable.track, track),
+              ),
+            ),
+          )
+          .orderBy(attestatsiyaExamsTable.startsAt);
+        scheduleLines = exams
+          .filter((e) => e.endsAt.getTime() > now.getTime() - 24 * 3600_000)
+          .slice(0, 5)
+          .map((e) => {
+            const state = now < e.startsAt ? L.upcoming : now >= e.endsAt ? L.closed : L.open;
+            return `• «${e.title}» — ${fmtDay.format(e.startsAt)} ${fmtTime.format(e.startsAt)}–${fmtTime.format(e.endsAt)} (${state})`;
+          });
+      }
+      if (!attempts.length && !scheduleLines.length) {
+        sections.push(L.noTests);
+      } else {
+        const parts = [L.tests];
+        if (attempts.length) {
+          parts.push(L.attempts);
+          for (const a of attempts) {
+            parts.push(
+              `• «${a.title}» — ${L.ball}: ${a.score ?? "—"}, ${a.passed == null ? a.status : a.passed ? L.passed : L.failed}`,
+            );
+          }
+        }
+        if (scheduleLines.length) {
+          parts.push(L.schedule, ...scheduleLines);
+        }
+        sections.push(parts.join("\n"));
+      }
+    } catch {
+      sections.push(L.noTests);
+    }
+  }
+
+  if (isJavob) {
+    try {
+      const reqs = await db
+        .select()
+        .from(javobOlishRequestsTable)
+        .where(eq(javobOlishRequestsTable.userId, user.id))
+        .orderBy(desc(javobOlishRequestsTable.createdAt))
+        .limit(3);
+      if (!reqs.length) {
+        sections.push(L.noJavob);
+      } else {
+        sections.push(
+          [L.javob, ...reqs.map((r) => `• ${r.workDate} ${r.fromHm}–${r.toHm} — ${r.status}`)].join("\n"),
+        );
+      }
+    } catch {
+      sections.push(L.noJavob);
+    }
+  }
+
+  const intent = isDavomat ? "davomat" : isTest ? "atestatsiya" : "javob";
+  return { reply: sections.join("\n\n"), intent, proposal: null, file: null };
 }
 
 /* ------------------------------------------------------------- suhbat oqimi */
@@ -994,12 +1228,8 @@ export async function handleAiAssistantMessage(
     ]);
   }
 
-  const snapshot = platformUser ? await buildUserSnapshot(platformUser).catch(() => null) : null;
-
-  const turn = aiAssistantEnabled()
-    ? await callAi({ snapshot, history, userText: text, displayName: senderDisplayName(msg) })
-    : null;
-  const result = turn ?? fallbackTurn(text, snapshot, senderDisplayName(msg));
+  // Xodim: AI umuman ishlatilmaydi — faqat bazadan tayyor standart javob
+  const result = await employeeStandardReply(platformUser, text, senderDisplayName(msg));
 
   await saveMessage(conv.id, "assistant", result.reply);
   await pool.query(`UPDATE ai_assistant_conversations SET intent = $2, updated_at = NOW() WHERE id = $1`, [
@@ -1117,16 +1347,8 @@ export async function webAssistantTurn(opts: {
     return { ...result, reply, fileData };
   }
 
-  const snapshot = platformUser ? await buildUserSnapshot(platformUser).catch(() => null) : null;
-  const turn = aiAssistantEnabled()
-    ? await callAi({
-        snapshot,
-        history: opts.history,
-        userText: opts.userText,
-        displayName: platformUser?.fullName || "Xodim",
-      })
-    : null;
-  const result = turn ?? fallbackTurn(opts.userText, snapshot, platformUser?.fullName || "Xodim");
+  // Xodim: AI umuman ishlatilmaydi — faqat bazadan tayyor standart javob
+  const result = await employeeStandardReply(platformUser, opts.userText, platformUser?.fullName || "Xodim");
   await saveMessage(conv.id, "assistant", result.reply);
   await pool.query(`UPDATE ai_assistant_conversations SET intent=$2, updated_at=NOW() WHERE id=$1`, [conv.id, result.intent]);
   // Xodim rejimi: taklif/amal yaratilmaydi — yozish va bajarish faqat adminda.

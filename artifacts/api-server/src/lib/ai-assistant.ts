@@ -90,7 +90,7 @@ export function ensureAiAssistantSchema(): Promise<void> {
 
 /* ------------------------------------------------------------------- types */
 
-export type AiProposalKind = "davomat_fix" | "atestatsiya_retake" | "account_help" | "admin_task";
+export type AiProposalKind = "davomat_fix" | "atestatsiya_retake" | "account_help" | "admin_task" | "notify_user";
 
 export type AiTurnResult = {
   reply: string;
@@ -240,15 +240,217 @@ async function searchUsersByName(raw: string): Promise<PlatformUser[]> {
   return rows;
 }
 
+/** Matn ichidan ism-familiya oynasi (3→2→1 token) bilan foydalanuvchi qidirish */
+export async function searchUsersInText(text: string): Promise<PlatformUser[]> {
+  const tokens = text
+    .toLowerCase()
+    .replace(/[^\p{L}\s]/gu, " ")
+    .split(/\s+/)
+    .filter((t) => t.length >= 3);
+  if (!tokens.length) return [];
+  for (const size of [3, 2, 1]) {
+    const found = new Map<number, PlatformUser>();
+    for (let i = 0; i + size <= tokens.length; i++) {
+      const win = tokens.slice(i, i + size).join(" ");
+      const rows = await searchUsersByName(win).catch(() => []);
+      for (const r of rows) found.set(r.id, r);
+      if (found.size > 5) break;
+    }
+    if (found.size) return [...found.values()].slice(0, 5);
+  }
+  return [];
+}
+
+/** Admin (yoki business) matnlaridan nishon xodimni topish; bir nechta bo‘lsa — nomzodlar */
+export async function resolveTargetFromTexts(
+  texts: string[],
+): Promise<{ user: PlatformUser | null; candidates: PlatformUser[] }> {
+  for (const t of texts) {
+    const found = await searchUsersInText(t).catch(() => []);
+    if (found.length === 1) return { user: found[0]!, candidates: [] };
+    if (found.length > 1) return { user: null, candidates: found };
+  }
+  return { user: null, candidates: [] };
+}
+
 async function extractMentionedUser(historyText: string, self: PlatformUser | null): Promise<PlatformUser | null> {
   if (self) return self;
-  // Suhbatda ism-familiya yozilgan bo‘lishi mumkin — oxirgi xabarlardan qidiramiz
-  const lines = historyText.split(/\n/).slice(-6);
-  for (const line of lines.reverse()) {
-    const found = await searchUsersByName(line).catch(() => []);
-    if (found.length === 1) return found[0]!;
+  const { user } = await resolveTargetFromTexts(historyText.split(/\n/).slice(-6).reverse());
+  return user;
+}
+
+/* ------------------------------------------------------------ amal ijrosi */
+
+/**
+ * Amalni bajarish. Xodim so‘rovida — FAQAT admin tasdiqlagach chaqiriladi.
+ * Admin o‘zi buyruq berganda — darhol chaqiriladi.
+ */
+export async function executeAssistantAction(opts: {
+  kind: string;
+  title: string;
+  summary: string;
+  payload: Record<string, unknown>;
+  platformUserId: number | null;
+  proposalId?: number;
+}): Promise<string> {
+  const payload = opts.payload || {};
+  const userId = opts.platformUserId ?? (Number(payload.userId) || null);
+  const { notifyUser, notifyByRoles } = await import("./notify");
+
+  if (opts.kind === "notify_user") {
+    if (!userId) throw new Error("Xodim aniqlanmagan");
+    const message = String(payload.message || opts.summary || opts.title).slice(0, 1500);
+    await notifyUser({
+      userId,
+      title: "Xabar",
+      text: message,
+      type: "ai_assistant",
+      linkUrl: "/dashboard",
+    });
+    return "Xodimga xabar yuborildi (platforma + Telegram).";
   }
-  return null;
+
+  if (opts.kind === "atestatsiya_retake") {
+    if (!userId) throw new Error("Xodim aniqlanmagan — avval xodimni aniqlang");
+    const examId = Number(payload.examId) || null;
+    const attempts = await db
+      .select()
+      .from(attestatsiyaAttemptsTable)
+      .where(eq(attestatsiyaAttemptsTable.userId, userId))
+      .orderBy(desc(attestatsiyaAttemptsTable.startedAt));
+    const target =
+      (examId ? attempts.find((a) => a.examId === examId) : undefined) ??
+      attempts.find((a) => a.passed === false) ??
+      attempts[0];
+    if (!target) return "Urinish topilmadi — test hali boshlanmagan, xodim testni odatdagidek boshlay oladi.";
+    if (target.passed === true) throw new Error("Xodim bu testdan o‘tgan — qayta ochish kerak emas");
+    await db
+      .update(attestatsiyaAttemptsTable)
+      .set({ retakeAllowed: true, retakeGrantedAt: new Date(), updatedAt: new Date() })
+      .where(eq(attestatsiyaAttemptsTable.id, target.id));
+    return `Atestatsiya qayta topshirish ochildi (urinish #${target.id}).`;
+  }
+
+  if (opts.kind === "davomat_fix") {
+    if (!userId) throw new Error("Xodim aniqlanmagan — avval xodimni aniqlang");
+    const workDate = String(payload.workDate || "").trim();
+    const checkIn = payload.checkInAt ? new Date(String(payload.checkInAt)) : null;
+    const checkOut = payload.checkOutAt ? new Date(String(payload.checkOutAt)) : null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate) || (!checkIn && !checkOut)) {
+      throw new Error("Davomat tuzatish uchun sana va vaqtlar yetarli emas — sana/vaqtni aniqlashtiring.");
+    }
+    const [emp] = await db
+      .select({ id: employeesTable.id })
+      .from(employeesTable)
+      .where(eq(employeesTable.userId, userId))
+      .limit(1);
+    if (!emp) throw new Error("Xodim kartochkasi (employee) topilmadi");
+    const [existing] = await db
+      .select()
+      .from(attendanceRecordsTable)
+      .where(and(eq(attendanceRecordsTable.employeeId, emp.id), eq(attendanceRecordsTable.workDate, workDate)))
+      .limit(1);
+    const note = `Yordamchi AI${opts.proposalId ? ` #${opts.proposalId}` : ""}: admin buyrug'i/tasdig'i. ${String(payload.note || opts.summary).slice(0, 300)}`;
+    if (existing) {
+      await db
+        .update(attendanceRecordsTable)
+        .set({
+          checkInAt: checkIn ?? existing.checkInAt,
+          checkOutAt: checkOut ?? existing.checkOutAt,
+          source: "manual",
+          notes: note,
+          updatedAt: new Date(),
+        })
+        .where(eq(attendanceRecordsTable.id, existing.id));
+    } else {
+      await db.insert(attendanceRecordsTable).values({
+        employeeId: emp.id,
+        userId,
+        workDate,
+        checkInAt: checkIn,
+        checkOutAt: checkOut,
+        status: "present",
+        source: "manual",
+        notes: note,
+      });
+    }
+    return `Davomat ${workDate} uchun tuzatildi.`;
+  }
+
+  // account_help / admin_task
+  await notifyByRoles({
+    roles: ["admin"],
+    title: "Yordamchi AI — amal",
+    text: `${opts.title}: ${opts.summary}`.slice(0, 900),
+    type: "ai_assistant",
+    linkUrl: "/admin/yordamchi-ai",
+  }).catch(() => undefined);
+  if (userId) {
+    await notifyUser({
+      userId,
+      title: "So‘rovingiz bajarildi",
+      text: opts.title,
+      type: "ai_assistant",
+      linkUrl: "/dashboard",
+    }).catch(() => undefined);
+  }
+  return "Adminlarga vazifa yuborildi / xodim xabardor qilindi.";
+}
+
+/** Taklifni yozib, admin rejimida darhol bajarish yoki xodim rejimida pending qoldirish */
+async function recordProposal(
+  conv: ConvRow,
+  platformUserId: number | null,
+  proposal: NonNullable<AiTurnResult["proposal"]>,
+  mode: "pending" | "executed",
+  decidedById?: number | null,
+): Promise<{ id: number; executionResult?: string; error?: string }> {
+  if (mode === "pending") {
+    const ins = await pool.query<{ id: number }>(
+      `INSERT INTO ai_assistant_proposals (conversation_id, platform_user_id, kind, title, summary, payload)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [
+        conv.id,
+        platformUserId,
+        proposal.kind,
+        proposal.title,
+        proposal.summary,
+        JSON.stringify({ ...proposal.payload, completionText: proposal.completionText || null }),
+      ],
+    );
+    await pool.query(`UPDATE ai_assistant_conversations SET status='waiting_admin', updated_at=NOW() WHERE id=$1`, [conv.id]);
+    return { id: ins.rows[0]!.id };
+  }
+  const ins = await pool.query<{ id: number }>(
+    `INSERT INTO ai_assistant_proposals (conversation_id, platform_user_id, kind, title, summary, payload, status, decided_by_id, decided_at, decision_note)
+     VALUES ($1,$2,$3,$4,$5,$6,'approved',$7,NOW(),'admin buyrug‘i') RETURNING id`,
+    [
+      conv.id,
+      platformUserId,
+      proposal.kind,
+      proposal.title,
+      proposal.summary,
+      JSON.stringify({ ...proposal.payload, completionText: proposal.completionText || null }),
+      decidedById ?? null,
+    ],
+  );
+  const pid = ins.rows[0]!.id;
+  try {
+    const result = await executeAssistantAction({
+      kind: proposal.kind,
+      title: proposal.title,
+      summary: proposal.summary,
+      payload: proposal.payload,
+      platformUserId,
+      proposalId: pid,
+    });
+    await pool.query(`UPDATE ai_assistant_proposals SET status='executed', execution_result=$2 WHERE id=$1`, [pid, result]);
+    return { id: pid, executionResult: result };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Bajarilmadi";
+    await pool.query(`UPDATE ai_assistant_proposals SET status='failed', execution_result=$2 WHERE id=$1`, [pid, msg]);
+    return { id: pid, error: msg };
+  }
 }
 
 /** Jonli holat: profil + filial + bugungi davomat + atestatsiya + javob olish */
@@ -431,6 +633,8 @@ async function callAi(opts: {
   history: Array<{ role: string; text: string }>;
   userText: string;
   displayName: string;
+  /** true — suhbatdosh admin (egasi): amal darhol bajariladi */
+  adminMode?: boolean;
 }): Promise<AiTurnResult | null> {
   const key = process.env.OPENAI_API_KEY?.trim();
   if (!key) return null;
@@ -445,15 +649,17 @@ async function callAi(opts: {
     "TIL: Xodim qaysi tilda va qaysi yozuvda yozsa (o‘zbek lotin, o‘zbek kirill, rus, ingliz), javobni AYNAN o‘sha tilda/yozuvda yoz.",
     "O‘zingni bot deb tanishtirma. Lekin to‘g‘ridan-to‘g‘ri «siz botmisiz / robotmisiz / odammisiz?» deb so‘ralsa, rostini ayt: admin jamoasining AI yordamchisiman, admin nazoratida ishlayman.",
     "PAROL so‘rama va qabul qilma. Login kerak bo‘lsa faqat loginni (parolsiz) so‘ra.",
-    "BAZANI O‘ZGARTIRMA: sen hech qanday o‘zgarish qila olmaysiz. Amal kerak bo‘lsa (davomat tuzatish, testni qayta ochish va h.k.) taklif tayyorla — admin tasdiqlasa bajariladi. Xodimga: muammoni o‘rganib chiqdim, tayyorlab qo‘yaman, admin tasdiqlashi bilan hal bo‘ladi, tez orada javob yozaman — deb umid ber.",
+    opts.adminMode
+      ? "ADMIN REJIMI: suhbatdosh — platformaning egasi (admin). U kimnidir yozib ma’lumot so‘rasa, JONLI BAZADAN to‘liq va aniq javob ber. Biror amal buyursa (testni qayta och, davomatni tuzat, xodimga xabar yubor) va ma’lumot yetarli bo‘lsa — proposal maydoniga amalni yoz, u DARHOL bajariladi (tasdiq kutilmaydi). reply da faqat qisqa izoh yoz («tekshirdim», nima topding) — «bajarildi» qismini tizim natija bilan qo‘shadi. Ma’lumot yetishmasa yoki xodim aniq topilmasa — proposal YARATMA, aniqlashtiruvchi savol ber."
+      : "BAZANI O‘ZGARTIRMA: sen hech qanday o‘zgarish qila olmaysiz. Amal kerak bo‘lsa (davomat tuzatish, testni qayta ochish va h.k.) taklif tayyorla — admin tasdiqlasa bajariladi. Xodimga: muammoni o‘rganib chiqdim, tayyorlab qo‘yaman, admin tasdiqlashi bilan hal bo‘ladi, tez orada javob yozaman — deb umid ber.",
     "Noqonuniy/for qalbakilashtirish so‘ralsa (masalan kelmagan kunga davomat yozib berish): rad et, sababini odamdek tushuntir va qonuniy yo‘lni ayt (javob olish so‘rovi, koordinatordan tasdiq). Bunday so‘rov uchun taklif YARATMA.",
     "Ma’lumot yetishmasa bitta-ikkita aniq savol ber: ism-familiya, filial, sana/vaqt, qanday xato chiqyapti. Hamma ma’lumot yig‘ilgach va xodim aniq amal so‘ragach — proposal yarat.",
     "Savol faqat ma’lumot so‘rasa (test qayerdan, qanday ishlanadi, smena, kirish...): bazadagi faktlar + jonli holat asosida to‘liq javob ber, proposal kerak emas.",
     "FAKT QOIDASI (eng muhim): sana, vaqt, ball, holat, filial, test nomi kabi aniq ma’lumotni FAQAT «JONLI BAZA HOLATI»da yozilganidan ol. U yerda yo‘q bo‘lsa — HECH QACHON uydirma (masalan «soat 10:00 da test bor» deb aytma). Buning o‘rniga: «Bazada hozir bunday ma’lumot ko‘rinmayapti, adminga aniqlashtirib beraman» deb ayt. «Jadvalda YO‘Q» deb yozilgan bo‘lsa — test yo‘qligini aniq ayt.",
     "Javob uzunligi: odatda 2–6 jumla, ro‘yxat kerak bo‘lsa qisqa ro‘yxat. Ortiqcha rasmiyatchilik qilma.",
     "",
-    'Faqat JSON qaytar: {"reply":"...","intent":"davomat|atestatsiya|login|javob|smena|savol|boshqa","proposal":null yoki {"kind":"davomat_fix|atestatsiya_retake|account_help|admin_task","title":"qisqa sarlavha","summary":"adminga: kim, nima, sabab, tekshirilgan faktlar","payload":{"userId":123,"workDate":"2026-10-20","examId":1,"note":"..."},"completionText":"admin tasdiqlasa xodimga yuboriladigan yakuniy xabar (xodim tilida)"}}',
-    "davomat_fix payload da iloji bo‘lsa workDate va tuzatiladigan vaqtlarni yoz. atestatsiya_retake da examId ni yoz (bilinmasa summary da test nomini yoz).",
+    'Faqat JSON qaytar: {"reply":"...","intent":"davomat|atestatsiya|login|javob|smena|savol|boshqa","proposal":null yoki {"kind":"davomat_fix|atestatsiya_retake|account_help|admin_task|notify_user","title":"qisqa sarlavha","summary":"kim, nima, sabab, tekshirilgan faktlar","payload":{"userId":123,"workDate":"2026-10-20","examId":1,"message":"xodimga matn","note":"..."},"completionText":"amal bajarilgach xodimga yuboriladigan yakuniy xabar"}}',
+    "davomat_fix payload da iloji bo‘lsa workDate va tuzatiladigan vaqtlarni yoz. atestatsiya_retake da examId ni yoz (bilinmasa summary da test nomini yoz). notify_user da payload.message — xodimga yuboriladigan matn.",
     "",
     opts.snapshot ? `=== JONLI BAZA HOLATI ===\n${opts.snapshot}` : "=== JONLI BAZA: xodim hali aniqlanmadi (ism-familiya/filial so‘ra) ===",
     "",
@@ -491,7 +697,7 @@ async function callAi(opts: {
     let proposal: AiTurnResult["proposal"] = null;
     const p = parsed.proposal as Record<string, unknown> | null;
     if (p && typeof p === "object" && p.title && p.summary) {
-      const kinds: AiProposalKind[] = ["davomat_fix", "atestatsiya_retake", "account_help", "admin_task"];
+      const kinds: AiProposalKind[] = ["davomat_fix", "atestatsiya_retake", "account_help", "admin_task", "notify_user"];
       const kind = kinds.includes(p.kind as AiProposalKind) ? (p.kind as AiProposalKind) : "admin_task";
       proposal = {
         kind,
@@ -644,7 +850,8 @@ export async function handleAiAssistantMessage(
   }
 
   const history = await loadHistory(conv.id);
-  const self = conv.platform_user_id
+  const linkedSelf = await findUserByTelegram(String(msg.from.id)).catch(() => null);
+  const convUser = conv.platform_user_id
     ? await db
         .select({
           id: usersTable.id,
@@ -659,7 +866,71 @@ export async function handleAiAssistantMessage(
         .where(eq(usersTable.id, conv.platform_user_id))
         .limit(1)
         .then((r) => r[0] ?? null)
-    : await findUserByTelegram(String(msg.from.id)).catch(() => null);
+    : null;
+  const self = linkedSelf ?? convUser;
+
+  // Admin buyrug‘i rejimi: faqat egasi (admin) — yozgan odamini topib, amalni darhol bajaradi
+  const isAdminSender =
+    (await isAiAdminTelegramId(String(msg.from.id)).catch(() => false)) || self?.role === "admin";
+
+  if (isAdminSender) {
+    const userTexts = [text, ...history.filter((h) => h.role === "user").map((h) => h.text).reverse()];
+    const { user: target, candidates } = await resolveTargetFromTexts(userTexts).catch(() => ({
+      user: null,
+      candidates: [] as PlatformUser[],
+    }));
+    if (!target && candidates.length > 1) {
+      const list = candidates
+        .map((c, i) => `${i + 1}. ${c.fullName} — ${c.role}, login: ${c.login}`)
+        .join("\n");
+      const ask = `Bir nechta xodim topildi, qaysi birini nazarda tutyapsiz?\n${list}\nTo‘liq ism yoki loginini yozing.`;
+      await saveMessage(conv.id, "assistant", ask);
+      await sendMessage(chatId, ask, sendOpts).catch(() => {});
+      return true;
+    }
+    const effective = target ?? self;
+    const snapshot = effective
+      ? `REJIM: ADMIN BUYRUG‘I (suhbatdosh — admin, nishon — ${effective.fullName}). Admin aytsa amal darhol bajariladi.\n` +
+        (await buildUserSnapshot(effective).catch(() => ""))
+      : null;
+    const turn = aiAssistantEnabled()
+      ? await callAi({ snapshot, history, userText: text, displayName: senderDisplayName(msg), adminMode: true })
+      : null;
+    const result =
+      turn ?? {
+        reply: target
+          ? `${target.fullName} bo‘yicha ma’lumot tayyor. Qaysi amal kerakligini aniq yozing (masalan: testni qayta och, davomatni tuzat, xabar yubor).`
+          : "Tushunmadim — kim haqida va nima qilish kerakligini aniqroq yozing (ism-familiya + amal).",
+        intent: "admin",
+        proposal: null,
+      };
+    let reply = result.reply;
+    if (result.proposal && effective) {
+      const rec = await recordProposal(conv, effective.id, result.proposal, "executed", self?.id ?? null);
+      if (rec.executionResult) {
+        reply = `${reply}\n\n✅ Bajarildi: ${rec.executionResult}`;
+        if (result.proposal.completionText && target && self && target.id !== self.id) {
+          const { notifyUser } = await import("./notify");
+          await notifyUser({
+            userId: target.id,
+            title: "Yordamchi AI",
+            text: result.proposal.completionText,
+            type: "ai_assistant",
+            linkUrl: "/dashboard",
+          }).catch(() => undefined);
+        }
+      } else if (rec.error) {
+        reply = `${reply}\n\n⚠️ Bajarilmadi: ${rec.error}. Ma’lumotni aniqlashtirib qayta yozing.`;
+      }
+    }
+    await saveMessage(conv.id, "assistant", reply);
+    await pool.query(`UPDATE ai_assistant_conversations SET intent = $2, updated_at = NOW() WHERE id = $1`, [
+      conv.id,
+      result.intent,
+    ]);
+    await sendMessage(chatId, reply, sendOpts).catch((err) => logger.warn({ err }, "ai-assistant admin send failed"));
+    return true;
+  }
 
   // Ism bo‘yicha aniqlash FAQAT admin akkaunti (Business) chatlarida —
   // botning shaxsiy chatida shaxs telegram_id bog‘lanishi bilan tasdiqlanadi.
@@ -689,23 +960,8 @@ export async function handleAiAssistantMessage(
   ]);
 
   if (result.proposal) {
-    const ins = await pool.query<{ id: number }>(
-      `INSERT INTO ai_assistant_proposals (conversation_id, platform_user_id, kind, title, summary, payload)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-      [
-        conv.id,
-        platformUser?.id ?? null,
-        result.proposal.kind,
-        result.proposal.title,
-        result.proposal.summary,
-        JSON.stringify({ ...result.proposal.payload, completionText: result.proposal.completionText || null }),
-      ],
-    );
-    await pool.query(`UPDATE ai_assistant_conversations SET status = 'waiting_admin', updated_at = NOW() WHERE id = $1`, [
-      conv.id,
-    ]);
-    const pid = ins.rows[0]!.id;
-    void notifyAdminsAboutProposal(pid, conv, result.proposal);
+    const rec = await recordProposal(conv, platformUser?.id ?? null, result.proposal, "pending");
+    void notifyAdminsAboutProposal(rec.id, conv, result.proposal);
   }
 
   await sendMessage(chatId, result.reply, sendOpts).catch((err) => {
@@ -754,6 +1010,53 @@ export async function webAssistantTurn(opts: {
     conv = ins.rows[0]!;
   }
   await saveMessage(conv.id, "user", opts.userText);
+
+  // Admin web chatda yozsa — xodimni topib, amal darhol bajariladi
+  if (platformUser?.role === "admin") {
+    const texts = [opts.userText, ...opts.history.filter((h) => h.role === "user").map((h) => h.text).reverse()];
+    const { user: target, candidates } = await resolveTargetFromTexts(texts).catch(() => ({
+      user: null,
+      candidates: [] as PlatformUser[],
+    }));
+    if (!target && candidates.length > 1) {
+      const reply =
+        "Bir nechta xodim topildi, qaysi biri?\n" +
+        candidates.map((c, i) => `${i + 1}. ${c.fullName} — ${c.role}, login: ${c.login}`).join("\n") +
+        "\nTo‘liq ism yoki loginini yozing.";
+      await saveMessage(conv.id, "assistant", reply);
+      return { reply, intent: "admin", proposal: null };
+    }
+    const effective = target ?? platformUser;
+    const snapshot =
+      `REJIM: ADMIN BUYRUG‘I (nishon — ${effective.fullName}).\n` +
+      (await buildUserSnapshot(effective).catch(() => ""));
+    const turn = aiAssistantEnabled()
+      ? await callAi({
+          snapshot,
+          history: opts.history,
+          userText: opts.userText,
+          displayName: platformUser.fullName,
+          adminMode: true,
+        })
+      : null;
+    const result = turn ?? {
+      reply: target
+        ? `${target.fullName} bo‘yicha ma’lumot tayyor. Qaysi amal kerakligini aniq yozing.`
+        : "Tushunmadim — kim haqida va nima qilish kerakligini aniqroq yozing (ism-familiya + amal).",
+      intent: "admin",
+      proposal: null as AiTurnResult["proposal"],
+    };
+    let reply = result.reply;
+    if (result.proposal) {
+      const rec = await recordProposal(conv, effective.id, result.proposal, "executed", platformUser.id);
+      if (rec.executionResult) reply = `${reply}\n\n✅ Bajarildi: ${rec.executionResult}`;
+      else if (rec.error) reply = `${reply}\n\n⚠️ Bajarilmadi: ${rec.error}. Ma’lumotni aniqlashtirib qayta yozing.`;
+    }
+    await saveMessage(conv.id, "assistant", reply);
+    await pool.query(`UPDATE ai_assistant_conversations SET intent=$2, updated_at=NOW() WHERE id=$1`, [conv.id, result.intent]);
+    return { ...result, reply };
+  }
+
   const snapshot = platformUser ? await buildUserSnapshot(platformUser).catch(() => null) : null;
   const turn = aiAssistantEnabled()
     ? await callAi({
@@ -767,20 +1070,8 @@ export async function webAssistantTurn(opts: {
   await saveMessage(conv.id, "assistant", result.reply);
   await pool.query(`UPDATE ai_assistant_conversations SET intent=$2, updated_at=NOW() WHERE id=$1`, [conv.id, result.intent]);
   if (result.proposal) {
-    const ins = await pool.query<{ id: number }>(
-      `INSERT INTO ai_assistant_proposals (conversation_id, platform_user_id, kind, title, summary, payload)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-      [
-        conv.id,
-        opts.userId,
-        result.proposal.kind,
-        result.proposal.title,
-        result.proposal.summary,
-        JSON.stringify({ ...result.proposal.payload, completionText: result.proposal.completionText || null, source: "web" }),
-      ],
-    );
-    await pool.query(`UPDATE ai_assistant_conversations SET status='waiting_admin', updated_at=NOW() WHERE id=$1`, [conv.id]);
-    void notifyAdminsAboutProposal(ins.rows[0]!.id, conv, result.proposal);
+    const rec = await recordProposal(conv, opts.userId, result.proposal, "pending");
+    void notifyAdminsAboutProposal(rec.id, conv, result.proposal);
   }
   return result;
 }

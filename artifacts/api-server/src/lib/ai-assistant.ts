@@ -281,12 +281,18 @@ export async function buildUserSnapshot(user: PlatformUser): Promise<string> {
       .orderBy(desc(attendanceRecordsTable.workDate))
       .limit(5);
     if (recs.length) {
+      const fmtTime = new Intl.DateTimeFormat("ru-RU", {
+        timeZone: "Asia/Tashkent",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
       parts.push(
-        "Davomat (oxirgi): " +
+        "Davomat (oxirgi, vaqtlar Toshkent): " +
           recs
             .map(
               (r) =>
-                `${r.workDate}: keldim=${r.checkInAt ? new Date(r.checkInAt).toISOString() : "—"}, ketdim=${r.checkOutAt ? new Date(r.checkOutAt).toISOString() : "—"}, holat=${r.status}${r.excused ? " (sababli)" : ""}`,
+                `${r.workDate}: keldim=${r.checkInAt ? fmtTime.format(new Date(r.checkInAt)) : "—"}, ketdim=${r.checkOutAt ? fmtTime.format(new Date(r.checkOutAt)) : "—"}, holat=${r.status}${r.excused ? " (sababli)" : ""}`,
             )
             .join("; "),
       );

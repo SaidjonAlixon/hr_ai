@@ -308,6 +308,8 @@ export type AttestResultRow = {
   status: AttestAttemptStatus;
   score: number | null;
   correct: number | null;
+  /** Nechta savolga javob bergani (ishlagani) */
+  answered: number;
   total: number;
   passed: boolean | null;
   attemptNo: number;

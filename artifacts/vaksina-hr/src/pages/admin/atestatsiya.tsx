@@ -63,6 +63,8 @@ import {
   type AttestManageExam,
   type AttestMonitorRow,
   type AttestQuestion,
+  type AttestResultRow,
+  type AttestResults,
   type AttestTrack,
 } from "@/lib/atestatsiya-api";
 import { exportAttestExcel, exportAttestPdf, exportAttestResultsExcel, exportAttestResultsPdf } from "@/lib/atestatsiya-export";
@@ -957,31 +959,102 @@ function Monitor({ examId, onBack }: { examId: number; onBack: () => void }) {
   );
 }
 
-function ResultsBoard({ track }: { track: AttestTrack }) {
+type ResultFilter = "finished" | "passed" | "failed" | "in_progress" | "not_started" | "annulled" | "all";
+
+const RESULT_FILTERS: Array<[ResultFilter, string]> = [
+  ["finished", "Tugatganlar"],
+  ["passed", "O‘tgan"],
+  ["failed", "O‘tmagan"],
+  ["in_progress", "Ishlayapti"],
+  ["not_started", "Boshlamagan"],
+  ["annulled", "Bekor"],
+  ["all", "Hammasi"],
+];
+
+const TRACK_FILTERS: Array<[AttestTrack | "all", string]> = [
+  ["all", "Hammasi"],
+  ["stajyor", "Stajyor"],
+  ["farmasevt", "Farmasevt"],
+  ["mudir", "Mudir"],
+];
+
+function resultStatusBadge(r: AttestResultRow): { label: string; cls: string } {
+  if (r.status === "submitted" || r.status === "expired")
+    return r.passed
+      ? { label: "O‘tdi", cls: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" }
+      : { label: "O‘tmadi", cls: "bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-300" };
+  if (r.status === "in_progress")
+    return { label: "Ishlayapti", cls: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300" };
+  if (r.status === "annulled")
+    return { label: "Bekor qilingan", cls: "bg-slate-200 text-slate-600 dark:bg-white/10 dark:text-slate-300" };
+  return { label: "Boshlamagan", cls: "bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400" };
+}
+
+function ResultsBoard() {
   const { toast } = useToast();
-  const q = useAttestResults(track, true);
+  const qStajyor = useAttestResults("stajyor", true);
+  const qFarmasevt = useAttestResults("farmasevt", true);
+  const qMudir = useAttestResults("mudir", true);
+  const queries = [qStajyor, qFarmasevt, qMudir];
+  const [scope, setScope] = useState<AttestTrack | "all">("all");
   const [examId, setExamId] = useState<number | "all">("all");
-  const [filter, setFilter] = useState<(typeof FILTERS)[number][0]>("all");
+  const [filter, setFilter] = useState<ResultFilter>("finished");
   const [search, setSearch] = useState("");
   const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
-  const data = q.data;
+
+  type RowX = AttestResultRow & { track: AttestTrack; trackLabel: string };
+  const allRows: RowX[] = queries.flatMap((q) =>
+    (q.data?.rows ?? []).map((r) => ({ ...r, track: q.data!.track, trackLabel: q.data!.trackLabel })),
+  );
+  const allExams = queries.flatMap((q) =>
+    (q.data?.exams ?? []).map((e) => ({ ...e, track: q.data!.track, trackLabel: q.data!.trackLabel })),
+  );
+  const scopedRows = scope === "all" ? allRows : allRows.filter((r) => r.track === scope);
+  const scopedExams = scope === "all" ? allExams : allExams.filter((e) => e.track === scope);
+
+  const isFinished = (r: AttestResultRow) => r.status === "submitted" || r.status === "expired";
+  const finishedRows = scopedRows.filter(isFinished);
+  const passedRows = finishedRows.filter((r) => r.passed);
+  const scoreList = finishedRows.map((r) => r.score ?? 0);
+  const s = {
+    people: new Set(scopedRows.map((r) => r.userId)).size,
+    exams: scopedExams.length,
+    rows: scopedRows.length,
+    notStarted: scopedRows.filter((r) => r.status === "not_started").length,
+    inProgress: scopedRows.filter((r) => r.status === "in_progress").length,
+    finished: finishedRows.length,
+    passed: passedRows.length,
+    failed: finishedRows.length - passedRows.length,
+    annulled: scopedRows.filter((r) => r.status === "annulled").length,
+    passRate: finishedRows.length ? Math.round((passedRows.length / finishedRows.length) * 100) : null,
+    avgScore: scoreList.length ? Math.round(scoreList.reduce((a, b) => a + b, 0) / scoreList.length) : null,
+  };
 
   const rows = useMemo(() => {
-    const list = data?.rows ?? [];
-    const s = search.trim().toLowerCase();
-    return list.filter((r) => {
-      if (examId !== "all" && r.examId !== examId) return false;
-      if (s && !`${r.fullName} ${r.branchLabel || ""} ${r.phone || ""} ${r.examTitle}`.toLowerCase().includes(s)) return false;
-      if (filter === "passed") return r.passed === true && (r.status === "submitted" || r.status === "expired");
-      if (filter === "failed") return r.passed === false && (r.status === "submitted" || r.status === "expired");
-      if (filter === "all") return true;
-      return r.status === filter;
-    });
-  }, [data?.rows, examId, filter, search]);
+    const needle = search.trim().toLowerCase();
+    const rank = (r: AttestResultRow) => (isFinished(r) ? 0 : r.status === "in_progress" ? 1 : r.status === "annulled" ? 3 : 2);
+    return scopedRows
+      .filter((r) => {
+        if (examId !== "all" && r.examId !== examId) return false;
+        if (needle && !`${r.fullName} ${r.branchLabel || ""} ${r.phone || ""} ${r.examTitle}`.toLowerCase().includes(needle)) return false;
+        if (filter === "finished") return isFinished(r);
+        if (filter === "passed") return isFinished(r) && r.passed === true;
+        if (filter === "failed") return isFinished(r) && r.passed === false;
+        if (filter === "all") return true;
+        return r.status === filter;
+      })
+      .sort((a, b) => rank(a) - rank(b) || String(b.submittedAt || b.startedAt || "").localeCompare(String(a.submittedAt || a.startedAt || "")));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopedRows, examId, filter, search]);
 
   const runExport = async (kind: "excel" | "pdf") => {
-    if (!data) return;
-    const payload = { ...data, rows };
+    const payload = {
+      track: scope === "all" ? ("stajyor" as AttestTrack) : scope,
+      trackLabel: scope === "all" ? "Barcha yo‘nalishlar" : scopedRows[0]?.trackLabel || "",
+      exams: scopedExams.map((e) => ({ id: e.id, title: e.title })),
+      stats: s,
+      rows,
+    } as AttestResults;
     setExporting(kind);
     try {
       if (kind === "excel") await exportAttestResultsExcel(payload);
@@ -994,18 +1067,20 @@ function ResultsBoard({ track }: { track: AttestTrack }) {
     }
   };
 
-  if (q.isLoading) return <Skeleton className="h-64 rounded-3xl" />;
-  if (q.isError || !data) {
-    return <p className="rounded-2xl bg-red-50 p-4 text-sm text-red-700">{(q.error as Error)?.message || "Yuklanmadi"}</p>;
+  if (queries.some((q) => q.isLoading)) return <Skeleton className="h-64 rounded-3xl" />;
+  const errQ = queries.find((q) => q.isError);
+  if (errQ) {
+    return <p className="rounded-2xl bg-red-50 p-4 text-sm text-red-700 dark:bg-rose-500/10 dark:text-rose-300">{(errQ.error as Error)?.message || "Yuklanmadi"}</p>;
   }
-  const s = data.stats;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1">
-          <h2 className="text-lg font-bold">Natijalar · {data.trackLabel}</h2>
-          <p className="text-xs text-muted-foreground">Har bir xodim va har bir atestatsiya alohida qator. Jadval 20 soniyada yangilanadi.</p>
+          <h2 className="text-lg font-bold">Natijalar · barcha attestatsiyalar</h2>
+          <p className="text-xs text-muted-foreground">
+            Kim qaysi testni ishlagani: nechta savolga javob bergani (ishlagani), nechtasi to‘g‘ri, foizi va o‘tgan/o‘tmagani. 20 soniyada yangilanadi.
+          </p>
         </div>
         <Button size="sm" variant="outline" disabled={exporting !== null || !rows.length} onClick={() => void runExport("excel")}>
           {exporting === "excel" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-700" />} Excel
@@ -1015,14 +1090,27 @@ function ResultsBoard({ track }: { track: AttestTrack }) {
         </Button>
       </div>
 
+      <div className="flex flex-wrap gap-1.5">
+        {TRACK_FILTERS.map(([k, label]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => { setScope(k); setExamId("all"); }}
+            className={cn("rounded-full px-3 py-1.5 text-xs font-semibold", scope === k ? "bg-foreground text-background" : "bg-card text-muted-foreground ring-1 ring-border")}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
         {[
-          ["Xodim", s.people],
-          ["Test", s.exams],
-          ["Boshlamagan", s.notStarted],
-          ["Ishlayapti", s.inProgress],
           ["Tugatgan", s.finished],
           ["O‘tgan", s.passed],
+          ["O‘tmagan", s.failed],
+          ["Ishlayapti", s.inProgress],
+          ["Boshlamagan", s.notStarted],
+          ["Xodim", s.people],
           ["O‘tish", s.passRate != null ? `${s.passRate}%` : "—"],
           ["O‘rtacha", s.avgScore != null ? `${s.avgScore}%` : "—"],
         ].map(([k, v]) => (
@@ -1041,11 +1129,11 @@ function ResultsBoard({ track }: { track: AttestTrack }) {
           onChange={(e) => setExamId(e.target.value === "all" ? "all" : Number(e.target.value))}
         >
           <option value="all">Barcha atestatsiyalar</option>
-          {data.exams.map((e) => (
+          {scopedExams.map((e) => (
             <option key={e.id} value={e.id}>{e.title}</option>
           ))}
         </select>
-        {FILTERS.map(([k, label]) => (
+        {RESULT_FILTERS.map(([k, label]) => (
           <button key={k} type="button" onClick={() => setFilter(k)} className={cn("rounded-full px-3 py-1 text-xs font-semibold", filter === k ? "bg-foreground text-background" : "bg-card text-muted-foreground ring-1 ring-border")}>
             {label}
           </button>
@@ -1053,50 +1141,51 @@ function ResultsBoard({ track }: { track: AttestTrack }) {
       </div>
 
       <div className="overflow-x-auto rounded-2xl border border-border bg-card">
-        <table className="w-full min-w-[1100px] text-left text-xs">
+        <table className="w-full min-w-[860px] text-left text-xs">
           <thead className="bg-muted/60 text-[11px] uppercase text-muted-foreground">
             <tr>
-              {["Xodim", "Filial", "Atestatsiya", "Holat", "Ball", "To‘g‘ri", "Urinish", "Joy", "Masofa", "Fokus", "Vaqt", "Boshlangan", "Topshirilgan"].map((h) => (
+              {["Xodim", "Test", "Ishlagani", "To‘g‘ri", "Ball", "Holat", "Urinish", "Topshirgan"].map((h) => (
                 <th key={h} className="whitespace-nowrap px-3 py-2 font-semibold">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={`${r.examId}-${r.userId}`} className="border-t border-border/70">
-                <td className="px-3 py-2">
-                  <p className="font-semibold text-foreground">{r.fullName}</p>
-                  <p className="text-[10px] text-muted-foreground">{r.phone || "—"}</p>
-                </td>
-                <td className="px-3 py-2">{r.branchLabel || "—"}</td>
-                <td className="max-w-[180px] px-3 py-2">
-                  <p className="truncate font-medium" title={r.examTitle}>{r.examTitle}</p>
-                  <p className="text-[10px] text-muted-foreground">
-                    {r.locationMode === "anywhere" ? "Istalgan joy" : r.locationMode === "office" ? "Ofis" : "Filial"} · o‘tish {r.passScore}%
-                  </p>
-                </td>
-                <td className={cn("whitespace-nowrap px-3 py-2 font-semibold", r.passed ? "text-emerald-700" : r.passed === false ? "text-rose-700" : "")}>
-                  {r.status === "submitted" || r.status === "expired" ? (r.passed ? "O‘tdi" : "O‘tmadi") : ATTEST_STATUS_LABEL[r.status]}
-                  {r.retakeAllowed ? <span className="ml-1 font-normal text-muted-foreground">· qayta</span> : null}
-                  {r.annulReason ? <p className="max-w-[140px] truncate font-normal text-muted-foreground" title={r.annulReason}>{r.annulReason}</p> : null}
-                </td>
-                <td className="px-3 py-2 tabular-nums">{r.score != null ? `${r.score}%` : "—"}</td>
-                <td className="px-3 py-2 tabular-nums">{r.correct != null ? `${r.correct}/${r.total}` : `—/${r.total}`}</td>
-                <td className="px-3 py-2 tabular-nums">{r.attemptsCount || "—"}</td>
-                <td className="max-w-[120px] truncate px-3 py-2" title={r.locationLabel || ""}>{r.locationLabel || "—"}</td>
-                <td className="px-3 py-2 tabular-nums">{r.distanceM != null ? `${r.distanceM} m` : "—"}</td>
-                <td className="px-3 py-2 tabular-nums">{r.focusLost || "—"}</td>
-                <td className="px-3 py-2 tabular-nums">{r.durationSec != null ? `${Math.floor(r.durationSec / 60)}:${String(r.durationSec % 60).padStart(2, "0")}` : "—"}</td>
-                <td className="whitespace-nowrap px-3 py-2">{formatAttestDt(r.startedAt)}</td>
-                <td className="whitespace-nowrap px-3 py-2">{formatAttestDt(r.submittedAt)}</td>
-              </tr>
-            ))}
+            {rows.map((r) => {
+              const badge = resultStatusBadge(r);
+              return (
+                <tr key={`${r.examId}-${r.userId}`} className="border-t border-border/70">
+                  <td className="px-3 py-2">
+                    <p className="font-semibold text-foreground">{r.fullName}</p>
+                    <p className="text-[10px] text-muted-foreground">{r.branchLabel || "Filialsiz"}{r.phone ? ` · ${r.phone}` : ""}</p>
+                  </td>
+                  <td className="max-w-[200px] px-3 py-2">
+                    <p className="truncate font-medium" title={r.examTitle}>{r.examTitle}</p>
+                    <p className="text-[10px] text-muted-foreground">{r.trackLabel} · o‘tish {r.passScore}%</p>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 tabular-nums font-semibold">{r.answered}/{r.total}</td>
+                  <td className="whitespace-nowrap px-3 py-2 tabular-nums">{r.correct != null ? `${r.correct}/${r.total}` : "—"}</td>
+                  <td className="whitespace-nowrap px-3 py-2">
+                    <span className={cn("text-sm font-bold tabular-nums", r.passed ? "text-emerald-600 dark:text-emerald-400" : r.passed === false ? "text-rose-600 dark:text-rose-400" : "text-foreground")}>
+                      {r.score != null ? `${r.score}%` : "—"}
+                    </span>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2">
+                    <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", badge.cls)}>{badge.label}</span>
+                    {r.retakeAllowed ? <span className="ml-1 text-muted-foreground">· qayta</span> : null}
+                    {r.annulReason ? <p className="max-w-[140px] truncate font-normal text-muted-foreground" title={r.annulReason}>{r.annulReason}</p> : null}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums">{r.attemptsCount || "—"}</td>
+                  <td className="whitespace-nowrap px-3 py-2">{r.submittedAt ? formatAttestDt(r.submittedAt) : r.startedAt ? formatAttestDt(r.startedAt) : "—"}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         {!rows.length ? <p className="py-8 text-center text-sm text-muted-foreground">Natija topilmadi</p> : null}
       </div>
       <p className="text-[11px] text-muted-foreground">
-        Excelda foiz, to‘g‘ri/noto‘g‘ri, telefon, GPS va bekor sababi bor. Bitta atestatsiya «Natija» orqali ochilsa — har bir javob ham Excelda chiqadi.
+        «Ishlagani» — nechta savolga javob bergani / jami savol. «To‘g‘ri» — to‘g‘ri javoblar soni. Excel/PDF da ham shu ustunlar bor.
+        Bitta testni «Atestatsiyalar»da ochsangiz — har bir xodimning har bir javobi ham ko‘rinadi.
       </p>
     </div>
   );
@@ -1255,7 +1344,7 @@ export default function AtestatsiyaAdminPage() {
         </div>
 
         {tab === "results" ? (
-          <ResultsBoard track={track} />
+          <ResultsBoard />
         ) : monitorId ? (
           <Monitor examId={monitorId} onBack={() => setMonitorId(null)} />
         ) : (

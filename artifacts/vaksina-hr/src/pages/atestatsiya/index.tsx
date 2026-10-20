@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Clock,
   Eye,
+  ListChecks,
   Loader2,
   MapPin,
   PencilRuler,
@@ -395,6 +396,25 @@ export function ExamRunner({
   );
 }
 
+/** Kartochkada aniq yozuvlar: oyna vaqti, davomiylik, savol/o‘tish — qisqa va tushunarli */
+function fmtDay(iso: string): string {
+  return new Intl.DateTimeFormat("ru-RU", { timeZone: "Asia/Tashkent", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(iso));
+}
+function fmtHm(iso: string): string {
+  return new Intl.DateTimeFormat("ru-RU", { timeZone: "Asia/Tashkent", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+}
+function windowLabel(startsAt: string, endsAt: string): string {
+  return fmtDay(startsAt) === fmtDay(endsAt)
+    ? `${fmtDay(startsAt)} · ${fmtHm(startsAt)}–${fmtHm(endsAt)}`
+    : `${formatAttestDt(startsAt)} – ${formatAttestDt(endsAt)}`;
+}
+function durationLabel(min: number): string {
+  if (min < 60) return `${min} daqiqa`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m ? `${h} soat ${m} daqiqa` : `${h} soat`;
+}
+
 function ResultBanner({
   attempt,
   canRetake,
@@ -635,7 +655,6 @@ export default function AtestatsiyaPage() {
           <div className="space-y-3">
             {data.exams.map((exam) => {
               const anywhere = exam.locationMode === "anywhere";
-              const placeLabel = anywhere ? "Istalgan joy" : exam.locationMode === "office" ? "Ofis" : "Filial";
               return (
               <article
                 key={exam.id}
@@ -669,18 +688,27 @@ export default function AtestatsiyaPage() {
                     ) : null}
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
+                <div className="grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-3">
                   {[
-                    { icon: Clock, label: "Vaqt", value: `${formatAttestDt(exam.startsAt)} – ${formatAttestDt(exam.endsAt)}` },
-                    { icon: Timer, label: "Davomiylik", value: `${exam.durationMinutes} daqiqa` },
-                    { icon: MapPin, label: placeLabel, value: exam.locationTarget },
+                    { icon: Clock, label: "Ochiq vaqti", value: windowLabel(exam.startsAt, exam.endsAt) },
+                    { icon: Timer, label: "Test davomiyligi", value: durationLabel(exam.durationMinutes) },
                     {
-                      icon: Award,
-                      label: "O‘tish / savol",
+                      icon: ListChecks,
+                      label: "Savollar",
                       value:
                         exam.poolCount && exam.poolCount > exam.questionCount
-                          ? `${exam.passScore}% · sizga ${exam.questionCount}/${exam.poolCount}`
-                          : `${exam.passScore}% · ${exam.questionCount} savol`,
+                          ? `${exam.questionCount} ta tushadi (bankda ${exam.poolCount} ta)`
+                          : `${exam.questionCount} ta savol`,
+                    },
+                    {
+                      icon: Award,
+                      label: "O‘tish bali",
+                      value: `${exam.passScore}% · kamida ${Math.ceil((exam.passScore / 100) * exam.questionCount)} ta to‘g‘ri`,
+                    },
+                    {
+                      icon: MapPin,
+                      label: "Qayerda",
+                      value: anywhere ? "Istalgan joy" : exam.locationMode === "office" ? "Asosiy ofis" : exam.locationTarget || "O‘z filialingiz",
                     },
                   ].map((x) => (
                     <div key={x.label} className="rounded-2xl bg-muted/70 px-2.5 py-2">

@@ -10,7 +10,7 @@
  *  - Ovozli xabar: eshitolmasligini aytib, yozib yuborishni so‘raydi.
  *  - Parol so‘ramaydi; yuborilsa — ogohlantiradi.
  */
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import {
   pool,
   db,
@@ -221,15 +221,88 @@ async function findUserByTelegram(telegramUserId: string): Promise<PlatformUser 
   return u ?? null;
 }
 
-/** F.I.Sh. bo‘yicha qidirish (lotin/kirill farqi bo‘lsa ham tokenlar bo‘yicha) */
-async function searchUsersByName(raw: string): Promise<PlatformUser[]> {
-  const tokens = raw
+/* ------------------------------------------------ odam topish (ball + fuzzy) */
+
+/**
+ * Admin odam yozsa — tizimning o‘zi topishi shart («agentcha» ishlash).
+ * Eski usul (substring oyna) «ber» kabi oddiy so‘zlar familiyaga tegib
+ * tasodifiy odamlarni chiqarardi. Endi: stop-so‘zlar tashlanadi, har bir
+ * xodim ism tokenlari bo‘yicha ball oladi (aniq / prefiks / fuzzy),
+ * rol ishorasi (hr, farmasevt...) bonus beradi. Xato yozilgan ism ham topiladi.
+ */
+const NAME_STOPWORDS = new Set([
+  "menga", "uchun", "bilan", "kerak", "qilib", "qil", "ber", "bering", "berib", "topib", "top", "toping",
+  "xodim", "xodimlar", "xodimlari", "xodimni", "ichidan", "ofis", "ofisdagi", "hafta", "haftalik", "haftalikni",
+  "kun", "kuni", "kunlik", "davomat", "davomatini", "davomatim", "davomati", "excel", "pdf", "fayl", "faylni",
+  "ish", "ishi", "ishini", "yozib", "yubor", "yuboring", "yuborib", "ochib", "och", "oching", "tuzat", "tuzating",
+  "nima", "qaysi", "qanday", "bugun", "bugungi", "kecha", "ertaga", "soat", "nechida", "haqida", "boyicha",
+  "ham", "hamda", "va", "ni", "ning", "ga", "da", "dan", "lar", "lari", "bir", "shu", "ushbu", "iltimos", "rahmat",
+  "менга", "учун", "билан", "керак", "қилиб", "қил", "бер", "беринг", "топиб", "ходим", "ходимлар", "ичидан",
+  "ҳафта", "ҳафталик", "кун", "куни", "давомат", "давоматини", "excel", "pdf", "файл", "иш", "иши", "ёзиб",
+  "юбор", "юборинг", "очиб", "оч", "тузат", "нима", "қайси", "бугун", "кеча", "эртага", "соат", "нечида",
+  "ҳақида", "ҳам", "ва", "ни", "нинг", "га", "да", "дан", "лар", "лари", "бир", "шу", "илтимос",
+  "the", "please", "give", "me", "file", "make", "send", "for", "and", "with", "week", "weekly", "today",
+  "мне", "для", "сделай", "дай", "нужен", "нужна", "файл", "неделю", "недели", "сегодня", "пожалуйста",
+  "работник", "сотрудник", "сотрудники", "из", "офис", "офиса",
+]);
+
+function nameQueryTokens(text: string): string[] {
+  return text
     .toLowerCase()
     .replace(/[^\p{L}\s]/gu, " ")
     .split(/\s+/)
-    .filter((t) => t.length >= 3)
-    .slice(0, 3);
-  if (!tokens.length) return [];
+    .filter((t) => t.length >= 3 && !NAME_STOPWORDS.has(t));
+}
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(
+        prev[j]! + 1,
+        cur[j - 1]! + 1,
+        prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+    prev = cur;
+  }
+  return prev[n]!;
+}
+
+/** Bitta so‘z ↔ ism bo‘lagi o‘xshashligi: aniq=3, prefiks=2.2, ichida=1.8, fuzzy=1.6/1.2 */
+function tokenScore(q: string, n: string): number {
+  if (!q || !n) return 0;
+  if (q === n) return 3;
+  if (q.length >= 4 && n.length >= 4 && (q.startsWith(n) || n.startsWith(q))) return 2.2;
+  if (q.length >= 5 && n.length >= 5 && (q.includes(n) || n.includes(q))) return 1.8;
+  const min = Math.min(q.length, n.length);
+  const d = levenshtein(q, n);
+  if (d <= 1 && min >= 4) return 1.6;
+  if (d <= 2 && min >= 6) return 1.2;
+  return 0;
+}
+
+const ROLE_HINTS: Array<{ re: RegExp; role: string }> = [
+  { re: /\bhr\b|эйчар/i, role: "hr" },
+  { re: /farmasevt|фармацевт/i, role: "farmasevt" },
+  { re: /mudir|мудир|заведующ/i, role: "mudir" },
+  { re: /direktor|директор/i, role: "director" },
+  { re: /koordinator|координатор/i, role: "koordinator" },
+  { re: /stajyor|стаж[её]р|стажер/i, role: "stajyor" },
+  { re: /rekruter|recruiter|рекрутер/i, role: "recruiter" },
+  { re: /mentor|ментор/i, role: "mentor" },
+  { re: /trener|trainer|тренер/i, role: "trainer" },
+];
+
+let allUsersCache: { at: number; users: PlatformUser[] } | null = null;
+
+async function loadAllUsersForMatch(): Promise<PlatformUser[]> {
+  if (allUsersCache && Date.now() - allUsersCache.at < 60_000) return allUsersCache.users;
   const rows = await db
     .select({
       id: usersTable.id,
@@ -241,30 +314,46 @@ async function searchUsersByName(raw: string): Promise<PlatformUser[]> {
       telegramId: usersTable.telegramId,
     })
     .from(usersTable)
-    .where(and(...tokens.map((t) => ilike(usersTable.fullName, `%${t}%`))))
-    .limit(5);
+    .limit(5000);
+  allUsersCache = { at: Date.now(), users: rows };
   return rows;
 }
 
-/** Matn ichidan ism-familiya oynasi (3→2→1 token) bilan foydalanuvchi qidirish */
-export async function searchUsersInText(text: string): Promise<PlatformUser[]> {
-  const tokens = text
-    .toLowerCase()
-    .replace(/[^\p{L}\s]/gu, " ")
-    .split(/\s+/)
-    .filter((t) => t.length >= 3);
-  if (!tokens.length) return [];
-  for (const size of [3, 2, 1]) {
-    const found = new Map<number, PlatformUser>();
-    for (let i = 0; i + size <= tokens.length; i++) {
-      const win = tokens.slice(i, i + size).join(" ");
-      const rows = await searchUsersByName(win).catch(() => []);
-      for (const r of rows) found.set(r.id, r);
-      if (found.size > 5) break;
+/** Matndan odam topish: ishonchli bo‘lsa user, yaqin bir nechta bo‘lsa candidates */
+export async function searchUsersInText(
+  text: string,
+): Promise<{ user: PlatformUser | null; candidates: PlatformUser[] }> {
+  const qTokens = nameQueryTokens(text);
+  if (!qTokens.length) return { user: null, candidates: [] };
+  const users = await loadAllUsersForMatch().catch(() => [] as PlatformUser[]);
+  if (!users.length) return { user: null, candidates: [] };
+  const hint = ROLE_HINTS.find((h) => h.re.test(text))?.role;
+
+  const scored: Array<{ u: PlatformUser; score: number }> = [];
+  for (const u of users) {
+    const parts = u.fullName
+      .toLowerCase()
+      .replace(/[^\p{L}\s]/gu, " ")
+      .split(/\s+/)
+      .filter(Boolean);
+    let score = 0;
+    for (const part of parts) {
+      let best = 0;
+      for (const q of qTokens) best = Math.max(best, tokenScore(q, part));
+      score += best;
     }
-    if (found.size) return [...found.values()].slice(0, 5);
+    const login = (u.login || "").toLowerCase();
+    if (login && qTokens.some((q) => q === login)) score += 3;
+    if (hint && u.role === hint) score += 1.5;
+    if (score >= 1.2) scored.push({ u, score });
   }
-  return [];
+  scored.sort((a, b) => b.score - a.score);
+  const top = scored[0];
+  if (!top) return { user: null, candidates: [] };
+  const close = scored.filter((s) => top.score - s.score < 0.9).slice(0, 5);
+  if (close.length === 1 && top.score >= 1.6) return { user: top.u, candidates: [] };
+  if (top.score >= 1.2) return { user: null, candidates: close.map((s) => s.u) };
+  return { user: null, candidates: [] };
 }
 
 /** Admin (yoki business) matnlaridan nishon xodimni topish; bir nechta bo‘lsa — nomzodlar */
@@ -272,9 +361,11 @@ export async function resolveTargetFromTexts(
   texts: string[],
 ): Promise<{ user: PlatformUser | null; candidates: PlatformUser[] }> {
   for (const t of texts) {
-    const found = await searchUsersInText(t).catch(() => []);
-    if (found.length === 1) return { user: found[0]!, candidates: [] };
-    if (found.length > 1) return { user: null, candidates: found };
+    const r = await searchUsersInText(t).catch(
+      () => ({ user: null, candidates: [] }) as { user: PlatformUser | null; candidates: PlatformUser[] },
+    );
+    if (r.user) return { user: r.user, candidates: [] };
+    if (r.candidates.length) return { user: null, candidates: r.candidates };
   }
   return { user: null, candidates: [] };
 }
@@ -659,7 +750,7 @@ async function callAi(opts: {
       ? "ADMIN REJIMI: suhbatdosh — platformaning egasi (admin), u botning yagona boshqaruvchisi. Nima desa — shuni to‘liq bajar: kimnidir yozib ma’lumot so‘rasa, JONLI BAZADAN to‘liq va aniq javob ber. Biror amal buyursa (testni qayta och, davomatni tuzat, xodimga xabar yubor) va ma’lumot yetarli bo‘lsa — proposal maydoniga amalni yoz, u DARHOL bajariladi (tasdiq kutilmaydi). reply da faqat qisqa izoh yoz («tekshirdim», nima topding) — «bajarildi» qismini tizim natija bilan qo‘shadi. Ma’lumot yetishmasa yoki xodim aniq topilmasa — proposal YARATMA, aniqlashtiruvchi savol ber."
       : "XODIM REJIMI (QAT’IY): sen FAQAT standart so‘rovlarga javob berasan: (1) o‘z davomati — qachon keldim/ketdim, qaysi kuni kelgan-kelmagani; (2) o‘z testlari — ball, o‘tgan/o‘tmagani, jadvali; (3) javob olish so‘rovi holati; (4) platforma qanday ishlatiladi (bilim bazasidan qisqa ko‘rsatma). Boshqa hech narsa QILMA: erkin suhbat/chat, vazifa qabul qilish, ma’lumot o‘zgartirish yoki biror ishni bajarishni va’da qilish TAQIQLANGAN. proposal va file HAR DOIM null bo‘lsin. O‘zgartirish/amal so‘ralsa yoki mavzudan tashqari gap bo‘lsa — xodim yozgan tilda bitta qisqa javob ber: bu ishlarni faqat admin bajaradi, admin bilan bog‘laning; o‘zing esa faqat davomat/test/platforma bo‘yicha standart ma’lumot bera olasan. Boshqa odamlar haqida ma’lumot BERMA.",
     opts.adminMode
-      ? "FAYL BUYRUG‘I: admin «PDF qilib ber», «Excel qilib ber», «ro‘yxatni fayl qilib yubor» desa — file maydonini to‘ldir va reply da qisqa «Tayyorlayapman» deb yoz (faylni tizim o‘zi yuboradi, «yubordim» deb o‘zing yozma). Tayyor bazaviy datasetlar: employees (barcha xodimlar ro‘yxati), davomat_today, davomat_month, atestatsiya_results. Admin aynan ko‘rib turgan/snapshotdagi jadvalni fayl qilishni so‘rasa — dataset=custom_table qilib columns va rows ni O‘ZING to‘ldir (faqat bazada/suhbatda aniq ko‘ringan faktlar bilan, uydirma qo‘shma)."
+      ? "FAYL BUYRUG‘I: admin «PDF qilib ber», «Excel qilib ber», «ro‘yxatni fayl qilib yubor» desa — file maydonini to‘ldir va reply da qisqa «Tayyorlayapman» deb yoz (faylni tizim o‘zi yuboradi, «yubordim» deb o‘zing yozma). Tayyor bazaviy datasetlar: employees (barcha xodimlar ro‘yxati), davomat_today (bugungi), davomat_week (oxirgi 7 kun — «1 haftalik» desa shu), davomat_month (oy boshidan), atestatsiya_results. Admin bir xodimni yozib o‘shaning davomati/testini fayl so‘rasa — odamni QIDIRMA va aniqlashtirish SO‘RAMA: tizim odamni o‘zi topgan va snapshot aynan o‘sha odam haqida; shunchaki mos datasetni tanla, fayl tizim tomonidan o‘sha xodim bo‘yicha filtrlanadi. Admin aynan snapshotdagi jadvalni fayl qilishni so‘rasa — dataset=custom_table qilib columns va rows ni O‘ZING to‘ldir (faqat bazada/suhbatda aniq ko‘ringan faktlar bilan, uydirma qo‘shma)."
       : "",
     "Noqonuniy/for qalbakilashtirish so‘ralsa (masalan kelmagan kunga davomat yozib berish): rad et, sababini odamdek tushuntir va qonuniy yo‘lni ayt (javob olish so‘rovi, koordinatordan tasdiq). Bunday so‘rov uchun taklif YARATMA.",
     opts.adminMode
@@ -669,7 +760,7 @@ async function callAi(opts: {
     "FAKT QOIDASI (eng muhim): sana, vaqt, ball, holat, filial, test nomi kabi aniq ma’lumotni FAQAT «JONLI BAZA HOLATI»da yozilganidan ol. U yerda yo‘q bo‘lsa — HECH QACHON uydirma (masalan «soat 10:00 da test bor» deb aytma). Buning o‘rniga: «Bazada hozir bunday ma’lumot ko‘rinmayapti, adminga aniqlashtirib beraman» deb ayt. «Jadvalda YO‘Q» deb yozilgan bo‘lsa — test yo‘qligini aniq ayt.",
     "Javob uzunligi: odatda 2–6 jumla, ro‘yxat kerak bo‘lsa qisqa ro‘yxat. Ortiqcha rasmiyatchilik qilma.",
     "",
-    'Faqat JSON qaytar: {"reply":"...","intent":"davomat|atestatsiya|login|javob|smena|savol|boshqa","proposal":null yoki {"kind":"davomat_fix|atestatsiya_retake|account_help|admin_task|notify_user","title":"qisqa sarlavha","summary":"kim, nima, sabab, tekshirilgan faktlar","payload":{"userId":123,"workDate":"2026-10-20","examId":1,"message":"xodimga matn","note":"..."},"completionText":"amal bajarilgach xodimga yuboriladigan yakuniy xabar"},"file":null yoki {"format":"pdf"|"excel","dataset":"employees"|"davomat_today"|"davomat_month"|"atestatsiya_results"|"custom_table","title":"fayl sarlavhasi","columns":["ustun"],"rows":[["qiymat"]]}. file FAQAT admin rejimida va faqat admin fayl so‘raganda to‘ldiriladi; xodim rejimida file DOIM null.',
+    'Faqat JSON qaytar: {"reply":"...","intent":"davomat|atestatsiya|login|javob|smena|savol|boshqa","proposal":null yoki {"kind":"davomat_fix|atestatsiya_retake|account_help|admin_task|notify_user","title":"qisqa sarlavha","summary":"kim, nima, sabab, tekshirilgan faktlar","payload":{"userId":123,"workDate":"2026-10-20","examId":1,"message":"xodimga matn","note":"..."},"completionText":"amal bajarilgach xodimga yuboriladigan yakuniy xabar"},"file":null yoki {"format":"pdf"|"excel","dataset":"employees"|"davomat_today"|"davomat_week"|"davomat_month"|"atestatsiya_results"|"custom_table","title":"fayl sarlavhasi","columns":["ustun"],"rows":[["qiymat"]]}. file FAQAT admin rejimida va faqat admin fayl so‘raganda to‘ldiriladi; xodim rejimida file DOIM null.',
     "davomat_fix payload da iloji bo‘lsa workDate va tuzatiladigan vaqtlarni yoz. atestatsiya_retake da examId ni yoz (bilinmasa summary da test nomini yoz). notify_user da payload.message — xodimga yuboriladigan matn.",
     "",
     opts.snapshot ? `=== JONLI BAZA HOLATI ===\n${opts.snapshot}` : "=== JONLI BAZA: xodim hali aniqlanmadi (ism-familiya/filial so‘ra) ===",
@@ -723,7 +814,7 @@ async function callAi(opts: {
     const f = parsed.file as Record<string, unknown> | null;
     if (opts.adminMode && f && typeof f === "object") {
       const formats = ["pdf", "excel"];
-      const datasets = ["employees", "davomat_today", "davomat_month", "atestatsiya_results", "custom_table"];
+      const datasets = ["employees", "davomat_today", "davomat_week", "davomat_month", "atestatsiya_results", "custom_table"];
       const format = formats.includes(String(f.format)) ? (String(f.format) as "pdf" | "excel") : "excel";
       const dataset = datasets.includes(String(f.dataset))
         ? (String(f.dataset) as AssistantFileRequest["dataset"])
@@ -1192,7 +1283,10 @@ export async function handleAiAssistantMessage(
     if (result.file) {
       try {
         const { buildAssistantFile } = await import("./ai-assistant-files");
-        const built = await buildAssistantFile(result.file);
+        const built = await buildAssistantFile(
+          result.file,
+          target ? { userId: target.id, userName: target.fullName } : undefined,
+        );
         await sendDocument(chatId, built.buffer, built.filename, {
           mimeType: built.mime,
           caption: `📊 ${built.title} · ${built.rowCount} qator`,
@@ -1333,7 +1427,10 @@ export async function webAssistantTurn(opts: {
     if (result.file) {
       try {
         const { buildAssistantFile } = await import("./ai-assistant-files");
-        const built = await buildAssistantFile(result.file);
+        const built = await buildAssistantFile(
+          result.file,
+          target ? { userId: target.id, userName: target.fullName } : undefined,
+        );
         fileData = { name: built.filename, mime: built.mime, base64: built.buffer.toString("base64") };
         reply = `${reply}\n\n📎 Fayl tayyor: ${built.filename} (${built.rowCount} qator) — yuklab olish avtomatik boshlanadi.`;
       } catch (err) {

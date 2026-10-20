@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import ExcelJS from "exceljs";
 import { PDFDocument, rgb, type PDFFont } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { desc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte } from "drizzle-orm";
 import {
   db,
   usersTable,
@@ -22,9 +22,20 @@ export type AssistantFileFormat = "pdf" | "excel";
 export type AssistantDataset =
   | "employees"
   | "davomat_today"
+  | "davomat_week"
   | "davomat_month"
   | "atestatsiya_results"
   | "custom_table";
+
+export type AssistantFileScope = { userId?: number; userName?: string };
+
+/** "2026-10-20" dan n kun oldingi sana ("2026-10-14") */
+function minusDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y!, m! - 1, d!));
+  dt.setUTCDate(dt.getUTCDate() - days);
+  return dt.toISOString().slice(0, 10);
+}
 
 export type AssistantFileRequest = {
   format: AssistantFileFormat;
@@ -81,8 +92,9 @@ function slug(s: string): string {
 
 type Table = { title: string; columns: string[]; rows: string[][] };
 
-async function datasetTable(req: AssistantFileRequest): Promise<Table> {
+async function datasetTable(req: AssistantFileRequest, scope?: AssistantFileScope): Promise<Table> {
   const today = todayTashkent();
+  const scopedName = scope?.userName ? ` — ${scope.userName}` : "";
 
   if (req.dataset === "employees") {
     const users = await db
@@ -115,8 +127,11 @@ async function datasetTable(req: AssistantFileRequest): Promise<Table> {
     };
   }
 
-  if (req.dataset === "davomat_today" || req.dataset === "davomat_month") {
-    const from = req.dataset === "davomat_today" ? today : `${today.slice(0, 8)}01`;
+  if (req.dataset === "davomat_today" || req.dataset === "davomat_week" || req.dataset === "davomat_month") {
+    const from =
+      req.dataset === "davomat_today" ? today : req.dataset === "davomat_week" ? minusDays(today, 6) : `${today.slice(0, 8)}01`;
+    const conds = [gte(attendanceRecordsTable.workDate, from)];
+    if (scope?.userId) conds.push(eq(attendanceRecordsTable.userId, scope.userId));
     const recs = await db
       .select({
         workDate: attendanceRecordsTable.workDate,
@@ -128,14 +143,20 @@ async function datasetTable(req: AssistantFileRequest): Promise<Table> {
       })
       .from(attendanceRecordsTable)
       .leftJoin(usersTable, eq(attendanceRecordsTable.userId, usersTable.id))
-      .where(gte(attendanceRecordsTable.workDate, from))
+      .where(and(...conds))
       .orderBy(desc(attendanceRecordsTable.workDate), usersTable.fullName)
       .limit(MAX_ROWS);
     const branches = await resolveUserBranches(
       recs.map((r) => r.userId).filter((n): n is number => Boolean(n)),
     ).catch(() => new Map<number, { label?: string }>());
+    const rangeTitle =
+      req.dataset === "davomat_today"
+        ? `Davomat — ${today}`
+        : req.dataset === "davomat_week"
+          ? `Davomat 1 hafta — ${from} … ${today}`
+          : `Davomat — ${from} dan`;
     return {
-      title: req.title || (req.dataset === "davomat_today" ? `Davomat — ${today}` : `Davomat — ${from} dan`),
+      title: (req.title || rangeTitle) + scopedName,
       columns: ["Sana", "F.I.Sh.", "Filial", "Keldi", "Ketdi", "Holat"],
       rows: recs.map((r) => [
         r.workDate,
@@ -161,10 +182,11 @@ async function datasetTable(req: AssistantFileRequest): Promise<Table> {
       .from(attestatsiyaAttemptsTable)
       .innerJoin(attestatsiyaExamsTable, eq(attestatsiyaAttemptsTable.examId, attestatsiyaExamsTable.id))
       .leftJoin(usersTable, eq(attestatsiyaAttemptsTable.userId, usersTable.id))
+      .where(scope?.userId ? eq(attestatsiyaAttemptsTable.userId, scope.userId) : undefined)
       .orderBy(desc(attestatsiyaAttemptsTable.startedAt))
       .limit(500);
     return {
-      title: req.title || "Atestatsiya natijalari (oxirgi 500)",
+      title: (req.title || "Atestatsiya natijalari (oxirgi 500)") + scopedName,
       columns: ["F.I.Sh.", "Test", "Ball", "Natija", "Holat", "Sana"],
       rows: rows.map((r) => [
         r.fullName || "—",
@@ -319,8 +341,11 @@ async function buildPdf(table: Table): Promise<Buffer> {
 
 /* ------------------------------------------------------------------ public */
 
-export async function buildAssistantFile(req: AssistantFileRequest): Promise<BuiltAssistantFile> {
-  const table = await datasetTable(req);
+export async function buildAssistantFile(
+  req: AssistantFileRequest,
+  scope?: AssistantFileScope,
+): Promise<BuiltAssistantFile> {
+  const table = await datasetTable(req, scope);
   if (!table.rows.length) throw new Error("So'ralgan ma'lumot bazada topilmadi (bo'sh)");
   const isExcel = req.format === "excel";
   const buffer = isExcel ? await buildExcel(table) : await buildPdf(table);

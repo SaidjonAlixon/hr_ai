@@ -439,6 +439,22 @@ function ResultBanner({
       </div>
     );
   }
+  if (attempt.status === "in_progress") {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-500/30 dark:bg-amber-500/10">
+        <Clock className="h-8 w-8 shrink-0 text-amber-600 dark:text-amber-400" />
+        <div className="min-w-0 text-sm">
+          <p className="text-base font-extrabold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+            Test boshlangan — tugatilmagan
+          </p>
+          <p className="mt-0.5 font-semibold text-foreground">
+            {attempt.answeredCount}/{attempt.total} ta savolga javob berdingiz
+          </p>
+          <p className="text-muted-foreground">Davom ettirish uchun pastdagi tugmani bosing.</p>
+        </div>
+      </div>
+    );
+  }
   if (attempt.score == null) return null;
   const ok = attempt.passed;
   return (
@@ -475,6 +491,50 @@ function ResultBanner({
               ? "Qayta topshirishga ruxsat berilgan."
               : ATTEST_STATUS_LABEL[attempt.status]}
         </p>
+      </div>
+    </div>
+  );
+}
+
+/** Urinish umuman bo‘lmasa ham kartochkada aniq hukm: ishlamadi / hali boshlamadi / hali ochilmagan */
+function NotStartedBanner({ exam }: { exam: AttestExamCard }) {
+  if (exam.window === "closed") {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+        <XCircle className="h-8 w-8 shrink-0 text-rose-600 dark:text-rose-400" />
+        <div className="min-w-0 text-sm">
+          <p className="text-base font-extrabold uppercase tracking-wide text-rose-700 dark:text-rose-300">
+            ✗ Testni ishlamadingiz
+          </p>
+          <p className="mt-0.5 font-semibold text-foreground">Natija: topshirilmadi</p>
+          <p className="text-muted-foreground">Belgilangan vaqtda test boshlanmadi — test vaqti tugagan.</p>
+        </div>
+      </div>
+    );
+  }
+  if (exam.window === "open") {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-500/30 dark:bg-amber-500/10">
+        <Clock className="h-8 w-8 shrink-0 text-amber-600 dark:text-amber-400" />
+        <div className="min-w-0 text-sm">
+          <p className="text-base font-extrabold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+            Hali boshlamadingiz
+          </p>
+          <p className="mt-0.5 font-semibold text-foreground">Natija: hali yo‘q</p>
+          <p className="text-muted-foreground">Test ochiq — boshlash uchun pastdagi tugmani bosing.</p>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 dark:border-sky-500/30 dark:bg-sky-500/10">
+      <Clock className="h-8 w-8 shrink-0 text-sky-600 dark:text-sky-400" />
+      <div className="min-w-0 text-sm">
+        <p className="text-base font-extrabold uppercase tracking-wide text-sky-700 dark:text-sky-300">
+          Test hali boshlanmagan
+        </p>
+        <p className="mt-0.5 font-semibold text-foreground">Natija: hali yo‘q</p>
+        <p className="text-muted-foreground">Vaqti kelganda shu yerda ochiladi.</p>
       </div>
     </div>
   );
@@ -731,8 +791,10 @@ export default function AtestatsiyaPage() {
                     attempt={exam.attempt}
                     canRetake={Boolean(exam.canStart && !exam.canResume && exam.attempt.passed !== true)}
                   />
+                ) : !data.preview ? (
+                  <NotStartedBanner exam={exam} />
                 ) : null}
-                {exam.reason ? (
+                {exam.reason && (!exam.attempt || exam.attempt.status === "in_progress") ? (
                   <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <ShieldAlert className="h-3.5 w-3.5 shrink-0" /> {exam.reason}
                   </p>

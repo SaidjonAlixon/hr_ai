@@ -328,9 +328,9 @@ function startPolicy(exam: Exam, attempts: Attempt[]) {
   if (state === "closed") return { canStart: false, canResume: false, reason: "Test vaqti tugagan", hide: false };
   if (!latest) return { canStart: true, canResume: false, reason: null as string | null, hide: false };
   if (latest.retakeAllowed) return { canStart: true, canResume: false, reason: null as string | null, hide: false };
-  /** O‘tganlarga test kerak emas — ro‘yxatdan yashirinadi */
+  /** O‘tganlar ham kartochkada qoladi — natijasi («O‘tdingiz») shu yerda ko‘rinadi */
   if (isFinished(latest) && latest.passed === true) {
-    return { canStart: false, canResume: false, reason: "Siz o‘tdingiz", hide: true };
+    return { canStart: false, canResume: false, reason: "Siz o‘tdingiz", hide: false };
   }
   /** O‘tmaganlar — qayta ishlashi mumkin */
   if (allowFailRetake && isFinished(latest) && latest.passed === false) {

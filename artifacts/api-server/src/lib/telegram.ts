@@ -42,6 +42,11 @@ export type TelegramMessage = {
   caption_entities?: TelegramMessageEntity[];
   photo?: TelegramPhotoSize[];
   document?: { file_id: string; mime_type?: string; file_name?: string; file_size?: number };
+  voice?: { file_id: string; duration?: number };
+  video_note?: { file_id: string; duration?: number };
+  audio?: { file_id: string; duration?: number };
+  /** Telegram Business: admin akkauntiga ulangan bot xabari */
+  business_connection_id?: string;
   reply_to_message?: TelegramMessage;
   message_thread_id?: number;
   is_topic_message?: boolean;
@@ -55,12 +60,24 @@ export type TelegramCallbackQuery = {
   from: TelegramUser;
   message?: TelegramMessage;
   data?: string;
+  business_connection_id?: string;
+};
+
+export type TelegramBusinessConnection = {
+  id: string;
+  user: TelegramUser;
+  user_chat_id: number;
+  date: number;
+  is_enabled: boolean;
 };
 
 export type TelegramUpdate = {
   update_id: number;
   message?: TelegramMessage;
   callback_query?: TelegramCallbackQuery;
+  business_connection?: TelegramBusinessConnection;
+  business_message?: TelegramMessage;
+  edited_business_message?: TelegramMessage;
 };
 
 export type InlineKeyboardButton =
@@ -145,10 +162,12 @@ export async function sendMessage(
     disable_web_page_preview?: boolean;
     reply_to_message_id?: number;
     message_thread_id?: number | null;
+    business_connection_id?: string;
   },
 ) {
   return tgCall<TelegramMessage>("sendMessage", {
     chat_id: chatId,
+    business_connection_id: opts?.business_connection_id || undefined,
     message_thread_id: opts?.message_thread_id || undefined,
     text,
     parse_mode: opts?.parse_mode ?? "HTML",
@@ -223,7 +242,7 @@ export async function setWebhook(url: string, secret?: string) {
   return tgCall("setWebhook", {
     url,
     secret_token: secret || undefined,
-    allowed_updates: ["message", "callback_query"],
+    allowed_updates: ["message", "callback_query", "business_connection", "business_message"],
     drop_pending_updates: true,
   });
 }

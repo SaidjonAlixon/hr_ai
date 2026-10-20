@@ -70,6 +70,7 @@ import disciplineRouter from "./discipline";
 import explanationLettersRouter from "./explanation-letters";
 import scannerDocsRouter from "./scanner-docs";
 import abetRouter from "./abet";
+import aiAssistantRouter from "./ai-assistant";
 
 const router: IRouter = Router();
 
@@ -120,6 +121,7 @@ router.use(deptStaffRouter);
 router.use(distribyutsiyaRouter);
 router.use(omborxonaRouter);
 router.use(helpRouter);
+router.use(aiAssistantRouter);
 router.use(hireAiRouter);
 router.use(notifTestRouter);
 router.use(testOfficeCoordinatorRouter);

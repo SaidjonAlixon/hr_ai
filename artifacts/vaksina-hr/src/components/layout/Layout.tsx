@@ -60,6 +60,7 @@ import {
   Headset,
   UtensilsCrossed,
   Receipt,
+  Sparkles,
 } from 'lucide-react';
 import {
   useLogout,
@@ -266,6 +267,7 @@ const NAV_SECTIONS: {
       '/admin/davomat-qr',
       '/admin/test',
       '/admin/scanner',
+      '/admin/yordamchi-ai',
       '/admin/qurilmalar',
       '/admin/kochma-davomat',
       '/admin/kochma-xarita',
@@ -388,6 +390,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/admin/davomat-qr')) return '/admin/davomat-qr';
   if (path.startsWith('/admin/test')) return '/admin/test';
   if (path.startsWith('/admin/scanner')) return '/admin/scanner';
+  if (path.startsWith('/admin/yordamchi-ai')) return '/admin/yordamchi-ai';
   if (path.startsWith('/admin/qurilmalar')) return '/admin/qurilmalar';
   if (path.startsWith('/admin/kochma-davomat')) return '/admin/kochma-davomat';
   if (path.startsWith('/admin/kochma-xarita')) return '/admin/kochma-xarita';
@@ -996,6 +999,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (location.startsWith('/admin/scanner') && !canUseDocumentScanner(user.role)) {
       setLocation('/dashboard');
     }
+    if (location.startsWith('/admin/yordamchi-ai') && user.role !== 'admin') {
+      setLocation('/dashboard');
+    }
     if (location.startsWith('/oquvchilar') && !canManageStudents(user.role)) {
       setLocation('/dashboard');
     }
@@ -1424,11 +1430,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Davomat QR', path: '/admin/davomat-qr', icon: ScanFace },
       { name: 'Test', path: '/admin/test', icon: Bell },
       { name: 'Skaner', path: '/admin/scanner', icon: ScanLine },
+      { name: 'Yordamchi AI', path: '/admin/yordamchi-ai', icon: Sparkles },
       { name: 'Hisobot', path: '/admin/holat', icon: BarChart3 },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
       oquvchilarNav,
-    { name: 'Preboarding', path: '/admin/preboarding', icon: GraduationCap },
+  { name: 'Preboarding', path: '/admin/preboarding', icon: GraduationCap },
       darslikJoylashNav,
       atestatsiyaJoylashNav,
     ],
@@ -1466,6 +1473,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Davomat QR', path: '/admin/davomat-qr', icon: ScanFace },
       { name: 'Test', path: '/admin/test', icon: Bell },
       { name: 'Skaner', path: '/admin/scanner', icon: ScanLine },
+      { name: 'Yordamchi AI', path: '/admin/yordamchi-ai', icon: Sparkles },
       { name: 'Hisobot', path: '/admin/holat', icon: BarChart3 },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
@@ -1523,6 +1531,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Davomat QR', path: '/admin/davomat-qr', icon: ScanFace },
       { name: 'Test', path: '/admin/test', icon: Bell },
       { name: 'Skaner', path: '/admin/scanner', icon: ScanLine },
+      { name: 'Yordamchi AI', path: '/admin/yordamchi-ai', icon: Sparkles },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
     hr: hrMenejerNav,
@@ -1927,6 +1936,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     .filter((item) => item.path !== '/smena-filial' || canSeeSmenaFilial)
     .filter((item) => item.path !== '/admin/holat' || canViewHolat(userRole))
     .filter((item) => item.path !== '/admin/holat/xodim' || canViewHolat(userRole))
+    .filter((item) => item.path !== '/admin/yordamchi-ai' || userRole === 'admin')
     .filter((item) => item.path !== '/distribyutsiya' || canViewDistribyutsiya(userRole))
     .filter((item) => item.path !== '/omborxona-ish' || canViewOmborxona(userRole))
     .filter((item) => item.path !== '/davomat/analytics')

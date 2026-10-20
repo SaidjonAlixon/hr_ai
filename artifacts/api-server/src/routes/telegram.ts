@@ -40,6 +40,7 @@ import {
   isGroupChat,
   messageHasImage,
 } from "../lib/telegram-support";
+import { handleAiAssistantMessage, registerBusinessConnection } from "../lib/ai-assistant";
 import { isReportChat, observeGroupMessage } from "../lib/telegram-report-group";
 
 const router: IRouter = Router();
@@ -569,13 +570,35 @@ async function handleUpdate(update: TelegramUpdate) {
     return;
   }
 
-  const msg = update.message;
+  // Telegram Business: akkauntga bot ulandi — egasini qayd qilamiz (faqat adminniki ishlaydi)
+  if (update.business_connection) {
+    await registerBusinessConnection(update.business_connection).catch((err) =>
+      console.error("business_connection register:", err),
+    );
+    return;
+  }
+
+  const msg = update.message ?? update.business_message;
   if (!msg?.from || msg.from.is_bot) return;
+  const businessConnectionId = msg.business_connection_id;
 
   if (isGroupChat(msg.chat)) {
     await observeGroupMessage(msg);
     if (await isReportChat(msg.chat)) return;
+    const gText = (msg.text ?? msg.caption ?? "").toLowerCase();
+    const directToBot =
+      gText.includes("@vaksinahrbot") || msg.reply_to_message?.from?.username === "vaksinahrbot";
+    if (directToBot) {
+      await runSupportTask(() => handleAiAssistantMessage(msg, { businessConnectionId }));
+      return;
+    }
     await runSupportTask(() => handleGroupSupportMessage(msg));
+    return;
+  }
+
+  // Ovoz / video xabar — AI yordamchi yozib yuborishni so‘raydi
+  if (msg.voice || msg.video_note || msg.audio) {
+    await runSupportTask(() => handleAiAssistantMessage(msg, { businessConnectionId }));
     return;
   }
 
@@ -587,6 +610,7 @@ async function handleUpdate(update: TelegramUpdate) {
           await sendMessage(
             msg.chat.id,
             "Muammoni qisqa matn bilan yozing (masalan: «kirmadi», «smena», «javob olish», «Face ID», «joylashuv») yoki /yordam.",
+            businessConnectionId ? { business_connection_id: businessConnectionId } : undefined,
           );
         }
       });
@@ -646,11 +670,20 @@ async function handleUpdate(update: TelegramUpdate) {
     return;
   }
 
-  if (!text.startsWith("/") && (await handlePrivateSupportMessage(msg))) return;
+  // Yordamchi AI: bazani o‘qib suhbatlashadi, amal kerak bo‘lsa adminga taklif tayyorlaydi
+  if (!text.startsWith("/")) {
+    const handled = await handleAiAssistantMessage(msg, { businessConnectionId }).catch((err) => {
+      console.error("ai-assistant:", err);
+      return false;
+    });
+    if (handled) return;
+    if (await handlePrivateSupportMessage(msg)) return;
+  }
 
   await sendMessage(
     chatId,
     `Tushunmadim.\n\nLogin va parolni shu tartibda yuboring:\n<code>login parol</code>\n\nYordam: /yordam`,
+    businessConnectionId ? { business_connection_id: businessConnectionId } : undefined,
   );
 }
 

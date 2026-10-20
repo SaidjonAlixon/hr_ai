@@ -11,8 +11,6 @@ import type { User } from '@workspace/api-client-react';
 import { compactCredential } from '../lib/utils';
 import { ThemeToggle } from '../components/theme-toggle';
 import { LanguageSwitcher } from '../components/language-switcher';
-import { HELP_ASSISTANT_ENABLED, HelpAssistantDialog } from '../components/HelpAssistantDialog';
-import { OperatorHeadsetIcon } from '../components/OperatorHeadsetIcon';
 import {
   ForeignDeviceWarning,
   LastApprovalBanner,
@@ -50,7 +48,6 @@ export default function Login() {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [gate, setGate] = useState<DeviceGate>(null);
   const [requesting, setRequesting] = useState(false);
@@ -304,21 +301,9 @@ export default function Login() {
               <Button type="submit" className="w-full bg-[#1e3a8a] hover:bg-[#16306f]" disabled={pending}>
                 {pending ? t('login.submitting') : t('login.submit')}
               </Button>
-              {HELP_ASSISTANT_ENABLED ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full gap-2"
-                  onClick={() => setHelpOpen(true)}
-                >
-                  <OperatorHeadsetIcon className="h-4 w-4" />
-                  {t('login.helpAria')}
-                </Button>
-              ) : null}
             </CardFooter>
           </form>
         </Card>
-        <HelpAssistantDialog open={helpOpen} onOpenChange={setHelpOpen} />
       </div>
     </div>
   );

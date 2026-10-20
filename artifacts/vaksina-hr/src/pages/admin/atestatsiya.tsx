@@ -870,11 +870,23 @@ function Monitor({ examId, onBack }: { examId: number; onBack: () => void }) {
                   </p>
                 </div>
                 <div className="text-right text-xs">
-                  <p className={cn("text-base font-bold tabular-nums", r.passed ? "text-emerald-700" : r.passed === false ? "text-rose-700" : "text-foreground")}>
+                  {r.passed != null && (r.status === "submitted" || r.status === "expired") ? (
+                    <span
+                      className={cn(
+                        "mb-1 inline-block rounded-full px-2.5 py-0.5 text-[11px] font-extrabold uppercase tracking-wide",
+                        r.passed
+                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300"
+                          : "bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-300",
+                      )}
+                    >
+                      {r.passed ? "✓ O‘tdi" : "✗ O‘tmadi"}
+                    </span>
+                  ) : null}
+                  <p className={cn("text-base font-bold tabular-nums", r.passed ? "text-emerald-700 dark:text-emerald-400" : r.passed === false ? "text-rose-700 dark:text-rose-400" : "text-foreground")}>
                     {r.score != null ? `${r.score}%` : ATTEST_STATUS_LABEL[r.status]}
                   </p>
                   <p className="text-muted-foreground">
-                    {r.correct != null ? `${r.correct}/${r.total} to‘g‘ri` : r.status === "in_progress" && r.remainingSec != null
+                    {r.correct != null ? `${r.correct}/${r.total} to‘g‘ri · ishlagani ${r.answeredCount}/${r.total}` : r.status === "in_progress" && r.remainingSec != null
                       ? `${Math.ceil(r.remainingSec / 60)} daq · ${r.answeredCount}/${r.total}`
                       : r.attemptsCount
                         ? `${r.attemptsCount}-urinish`

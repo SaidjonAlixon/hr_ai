@@ -451,14 +451,21 @@ function ResultBanner({
       )}
     >
       {ok ? (
-        <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600 dark:text-emerald-400" />
+        <CheckCircle2 className="h-8 w-8 shrink-0 text-emerald-600 dark:text-emerald-400" />
       ) : (
-        <XCircle className="h-6 w-6 shrink-0 text-rose-600 dark:text-rose-400" />
+        <XCircle className="h-8 w-8 shrink-0 text-rose-600 dark:text-rose-400" />
       )}
       <div className="min-w-0 text-sm">
-        <p className="font-semibold text-foreground">
-          {ok ? "O‘tdingiz" : "O‘tish bali yetmadi"} · {attempt.score}%
-          {attempt.correct != null ? ` (${attempt.correct}/${attempt.total})` : ""}
+        <p
+          className={cn(
+            "text-base font-extrabold uppercase tracking-wide",
+            ok ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300",
+          )}
+        >
+          {ok ? "✓ O‘tdingiz" : "✗ O‘tolmadingiz"}
+        </p>
+        <p className="mt-0.5 font-semibold text-foreground">
+          Ball: {attempt.score}%{attempt.correct != null ? ` · To‘g‘ri: ${attempt.correct}/${attempt.total}` : ""}
         </p>
         <p className="text-muted-foreground">
           {attempt.status === "expired" ? "Vaqt tugagach yopildi. " : ""}

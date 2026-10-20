@@ -226,6 +226,16 @@ router.post("/ai-assistant/proposals/:id/approve", requireAuth, async (req: Auth
     (typeof p.payload?.completionText === "string" && p.payload.completionText.trim()) ||
     `Yaxshi xabar 🙂 So‘rovingiz ko‘rib chiqildi va hal qilindi: ${p.title}. Yana savol bo‘lsa yozing.`;
   await sendAssistantFollowUp(p.conversation_id, completion);
+  if (p.platform_user_id) {
+    const { notifyUser } = await import("../lib/notify");
+    await notifyUser({
+      userId: p.platform_user_id,
+      title: "Yordamchi AI",
+      text: completion,
+      type: "ai_assistant",
+      linkUrl: "/yordam",
+    }).catch(() => undefined);
+  }
   res.json({ ok: true, result });
 });
 

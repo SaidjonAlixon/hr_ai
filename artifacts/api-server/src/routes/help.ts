@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { optionalAuth, type AuthRequest } from "../middlewares/auth";
+import { webAssistantTurn } from "../lib/ai-assistant";
 import {
   faqAnswer,
   faqCatalogForAi,
@@ -332,6 +333,28 @@ router.post("/help/chat", optionalAuth, async (req: AuthRequest, res): Promise<v
 
     if (!message && !imageDataUrl) {
       res.status(400).json({ error: errNeedInput(locale) });
+      return;
+    }
+
+    // Login qilgan xodim — to‘liq Yordamchi AI: jonli baza + adminga taklif tayyorlash
+    if (req.userId && message && !imageDataUrl) {
+      const history = Array.isArray(req.body?.history)
+        ? (req.body.history as Array<Record<string, unknown>>)
+            .slice(-12)
+            .map((m) => ({
+              role: m.role === "user" ? "user" : "assistant",
+              text: String(m.text || m.content || "").slice(0, 1500),
+            }))
+            .filter((m) => m.text)
+        : [];
+      const turn = await webAssistantTurn({ userId: req.userId, history, userText: message });
+      res.json({
+        reply: turn.reply,
+        source: "ai-assistant",
+        proposalCreated: Boolean(turn.proposal),
+        showContacts: false,
+        locale,
+      });
       return;
     }
 

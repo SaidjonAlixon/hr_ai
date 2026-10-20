@@ -67,6 +67,7 @@ const AdminDavomatQrPage = lazyPage('/admin/davomat-qr', () => import('./pages/a
 const AdminTestPage = lazyPage('/admin/test', () => import('./pages/admin/test'));
 const AdminScannerPage = lazyPage('/admin/scanner', () => import('./pages/admin/scanner'));
 const YordamchiAiPage = lazyPage('/admin/yordamchi-ai', () => import('./pages/admin/yordamchi-ai'));
+const YordamPage = lazyPage('/yordam', () => import('./pages/yordam'));
 const AdminTushuntirishXatlariPage = lazyPage('/admin/tushuntirish-xatlari', () => import('./pages/admin/tushuntirish-xatlari'));
 const AdminJarimalarPage = lazyPage('/admin/jarimalar', () => import('./pages/admin/jarimalar'));
 const TushuntirishXatimPage = lazyPage('/tushuntirish-xatim', () => import('./pages/tushuntirish-xatim'));
@@ -182,6 +183,11 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
+      <Route path="/yordam">
+        <Suspense fallback={<PageFallback />}>
+          <YordamPage />
+        </Suspense>
+      </Route>
       <Route path="/filiallar">
         <Suspense fallback={<PageFallback />}>
           <PublicFilialMapPage />

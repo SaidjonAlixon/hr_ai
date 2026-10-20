@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Send, Loader2, Bot, User, Phone, SendHorizontal, ImagePlus, Globe } from "lucide-react";
+import { Send, Loader2, Bot, User, Phone, SendHorizontal, ImagePlus, Globe, Link2, Check } from "lucide-react";
 import { OperatorHeadsetIcon } from "@/components/OperatorHeadsetIcon";
 import {
   Dialog,
@@ -60,6 +60,7 @@ async function postHelpChat(
     context?: string;
     imageDataUrl?: string;
     locale?: Locale;
+    history?: Array<{ role: "user" | "assistant"; text: string }>;
   },
 ): Promise<HelpChatResponse> {
   const res = await fetch("/api/help/chat", {
@@ -183,8 +184,42 @@ function LinkButtons({ links }: { links: HelpLink[] }) {
   );
 }
 
-/** Vaqtincha yashirish. Qayta yoqish: `true` qiling. */
-export const HELP_ASSISTANT_ENABLED = false;
+export const HELP_ASSISTANT_ENABLED = true;
+
+export const HELP_CHAT_URL = "https://vaksinahr.uz/yordam";
+export const HELP_BOT_URL = "https://t.me/vaksinahrbot";
+
+function ShareRow() {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(HELP_CHAT_URL);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* ignore */ }
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 border-b bg-violet-50/70 px-4 py-2 dark:bg-violet-950/30">
+      <button
+        type="button"
+        onClick={() => void copy()}
+        className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-violet-800 transition hover:bg-violet-100 dark:border-violet-500/30 dark:bg-transparent dark:text-violet-200"
+      >
+        {copied ? <Check className="h-3 w-3" /> : <Link2 className="h-3 w-3" />}
+        {copied ? "Nusxalandi" : "Chat havolasini nusxalash"}
+      </button>
+      <a
+        href={HELP_BOT_URL}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-sky-800 transition hover:bg-sky-100 dark:border-sky-500/30 dark:bg-transparent dark:text-sky-200"
+      >
+        <SendHorizontal className="h-3 w-3" /> Telegram bot
+      </a>
+      <span className="text-[10px] text-muted-foreground">vaksinahr.uz/yordam</span>
+    </div>
+  );
+}
 
 export function HelpAssistantDialog({
   open,
@@ -249,10 +284,11 @@ export function HelpAssistantDialog({
     setError(null);
     setInput("");
     setLastContext(text);
+    const history = messages.slice(-10).map((m) => ({ role: m.role, text: m.content }));
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setLoading(true);
     try {
-      const data = await postHelpChat({ message: text, locale });
+      const data = await postHelpChat({ message: text, locale, history });
       applyReply(data);
     } catch (e) {
       setError(e instanceof Error && e.message !== "help.error" ? e.message : t("help.botError"));
@@ -317,6 +353,7 @@ export function HelpAssistantDialog({
           </DialogTitle>
           <p className="text-xs text-muted-foreground">{t("help.subtitle")}</p>
         </DialogHeader>
+        <ShareRow />
 
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3">

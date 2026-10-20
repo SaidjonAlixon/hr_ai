@@ -635,6 +635,77 @@ export async function handleAiAssistantMessage(
   return true;
 }
 
+/**
+ * Platforma ichidagi chat (login qilgan xodim): Telegram oqimi bilan bir xil —
+ * jonli baza snapshot, suhbat tarixi, kerak bo‘lsa adminga taklif.
+ */
+export async function webAssistantTurn(opts: {
+  userId: number;
+  history: Array<{ role: string; text: string }>;
+  userText: string;
+}): Promise<AiTurnResult> {
+  await ensureAiAssistantSchema();
+  const [u] = await db
+    .select({
+      id: usersTable.id,
+      fullName: usersTable.fullName,
+      role: usersTable.role,
+      login: usersTable.login,
+      phone: usersTable.phone,
+      status: usersTable.status,
+      telegramId: usersTable.telegramId,
+    })
+    .from(usersTable)
+    .where(eq(usersTable.id, opts.userId))
+    .limit(1);
+  const platformUser: PlatformUser | null = u ?? null;
+
+  const tgKey = `web:${opts.userId}`;
+  const { rows } = await pool.query<ConvRow>(
+    `SELECT * FROM ai_assistant_conversations WHERE telegram_user_id = $1 ORDER BY id DESC LIMIT 1`,
+    [tgKey],
+  );
+  let conv = rows[0];
+  if (!conv) {
+    const ins = await pool.query<ConvRow>(
+      `INSERT INTO ai_assistant_conversations (telegram_user_id, telegram_chat_id, chat_type, display_name, platform_user_id)
+       VALUES ($1,'web','web',$2,$3) RETURNING *`,
+      [tgKey, platformUser?.fullName || "Xodim", opts.userId],
+    );
+    conv = ins.rows[0]!;
+  }
+  await saveMessage(conv.id, "user", opts.userText);
+  const snapshot = platformUser ? await buildUserSnapshot(platformUser).catch(() => null) : null;
+  const turn = aiAssistantEnabled()
+    ? await callAi({
+        snapshot,
+        history: opts.history,
+        userText: opts.userText,
+        displayName: platformUser?.fullName || "Xodim",
+      })
+    : null;
+  const result = turn ?? fallbackTurn(opts.userText, snapshot, platformUser?.fullName || "Xodim");
+  await saveMessage(conv.id, "assistant", result.reply);
+  await pool.query(`UPDATE ai_assistant_conversations SET intent=$2, updated_at=NOW() WHERE id=$1`, [conv.id, result.intent]);
+  if (result.proposal) {
+    const ins = await pool.query<{ id: number }>(
+      `INSERT INTO ai_assistant_proposals (conversation_id, platform_user_id, kind, title, summary, payload)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [
+        conv.id,
+        opts.userId,
+        result.proposal.kind,
+        result.proposal.title,
+        result.proposal.summary,
+        JSON.stringify({ ...result.proposal.payload, completionText: result.proposal.completionText || null, source: "web" }),
+      ],
+    );
+    await pool.query(`UPDATE ai_assistant_conversations SET status='waiting_admin', updated_at=NOW() WHERE id=$1`, [conv.id]);
+    void notifyAdminsAboutProposal(ins.rows[0]!.id, conv, result.proposal);
+  }
+  return result;
+}
+
 /** Admin qaroridan keyin xodimga xabar (tasdiq/rad) */
 export async function sendAssistantFollowUp(conversationId: number, text: string): Promise<void> {
   await ensureAiAssistantSchema();

@@ -272,7 +272,7 @@ export function ExamRunner({
             className={cn(
               "h-8 w-8 shrink-0 rounded-lg text-xs font-bold",
               i === index && "bg-[#2AABEE] text-white",
-              i !== index && answers[qq.id] !== undefined && "bg-emerald-100 text-emerald-800",
+              i !== index && answers[qq.id] !== undefined && "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300",
               i !== index && answers[qq.id] === undefined && "bg-muted text-muted-foreground",
             )}
           >
@@ -311,7 +311,7 @@ export function ExamRunner({
                 >
                   <p className="text-xs font-semibold text-muted-foreground">{i + 1}-savol</p>
                   <p className="mt-0.5 text-sm font-medium leading-snug text-foreground">{qq.text}</p>
-                  <p className={cn("mt-1.5 text-sm", chosen ? "text-[#0B3A5C]" : "text-amber-700")}>
+                  <p className={cn("mt-1.5 text-sm font-medium", chosen ? "text-sky-700 dark:text-sky-300" : "text-amber-700 dark:text-amber-400")}>
                     {chosen ? `${String.fromCharCode(65 + picked!)}. ${chosen}` : "Javob belgilanmagan"}
                   </p>
                 </button>
@@ -404,10 +404,10 @@ function ResultBanner({
 }) {
   if (attempt.status === "annulled") {
     return (
-      <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+      <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
         <p className="font-semibold">Natija bekor qilindi</p>
         {attempt.annulReason ? <p className="mt-0.5">{attempt.annulReason}</p> : null}
-        {canRetake ? <p className="mt-1 font-medium text-rose-800">Qayta topshirishingiz mumkin.</p> : null}
+        {canRetake ? <p className="mt-1 font-medium text-rose-800 dark:text-rose-300">Qayta topshirishingiz mumkin.</p> : null}
       </div>
     );
   }
@@ -425,10 +425,16 @@ function ResultBanner({
     <div
       className={cn(
         "flex items-center gap-3 rounded-2xl border px-4 py-3",
-        ok ? "border-emerald-200 bg-emerald-50" : "border-rose-200 bg-rose-50",
+        ok
+          ? "border-emerald-200 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-500/10"
+          : "border-rose-200 bg-rose-50 dark:border-rose-500/30 dark:bg-rose-500/10",
       )}
     >
-      {ok ? <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600" /> : <XCircle className="h-6 w-6 shrink-0 text-rose-600" />}
+      {ok ? (
+        <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600 dark:text-emerald-400" />
+      ) : (
+        <XCircle className="h-6 w-6 shrink-0 text-rose-600 dark:text-rose-400" />
+      )}
       <div className="min-w-0 text-sm">
         <p className="font-semibold text-foreground">
           {ok ? "O‘tdingiz" : "O‘tish bali yetmadi"} · {attempt.score}%
@@ -594,7 +600,7 @@ export default function AtestatsiyaPage() {
         </section>
 
         {isManager && !isLearner ? (
-          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
             <Eye className="h-4 w-4 shrink-0" />
             <span className="mr-auto">Ko‘rish rejimi — testni sinab ko‘rish mumkin. Natija saqlanmaydi.</span>
             {ATTESTATSIYA_TRACKS.map((t) => (
@@ -604,7 +610,9 @@ export default function AtestatsiyaPage() {
                 onClick={() => setPreviewTrack(t.key)}
                 className={cn(
                   "rounded-full px-3 py-1 text-xs font-semibold",
-                  previewTrack === t.key ? "bg-amber-600 text-white" : "bg-white text-amber-900 ring-1 ring-amber-300",
+                  previewTrack === t.key
+                    ? "bg-amber-600 text-white"
+                    : "bg-white text-amber-900 ring-1 ring-amber-300 dark:bg-white/10 dark:text-amber-200 dark:ring-amber-500/40",
                 )}
               >
                 {t.label}
@@ -616,7 +624,7 @@ export default function AtestatsiyaPage() {
         {me.isLoading ? (
           <Skeleton className="h-40 rounded-3xl" />
         ) : me.isError ? (
-          <p className="rounded-2xl bg-red-50 p-4 text-sm text-red-700">{(me.error as Error).message}</p>
+          <p className="rounded-2xl bg-red-50 p-4 text-sm text-red-700 dark:bg-rose-500/10 dark:text-rose-300">{(me.error as Error).message}</p>
         ) : !data?.exams.length ? (
           <div className="rounded-3xl border border-dashed border-border bg-card/70 p-10 text-center">
             <Award className="mx-auto mb-3 h-10 w-10 text-muted-foreground/60" />
@@ -631,31 +639,31 @@ export default function AtestatsiyaPage() {
               return (
               <article
                 key={exam.id}
-                className="space-y-3 overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-950 sm:p-5"
+                className="space-y-3 overflow-hidden rounded-3xl border border-border bg-card p-4 text-card-foreground shadow-sm sm:p-5"
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <h2 className="text-base font-extrabold tracking-tight text-slate-900 dark:text-white">{exam.title}</h2>
-                    {exam.description ? <p className="mt-1 text-sm text-slate-500">{exam.description}</p> : null}
+                    <h2 className="text-base font-extrabold tracking-tight text-foreground">{exam.title}</h2>
+                    {exam.description ? <p className="mt-1 text-sm text-muted-foreground">{exam.description}</p> : null}
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">
                     {data.preview && exam.published === false ? (
-                      <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-900">
+                      <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-900 dark:bg-amber-500/15 dark:text-amber-300">
                         E’lon qilinmagan
                       </span>
                     ) : null}
                     <span
                       className={cn(
                         "rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
-                        exam.window === "open" && "bg-emerald-100 text-emerald-800",
-                        exam.window === "upcoming" && "bg-sky-100 text-sky-800",
-                        exam.window === "closed" && "bg-slate-100 text-slate-500",
+                        exam.window === "open" && "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
+                        exam.window === "upcoming" && "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-300",
+                        exam.window === "closed" && "bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300",
                       )}
                     >
                       {exam.window === "open" ? "Ochiq" : exam.window === "upcoming" ? "Kutilmoqda" : "Yopilgan"}
                     </span>
                     {anywhere ? (
-                      <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">
+                      <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">
                         GPS shart emas
                       </span>
                     ) : null}
@@ -675,11 +683,11 @@ export default function AtestatsiyaPage() {
                           : `${exam.passScore}% · ${exam.questionCount} savol`,
                     },
                   ].map((x) => (
-                    <div key={x.label} className="rounded-2xl bg-slate-50 px-2.5 py-2 dark:bg-white/5">
-                      <p className="flex items-center gap-1 text-slate-500">
+                    <div key={x.label} className="rounded-2xl bg-muted/70 px-2.5 py-2">
+                      <p className="flex items-center gap-1 font-medium text-muted-foreground">
                         <x.icon className="h-3 w-3" /> {x.label}
                       </p>
-                      <p className="mt-0.5 font-semibold leading-snug text-slate-900 dark:text-white">{x.value}</p>
+                      <p className="mt-0.5 font-semibold leading-snug text-foreground">{x.value}</p>
                     </div>
                   ))}
                 </div>
@@ -690,7 +698,7 @@ export default function AtestatsiyaPage() {
                   />
                 ) : null}
                 {exam.reason ? (
-                  <p className="flex items-center gap-1.5 text-xs text-slate-500">
+                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <ShieldAlert className="h-3.5 w-3.5 shrink-0" /> {exam.reason}
                   </p>
                 ) : null}

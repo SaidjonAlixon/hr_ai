@@ -675,7 +675,7 @@ export default function OylikPage() {
         </div>
 
       <div className="dept-page-inner !mx-0 w-full !max-w-none space-y-3 !px-2 sm:!px-3 md:!px-4">
-        {canSeeDiscipline(user?.role) ? <DisciplinePanel month={month} /> : null}
+        {canSeeDiscipline(user?.role) ? <DisciplinePanel month={month} place={place} /> : null}
         {canManageLetters(user?.role) ? <LettersAdminPanel month={month} /> : null}
         {!manage ? (
           <>

@@ -34,6 +34,7 @@ import {
   useReviewLetter,
   type ExplanationLetter,
 } from "@/lib/explanation-letters-api";
+import { useDisciplineSummary } from "@/lib/discipline-api";
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -185,6 +186,9 @@ type Tab = "waiting" | "decide" | "approved" | "cancelled" | "all";
 export function LettersAdminPanel({ month }: { month: string }) {
   const { toast } = useToast();
   const q = useMonthLetters(month, true);
+  // Ofis holati — umumiy jarima kaliti (Intizom nazorati bilan bitta manba); dorixona doim o‘chiq
+  const discipline = useDisciplineSummary(month, true);
+  const officeJarimaOn = discipline.data?.jarima?.enabled;
   const review = useReviewLetter();
   const [tab, setTab] = useState<Tab>("waiting");
   const [group, setGroup] = useState<StaffGroup>("pharmacy");
@@ -274,6 +278,44 @@ export function LettersAdminPanel({ month }: { month: string }) {
       <LetterLookupBar onOpenLetter={setOpenId} />
 
       <StaffGroupTabs value={group} onChange={setGroup} counts={q.isLoading ? undefined : groupCounts} />
+
+      {group === "pharmacy" ? (
+        <div className="flex items-start gap-2 rounded-xl bg-slate-100 px-3 py-2.5 text-xs leading-relaxed text-slate-700 dark:bg-white/5 dark:text-slate-200">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+          <span>
+            <b>Dorixona: jarima o‘chiq (doimiy).</b> Mudir, farmasevt va stajyorlarga jarima ham, tushuntirish xati ham
+            qo‘llanilmaydi — bu guruhda yangi xatlar chiqmaydi. Ofisga o‘tsangiz, yoniq holatni ko‘rasiz.
+          </span>
+        </div>
+      ) : (
+        <div
+          className={cn(
+            "flex items-start gap-2 rounded-xl px-3 py-2.5 text-xs leading-relaxed",
+            officeJarimaOn === false
+              ? "bg-slate-100 text-slate-700 dark:bg-white/5 dark:text-slate-200"
+              : "bg-emerald-50 text-emerald-900 ring-1 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-100 dark:ring-emerald-500/30",
+          )}
+        >
+          <ShieldCheck className={cn("mt-0.5 h-4 w-4 shrink-0", officeJarimaOn === false ? "text-slate-500" : "text-emerald-600 dark:text-emerald-400")} />
+          <span>
+            {officeJarimaOn == null ? (
+              <>
+                <b>Ofis:</b> jarima holati yuklanmoqda…
+              </>
+            ) : officeJarimaOn ? (
+              <>
+                <b>Ofis: jarima yoniq.</b> Ofis xodimlariga jarima, tushuntirish xati va bosqichlar odatdagidek ishlaydi
+                (yuqoridagi «Intizom nazorati» kaliti orqali boshqariladi).
+              </>
+            ) : (
+              <>
+                <b>Ofis: jarima o‘chiq.</b> Umumiy kalit o‘chirilgan — ofis xodimlariga ham jarima va xat yozilmaydi.
+                Yoqish: yuqoridagi «Intizom nazorati» bo‘limidagi kalit.
+              </>
+            )}
+          </span>
+        </div>
+      )}
 
       <div className="space-y-2">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">

@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
+  Building2,
   CalendarX2,
   ChevronRight,
   Clock3,
@@ -12,6 +13,7 @@ import {
   Search,
   ShieldAlert,
   ShieldCheck,
+  Store,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -54,8 +56,13 @@ const LEVELS = [
 
 type Tab = "blocked" | "cleared";
 
-/** Admin/HR: jarima eskalatsiyasi, bugungi bloklar va yig‘ma PDF */
-export function DisciplinePanel({ month }: { month: string }) {
+/**
+ * Admin/HR: jarima eskalatsiyasi, bugungi bloklar va yig‘ma PDF.
+ * Dorixona (mudir/farmasevt/stajyor) uchun jarima/xat/blok backendda DOIM o‘chiq —
+ * `place="dorixona"` bo‘lsa kalit o‘chiq va bosib bo‘lmaydigan ko‘rinadi;
+ * ofisda umumiy kalit holati (odatda yoniq) ko‘rinadi.
+ */
+export function DisciplinePanel({ month, place }: { month: string; place?: string }) {
   const { toast } = useToast();
   const summary = useDisciplineSummary(month, true);
   const clear = useClearDisciplineLock();
@@ -105,7 +112,11 @@ export function DisciplinePanel({ month }: { month: string }) {
   };
 
   const noLocks = !activeLocks.length && !clearedLocks.length;
-  const jarimaOn = data?.jarima?.enabled ?? true;
+  const isPharmacy = place === "dorixona";
+  const isOffice = place === "ofis";
+  /** Umumiy kalit — faqat ofisga tegishli; dorixonada har doim o‘chiq */
+  const globalJarimaOn = data?.jarima?.enabled ?? true;
+  const jarimaOn = isPharmacy ? false : globalJarimaOn;
 
   const toggleJarima = (next: boolean) => {
     const ask = next
@@ -140,18 +151,20 @@ export function DisciplinePanel({ month }: { month: string }) {
         </div>
         <div className="flex items-center gap-2">
           <label
+            title={isPharmacy ? "Dorixona uchun jarima har doim o‘chiq — yoqib bo‘lmaydi" : undefined}
             className={cn(
-              "inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2.5 text-xs font-bold ring-1 transition",
+              "inline-flex h-8 items-center gap-2 rounded-lg px-2.5 text-xs font-bold ring-1 transition",
+              isPharmacy ? "cursor-not-allowed" : "cursor-pointer",
               jarimaOn
                 ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-200 dark:ring-emerald-500/30"
                 : "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-white/5 dark:text-slate-300 dark:ring-white/10",
             )}
           >
             {setJarima.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-            Jarima {jarimaOn ? "yoqiq" : "o‘chiq"}
+            {isPharmacy ? "Dorixona: jarima o‘chiq" : jarimaOn ? "Jarima yoqiq" : "Jarima o‘chiq"}
             <Switch
               checked={jarimaOn}
-              disabled={summary.isLoading || setJarima.isPending}
+              disabled={isPharmacy || summary.isLoading || setJarima.isPending}
               onCheckedChange={toggleJarima}
               className="data-[state=checked]:bg-emerald-600"
               aria-label="Jarima tizimini yoqish yoki o‘chirish"
@@ -172,7 +185,49 @@ export function DisciplinePanel({ month }: { month: string }) {
       </div>
 
       <div className="space-y-3 p-4">
-        {!jarimaOn ? (
+        <div className="flex flex-wrap gap-2">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide ring-1",
+              "bg-slate-100 text-slate-600 ring-slate-300 dark:bg-white/5 dark:text-slate-300 dark:ring-white/15",
+              isPharmacy && "ring-2 ring-slate-500 dark:ring-slate-300",
+            )}
+          >
+            <Store className="h-3.5 w-3.5" />
+            Dorixona: jarima o‘chiq (doimiy)
+          </span>
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide ring-1",
+              globalJarimaOn
+                ? "bg-emerald-100 text-emerald-800 ring-emerald-300 dark:bg-emerald-500/15 dark:text-emerald-200 dark:ring-emerald-500/40"
+                : "bg-slate-100 text-slate-600 ring-slate-300 dark:bg-white/5 dark:text-slate-300 dark:ring-white/15",
+              isOffice && "ring-2 ring-emerald-600 dark:ring-emerald-400",
+            )}
+          >
+            <Building2 className="h-3.5 w-3.5" />
+            Ofis: jarima {globalJarimaOn ? "yoniq" : "o‘chiq"}
+          </span>
+          {isPharmacy ? (
+            <span className="inline-flex items-center text-[11px] font-medium text-slate-500 dark:text-slate-400">
+              ← Hozir Dorixona tanlangan, shuning uchun kalit o‘chiq turibdi
+            </span>
+          ) : isOffice ? (
+            <span className="inline-flex items-center text-[11px] font-medium text-slate-500 dark:text-slate-400">
+              ← Hozir Ofis tanlangan
+            </span>
+          ) : null}
+        </div>
+        {isPharmacy ? (
+          <div className="flex items-start gap-2 rounded-xl bg-slate-100 px-3 py-2.5 text-xs leading-relaxed text-slate-700 dark:bg-white/5 dark:text-slate-200">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+            <span>
+              <b>Dorixona uchun jarima o‘chirilgan.</b> Mudir, farmasevt va stajyorlarga jarima yozilmaydi, tushuntirish
+              xati so‘ralmaydi va hech kim bloklanmaydi — shuning uchun kalit o‘chiq ko‘rinadi va uni yoqib bo‘lmaydi.
+              Ofis bo‘limiga o‘tsangiz, kalit yoniq ko‘rinadi.
+            </span>
+          </div>
+        ) : !jarimaOn ? (
           <div className="flex items-start gap-2 rounded-xl bg-slate-100 px-3 py-2.5 text-xs leading-relaxed text-slate-700 dark:bg-white/5 dark:text-slate-200">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
             <span>

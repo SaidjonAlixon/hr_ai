@@ -9,12 +9,14 @@ import {
   Send,
   ShieldAlert,
   Sparkles,
+  Users,
   X,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 const isAdminOnly = (role?: string | null) => role === "admin";
@@ -23,10 +25,13 @@ import {
   AI_KIND_LABEL,
   AI_STATUS_LABEL,
   approveAiProposal,
+  fetchAiGroups,
   fetchAiMessages,
   fetchAiOverview,
   rejectAiProposal,
   replyAiConversation,
+  setAiGroupEnabled,
+  type AiGroup,
   type AiProposal,
 } from "@/lib/ai-assistant-api";
 
@@ -70,6 +75,25 @@ export default function YordamchiAiPage() {
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ["ai-assistant"] });
   };
+
+  const groups = useQuery({
+    queryKey: ["ai-assistant", "groups"],
+    queryFn: fetchAiGroups,
+    refetchInterval: 30_000,
+    enabled: isAdminOnly(user?.role),
+  });
+
+  const toggleGroup = useMutation({
+    mutationFn: (g: AiGroup) => setAiGroupEnabled(g.chatId, !g.enabled),
+    onSuccess: (_r, g) => {
+      toast({
+        title: g.enabled ? "Guruhda bot o‘chirildi" : "Guruhda bot yoqildi",
+        description: g.title || g.chatId,
+      });
+      invalidate();
+    },
+    onError: (e) => toast({ title: "Xato", description: (e as Error).message, variant: "destructive" }),
+  });
 
   const approve = useMutation({
     mutationFn: (p: AiProposal) => approveAiProposal(p.id, notes[p.id]),
@@ -115,9 +139,10 @@ export default function YordamchiAiPage() {
           Yordamchi AI
         </h1>
         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-          Telegramda (@vaksinahrbot va akkauntingizga ulangan bot orqali) xodimlar bilan suhbatlashadi,
-          bazadan tekshiradi va amal kerak bo‘lsa shu yerga <b>taklif</b> tayyorlaydi. Baza faqat siz
-          «Tasdiqlash»ni bosgach o‘zgaradi — tasdiqlansa xodimga yakuniy javob avtomatik ketadi.
+          Xodimlarga AI ishlatilmaydi — bot ularga faqat bazadan standart ma’lumot beradi (davomat,
+          test holati). To‘liq AI, buyruq bajarish va fayl (PDF/Excel) tayyorlash faqat sizda:
+          botga nima yozsangiz, o‘shani bajaradi. Guruhda bot adminga javob bermaydi; guruhdagi
+          botni quyidan yoki guruhda <code>/bot_on</code> / <code>/bot_off</code> bilan boshqarasiz.
         </p>
         {overview.data && !overview.data.aiEnabled ? (
           <p className="mt-2 flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
@@ -142,6 +167,57 @@ export default function YordamchiAiPage() {
           </div>
         ))}
       </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Users className="h-5 w-5 text-violet-600" /> Telegram guruhlari
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            Bot guruhda <b>adminga javob bermaydi</b>. Yoqish/o‘chirish faqat sizda — shu yerdan yoki
+            guruhda <code>/bot_on</code> / <code>/bot_off</code> yozing: bot guruhga javob bermaydi,
+            shaxsiy chatingizga tasdiq yuboradi. O‘chirilgan guruhda bot hech kimga javob bermaydi;
+            yoqilgan guruhda xodimlarga faqat standart ma’lumot (davomat/test) beradi.
+          </p>
+          {groups.isLoading ? (
+            <p className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Yuklanmoqda…
+            </p>
+          ) : !(groups.data?.groups.length) ? (
+            <p className="py-2 text-sm text-muted-foreground">
+              Hozircha guruh ko‘rilmagan. Bot guruhda xabar ko‘rishi bilan guruh shu ro‘yxatda chiqadi
+              (masalan, «VAKSINA HR JAMOASI»).
+            </p>
+          ) : (
+            groups.data.groups.map((g) => (
+              <div
+                key={g.chatId}
+                className="flex items-center gap-3 rounded-2xl border bg-card px-3 py-2.5"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{g.title || "Guruh"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {g.chatId} ·{" "}
+                    {g.enabled ? (
+                      <span className="font-medium text-emerald-600 dark:text-emerald-400">Yoqilgan</span>
+                    ) : (
+                      <span className="font-medium text-rose-600 dark:text-rose-400">O‘chirilgan</span>
+                    )}
+                  </p>
+                </div>
+                <Switch
+                  checked={g.enabled}
+                  disabled={toggleGroup.isPending}
+                  onCheckedChange={() => toggleGroup.mutate(g)}
+                  aria-label={`${g.title || "Guruh"}da bot`}
+                />
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-2">

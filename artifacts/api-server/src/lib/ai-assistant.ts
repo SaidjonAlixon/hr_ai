@@ -24,7 +24,7 @@ import {
 import { loadPlatformHelpKnowledge } from "./platform-help-kb";
 import { resolveUserBranches } from "./employee-branch";
 import { logger } from "./logger";
-import { sendDocument, sendMessage, type TelegramMessage } from "./telegram";
+import { deleteMessage, sendDocument, sendMessage, type TelegramMessage } from "./telegram";
 import type { AssistantFileRequest } from "./ai-assistant-files";
 
 /* ------------------------------------------------------------------ schema */
@@ -79,6 +79,13 @@ export function ensureAiAssistantSchema(): Promise<void> {
           connection_id TEXT PRIMARY KEY,
           telegram_user_id TEXT NOT NULL,
           enabled BOOLEAN NOT NULL DEFAULT TRUE,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS ai_assistant_group_settings (
+          chat_id TEXT PRIMARY KEY,
+          title TEXT,
+          enabled BOOLEAN NOT NULL DEFAULT TRUE,
+          updated_by TEXT,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
       `);
@@ -169,6 +176,85 @@ async function businessConnectionAllowed(connectionId: string): Promise<boolean>
   const row = rows[0];
   if (!row || !row.enabled) return false;
   return isAiAdminTelegramId(row.telegram_user_id);
+}
+
+/* ------------------------------------------------------ guruh boshqaruvi */
+
+/** Guruh ilk marotaba ko‘rinsa ro‘yxatga olinadi (standart: yoqilgan) */
+async function ensureGroupRow(chatId: string, title: string | null): Promise<boolean> {
+  await ensureAiAssistantSchema();
+  await pool.query(
+    `INSERT INTO ai_assistant_group_settings (chat_id, title) VALUES ($1,$2)
+     ON CONFLICT (chat_id) DO UPDATE SET title = COALESCE(EXCLUDED.title, ai_assistant_group_settings.title)`,
+    [chatId, title],
+  );
+  const { rows } = await pool.query<{ enabled: boolean }>(
+    `SELECT enabled FROM ai_assistant_group_settings WHERE chat_id = $1`,
+    [chatId],
+  );
+  return rows[0]?.enabled ?? true;
+}
+
+export async function listAiGroups(): Promise<
+  Array<{ chatId: string; title: string | null; enabled: boolean; updatedAt: string }>
+> {
+  await ensureAiAssistantSchema();
+  const { rows } = await pool.query<{ chat_id: string; title: string | null; enabled: boolean; updated_at: string }>(
+    `SELECT chat_id, title, enabled, updated_at FROM ai_assistant_group_settings ORDER BY updated_at DESC LIMIT 100`,
+  );
+  return rows.map((r) => ({ chatId: r.chat_id, title: r.title, enabled: r.enabled, updatedAt: r.updated_at }));
+}
+
+export async function setAiGroupEnabled(chatId: string, enabled: boolean, updatedBy?: string | null): Promise<void> {
+  await ensureAiAssistantSchema();
+  await pool.query(
+    `INSERT INTO ai_assistant_group_settings (chat_id, enabled, updated_by, updated_at) VALUES ($1,$2,$3,NOW())
+     ON CONFLICT (chat_id) DO UPDATE SET enabled=$2, updated_by=$3, updated_at=NOW()`,
+    [chatId, enabled, updatedBy ?? null],
+  );
+}
+
+const GROUP_TOGGLE_RE = /^\/(bot_on|bot_off|yordamchi_on|yordamchi_off)(?:@\w+)?\b/i;
+
+/**
+ * Guruh darvozasi. true — xabar shu yerda tugadi (keyingi handlerlar javob bermaydi):
+ *  - Admin guruhda /bot_on yoki /bot_off yozsa — jim bajariladi (guruhga javob YO‘Q,
+ *    tasdiq adminning shaxsiy chatiga boradi). Boshqalar bu buyruqni berolmaydi.
+ *  - Admin guruhda oddiy xabar yozsa — bot javob bermaydi.
+ *  - Guruh o‘chirilgan bo‘lsa — hech kimga javob berilmaydi.
+ * false — xodim, guruh yoqilgan: odatiy oqim davom etadi.
+ */
+export async function handleAiGroupGate(msg: TelegramMessage): Promise<boolean> {
+  if (!msg.from || msg.from.is_bot) return false;
+  const chat = msg.chat;
+  if (chat.type !== "group" && chat.type !== "supergroup") return false;
+  const chatId = String(chat.id);
+  const title = chat.title || null;
+  const enabledNow = await ensureGroupRow(chatId, title).catch(() => true);
+  const text = (msg.text ?? msg.caption ?? "").trim();
+
+  const adminTg = await isAiAdminTelegramId(String(msg.from.id)).catch(() => false);
+  const linked = adminTg ? null : await findUserByTelegram(String(msg.from.id)).catch(() => null);
+  const isAdmin = adminTg || linked?.role === "admin";
+
+  const toggle = text.match(GROUP_TOGGLE_RE);
+  if (toggle) {
+    if (!isAdmin) return true; // faqat admin yoqib-o‘chiradi; boshqalarga javob ham berilmaydi
+    const enabled = /on$/i.test(toggle[1]!);
+    await setAiGroupEnabled(chatId, enabled, String(msg.from.id)).catch(() => {});
+    await deleteMessage(chat.id, msg.message_id).catch(() => {});
+    await sendMessage(
+      msg.from.id,
+      enabled
+        ? `✅ «${title || "Guruh"}»da bot YOQILDI. Xodimlar standart so‘rov yozsa javob beradi; sizga guruhda javob bermaydi.`
+        : `🔕 «${title || "Guruh"}»da bot O‘CHIRILDI. Endi guruhda hech kimga javob bermaydi. Qayta yoqish: shu guruhda /bot_on yozing yoki Yordamchi AI bo‘limi.`,
+    ).catch(() => {});
+    return true;
+  }
+
+  if (isAdmin) return true; // guruhda adminga javob berilmaydi
+  if (!enabledNow) return true; // o‘chirilgan guruh — jim
+  return false;
 }
 
 /* ------------------------------------------------------------------- matn */
@@ -1152,6 +1238,13 @@ export async function handleAiAssistantMessage(
   opts?: { businessConnectionId?: string | null },
 ): Promise<boolean> {
   if (!msg.from || msg.from.is_bot) return false;
+  // Guruhda adminga javob berilmaydi (xavfsizlik to‘ri — asosiy darvoza routes/telegram.ts da)
+  if (msg.chat.type === "group" || msg.chat.type === "supergroup") {
+    const adminTg = await isAiAdminTelegramId(String(msg.from.id)).catch(() => false);
+    if (adminTg) return true;
+    const linked = await findUserByTelegram(String(msg.from.id)).catch(() => null);
+    if (linked?.role === "admin") return true;
+  }
   const chatId = msg.chat.id;
   const businessConnectionId = opts?.businessConnectionId || msg.business_connection_id || null;
   const sendOpts = businessConnectionId ? { business_connection_id: businessConnectionId } : undefined;

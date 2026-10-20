@@ -6,7 +6,13 @@
 import { Router, type IRouter, type Response } from "express";
 import { pool } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
-import { ensureAiAssistantSchema, executeAssistantAction, sendAssistantFollowUp } from "../lib/ai-assistant";
+import {
+  ensureAiAssistantSchema,
+  executeAssistantAction,
+  listAiGroups,
+  sendAssistantFollowUp,
+  setAiGroupEnabled,
+} from "../lib/ai-assistant";
 
 const router: IRouter = Router();
 
@@ -171,6 +177,28 @@ router.post("/ai-assistant/proposals/:id/reject", requireAuth, async (req: AuthR
     "So‘rovingizni ko‘rib chiqdim — hozircha qo‘shimcha aniqlik kerak. Iltimos, vaziyatni biroz batafsil yozing (sana, vaqt, qanday xato chiqyapti), davom etamiz 🙂";
   await sendAssistantFollowUp(p.conversation_id, follow);
   res.json({ ok: true });
+});
+
+/* ------------------------------------------------------------ guruhlar */
+
+/** Bot ko‘rgan guruhlar ro‘yxati (yoqilgan/o‘chirilgan) — faqat admin */
+router.get("/ai-assistant/groups", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const groups = await listAiGroups();
+  res.json({ groups });
+});
+
+/** Guruhda botni yoqish/o‘chirish — faqat admin */
+router.post("/ai-assistant/groups/:chatId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const chatId = String(req.params.chatId || "").trim();
+  const enabled = Boolean(req.body?.enabled);
+  if (!/^-?\d+$/.test(chatId)) {
+    res.status(400).json({ error: "Guruh ID noto‘g‘ri" });
+    return;
+  }
+  await setAiGroupEnabled(chatId, enabled, req.userId ? String(req.userId) : null);
+  res.json({ ok: true, chatId, enabled });
 });
 
 /** Admin suhbatga qo‘lda javob yozadi (bot nomidan Telegramga ketadi) */

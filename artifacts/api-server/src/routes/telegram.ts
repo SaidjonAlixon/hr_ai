@@ -40,7 +40,7 @@ import {
   isGroupChat,
   messageHasImage,
 } from "../lib/telegram-support";
-import { handleAiAssistantMessage, registerBusinessConnection } from "../lib/ai-assistant";
+import { handleAiAssistantMessage, handleAiGroupGate, registerBusinessConnection } from "../lib/ai-assistant";
 import { isReportChat, observeGroupMessage } from "../lib/telegram-report-group";
 
 const router: IRouter = Router();
@@ -585,6 +585,12 @@ async function handleUpdate(update: TelegramUpdate) {
   if (isGroupChat(msg.chat)) {
     await observeGroupMessage(msg);
     if (await isReportChat(msg.chat)) return;
+    // Yordamchi AI guruh darvozasi: adminga javob yo‘q, /bot_on|/bot_off faqat adminda, o‘chirilgan guruhda jim
+    const gated = await handleAiGroupGate(msg).catch((err) => {
+      console.error("ai-group-gate:", err);
+      return false;
+    });
+    if (gated) return;
     const gText = (msg.text ?? msg.caption ?? "").toLowerCase();
     const directToBot =
       gText.includes("@vaksinahrbot") || msg.reply_to_message?.from?.username === "vaksinahrbot";

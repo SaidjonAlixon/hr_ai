@@ -88,6 +88,24 @@ export function replyAiConversation(conversationId: number, text: string) {
   });
 }
 
+export type AiGroup = {
+  chatId: string;
+  title: string | null;
+  enabled: boolean;
+  updatedAt: string;
+};
+
+export function fetchAiGroups() {
+  return apiFetch<{ groups: AiGroup[] }>("/ai-assistant/groups");
+}
+
+export function setAiGroupEnabled(chatId: string, enabled: boolean) {
+  return apiFetch<{ ok: boolean; chatId: string; enabled: boolean }>(
+    `/ai-assistant/groups/${encodeURIComponent(chatId)}`,
+    { method: "POST", body: JSON.stringify({ enabled }) },
+  );
+}
+
 export const AI_KIND_LABEL: Record<string, string> = {
   davomat_fix: "Davomat tuzatish",
   atestatsiya_retake: "Testni qayta ochish",

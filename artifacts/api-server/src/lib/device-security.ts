@@ -169,6 +169,11 @@ export async function isDeviceSecurityEnforced(user: {
   role: string;
   deviceSecurityEnforced?: boolean | null;
 }): Promise<boolean> {
+  // TO‘LIQ RUXSAT REJIMI (platforma egasi talabi): barcha ofis va dorixona
+  // xodimlari istalgan joydan/qurilmadan faqat login+parol bilan kiradi.
+  // Qurilma nazorati standart holatda O‘CHIQ — faqat serverda
+  // DEVICE_SECURITY_ENABLED=1 ataylab qo‘yilsa yana ishlaydi.
+  if (process.env.DEVICE_SECURITY_ENABLED !== "1") return false;
   if (isStudentRole(user.role)) return false;
   const settings = await getDeviceSecuritySettings();
   const mode = settings.enforcementMode;

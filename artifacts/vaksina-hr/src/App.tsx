@@ -16,6 +16,7 @@ import { PharmacyFaceGate } from './components/PharmacyFaceGate';
 import { DisciplineLockOverlay } from './components/DisciplineLockOverlay';
 import { ExplanationLetterPrompt } from './components/explanation-letter/ExplanationLetterPrompt';
 import { CallLayer } from './components/calls/CallLayer';
+import { AI_CHAT_ENABLED } from './lib/chat-flag';
 
 // Login asosiy paketda qoladi. Qolgan sahifalar kirish/yangilashda birga tahlil qilinmasin.
 import Login from './pages/login';
@@ -183,11 +184,14 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
-      <Route path="/yordam">
-        <Suspense fallback={<PageFallback />}>
-          <YordamPage />
-        </Suspense>
-      </Route>
+      {/* Chat-bot vaqtincha yopilgan — /yordam sahifasi ko‘rinmaydi (AI_CHAT_ENABLED) */}
+      {AI_CHAT_ENABLED ? (
+        <Route path="/yordam">
+          <Suspense fallback={<PageFallback />}>
+            <YordamPage />
+          </Suspense>
+        </Route>
+      ) : null}
       <Route path="/filiallar">
         <Suspense fallback={<PageFallback />}>
           <PublicFilialMapPage />

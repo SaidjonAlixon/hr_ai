@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { optionalAuth, type AuthRequest } from "../middlewares/auth";
-import { webAssistantTurn } from "../lib/ai-assistant";
+import { aiChatEnabled, webAssistantTurn } from "../lib/ai-assistant";
 import {
   faqAnswer,
   faqCatalogForAi,
@@ -318,7 +318,7 @@ router.get("/help/meta", optionalAuth, (req, res): void => {
     telegramUrl: TELEGRAM_HELP_URL,
     telegram: TELEGRAM_HELP,
     phone: SUPPORT_PHONE,
-    aiEnabled: Boolean(process.env.OPENAI_API_KEY?.trim()) && HELP_AI_ENABLED,
+    aiEnabled: aiChatEnabled() && Boolean(process.env.OPENAI_API_KEY?.trim()) && HELP_AI_ENABLED,
     locale,
     faqs: HELP_FAQS.map((f) => ({
       id: f.id,
@@ -329,6 +329,16 @@ router.get("/help/meta", optionalAuth, (req, res): void => {
 
 router.post("/help/chat", optionalAuth, async (req: AuthRequest, res): Promise<void> => {
   const locale = localeFromReq(req);
+  // Chat-bot vaqtincha yopilgan — web chat ham ishlamaydi
+  if (!aiChatEnabled()) {
+    res.json({
+      reply: locale === "ru" ? "Чат помощи временно закрыт." : "Yordam chat vaqtincha yopilgan.",
+      source: "closed",
+      showContacts: false,
+      locale,
+    });
+    return;
+  }
   try {
     if (rateLimited(req)) {
       res.status(429).json({ error: errTooMany(locale) });

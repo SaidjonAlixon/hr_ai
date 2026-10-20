@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { AI_CHAT_ENABLED } from "@/lib/chat-flag";
 import { useI18n } from "@/i18n/I18nProvider";
 import type { Locale } from "@/i18n/types";
 
@@ -204,7 +205,7 @@ function LinkButtons({ links }: { links: HelpLink[] }) {
   );
 }
 
-export const HELP_ASSISTANT_ENABLED = true;
+export const HELP_ASSISTANT_ENABLED = AI_CHAT_ENABLED;
 
 export const HELP_CHAT_URL = "https://vaksinahr.uz/yordam";
 export const HELP_BOT_URL = "https://t.me/vaksinahrbot";

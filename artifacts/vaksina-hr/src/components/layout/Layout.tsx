@@ -91,6 +91,7 @@ import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
 import { VerifiedBadge, VerifiedName } from "@/components/VerifiedBadge";
 import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewEmployeesFull, canViewDavomat, canViewDavomatXatoliklar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome, isSbRole, canManageSmenaFilial, canManageStudents, canSeeAbet, canUseDocumentScanner } from "@/lib/roles";
+import { AI_CHAT_ENABLED } from "@/lib/chat-flag";
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1932,7 +1933,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     .filter((item) => item.path !== '/smena-filial' || canSeeSmenaFilial)
     .filter((item) => item.path !== '/admin/holat' || canViewHolat(userRole))
     .filter((item) => item.path !== '/admin/holat/xodim' || canViewHolat(userRole))
-    .filter((item) => item.path !== '/admin/yordamchi-ai' || userRole === 'admin')
+    .filter((item) => item.path !== '/admin/yordamchi-ai' || (AI_CHAT_ENABLED && userRole === 'admin'))
     .filter((item) => item.path !== '/distribyutsiya' || canViewDistribyutsiya(userRole))
     .filter((item) => item.path !== '/omborxona-ish' || canViewOmborxona(userRole))
     .filter((item) => item.path !== '/davomat/analytics')

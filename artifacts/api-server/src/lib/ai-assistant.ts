@@ -231,6 +231,8 @@ export async function handleAiGroupGate(msg: TelegramMessage): Promise<boolean> 
   const chatId = String(chat.id);
   const title = chat.title || null;
   const enabledNow = await ensureGroupRow(chatId, title).catch(() => true);
+  // Eslatma: chat-bot yopilgani GURUHGA tegmaydi — guruhda bot doimidagidek javob beradi
+  // (shu darvoza qoidalari bilan: adminga javob yo‘q, o‘chirilgan guruhda jim).
   const text = (msg.text ?? msg.caption ?? "").trim();
 
   const adminTg = await isAiAdminTelegramId(String(msg.from.id)).catch(() => false);
@@ -811,6 +813,15 @@ export function aiAssistantEnabled(): boolean {
   return process.env.AI_ASSISTANT_ENABLED !== "0" && Boolean(process.env.OPENAI_API_KEY?.trim());
 }
 
+/**
+ * Chat-bot (Yordamchi AI) umumiy kaliti — egasi talabiga ko‘ra VAQTINCHA YOPILGAN.
+ * AI_CHAT_ENABLED=0 (server .env) bo‘lsa: chat hech qayerda ko‘rinmaydi va ishlamaydi
+ * (Telegramda jim, web chatda «yopilgan» javobi). Qayta ochish: .env dan yozuvni olib tashlash.
+ */
+export function aiChatEnabled(): boolean {
+  return process.env.AI_CHAT_ENABLED !== "0";
+}
+
 async function callAi(opts: {
   snapshot: string | null;
   history: Array<{ role: string; text: string }>;
@@ -1245,6 +1256,9 @@ export async function handleAiAssistantMessage(
   opts?: { businessConnectionId?: string | null },
 ): Promise<boolean> {
   if (!msg.from || msg.from.is_bot) return false;
+  // Chat-bot vaqtincha yopilgan — Telegram SHAXSIY chatda jim turamiz (login buyruqlari alohida ishlaydi).
+  // GURUH bundan mustasno: u yerda bot doimidagidek javob beradi.
+  if (!aiChatEnabled() && msg.chat.type !== "group" && msg.chat.type !== "supergroup") return true;
   // Guruhda adminga javob berilmaydi (xavfsizlik to‘ri — asosiy darvoza routes/telegram.ts da)
   if (msg.chat.type === "group" || msg.chat.type === "supergroup") {
     const adminTg = await isAiAdminTelegramId(String(msg.from.id)).catch(() => false);
@@ -1449,6 +1463,10 @@ export async function webAssistantTurn(opts: {
   history: Array<{ role: string; text: string }>;
   userText: string;
 }): Promise<AiTurnResult> {
+  // Chat-bot vaqtincha yopilgan
+  if (!aiChatEnabled()) {
+    return { reply: "Chat vaqtincha yopilgan.", intent: "closed", proposal: null, file: null, fileData: null };
+  }
   await ensureAiAssistantSchema();
   const [u] = await db
     .select({

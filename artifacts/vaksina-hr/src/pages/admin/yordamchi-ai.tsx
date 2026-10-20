@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { AI_CHAT_ENABLED } from "@/lib/chat-flag";
 const isAdminOnly = (role?: string | null) => role === "admin";
 import { cn } from "@/lib/utils";
 import {
@@ -124,6 +125,21 @@ export default function YordamchiAiPage() {
 
   if (!isAdminOnly(user?.role)) {
     return <div className="p-6 text-sm text-muted-foreground">Bu bo‘lim faqat admin uchun.</div>;
+  }
+
+  if (!AI_CHAT_ENABLED) {
+    return (
+      <div className="mx-auto max-w-2xl p-6">
+        <div className="rounded-3xl border border-border bg-card p-6 text-center">
+          <Bot className="mx-auto mb-3 h-10 w-10 text-muted-foreground/60" />
+          <p className="font-semibold">Chat-bot vaqtincha yopilgan</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Yordamchi AI hozir ko‘rinmaydi va ishlamaydi (platformada ham, Telegramda ham).
+            Qayta ochish kerak bo‘lsa, dasturchiga ayting.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   const proposals = overview.data?.proposals ?? [];

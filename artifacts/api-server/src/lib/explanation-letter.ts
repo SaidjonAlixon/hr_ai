@@ -323,6 +323,8 @@ export async function syncExplanationLetters(month: string, people: JarimaPerson
   );
   const deleted = new Set(deletedRows.map((r) => `${r.user_id}|${r.event_date}|${r.kind}`));
   for (const p of people) {
+    // Dorixona xodimlariga tushuntirish xati yaratilmaydi (funksiya faqat ofis uchun)
+    if (p.group === "pharmacy") continue;
     for (const ev of p.events) {
       if (deleted.has(`${p.userId}|${ev.date}|${ev.kind}`)) continue;
       keep.push(`${p.userId}|${ev.date}|${ev.kind}`);
@@ -400,6 +402,9 @@ export async function syncExplanationLetters(month: string, people: JarimaPerson
 
 export async function myLetters(userId: number): Promise<ExplanationLetterRow[]> {
   await ensureExplanationSchema();
+  // Dorixona xodimlariga tushuntirish xatlari umuman ko‘rinmaydi
+  const { rows: roleRows } = await pool.query(`SELECT role FROM users WHERE id = $1`, [userId]);
+  if (jarimaGroupForRole(roleRows[0]?.role as string | undefined) === "pharmacy") return [];
   const { rows } = await pool.query(
     `SELECT ${SELECT_COLS} FROM explanation_letters l LEFT JOIN users u ON u.id = l.user_id
       WHERE l.user_id = $1 ORDER BY l.event_date DESC, l.id DESC LIMIT 100`,
@@ -439,6 +444,9 @@ export async function pendingLetterFor(userId: number): Promise<ExplanationLette
 
 export async function explanationPunchBlock(userId: number | null | undefined): Promise<Record<string, unknown> | null> {
   if (!userId || !(await isJarimaEnabled())) return null;
+  // Dorixona xodimlari xat sababli davomatdan bloklanmaydi
+  const { rows: roleRows } = await pool.query(`SELECT role FROM users WHERE id = $1`, [userId]).catch(() => ({ rows: [] as Array<{ role: string }> }));
+  if (jarimaGroupForRole(roleRows[0]?.role as string | undefined) === "pharmacy") return null;
   const l = await pendingLetterFor(userId).catch((err) => {
     logLetterError(err, "punch-gate");
     return null;

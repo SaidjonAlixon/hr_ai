@@ -32,13 +32,19 @@ export async function activeLockFor(userId: number): Promise<DisciplineLock | nu
   let r: Record<string, any> | undefined;
   try {
     const { rows } = await pool.query(
-      `SELECT id, user_id, lock_day, strike_n, event_date, kind
-         FROM discipline_locks
-        WHERE user_id = $1 AND lock_day = $2 AND cleared_at IS NULL
+      `SELECT l.id, l.user_id, l.lock_day, l.strike_n, l.event_date, l.kind, u.role AS user_role
+         FROM discipline_locks l
+         JOIN users u ON u.id = l.user_id
+        WHERE l.user_id = $1 AND l.lock_day = $2 AND l.cleared_at IS NULL
         LIMIT 1`,
       [userId, todayTashkent()],
     );
     r = rows[0];
+    // Dorixona xodimlari (mudir, farmasevt, stajyor) endi bloklanmaydi — bloklari ochilgan hisoblanadi
+    if (r && DISCIPLINE_ROLES.has(String(r.user_role || "").toLowerCase())) {
+      lockCache.set(userId, { at: Date.now(), lock: null });
+      return null;
+    }
   } catch {
     return null;
   }

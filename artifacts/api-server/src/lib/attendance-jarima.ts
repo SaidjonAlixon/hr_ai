@@ -225,7 +225,10 @@ export async function applyAttendanceJarima(
     );
     for (const r of rows) activeOffice.add(Number(r.employee_id));
   }
-  const people = candidates.filter((row) => jarimaGroupForRole(row.role) === "pharmacy" || activeOffice.has(row.employeeId));
+  // DORIXONA xodimlari (mudir, farmasevt, stajyor) — egasi talabiga ko‘ra jarima va
+  // tushuntirish xati tizimidan TO‘LIQ chiqarilgan: jarima hisoblanmaydi, xat yaratilmaydi,
+  // blok qo‘yilmaydi. Funksiya kodda qoladi — faqat ofis xodimlari uchun ishlaydi.
+  const people = candidates.filter((row) => jarimaGroupForRole(row.role) !== "pharmacy" && activeOffice.has(row.employeeId));
   if (!people.length) return { month, active: true, people: [] };
 
   const userIds = people.map((row) => row.userId as number);

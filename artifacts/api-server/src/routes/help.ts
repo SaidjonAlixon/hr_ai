@@ -23,6 +23,14 @@ const HELP_TIMEOUT_MS = Number(process.env.HELP_AI_TIMEOUT_MS || 20000);
 const HELP_AI_ENABLED = process.env.HELP_AI !== "0" && process.env.HELP_AI !== "false";
 const MAX_IMAGE_CHARS = 1_800_000;
 
+/**
+ * QAT’IY QOIDA: yordam chatida AI faqat platforma admini uchun ishlaydi.
+ * Xodim va anonim foydalanuvchiga AI umuman ishlatilmaydi — tayyor FAQ yoki kontaktlar beriladi.
+ */
+function helpAiAdminOnly(req: AuthRequest): boolean {
+  return (req.userRole || "") === "admin";
+}
+
 const recentByKey = new Map<string, number[]>();
 
 function clientKey(req: AuthRequest): string {
@@ -364,7 +372,8 @@ router.post("/help/chat", optionalAuth, async (req: AuthRequest, res): Promise<v
         message ||
         context ||
         (locale === "ru" ? "Объясните проблему на экране" : "Ekrandagi muammoni tushuntiring");
-      const vision = await aiVisionAnswer(q, imageDataUrl, locale);
+      // AI vision faqat admin uchun; xodim/anonimga AI ishlatilmaydi
+      const vision = helpAiAdminOnly(req) ? await aiVisionAnswer(q, imageDataUrl, locale) : null;
       if (!vision || vision.action === "contacts") {
         res.json(contactsPayload(locale));
         return;
@@ -396,7 +405,8 @@ router.post("/help/chat", optionalAuth, async (req: AuthRequest, res): Promise<v
       return;
     }
 
-    const aiId = await pickFaqIdWithCheapAi(message, locale);
+    // AI bilan FAQ tanlash faqat admin uchun; qolganlarga AI ishlatilmaydi
+    const aiId = helpAiAdminOnly(req) ? await pickFaqIdWithCheapAi(message, locale) : null;
     if (aiId) {
       res.json(faqReplyPayload(findFaqById(aiId)!, "faq-ai", locale));
       return;
@@ -408,7 +418,7 @@ router.post("/help/chat", optionalAuth, async (req: AuthRequest, res): Promise<v
     }
 
     if (looksLikeUiError(message)) {
-      const tailored = await aiShortOrPhoto(message, true, locale);
+      const tailored = helpAiAdminOnly(req) ? await aiShortOrPhoto(message, true, locale) : null;
       if (tailored?.action === "ask_photo") {
         res.json({
           reply: tailored.reply,
@@ -443,7 +453,7 @@ router.post("/help/chat", optionalAuth, async (req: AuthRequest, res): Promise<v
       return;
     }
 
-    const short = await aiShortOrPhoto(message, false, locale);
+    const short = helpAiAdminOnly(req) ? await aiShortOrPhoto(message, false, locale) : null;
     if (short?.action === "contacts") {
       res.json(contactsPayload(locale));
       return;

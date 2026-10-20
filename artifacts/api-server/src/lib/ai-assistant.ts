@@ -819,6 +819,13 @@ async function callAi(opts: {
   /** true — suhbatdosh admin (egasi): amal darhol bajariladi */
   adminMode?: boolean;
 }): Promise<AiTurnResult | null> {
+  // QAT’IY QOIDA: AI (OpenAI) faqat admin uchun. Xodim/foydalanuvchiga AI umuman
+  // ishlatilmaydi — ular employeeStandardReply (bazadan tayyor javob) oladi.
+  // Bu darvoza kod darajasida: adminMode bo‘lmasa OpenAI chaqirilmaydi.
+  if (!opts.adminMode) {
+    logger.warn("ai-assistant: callAi admin rejimisiz chaqirildi — rad etildi (xodimga AI ishlatilmaydi)");
+    return null;
+  }
   const key = process.env.OPENAI_API_KEY?.trim();
   if (!key) return null;
   const kb = loadPlatformHelpKnowledge().slice(0, 45_000);

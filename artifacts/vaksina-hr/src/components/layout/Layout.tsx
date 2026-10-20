@@ -57,7 +57,6 @@ import {
   Library,
   BadgeCheck,
   FileSignature,
-  Headset,
   UtensilsCrossed,
   Receipt,
   Sparkles,
@@ -86,8 +85,6 @@ import { BoglanishMissingBanner } from '@/components/BoglanishMissingBanner';
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { FaceIdEnroll } from '@/components/FaceIdEnroll';
-import { HELP_ASSISTANT_ENABLED, HelpAssistantDialog } from '@/components/HelpAssistantDialog';
-import { OperatorHeadsetIcon } from '@/components/OperatorHeadsetIcon';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { useCall } from '@/lib/calls/engine';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
@@ -463,12 +460,12 @@ function HeaderCallButton({ active }: { active: boolean }) {
       aria-label="Qo‘ng‘iroq"
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'app-header-call-chip group relative inline-flex h-[34px] shrink-0 items-center gap-1.5 rounded-full border border-white/20 p-0.5 text-white transition-all duration-200 active:scale-95 sm:pr-3',
+        'group relative inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-emerald-600 py-1 pl-1 pr-2.5 text-white shadow-sm transition-all duration-200 hover:bg-emerald-500 active:scale-95',
         active && 'ring-2 ring-emerald-400/60 ring-offset-2 ring-offset-card',
       )}
     >
       <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/20 ring-1 ring-white/30 transition group-hover:bg-white/25">
-        <Headset className="h-4 w-4" />
+        <PhoneCall className="h-4 w-4" />
         {live ? (
           <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/80" />
@@ -476,7 +473,7 @@ function HeaderCallButton({ active }: { active: boolean }) {
           </span>
         ) : null}
       </span>
-      <span className="hidden text-xs font-semibold tracking-wide sm:inline">Qo‘ng‘iroq</span>
+      <span className="text-[11px] font-bold tracking-wide">Qo‘ng‘iroq</span>
     </Link>
   );
 }
@@ -531,7 +528,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const [profilePassword, setProfilePassword] = React.useState('');
   const [profilePassword2, setProfilePassword2] = React.useState('');
   const [profileSaving, setProfileSaving] = React.useState(false);
-  const [helpOpen, setHelpOpen] = React.useState(false);
   const [mobileAttAllowed, setMobileAttAllowed] = React.useState(false);
 
   const onFaceStatusChange = React.useCallback(
@@ -2558,10 +2554,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         </div>
       </aside>
 
-      {HELP_ASSISTANT_ENABLED ? (
-        <HelpAssistantDialog open={helpOpen} onOpenChange={setHelpOpen} />
-      ) : null}
-
       <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
         <DialogContent className="w-[calc(100%-1.25rem)] max-w-md">
           <DialogHeader>
@@ -2661,26 +2653,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <HeaderCallButton active={location.startsWith('/qongiroq')} />
             <LanguageSwitcher />
-            {HELP_ASSISTANT_ENABLED ? (
-              <button
-                type="button"
-                onClick={() => setHelpOpen(true)}
-                className="shrink-0"
-                aria-label={t('common.help')}
-              >
-                <span className="app-header-help-chip group inline-flex items-center gap-1.5 rounded-full pl-1.5 pr-2.5 py-1 sm:gap-2 sm:pl-1.5 sm:pr-3">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/15 text-white ring-1 ring-white/20 transition group-hover:bg-white/20">
-                    <OperatorHeadsetIcon className="h-5 w-5" />
-                  </span>
-                  <span className="flex min-w-0 flex-col leading-none text-left">
-                    <span className="text-[11px] font-semibold text-white sm:text-[12px]">{t('common.help')}</span>
-                    <span className="mt-0.5 hidden text-[9px] font-medium text-violet-100/75 sm:block">
-                      {t('common.contact')}
-                    </span>
-                  </span>
-                </span>
-              </button>
-            ) : null}
             <ThemeToggle />
             <Link href="/notifications">
               <div className="relative cursor-pointer rounded-full p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">

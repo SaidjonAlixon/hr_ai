@@ -176,7 +176,7 @@ export default function DistribyutsiyaPage() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5 px-4 py-5 pb-28 sm:px-6">
+    <div className="w-full space-y-5 px-3 py-5 pb-28 sm:px-5 lg:px-6">
       <header className="space-y-2">
         <div className="flex flex-wrap items-center gap-3">
           <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">

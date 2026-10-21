@@ -1115,7 +1115,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       const at = dashIdx >= 0 ? dashIdx + 1 : 0;
       next = [...next.slice(0, at), javobHolatNav, ...next.slice(at)];
     }
-    // Farmasevt / mudir / stajyor / ofis — Javob olish Asosiyda doim ko‘rinsin
+    // Farmasevt / mudir / stajyor / ofis / distrib / tamojni — Javob olish Asosiyda doim ko‘rinsin
     if (
       (role === 'farmasevt' ||
         role === 'mudir' ||
@@ -1123,6 +1123,11 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         role === 'koordinator' ||
         role === 'regional_menejer' ||
         role === 'admin' ||
+        role === 'distrib' ||
+        role === 'distrib_rahbar' ||
+        role === 'distrib_hr' ||
+        role === 'tamojni' ||
+        role === 'tamojni_rahbar' ||
         isDirectorRole(role) ||
         isDeptHeadRole(role) ||
         isLimitedOfficeStaffRole(role)) &&

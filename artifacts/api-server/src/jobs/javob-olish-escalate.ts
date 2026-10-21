@@ -1,8 +1,9 @@
 /**
- * Javob olish: 1-koordinator 8 soat ichida javob bermasa → HR menejer + HR direktor.
+ * Javob olish: 1-koordinator / bo‘lim boshlig‘i 8 soat ichida javob bermasa → HR.
+ * Distrib/tamojni → Distribyutsiya HR.
  */
 import { and, eq, inArray, lt } from "drizzle-orm";
-import { db, employeesTable, javobOlishRequestsTable } from "@workspace/db";
+import { db, employeesTable, javobOlishRequestsTable, usersTable } from "@workspace/db";
 import { notifyByRoles } from "../lib/notify";
 import { logger } from "../lib/logger";
 
@@ -18,6 +19,16 @@ function fmtDt(d: Date) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function isDistribFamilyRole(role: string) {
+  return (
+    role === "distrib" ||
+    role === "distrib_rahbar" ||
+    role === "distrib_hr" ||
+    role === "tamojni" ||
+    role === "tamojni_rahbar"
+  );
 }
 
 export async function runJavobOlishEscalateCycle(): Promise<number> {
@@ -39,7 +50,18 @@ export async function runJavobOlishEscalateCycle(): Promise<number> {
   let n = 0;
   for (const row of rows) {
     const who = row.status === "pending_dept" ? "Bo‘lim boshlig‘i" : "Koordinator";
-    const note = `${who} 8 soat ichida javob bermadi. Yuborilgan: ${fmtDt(row.createdAt)}. HR ga o‘tkazilgan: ${fmtDt(now)}.`;
+    let requesterRole = "";
+    if (row.userId) {
+      const [u] = await db
+        .select({ role: usersTable.role })
+        .from(usersTable)
+        .where(eq(usersTable.id, row.userId))
+        .limit(1);
+      requesterRole = String(u?.role || "");
+    }
+    const distribFamily = isDistribFamilyRole(requesterRole);
+    const hrLabel = distribFamily ? "Distribyutsiya HR" : "HR";
+    const note = `${who} 8 soat ichida javob bermadi. Yuborilgan: ${fmtDt(row.createdAt)}. ${hrLabel} ga o‘tkazilgan: ${fmtDt(now)}.`;
     await db
       .update(javobOlishRequestsTable)
       .set({
@@ -57,7 +79,7 @@ export async function runJavobOlishEscalateCycle(): Promise<number> {
       .limit(1);
 
     await notifyByRoles({
-      roles: ["hr_menejer", "hr_direktor", "admin"],
+      roles: distribFamily ? ["distrib_hr", "admin"] : ["hr_menejer", "hr_direktor", "admin"],
       text: `${emp?.fullName || "Xodim"}: javob olish — ${who.toLowerCase()} javob bermadi. ${row.workDate} ${row.fromHm}–${row.toHm}. Sabab: ${row.note}. ${note}`,
       type: "javob_olish_escalated",
       linkUrl: "/javob-olish",

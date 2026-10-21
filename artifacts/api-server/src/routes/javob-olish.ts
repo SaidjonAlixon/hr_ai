@@ -42,6 +42,17 @@ function usesCoordinatorChain(role: string) {
   );
 }
 
+/** Distribyutsiya + Tamojni — javob olish: boshliq → Distribyutsiya HR */
+function isDistribFamilyRole(role: string) {
+  return (
+    role === "distrib" ||
+    role === "distrib_rahbar" ||
+    role === "distrib_hr" ||
+    role === "tamojni" ||
+    role === "tamojni_rahbar"
+  );
+}
+
 function isCoordRole(role: string) {
   return role === "koordinator";
 }
@@ -57,20 +68,36 @@ function isHrApprover(role: string) {
   );
 }
 
+/** Distrib/tamojni so‘rovlari yakuniy — Distribyutsiya HR (admin/direktor ham) */
+function isDistribHrFinalApprover(role: string) {
+  return role === "distrib_hr" || role === "admin" || isDirectorRole(role);
+}
+
 /** Admin/rahbar koordinator bosqichini ham yakuniy qaror bilan yopa oladi */
 function isFinalOverrideRole(role: string) {
   return role === "admin" || isDirectorRole(role);
 }
 
-function canActOn(role: string, status: string): boolean {
+function canActOn(role: string, status: string, opts?: { distribFamily?: boolean }): boolean {
   if (status === "pending_coord") return isCoordRole(role) || isFinalOverrideRole(role);
   if (status === "pending_dept") return isDeptHeadRole(role) || isFinalOverrideRole(role);
-  if (status === "pending_hr") return isHrApprover(role);
+  if (status === "pending_hr") {
+    if (opts?.distribFamily) return isDistribHrFinalApprover(role);
+    return isHrApprover(role);
+  }
   return false;
 }
 
 function isLead(role: string) {
-  return role === "admin" || isDirectorRole(role) || isCoordRole(role) || isHrRole(role);
+  return (
+    role === "admin" ||
+    isDirectorRole(role) ||
+    isCoordRole(role) ||
+    isHrRole(role) ||
+    role === "distrib_hr" ||
+    role === "distrib_rahbar" ||
+    role === "tamojni_rahbar"
+  );
 }
 
 function durationMinutes(fromHm: string, toHm: string): number {
@@ -173,26 +200,73 @@ async function resolveShiftForDate(
   };
 }
 
-/** Shu bo‘limning boshlig‘i. Lavozim yo‘q yoki o‘zi boshliq bo‘lsa — null, HR ga o‘tadi. */
+/** Shu bo‘limning boshlig‘i. Lavozim yo‘q yoki o‘zi boshliq bo‘lsa — null, HR ga o‘tadi.
+ * Avvalo *_rahbar / sb_boshliq — *_hr birinchi bosqichda emas (Distrib: rahbar → Distrib HR). */
 async function findOfficeDeptHeadUserId(role: string, userId: number): Promise<number | null> {
+  // Distrib/Tamojni — aniq boshliq rollari
+  if (isDistribFamilyRole(role)) {
+    const preferred =
+      role === "tamojni" || role === "tamojni_rahbar" ? ["tamojni_rahbar"] : ["distrib_rahbar"];
+    for (const headRole of preferred) {
+      const [head] = await db
+        .select({ id: usersTable.id })
+        .from(usersTable)
+        .where(and(eq(usersTable.role, headRole), eq(usersTable.status, "active"), ne(usersTable.id, userId)))
+        .limit(1);
+      if (head) return head.id;
+    }
+    return null;
+  }
+
   const deptName = departmentNameForRole(role);
   if (!deptName) return null;
   const headRoles = Object.entries(ROLE_DEPARTMENT_NAME)
     .filter(([candidate, name]) => name === deptName && (DEPT_HEAD_ROLES as readonly string[]).includes(candidate))
     .map(([candidate]) => candidate);
   if (!headRoles.length) return null;
-  const [head] = await db
-    .select({ id: usersTable.id })
+  const preferred = headRoles.filter((r) => r.endsWith("_rahbar") || r === "sb_boshliq");
+  const ordered = [...preferred, ...headRoles.filter((r) => !preferred.includes(r))];
+  for (const headRole of ordered) {
+    const [head] = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(and(eq(usersTable.role, headRole), eq(usersTable.status, "active"), ne(usersTable.id, userId)))
+      .limit(1);
+    if (head) return head.id;
+  }
+  return null;
+}
+
+async function userRoleById(userId: number | null | undefined): Promise<string> {
+  if (!userId) return "";
+  const [u] = await db
+    .select({ role: usersTable.role })
     .from(usersTable)
-    .where(
-      and(
-        inArray(usersTable.role, headRoles),
-        eq(usersTable.status, "active"),
-        ne(usersTable.id, userId),
-      ),
-    )
+    .where(eq(usersTable.id, userId))
     .limit(1);
-  return head?.id ?? null;
+  return String(u?.role || "");
+}
+
+async function notifyFinalApprovers(opts: {
+  distribFamily: boolean;
+  text: string;
+  type?: string;
+}) {
+  if (opts.distribFamily) {
+    await notifyByRoles({
+      roles: ["distrib_hr", "admin"],
+      text: opts.text,
+      type: opts.type || "javob_olish",
+      linkUrl: "/javob-olish",
+    });
+    return;
+  }
+  await notifyByRoles({
+    roles: ["hr_menejer", "hr_direktor", "admin"],
+    text: opts.text,
+    type: opts.type || "javob_olish",
+    linkUrl: "/javob-olish",
+  });
 }
 
 async function findCoordinatorUserId(empId: number): Promise<number | null> {
@@ -300,6 +374,7 @@ function serializeRow(
     branchLabel?: string | null;
     coordinatorName?: string | null;
     deptStep?: boolean;
+    distribFamily?: boolean;
     coordDecidedByName?: string | null;
     decidedByName?: string | null;
   },
@@ -338,9 +413,12 @@ function serializeRow(
   }
 
   if (r.escalatedAt) {
+    const hrTarget = extra?.distribFamily ? "Distribyutsiya HR" : "HR";
     timeline.push({
       key: "escalated",
-      label: extra?.deptStep ? "Bo‘lim boshlig‘i javob bermadi — HR ga o‘tdi" : "Koordinator javob bermadi — HR ga o‘tdi",
+      label: extra?.deptStep
+        ? `Bo‘lim boshlig‘i javob bermadi — ${hrTarget} ga o‘tdi`
+        : `Koordinator javob bermadi — ${hrTarget} ga o‘tdi`,
       at: new Date(r.escalatedAt).toISOString(),
       atLabel: fmtDt(r.escalatedAt),
       by: extra?.coordinatorName || null,
@@ -388,7 +466,9 @@ function serializeRow(
   if (status === "pending_hr" && !r.decidedAt) {
     timeline.push({
       key: "waiting_hr",
-      label: "HR yakuniy ruxsati kutilmoqda",
+      label: extra?.distribFamily
+        ? "Distribyutsiya HR yakuniy ruxsati kutilmoqda"
+        : "HR yakuniy ruxsati kutilmoqda",
       at: null,
       atLabel: "—",
       by: null,
@@ -444,6 +524,7 @@ async function enrichRows(
   const empIds = [...new Set(rows.map((r) => r.employeeId))];
   const userIds = new Set<number>();
   for (const r of rows) {
+    if (r.userId) userIds.add(r.userId);
     if (r.coordinatorUserId) userIds.add(r.coordinatorUserId);
     if (r.coordDecidedById) userIds.add(r.coordDecidedById);
     if (r.decidedById) userIds.add(r.decidedById);
@@ -524,6 +605,7 @@ async function enrichRows(
 
   return rows.map((r) => {
     const emp = empById.get(r.employeeId);
+    const requesterRole = r.userId ? String(roleByUserId.get(r.userId) || "") : "";
     return serializeRow(r, {
       fullName: emp?.fullName || null,
       branchLabel: branchLabelFromEmp(emp, empById),
@@ -533,6 +615,7 @@ async function enrichRows(
       deptStep:
         r.status === "pending_dept" ||
         (r.coordinatorUserId != null && isDeptHeadRole(roleByUserId.get(r.coordinatorUserId))),
+      distribFamily: isDistribFamilyRole(requesterRole),
       coordDecidedByName: r.coordDecidedById
         ? nameByUserId.get(r.coordDecidedById) || null
         : null,
@@ -596,6 +679,24 @@ router.get("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<v
       const scopeIds = await coordinatorScopeEmployeeIds(me.id);
       rows = rows.filter((r) => scopeIds.has(r.employeeId) || r.coordinatorUserId === req.userId);
       canDecide = true;
+    } else if (role === "distrib_hr") {
+      // Distribyutsiya HR — faqat distrib/tamojni so‘rovlari (yakuniy bosqich)
+      rows = await db
+        .select()
+        .from(javobOlishRequestsTable)
+        .where(eq(javobOlishRequestsTable.status, "pending_hr"))
+        .orderBy(desc(javobOlishRequestsTable.createdAt));
+      const userIds = [...new Set(rows.map((r) => r.userId).filter(Boolean))] as number[];
+      const roleMap = new Map<number, string>();
+      if (userIds.length) {
+        const us = await db
+          .select({ id: usersTable.id, role: usersTable.role })
+          .from(usersTable)
+          .where(inArray(usersTable.id, userIds));
+        for (const u of us) roleMap.set(u.id, String(u.role || ""));
+      }
+      rows = rows.filter((r) => isDistribFamilyRole(roleMap.get(r.userId!) || ""));
+      canDecide = true;
     } else if (isHrApprover(role)) {
       rows = await db
         .select()
@@ -620,20 +721,43 @@ router.get("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<v
       return;
     }
     const items = await enrichRows(rows);
+    const requesterRoles = new Map<number, string>();
+    {
+      const ids = [...new Set(items.map((it) => it.userId).filter(Boolean))] as number[];
+      if (ids.length) {
+        const us = await db
+          .select({ id: usersTable.id, role: usersTable.role })
+          .from(usersTable)
+          .where(inArray(usersTable.id, ids));
+        for (const u of us) requesterRoles.set(u.id, String(u.role || ""));
+      }
+    }
     res.json({
-      items: items.map((it) => ({
-        ...it,
-        canAct:
-          it.status === "pending_dept"
-            ? (isDeptHeadRole(role) && it.coordinatorUserId === req.userId) || isFinalOverrideRole(role)
-            : canActOn(role, it.status),
-      })),
+      items: items.map((it) => {
+        const fam = isDistribFamilyRole(requesterRoles.get(it.userId!) || "");
+        return {
+          ...it,
+          canAct:
+            it.status === "pending_dept"
+              ? (isDeptHeadRole(role) && it.coordinatorUserId === req.userId) || isFinalOverrideRole(role)
+              : canActOn(role, it.status, { distribFamily: fam }),
+        };
+      }),
       canDecide,
-      roleScope: isHrApprover(role) ? "hr" : isCoordRole(role) ? "coord" : isDeptHeadRole(role) ? "dept" : "none",
+      roleScope:
+        role === "distrib_hr"
+          ? "distrib_hr"
+          : isHrApprover(role)
+            ? "hr"
+            : isCoordRole(role)
+              ? "coord"
+              : isDeptHeadRole(role)
+                ? "dept"
+                : "none",
     });
     return;
   } else if (scope === "decided") {
-    if (isHrApprover(role)) {
+    if (isHrApprover(role) || role === "distrib_hr") {
       rows = await db
         .select()
         .from(javobOlishRequestsTable)
@@ -645,6 +769,22 @@ router.get("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<v
         )
         .orderBy(desc(javobOlishRequestsTable.decidedAt))
         .limit(300);
+      if (role === "distrib_hr") {
+        const userIds = [...new Set(rows.map((r) => r.userId).filter(Boolean))] as number[];
+        const roleMap = new Map<number, string>();
+        if (userIds.length) {
+          const us = await db
+            .select({ id: usersTable.id, role: usersTable.role })
+            .from(usersTable)
+            .where(inArray(usersTable.id, userIds));
+          for (const u of us) roleMap.set(u.id, String(u.role || ""));
+        }
+        rows = rows.filter(
+          (r) =>
+            r.decidedById === req.userId ||
+            isDistribFamilyRole(roleMap.get(r.userId!) || ""),
+        );
+      }
     } else if (isCoordRole(role) || isDeptHeadRole(role)) {
       rows = await db
         .select()
@@ -657,7 +797,7 @@ router.get("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<v
       return;
     }
   } else if (scope === "approved-by-me") {
-    if (!isHrApprover(role)) {
+    if (!isHrApprover(role) && role !== "distrib_hr") {
       res.status(403).json({ error: "Faqat HR ko‘radi" });
       return;
     }
@@ -822,6 +962,7 @@ router.post("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<
   }
 
   const officeFlow = !usesCoordinatorChain(role);
+  const distribFamily = isDistribFamilyRole(role);
   const deptHeadUserId = officeFlow ? await findOfficeDeptHeadUserId(role, req.userId!) : null;
   const coordUserId = officeFlow ? deptHeadUserId : await findCoordinatorUserId(me.id);
   const initialStatus = officeFlow ? (deptHeadUserId ? "pending_dept" : "pending_hr") : "pending_coord";
@@ -865,11 +1006,11 @@ router.post("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<
       linkUrl: "/javob-olish",
     });
   } else if (officeFlow) {
-    await notifyByRoles({
-      roles: ["hr_menejer", "hr_direktor", "admin"],
-      text: `${notifyText} Bo‘lim boshlig‘i lavozimi yo‘q — HR menejer va HR direktor tasdiqlaydi.`,
-      type: "javob_olish",
-      linkUrl: "/javob-olish",
+    await notifyFinalApprovers({
+      distribFamily,
+      text: distribFamily
+        ? `${notifyText} Bo‘lim boshlig‘i topilmadi — Distribyutsiya HR tasdiqlaydi.`
+        : `${notifyText} Bo‘lim boshlig‘i lavozimi yo‘q — HR menejer va HR direktor tasdiqlaydi.`,
     });
   } else if (coordUserId) {
     await notifyUser({
@@ -890,7 +1031,9 @@ router.post("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<
   const sentTo = officeFlow
     ? deptHeadUserId
       ? "bo‘lim boshlig‘iga"
-      : "HR menejer va HR direktorga"
+      : distribFamily
+        ? "Distribyutsiya HR ga"
+        : "HR menejer va HR direktorga"
     : "1-koordinatorga";
   res.status(201).json({
     ok: true,
@@ -1214,20 +1357,29 @@ async function decide(
     });
     if (!updated) return;
     const item = await enrichOne(updated);
-    await notifyByRoles({
-      roles: ["hr_menejer", "hr_direktor", "admin"],
-      text: `${item.fullName || "Xodim"}: bo‘lim boshlig‘i tasdiqladi — HR yakuniy ruxsat kerak. ${when} ${row.fromHm}–${row.toHm}. Sabab: ${row.note}.`,
-      type: "javob_olish",
-      linkUrl: "/javob-olish",
+    const requesterRole = await userRoleById(row.userId);
+    const distribFamily = isDistribFamilyRole(requesterRole);
+    await notifyFinalApprovers({
+      distribFamily,
+      text: distribFamily
+        ? `${item.fullName || "Xodim"}: bo‘lim boshlig‘i tasdiqladi — Distribyutsiya HR yakuniy ruxsat kerak. ${when} ${row.fromHm}–${row.toHm}. Sabab: ${row.note}.`
+        : `${item.fullName || "Xodim"}: bo‘lim boshlig‘i tasdiqladi — HR yakuniy ruxsat kerak. ${when} ${row.fromHm}–${row.toHm}. Sabab: ${row.note}.`,
     });
     res.json({ ok: true, item });
     return;
   }
 
-  /** 2-bosqich: HR */
+  /** 2-bosqich: HR / Distribyutsiya HR */
   if (status === "pending_hr") {
-    if (!isHrApprover(role)) {
-      res.status(403).json({ error: "Yakuniy ruxsatni HR beradi" });
+    const requesterRole = await userRoleById(row.userId);
+    const distribFamily = isDistribFamilyRole(requesterRole);
+    const allowed = distribFamily ? isDistribHrFinalApprover(role) : isHrApprover(role);
+    if (!allowed) {
+      res.status(403).json({
+        error: distribFamily
+          ? "Yakuniy ruxsatni Distribyutsiya HR beradi"
+          : "Yakuniy ruxsatni HR beradi",
+      });
       return;
     }
 
@@ -1241,13 +1393,14 @@ async function decide(
     if (!updated) return;
     await markBatchSababli();
 
+    const approverLabel = distribFamily ? "Distribyutsiya HR" : "HR";
     if (row.userId) {
       await notifyUser({
         userId: row.userId,
         text:
           decision === "approved"
-            ? `${when} ${row.fromHm}–${row.toHm} javob olish tasdiqlandi (HR). Davomatda Sababli. Jarima tushmaydi.`
-            : `${when} javob olish so‘rovingiz HR tomonidan rad etildi.${decisionNote ? ` Sabab: ${decisionNote}` : ""}`,
+            ? `${when} ${row.fromHm}–${row.toHm} javob olish tasdiqlandi (${approverLabel}). Davomatda Sababli. Jarima tushmaydi.`
+            : `${when} javob olish so‘rovingiz ${approverLabel} tomonidan rad etildi.${decisionNote ? ` Sabab: ${decisionNote}` : ""}`,
         type: "javob_olish_decision",
         linkUrl: "/javob-olish",
       });

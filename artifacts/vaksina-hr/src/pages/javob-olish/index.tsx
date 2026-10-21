@@ -43,6 +43,7 @@ export default function JavobOlishPage() {
     role === "hr_direktor" ||
     role === "hr" ||
     role === "hr_kadr_rahbar" ||
+    role === "distrib_hr" ||
     role === "admin" ||
     isDirectorRole(role);
   const isDept = isDeptHeadRole(role) && !isHr && !isCoord;

@@ -60,6 +60,11 @@ const ROLE_MOBILE_PATHS: Record<string, string[]> = {
   marketing_rahbar: ['/dashboard', '/vazifalar', '/employees', '/davomat-face', '/eslatmalar'],
   revizor: ['/reviziya', '/vazifalar', '/davomat-face', '/pharmacy-network'],
   reviziya_rahbar: ['/reviziya', '/vazifalar', '/employees', '/davomat-face'],
+  distrib: ['/dashboard', '/javob-olish', '/vazifalar', '/davomat-face'],
+  distrib_rahbar: ['/dashboard', '/javob-olish', '/distribyutsiya', '/vazifalar', '/davomat-face'],
+  distrib_hr: ['/dashboard', '/javob-olish', '/distribyutsiya', '/vazifalar', '/davomat-face'],
+  tamojni: ['/dashboard', '/javob-olish', '/vazifalar', '/davomat-face'],
+  tamojni_rahbar: ['/dashboard', '/javob-olish', '/distribyutsiya', '/vazifalar', '/davomat-face'],
 };
 
 /** Path → short mobile label key (mobile.*) */
@@ -105,8 +110,14 @@ function pickMobileItems(role: string, navItems: MobileNavItem[]): MobileNavItem
       '/davomat',
     ];
   let preferred = ensureVazifalar(base, byPath).filter((p) => p !== '/chat');
+  const distribFamily =
+    role === 'distrib' ||
+    role === 'distrib_rahbar' ||
+    role === 'distrib_hr' ||
+    role === 'tamojni' ||
+    role === 'tamojni_rahbar';
   if (
-    (isLimitedOfficeStaffRole(role) || isDeptHeadRole(role)) &&
+    (isLimitedOfficeStaffRole(role) || isDeptHeadRole(role) || distribFamily) &&
     byPath.has('/javob-olish') &&
     !preferred.includes('/javob-olish')
   ) {

@@ -1,9 +1,11 @@
 /**
  * Dam kunlari: ofis va dorixona smenalari — smena kalendari (work-calendar), qoida bo‘lmasa ofis shanba–yakshanba.
  * Xavfsizlik (SB) — o‘z jadvali (security-shifts).
+ * Omborxona — faqat yakshanba.
  */
 import { isSecurityRestDay, securityShiftFor, SECURITY_USER_ROLES } from "./security-shifts";
 import { altDayOn, payrollCalendarScope, scopeDayStatus, swapOn } from "./work-calendar";
+import { isOmborStaffRole } from "./omborxona-department";
 
 const SHIFT_PHARMACY_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor"]);
 const SHIFT_PHARMACY_ORG_ROLES = new Set([
@@ -57,6 +59,7 @@ export function isOfisStaffEmp(emp: {
   const position = emp.position || "";
   if (userRole === "admin" || /^admin$/i.test(position.trim())) return false;
   if (SECURITY_USER_ROLES.has(userRole)) return false;
+  if (isOmborStaffRole(userRole)) return false;
 
   if (SHIFT_PHARMACY_USER_ROLES.has(userRole)) return false;
   if (SHIFT_PHARMACY_ORG_ROLES.has(orgRole)) return false;
@@ -119,6 +122,11 @@ export function scheduledRestInfo(ymd: string, emp: ScheduleStaff): RestInfo {
   if (sb) {
     const rest = isSecurityRestDay(ymd, sb.pattern);
     return { rest, reason: rest ? "Xavfsizlik grafigi bo‘yicha dam" : null };
+  }
+  // Omborxona: faqat yakshanba dam; Du–Sha ish (kelmasa — kelmagan)
+  if (isOmborStaffRole(emp.userRole)) {
+    const rest = weekdayFromYmd(ymd) === 0;
+    return { rest, reason: rest ? "Omborxona — yakshanba dam" : null };
   }
   const swap = swapOn(emp.employeeId, ymd);
   if (swap) {

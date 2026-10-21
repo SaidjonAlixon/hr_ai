@@ -6,11 +6,15 @@ import { requireAuth } from "../middlewares/auth";
 import { canViewLeadershipModules, hasFullPlatformAccess } from "../lib/roles";
 import {
   OMBORXONA_DEPARTMENT_NAME,
+  WAREHOUSE_FREE_END_HM,
+  WAREHOUSE_FREE_LABEL,
+  WAREHOUSE_FREE_START_HM,
   ensureOmborxonaDepartmentId,
   isOmborHeadRole,
   isOmborStaffRole,
 } from "../lib/omborxona-department";
 import {
+  applyWarehouseFreeSchedule,
   assignEmployeeToShift,
   createWarehouseShift,
   getActiveMemberForEmployee,
@@ -37,7 +41,8 @@ function formatHmTashkent(d: Date | null | undefined): string | null {
 function attendanceStatusUz(status?: string | null, checkIn?: Date | null, checkOut?: Date | null): string {
   const s = String(status || "").toLowerCase();
   if (checkIn && !checkOut) return "Ishda";
-  if (s === "late") return "Kechikkan";
+  // Erkin grafik — kechikish yo‘q
+  if (s === "late") return checkIn && checkOut ? "Kelgan" : "Ishda";
   if (checkIn && checkOut && s === "present") return "Kelgan";
   if (checkIn && checkOut) return "Ketdi";
   if (s === "present") return "Kelgan";
@@ -94,12 +99,21 @@ router.get("/omborxona/meta", requireAuth, async (req: AuthRequest, res): Promis
   }
   try {
     const departmentId = await ensureOmborxonaDepartmentId();
+    // Har safar: smenalar o‘chiq, xodimlar erkin grafikda
+    const applied = await applyWarehouseFreeSchedule().catch(() => null);
     res.json({
       departmentId,
       departmentName: OMBORXONA_DEPARTMENT_NAME,
       canManage: canManageOmbor(req.userRole),
       canViewHolat: canViewOmborHolat(req.userRole),
-      checkoutGraceHours: 2,
+      freeSchedule: true,
+      freeStartHm: WAREHOUSE_FREE_START_HM,
+      freeEndHm: WAREHOUSE_FREE_END_HM,
+      freeLabel: WAREHOUSE_FREE_LABEL,
+      restDay: "sunday",
+      noPenalty: true,
+      checkoutGraceHours: 0,
+      applied,
     });
   } catch (err) {
     console.error("GET /omborxona/meta error:", err);
@@ -348,7 +362,6 @@ router.get("/omborxona/me", requireAuth, async (req: AuthRequest, res): Promise<
       res.json({ employee: null, shift: null, today: null, workDate: ymdInTashkent(new Date()) });
       return;
     }
-    const active = await getActiveMemberForEmployee(emp.id);
     const today = ymdInTashkent(new Date());
     const [rec] = await db
       .select({
@@ -376,24 +389,22 @@ router.get("/omborxona/me", requireAuth, async (req: AuthRequest, res): Promise<
         fullName: formatPersonName(emp.fullName) || emp.fullName,
         position: emp.position,
         shiftType: emp.shiftType,
-        shiftLabel: emp.shiftLabel,
+        shiftLabel: WAREHOUSE_FREE_LABEL,
       },
-      shift: active
-        ? {
-            id: active.shift.id,
-            name: active.shift.name,
-            startHm: active.shift.startHm,
-            endHm: active.shift.endHm,
-            overnight: active.shift.overnight,
-            workHours: `${active.shift.startHm}–${active.shift.endHm}${active.shift.overnight ? " (keyingi kun)" : ""}`,
-            checkoutGraceHours: 2,
-            checkoutDeadlineHm: warehouseCheckoutDeadlineHm(
-              today,
-              active.shift.endHm,
-              active.shift.overnight,
-            ),
-          }
-        : null,
+      shift: {
+        id: 0,
+        name: WAREHOUSE_FREE_LABEL,
+        startHm: WAREHOUSE_FREE_START_HM,
+        endHm: WAREHOUSE_FREE_END_HM,
+        overnight: true,
+        workHours: `${WAREHOUSE_FREE_START_HM}–${WAREHOUSE_FREE_END_HM} (keyingi kun)`,
+        checkoutGraceHours: 0,
+        freeSchedule: true,
+        noPenalty: true,
+        checkoutDeadlineHm: warehouseCheckoutDeadlineHm(today, WAREHOUSE_FREE_END_HM, true, {
+          flexible: true,
+        }),
+      },
       today: {
         workDate: today,
         checkInAt: checkInAt?.toISOString() ?? null,

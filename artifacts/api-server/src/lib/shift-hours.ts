@@ -18,6 +18,14 @@ import {
   securityPatternLabel,
   securityShiftFor,
 } from "./security-shifts";
+import {
+  isOmborStaffRole,
+  isWarehouseFreeShiftType,
+  WAREHOUSE_FREE_END_HM,
+  WAREHOUSE_FREE_LABEL,
+  WAREHOUSE_FREE_START_HM,
+  WAREHOUSE_FREE_SHIFT_TYPE,
+} from "./omborxona-department";
 
 export {
   DEFAULT_SHIFT_DEFS,
@@ -64,8 +72,12 @@ export type WorkSchedule = {
   warnHm: string;
   warnText: string;
   overnight?: boolean;
-  /** Omborxona smenasi — Ketdim = tugash + 2 soat */
+  /** Omborxona smenasi — Ketdim = tugash + 2 soat (eski); free bo‘lsa tugash aniq */
   warehouse?: boolean;
+  /** Omborxona erkin grafik: kechikish/jarima yo‘q, Ketdim muddati = end (07:00) */
+  warehouseFlexible?: boolean;
+  /** Kechikish / erta ketish jarimasi va majburiy izoh yo‘q */
+  noPenalty?: boolean;
   /** Xavfsizlik 24 soatlik smena (Ketdim qoidasi omborxona bilan bir xil) */
   security?: boolean;
 };
@@ -80,8 +92,34 @@ export type StaffHours = {
   /** Barcha smenalar — 1+2 bo‘lsa ["one","two"] */
   shiftKeys?: ShiftKey[];
   warehouse?: boolean;
+  warehouseFlexible?: boolean;
+  noPenalty?: boolean;
   security?: boolean;
 };
+
+/** Omborxona erkin grafik: 08:00 → ertasi 07:00, smenasiz, jarimasiz */
+export function freeWarehouseWorkSchedule(): WorkSchedule {
+  const start = WAREHOUSE_FREE_START_HM;
+  const end = WAREHOUSE_FREE_END_HM;
+  return {
+    key: "office",
+    keys: ["office"],
+    label: WAREHOUSE_FREE_LABEL,
+    start,
+    end,
+    graceMinutes: 24 * 60,
+    overnight: true,
+    warehouse: true,
+    warehouseFlexible: true,
+    noPenalty: true,
+    warnHm: start,
+    warnText: `Omborxona erkin grafik: Keldim ${start} dan, Ketdim ertasi ${end} gacha (istalgan vaqtda). Kechikish va jarima yo‘q. Dam: faqat yakshanba.`,
+  };
+}
+
+export function encodeWarehouseFreeShiftType(): string {
+  return WAREHOUSE_FREE_SHIFT_TYPE;
+}
 
 function toWorkSchedule(def: ShiftDefinition): WorkSchedule {
   const warnHm = warnHmBefore(def.startHm, def.graceMinutes);
@@ -131,6 +169,7 @@ export function parseWarehouseShiftType(
   shiftLabel?: string | null,
   graceMinutes = 15,
 ): WorkSchedule | null {
+  if (isWarehouseFreeShiftType(shiftType)) return freeWarehouseWorkSchedule();
   const raw = String(shiftType || "").trim();
   const m = /^wh:(\d{1,2}:\d{2})-(\d{1,2}:\d{2})(:o)?$/i.exec(raw);
   if (!m) return null;
@@ -187,8 +226,11 @@ export function warehouseCheckoutDeadlineAt(
   workDateYmd: string,
   endHm: string,
   overnight?: boolean,
+  opts?: { flexible?: boolean },
 ): Date {
   const endAt = shiftEndAt(workDateYmd, endHm, overnight);
+  // Erkin grafik: muddat = tugash (ertasi 07:00), +2 soat qo‘shilmaydi
+  if (opts?.flexible) return endAt;
   return new Date(endAt.getTime() + WAREHOUSE_CHECKOUT_GRACE_MS);
 }
 
@@ -196,8 +238,9 @@ export function warehouseCheckoutDeadlineHm(
   workDateYmd: string,
   endHm: string,
   overnight?: boolean,
+  opts?: { flexible?: boolean },
 ): string {
-  const at = warehouseCheckoutDeadlineAt(workDateYmd, endHm, overnight);
+  const at = warehouseCheckoutDeadlineAt(workDateYmd, endHm, overnight, opts);
   return HM_FMT.format(at);
 }
 
@@ -303,6 +346,9 @@ export function workScheduleForStaff(
   shiftLabel?: string | null,
   defs: Record<ShiftKey, ShiftDefinition> = DEFAULT_SHIFT_DEFS,
 ): WorkSchedule {
+  // Omborxona xodimi — har doim erkin grafik (smena biriktirish e’tiborga olinmaydi)
+  if (isOmborStaffRole(userRole)) return freeWarehouseWorkSchedule();
+
   const wh = parseWarehouseShiftType(shiftType, shiftLabel, defs.office?.graceMinutes ?? 15);
   if (wh) return wh;
   const sb = securityWorkSchedule(userRole, shiftType, defs.office?.graceMinutes ?? 15);
@@ -417,15 +463,20 @@ export function checkoutDeadlineHmFor(opts?: {
   shiftKeys?: Array<string | null | undefined> | null;
   overnight?: boolean;
   warehouse?: boolean;
+  warehouseFlexible?: boolean;
   shiftType?: string | null;
   workDateYmd?: string;
   endHm?: string;
 }): string {
+  const flexible =
+    Boolean(opts?.warehouseFlexible) ||
+    isWarehouseFreeShiftType(opts?.shiftType) ||
+    (Boolean(opts?.warehouse) && opts?.endHm === WAREHOUSE_FREE_END_HM && opts?.overnight);
   if (opts?.warehouse || isWarehouseShiftType(opts?.shiftType) || isSecurityShiftType(opts?.shiftType)) {
     if (opts?.workDateYmd && opts?.endHm) {
-      return warehouseCheckoutDeadlineHm(opts.workDateYmd, opts.endHm, opts.overnight);
+      return warehouseCheckoutDeadlineHm(opts.workDateYmd, opts.endHm, opts.overnight, { flexible });
     }
-    return "tugash+2soat";
+    return flexible ? WAREHOUSE_FREE_END_HM : "tugash+2soat";
   }
   if (usesShiftThreeCheckoutDeadline(opts)) return CHECKOUT_DEADLINE_SHIFT_THREE_HM;
   if (usesShiftTwoCheckoutDeadline(opts)) return CHECKOUT_DEADLINE_SHIFT_TWO_HM;
@@ -434,7 +485,8 @@ export function checkoutDeadlineHmFor(opts?: {
 
 /**
  * Ketdim oxirgi muddati (Toshkent):
- * - Omborxona (warehouse): smena tugashi + 2 soat
+ * - Omborxona erkin: ertasi 07:00 (aniq tugash)
+ * - Omborxona (eski smena) / xavfsizlik: smena tugashi + 2 soat
  * - 2-smena: smena tugagan kundan KEYINGI kun 02:00 (23:55 YO‘Q)
  * - 3-smena: smena tugagan ertalab 10:00
  * - 1-smena / ofis: smena tugagan kun 23:55
@@ -447,11 +499,16 @@ export function checkoutDeadlineAt(
     shiftKey?: string | null;
     shiftKeys?: Array<string | null | undefined> | null;
     warehouse?: boolean;
+    warehouseFlexible?: boolean;
     shiftType?: string | null;
   },
 ): Date {
   if (opts?.warehouse || isWarehouseShiftType(opts?.shiftType) || isSecurityShiftType(opts?.shiftType)) {
-    return warehouseCheckoutDeadlineAt(workDateYmd, endHm, overnight);
+    const flexible =
+      Boolean(opts?.warehouseFlexible) ||
+      isWarehouseFreeShiftType(opts?.shiftType) ||
+      (!isSecurityShiftType(opts?.shiftType) && endHm === WAREHOUSE_FREE_END_HM && overnight);
+    return warehouseCheckoutDeadlineAt(workDateYmd, endHm, overnight, { flexible });
   }
   const endAt = shiftEndAt(workDateYmd, endHm, overnight);
   // 23:59 / 24:00 — shu kun oxiri (ertasi 00:00 emas)
@@ -478,10 +535,14 @@ export function checkoutDeadlineHint(opts?: {
   shiftKeys?: Array<string | null | undefined> | null;
   overnight?: boolean;
   warehouse?: boolean;
+  warehouseFlexible?: boolean;
   shiftType?: string | null;
 }): string {
   if (isSecurityShiftType(opts?.shiftType)) {
     return "Xavfsizlik smenasi: «Ketdim» ertasi kun smena tugagach 2 soat ichida (09:00 → 11:00 gacha)";
+  }
+  if (opts?.warehouseFlexible || isWarehouseFreeShiftType(opts?.shiftType)) {
+    return `Omborxona erkin: «Ketdim» ertasi ertalab ${WAREHOUSE_FREE_END_HM} gacha (istalgan vaqtda yopish mumkin)`;
   }
   if (opts?.warehouse || isWarehouseShiftType(opts?.shiftType)) {
     return "Ombor smena: «Ketdim» tugash vaqtidan keyin 2 soat ichida";
@@ -516,6 +577,8 @@ export function hoursForStaff(
       shiftKey: "office",
       shiftKeys: ["office"],
       warehouse: true,
+      warehouseFlexible: Boolean(w.warehouseFlexible),
+      noPenalty: Boolean(w.noPenalty),
       security: w.security,
     };
   }

@@ -6,12 +6,17 @@ import {
   warehouseShiftsTable,
   warehouseShiftMembersTable,
   attendanceRecordsTable,
+  employeeScheduleOverridesTable,
 } from "@workspace/db";
 import {
   ensureOmborxonaDepartmentId,
   isOmborStaffRole,
+  WAREHOUSE_FREE_END_HM,
+  WAREHOUSE_FREE_LABEL,
+  WAREHOUSE_FREE_START_HM,
 } from "./omborxona-department";
 import {
+  encodeWarehouseFreeShiftType,
   encodeWarehouseShiftType,
   hmToMinutes,
   warehouseCheckoutDeadlineHm,
@@ -55,34 +60,17 @@ export async function getWarehouseShiftById(id: number) {
   return row ?? null;
 }
 
-export async function createWarehouseShift(input: {
+export async function createWarehouseShift(_input: {
   name: string;
   startHm: string;
   endHm: string;
   overnight?: boolean;
   createdById?: number | null;
   departmentId?: number;
-}) {
-  const departmentId = input.departmentId ?? (await ensureOmborxonaDepartmentId());
-  const startHm = normalizeHm(input.startHm);
-  const endHm = normalizeHm(input.endHm);
-  if (!startHm || !endHm) throw new Error("Vaqt HH:MM formatida bo‘lsin");
-  const overnight =
-    input.overnight === true ||
-    (input.overnight !== false && hmToMinutes(endHm) <= hmToMinutes(startHm));
-  const [created] = await db
-    .insert(warehouseShiftsTable)
-    .values({
-      departmentId,
-      name: input.name.trim(),
-      startHm,
-      endHm,
-      overnight,
-      active: true,
-      createdById: input.createdById ?? null,
-    })
-    .returning();
-  return created;
+}): Promise<never> {
+  throw new Error(
+    "Omborxona endi erkin grafikda (08:00 → ertasi 07:00). Yangi smena yaratish o‘chirilgan.",
+  );
 }
 
 export async function updateWarehouseShift(
@@ -230,57 +218,91 @@ export async function getActiveMemberForEmployee(employeeId: number) {
   return row ?? null;
 }
 
-export async function assignEmployeeToShift(input: {
-  shiftId: number;
-  employeeId: number;
-  assignedById?: number | null;
-  note?: string | null;
-}) {
-  const shift = await getWarehouseShiftById(input.shiftId);
-  if (!shift || !shift.active) throw new Error("Smena topilmadi yoki o‘chirilgan");
+/** Barcha omborxona xodimlarini erkin grafikga o‘tkazadi, smenalarni o‘chiradi */
+export async function applyWarehouseFreeSchedule(): Promise<{
+  employees: number;
+  shiftsOff: number;
+  membersOff: number;
+  overridesOff: number;
+}> {
+  const departmentId = await ensureOmborxonaDepartmentId();
+  const encoded = encodeWarehouseFreeShiftType();
 
-  const [emp] = await db
-    .select()
+  const staff = await db
+    .select({
+      id: employeesTable.id,
+      userRole: usersTable.role,
+    })
     .from(employeesTable)
-    .where(eq(employeesTable.id, input.employeeId))
-    .limit(1);
-  if (!emp) throw new Error("Xodim topilmadi");
-  if (emp.departmentId !== shift.departmentId) {
-    throw new Error("Faqat Omborxona xodimlarini biriktirish mumkin");
+    .leftJoin(usersTable, eq(employeesTable.userId, usersTable.id))
+    .where(eq(employeesTable.departmentId, departmentId));
+
+  const empIds = staff
+    .filter((r) => {
+      const role = String(r.userRole || "").trim();
+      return !role || isOmborStaffRole(role);
+    })
+    .map((r) => r.id);
+
+  let employees = 0;
+  if (empIds.length) {
+    await db
+      .update(employeesTable)
+      .set({
+        shiftType: encoded,
+        shiftLabel: WAREHOUSE_FREE_LABEL,
+      })
+      .where(inArray(employeesTable.id, empIds));
+    employees = empIds.length;
+
+    await db
+      .update(employeeScheduleOverridesTable)
+      .set({ active: false, updatedAt: new Date() })
+      .where(
+        and(
+          inArray(employeeScheduleOverridesTable.employeeId, empIds),
+          eq(employeeScheduleOverridesTable.active, true),
+        ),
+      );
   }
 
-  await db
+  const membersOff = await db
     .update(warehouseShiftMembersTable)
     .set({ active: false, updatedAt: new Date() })
     .where(
       and(
-        eq(warehouseShiftMembersTable.employeeId, input.employeeId),
+        eq(warehouseShiftMembersTable.departmentId, departmentId),
         eq(warehouseShiftMembersTable.active, true),
       ),
-    );
+    )
+    .returning({ id: warehouseShiftMembersTable.id });
 
-  const [created] = await db
-    .insert(warehouseShiftMembersTable)
-    .values({
-      shiftId: shift.id,
-      employeeId: input.employeeId,
-      departmentId: shift.departmentId,
-      active: true,
-      assignedById: input.assignedById ?? null,
-      note: input.note?.trim() || null,
-    })
-    .returning();
+  const shiftsOff = await db
+    .update(warehouseShiftsTable)
+    .set({ active: false })
+    .where(
+      and(eq(warehouseShiftsTable.departmentId, departmentId), eq(warehouseShiftsTable.active, true)),
+    )
+    .returning({ id: warehouseShiftsTable.id });
 
-  const encoded = encodeWarehouseShiftType(shift.startHm, shift.endHm, shift.overnight);
-  await db
-    .update(employeesTable)
-    .set({
-      shiftType: encoded,
-      shiftLabel: shift.name,
-    })
-    .where(eq(employeesTable.id, input.employeeId));
+  // overridesOff count — approximate via empIds update (no returning on all DBs easily)
+  return {
+    employees,
+    shiftsOff: shiftsOff.length,
+    membersOff: membersOff.length,
+    overridesOff: empIds.length,
+  };
+}
 
-  return created;
+export async function assignEmployeeToShift(_input: {
+  shiftId: number;
+  employeeId: number;
+  assignedById?: number | null;
+  note?: string | null;
+}): Promise<never> {
+  throw new Error(
+    "Omborxona endi erkin grafikda (08:00 → ertasi 07:00). Smena biriktirish o‘chirilgan.",
+  );
 }
 
 export async function unassignEmployee(employeeId: number) {
@@ -296,35 +318,16 @@ export async function unassignEmployee(employeeId: number) {
   await db
     .update(employeesTable)
     .set({
-      shiftType: "office",
-      shiftLabel: null,
+      shiftType: encodeWarehouseFreeShiftType(),
+      shiftLabel: WAREHOUSE_FREE_LABEL,
     })
     .where(eq(employeesTable.id, employeeId));
 }
 
 export async function warehouseHolatForDate(workDate: string, departmentId?: number) {
   const deptId = departmentId ?? (await ensureOmborxonaDepartmentId());
-  const { shifts } = await listWarehouseShifts({ departmentId: deptId, includeInactive: false });
-  const members = await db
-    .select({
-      memberId: warehouseShiftMembersTable.id,
-      shiftId: warehouseShiftMembersTable.shiftId,
-      employeeId: warehouseShiftMembersTable.employeeId,
-      fullName: employeesTable.fullName,
-      position: employeesTable.position,
-      shiftType: employeesTable.shiftType,
-      shiftLabel: employeesTable.shiftLabel,
-    })
-    .from(warehouseShiftMembersTable)
-    .innerJoin(employeesTable, eq(warehouseShiftMembersTable.employeeId, employeesTable.id))
-    .where(
-      and(
-        eq(warehouseShiftMembersTable.departmentId, deptId),
-        eq(warehouseShiftMembersTable.active, true),
-      ),
-    );
-
-  const empIds = members.map((m) => m.employeeId);
+  const staff = await listOmborEmployees(deptId);
+  const empIds = staff.map((m) => m.employeeId);
   const records =
     empIds.length === 0
       ? []
@@ -344,18 +347,19 @@ export async function warehouseHolatForDate(workDate: string, departmentId?: num
           );
   const byEmp = new Map(records.map((r) => [r.employeeId, r]));
 
-  return shifts.map((s) => {
-    const sm = members.filter((m) => m.shiftId === s.id);
-    return {
+  return [
+    {
       shift: {
-        id: s.id,
-        name: s.name,
-        startHm: s.startHm,
-        endHm: s.endHm,
-        overnight: s.overnight,
-        checkoutDeadlineHm: warehouseCheckoutDeadlineHm(workDate, s.endHm, s.overnight),
+        id: 0,
+        name: WAREHOUSE_FREE_LABEL,
+        startHm: WAREHOUSE_FREE_START_HM,
+        endHm: WAREHOUSE_FREE_END_HM,
+        overnight: true,
+        checkoutDeadlineHm: warehouseCheckoutDeadlineHm(workDate, WAREHOUSE_FREE_END_HM, true, {
+          flexible: true,
+        }),
       },
-      members: sm.map((m) => {
+      members: staff.map((m) => {
         const rec = byEmp.get(m.employeeId);
         return {
           employeeId: m.employeeId,
@@ -367,16 +371,16 @@ export async function warehouseHolatForDate(workDate: string, departmentId?: num
           statusLabel: (() => {
             const st = String(rec?.status || "").toLowerCase();
             if (rec?.checkInAt && !rec?.checkOutAt) return "Ishda";
-            if (st === "late") return "Kechikkan";
-            if (rec?.checkInAt && rec?.checkOutAt && st === "present") return "Kelgan";
-            if (rec?.checkInAt && rec?.checkOutAt) return "Ketdi";
+            // Erkin grafikda kechikish yo‘q — late bo‘lsa ham «Kelgan»
+            if (rec?.checkInAt && rec?.checkOutAt) return st === "absent" ? "Kelmagan" : "Kelgan";
             if (st === "present") return "Kelgan";
             if (st === "absent") return "Kelmagan";
             if (st === "incomplete") return "Ketish yo‘q";
+            if (st === "late") return "Kelgan";
             return "Kutilmoqda";
           })(),
         };
       }),
-    };
-  });
+    },
+  ];
 }

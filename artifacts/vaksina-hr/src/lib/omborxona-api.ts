@@ -66,17 +66,24 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+export type OmborMeta = {
+  departmentId: number;
+  departmentName: string;
+  canManage: boolean;
+  canViewHolat: boolean;
+  checkoutGraceHours: number;
+  freeSchedule?: boolean;
+  freeStartHm?: string;
+  freeEndHm?: string;
+  freeLabel?: string;
+  restDay?: string;
+  noPenalty?: boolean;
+};
+
 export function useOmborMeta(enabled = true) {
   return useQuery({
     queryKey: ["omborxona", "meta"],
-    queryFn: () =>
-      apiFetch<{
-        departmentId: number;
-        departmentName: string;
-        canManage: boolean;
-        canViewHolat: boolean;
-        checkoutGraceHours: number;
-      }>("/omborxona/meta"),
+    queryFn: () => apiFetch<OmborMeta>("/omborxona/meta"),
     enabled,
   });
 }

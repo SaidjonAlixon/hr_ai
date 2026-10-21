@@ -40,6 +40,7 @@ import {
   useOmborHolat,
   useOmborHistory,
   useOmborMe,
+  useOmborMeta,
   useOmborMutations,
   useOmborShifts,
   useOmborStaff,
@@ -130,10 +131,14 @@ export default function OmborxonaIshPage() {
   const canManage = canManageOmborxona(user?.role);
   /** Rahbariyat/HR — xodimlar va holatni ko‘radi, o‘zgartirmaydi */
   const canOversee = canManage || canViewLeadershipModules(user?.role);
-  const [tab, setTab] = useState<Tab>(canManage ? "smenalar" : canOversee ? "xodimlar" : "ish");
+  const [tab, setTab] = useState<Tab>(canOversee ? "xodimlar" : "ish");
   const [holatDate, setHolatDate] = useState(todayYmd());
   const [assignOpen, setAssignOpen] = useState(false);
 
+  const metaQ = useOmborMeta(canView);
+  const freeSchedule = metaQ.data?.freeSchedule !== false;
+  const freeStart = metaQ.data?.freeStartHm || "08:00";
+  const freeEnd = metaQ.data?.freeEndHm || "07:00";
   const meQ = useOmborMe(canView);
   const shiftsQ = useOmborShifts(
     canView && canOversee && (tab === "smenalar" || tab === "xodimlar" || tab === "holat" || assignOpen),
@@ -177,7 +182,7 @@ export default function OmborxonaIshPage() {
 
   const tabs: { id: Tab; label: string; short: string; show: boolean }[] = [
     { id: "ish", label: "Ish vaqtlari", short: "Ish", show: canOversee },
-    { id: "smenalar", label: "Smenalar", short: "Smena", show: canOversee },
+    { id: "smenalar", label: "Grafik", short: "Grafik", show: canOversee },
     { id: "xodimlar", label: "Xodimlar", short: "Xodim", show: canOversee },
     { id: "holat", label: "Holat / nazorat", short: "Holat", show: canOversee },
   ];
@@ -300,38 +305,28 @@ export default function OmborxonaIshPage() {
                 Omborxona
               </h1>
               <p className="mt-0.5 text-sm leading-snug text-muted-foreground">
-                {canManage
-                  ? "Smena, xodimlar va nazorat"
-                  : canOversee
-                    ? "Xodimlar ro‘yxati va holat (faqat ko‘rish)"
-                    : "Sizning smenangiz va bugungi keldi / ketdi"}
+                {freeSchedule
+                  ? `Erkin grafik: ${freeStart} → ertasi ${freeEnd} · dam faqat yakshanba · jarima yo‘q`
+                  : canManage
+                    ? "Smena, xodimlar va nazorat"
+                    : canOversee
+                      ? "Xodimlar ro‘yxati va holat (faqat ko‘rish)"
+                      : "Sizning smenangiz va bugungi keldi / ketdi"}
               </p>
             </div>
           </div>
-          {canManage && (
-            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:shrink-0">
-              <Button
-                type="button"
-                size="sm"
-                className="w-full gap-1.5 rounded-xl sm:w-auto"
-                onClick={openCreateShift}
-              >
-                <Plus className="h-4 w-4" />
-                Smena
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                className="w-full gap-1.5 rounded-xl sm:w-auto"
-                onClick={() => setAssignOpen(true)}
-              >
-                <UserPlus className="h-4 w-4" />
-                Biriktirish
-              </Button>
-            </div>
-          )}
         </div>
+        {freeSchedule ? (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-sm text-emerald-950 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100">
+            <p className="font-semibold">Erkin grafik yoqilgan — smenalar o‘chirilgan</p>
+            <p className="mt-1 text-[13px] leading-relaxed opacity-90">
+              Keldim/Ketdim istalgan vaqtda. Oyna: <b>{freeStart}</b> dan keyingi kun{" "}
+              <b>{freeEnd}</b> gacha. Muddatdan oldin yopsangiz avtomatik yopilmaydi. Keyingi kun{" "}
+              {freeStart} dan yana Keldim. Kechikish va jarima yo‘q. Dam: faqat yakshanba; boshqa
+              kunlarda kelmasa — kelmagan.
+            </p>
+          </div>
+        ) : null}
       </header>
 
       {canOversee && (
@@ -559,7 +554,35 @@ export default function OmborxonaIshPage() {
 
       {tab === "smenalar" && canOversee && (
         <div className="space-y-3">
-          {shiftsQ.isLoading ? (
+          {freeSchedule ? (
+            <div className="space-y-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-emerald-600" />
+                <p className="font-semibold text-foreground">Erkin grafik (smenasiz)</p>
+              </div>
+              <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                <div className="rounded-xl bg-muted/50 px-3 py-2">
+                  <dt className="text-[11px] font-medium text-muted-foreground">Keldim ochiladi</dt>
+                  <dd className="mt-0.5 text-base font-bold tabular-nums">{freeStart}</dd>
+                </div>
+                <div className="rounded-xl bg-muted/50 px-3 py-2">
+                  <dt className="text-[11px] font-medium text-muted-foreground">Ketdim muddati</dt>
+                  <dd className="mt-0.5 text-base font-bold tabular-nums">ertasi {freeEnd}</dd>
+                </div>
+                <div className="rounded-xl bg-muted/50 px-3 py-2">
+                  <dt className="text-[11px] font-medium text-muted-foreground">Jarima / kechikish</dt>
+                  <dd className="mt-0.5 font-semibold text-emerald-700 dark:text-emerald-300">Yo‘q</dd>
+                </div>
+                <div className="rounded-xl bg-muted/50 px-3 py-2">
+                  <dt className="text-[11px] font-medium text-muted-foreground">Dam olish</dt>
+                  <dd className="mt-0.5 font-semibold">Faqat yakshanba</dd>
+                </div>
+              </dl>
+              <p className="text-xs text-muted-foreground">
+                Eski smena biriktirishlari o‘chirilgan. Barcha omborxona xodimlari shu grafikda.
+              </p>
+            </div>
+          ) : shiftsQ.isLoading ? (
             <div className="flex justify-center py-10">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>

@@ -33,7 +33,17 @@ export function strikePenalty(n: number): string {
 export const OFFICE_JARIMA_START = "2026-10-16";
 
 /** Davomat jarimasi qo‘llanmaydigan rollar: rahbariyat, dala koordinatorlari, SB navbatchilari */
-const JARIMA_EXEMPT_ROLES = new Set(["admin", "asoschi", "director", "koordinator", "sb", "oquvchi"]);
+const JARIMA_EXEMPT_ROLES = new Set([
+  "admin",
+  "asoschi",
+  "director",
+  "koordinator",
+  "sb",
+  "oquvchi",
+  // Omborxona — erkin grafik, jarima/kechikish yo‘q
+  "ombor",
+  "ombor_rahbar",
+]);
 /** Ofis xodimi shu muddat ichida kamida bir marta «Keldim» qilgan bo‘lsagina jarima hisoblanadi */
 const OFFICE_ACTIVE_DAYS = 30;
 

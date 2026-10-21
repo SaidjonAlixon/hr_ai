@@ -162,12 +162,15 @@ export async function loadScheduleOverrides(
   return out;
 }
 
-/** Shaxsiy vaqt bo‘lsa — o‘sha jadval, aks holda standart */
+/** Shaxsiy vaqt bo‘lsa — o‘sha jadval, aks holda standart.
+ * Omborxona erkin grafik — shaxsiy override e’tiborga olinmaydi. */
 export function scheduleWithOverride(base: WorkSchedule, rule: ScheduleOverride | null | undefined): WorkSchedule {
+  if (base.warehouseFlexible || base.noPenalty) return base;
   return rule ? workScheduleFromOverride(rule, base.graceMinutes) : base;
 }
 
 export function hoursWithOverride(base: StaffHours, rule: ScheduleOverride | null | undefined): StaffHours {
+  if (base.warehouseFlexible || base.noPenalty) return base;
   return rule ? staffHoursFromOverride(rule, base.graceMinutes) : base;
 }
 

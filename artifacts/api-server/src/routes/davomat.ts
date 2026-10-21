@@ -369,6 +369,9 @@ function computeMetrics(
     overnight?: boolean;
     shiftKey?: string;
     shiftKeys?: string[];
+    warehouse?: boolean;
+    warehouseFlexible?: boolean;
+    noPenalty?: boolean;
   },
 ): Metrics & {
   paidWorkedMinutes?: number;
@@ -447,6 +450,14 @@ function computeMetrics(
     else status = "present";
   } else if (engine.missingCheckout) {
     status = "incomplete";
+  }
+
+  // Omborxona erkin: kechikish / erta ketish hisoblanmaydi
+  if (hours?.noPenalty || hours?.warehouseFlexible) {
+    lateArrivalMin = 0;
+    earlyArrivalMin = 0;
+    earlyLeaveMin = 0;
+    if (status === "late") status = checkInAt && checkOutAt ? "present" : checkInAt ? "incomplete" : status;
   }
 
   if (engine.missingCheckout) {
@@ -3849,6 +3860,7 @@ async function closeExpiredOvernightRecord<
     shiftKey: sched.key,
     shiftKeys: sched.keys,
     warehouse: Boolean(sched.warehouse),
+    warehouseFlexible: Boolean(sched.warehouseFlexible),
     shiftType: override ? override.shiftKey : shiftType,
     workDateYmd: yesterday,
     endHm: sched.end,
@@ -4263,7 +4275,7 @@ async function applyFacePunch(opts: {
         };
       }
 
-      // Ketdim: ombor → tugash+2soat; 2-smena → ertasi 02:00; 3-smena → ertalab 10:00; 1/ofis → 23:55
+      // Ketdim: ombor erkin → ertasi 07:00; ombor eski → +2soat; 2-smena → ertasi 02:00; 3-smena → ertalab 10:00; 1/ofis → 23:55
       if (action === "out" && existing?.checkInAt) {
         const sched = scheduleWithOverride(
           workScheduleForStaff(userRole, emp.orgRole, punchShiftType, punchShiftLabel, defs),
@@ -4273,6 +4285,7 @@ async function applyFacePunch(opts: {
           shiftKey: sched.key,
           shiftKeys: sched.keys,
           warehouse: Boolean(sched.warehouse),
+          warehouseFlexible: Boolean(sched.warehouseFlexible),
           shiftType: punchOverride ? punchOverride.shiftKey : punchShiftType,
           workDateYmd: workDate,
           endHm: sched.end,
@@ -4291,6 +4304,8 @@ async function applyFacePunch(opts: {
             .where(eq(attendanceRecordsTable.id, existing.id));
           const ruleNote = sched.security
             ? `Xavfsizlik smenasi: «Ketdim» ertasi kun ${sched.end} dan keyin 2 soat ichida.`
+            : sched.warehouseFlexible
+            ? `Omborxona erkin: «Ketdim» ertasi ertalab ${sched.end} gacha.`
             : sched.warehouse
             ? `Ombor smena: «Ketdim» tugash (${sched.end}) dan keyin 2 soat ichida.`
             : deadlineHm === CHECKOUT_DEADLINE_SHIFT_TWO_HM
@@ -4345,7 +4360,7 @@ async function applyFacePunch(opts: {
         checkInAt = existing!.checkInAt;
         const status = computeMetrics(workDate, existing!.checkInAt, checkOutAt, null, punchHours).status;
 
-        // Smena tugashidan oldin — sabab izohi majburiy
+        // Smena tugashidan oldin — sabab izohi majburiy (ombor erkin grafikda — yo‘q)
         let endAt = atTashkent(
           punchHours.overnight ? addDaysYmd(workDate, 1) : workDate,
           punchHours.end,
@@ -4356,7 +4371,9 @@ async function applyFacePunch(opts: {
         }
         // 2-smena: 23:45 dan keyin izoh/jarima yo‘q (end 23:59 yoki 24:00)
         const leaveGraceMs = earlyLeaveGraceMin(punchHours.end) * 60_000;
-        const isEarlyLeave = now.getTime() < endAt.getTime() - leaveGraceMs;
+        const skipEarlyLeaveNote = Boolean(punchHours.noPenalty || punchHours.warehouseFlexible);
+        const isEarlyLeave =
+          !skipEarlyLeaveNote && now.getTime() < endAt.getTime() - leaveGraceMs;
         const earlyNote = String(notesRaw || "").trim().slice(0, 500);
         if (isEarlyLeave && earlyNote.length < 3) {
           return {
@@ -5039,6 +5056,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
           shiftKeys: wFull.keys || dayShiftKeys || [wFull.key],
           overnight: Boolean(wFull.overnight),
           warehouse: Boolean(wFull.warehouse),
+          warehouseFlexible: Boolean(wFull.warehouseFlexible),
           shiftType: scheduleOverride ? scheduleOverride.shiftKey : deadlineShiftType,
           workDateYmd: workDate,
           endHm: wFull.end,
@@ -5047,18 +5065,20 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
         return {
           type: scheduleOverride?.shiftKey || deadlineShiftType || wFull.key,
           keys: scheduleOverride ? [scheduleOverride.shiftKey] : dayShiftKeys?.length ? dayShiftKeys : wFull.keys || [wFull.key],
-          label: scheduleOverride
+          label: scheduleOverride && !wFull.warehouseFlexible
             ? `${overrideShiftLabel(scheduleOverride)} · ${wFull.start}–${wFull.end}`
             : daySlots.length
               ? daySlots.map((s) => `${formatShiftKeyUz(s.shiftKey)}→${s.branchLabel || s.branchId}`).join(" · ")
               : wFull.label,
           start: wFull.start,
           end: wFull.end,
-          activeStart: scheduleOverride ? wFull.start : wActive.start,
-          activeEnd: scheduleOverride ? wFull.end : wActive.end,
-          custom: Boolean(scheduleOverride),
+          activeStart: scheduleOverride && !wFull.warehouseFlexible ? wFull.start : wActive.start,
+          activeEnd: scheduleOverride && !wFull.warehouseFlexible ? wFull.end : wActive.end,
+          custom: Boolean(scheduleOverride) && !wFull.warehouseFlexible,
           overnight: Boolean(wFull.overnight),
           warehouse: Boolean(wFull.warehouse),
+          warehouseFlexible: Boolean(wFull.warehouseFlexible),
+          noPenalty: Boolean(wFull.noPenalty),
           warnHm: wFull.warnHm,
           warnText: wFull.warnText,
           checkoutDeadlineHm: checkoutDeadlineHmFor(deadlineOpts),

@@ -335,6 +335,7 @@ export async function autoCloseMissedCheckoutSilent(): Promise<{ closed: number 
       shiftKeys: w.keys,
       overnight: Boolean(w.overnight),
       warehouse: Boolean(w.warehouse),
+      warehouseFlexible: Boolean(w.warehouseFlexible),
       shiftType: ov ? ov.shiftKey : shiftType,
       workDateYmd: r.workDate,
       endHm: w.end,

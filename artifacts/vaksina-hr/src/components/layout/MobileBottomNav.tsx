@@ -65,6 +65,7 @@ const ROLE_MOBILE_PATHS: Record<string, string[]> = {
   distrib_hr: ['/dashboard', '/javob-olish', '/distribyutsiya', '/vazifalar', '/davomat-face'],
   tamojni: ['/dashboard', '/javob-olish', '/vazifalar', '/davomat-face'],
   tamojni_rahbar: ['/dashboard', '/javob-olish', '/distribyutsiya', '/vazifalar', '/davomat-face'],
+  resepsion: ['/resepsion', '/vazifalar', '/eslatmalar', '/davomat-face', '/javob-olish'],
 };
 
 /** Path → short mobile label key (mobile.*) */

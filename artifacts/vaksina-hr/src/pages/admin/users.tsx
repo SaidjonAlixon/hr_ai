@@ -47,6 +47,7 @@ const ROLES = [
   { value: 'hr_kadr_rahbar', label: 'HR kadr b/m' },
   { value: 'hr_auditor', label: 'HR Auditor' },
   { value: 'hr_menejer', label: 'HR Menejer' },
+  { value: 'resepsion', label: 'Resepshin' },
   { value: 'recruiter', label: 'Rekruter' },
   { value: 'trainer', label: 'Trener' },
   { value: 'director', label: 'Direktor' },
@@ -129,6 +130,7 @@ const ROLE_DEPARTMENT: Record<string, string> = {
   hr_kadr_rahbar: "HR",
   hr_menejer: "HR",
   hr_auditor: "HR",
+  resepsion: "HR",
   recruiter: "Rekruting",
   trainer: "Trening",
   koordinator: "Koordinator",
@@ -234,6 +236,7 @@ type CreatedCredentials = {
 
 function homeForRole(role?: string | null) {
   if (isStajyor(role)) return '/kirish';
+  if (role === 'resepsion') return '/resepsion';
   if (isLimitedOfficeStaffRole(role)) return '/vazifalar';
   if (role === 'it_rahbar') return '/it';
   if (isReviziyaRole(role)) return '/reviziya';

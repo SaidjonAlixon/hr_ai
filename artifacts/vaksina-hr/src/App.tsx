@@ -98,6 +98,7 @@ const NotificationsPage = lazyPage('/notifications', () => import('./pages/notif
 const TgEntryPage = lazyPage([], () => import('./pages/tg-entry'));
 const JavobOlishPage = lazyPage('/javob-olish', () => import('./pages/javob-olish/index'));
 const JavobOlishHolatPage = lazyPage('/javob-olish/holat', () => import('./pages/javob-olish/holat'));
+const ResepsionPage = lazyPage('/resepsion', () => import('./pages/resepsion/index'));
 const TxVerifyPage = lazyPage([], () => import('./pages/tx-verify'));
 const QongiroqPage = lazyPage('/qongiroq', () => import('./pages/qongiroq/index'));
 const KonferensiyaPage = lazyPage([], () => import('./pages/konferensiya/index'));
@@ -317,6 +318,7 @@ function Router() {
       <ProtectedRoute path="/smena-filial" component={SmenaFilialPage} />
       <ProtectedRoute path="/javob-olish/holat" component={JavobOlishHolatPage} />
       <ProtectedRoute path="/javob-olish" component={JavobOlishPage} />
+      <ProtectedRoute path="/resepsion" component={ResepsionPage} />
       <ProtectedRoute path="/pharmacy-network" component={PharmacyNetworkPage} />
       <ProtectedRoute path="/boglanish" component={BoglanishPage} />
       <ProtectedRoute path="/logistika/:section" component={LogistikaPage} />

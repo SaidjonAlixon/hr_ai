@@ -399,6 +399,7 @@ export const LIMITED_OFFICE_STAFF_ROLES = [
   "farrosh",
   "mexanik",
   "direktor_yordamchisi",
+  "resepsion",
 ] as const;
 
 export function isLimitedOfficeStaffRole(role?: string | null): boolean {
@@ -681,6 +682,7 @@ export const HR_ROLE_LABELS: Record<string, string> = {
 export const USER_ROLE_LABELS: Record<string, string> = {
   admin: "",
   ...HR_ROLE_LABELS,
+  resepsion: "Resepshin",
   recruiter: "Rekruter",
   trainer: "Trener",
   director: "Direktor",

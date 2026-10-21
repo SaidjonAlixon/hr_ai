@@ -1768,6 +1768,11 @@ CREATE INDEX IF NOT EXISTS mobile_att_audit_action_idx ON mobile_attendance_audi
 
   await ensureZonePresenceSchema();
   await ensureScannerDocsSchema();
+  try {
+    await ensureReceptionSchema();
+  } catch (err) {
+    logger.warn({ err }, "Reception schema ensure skipped");
+  }
 
   try {
     const { syncAllRoleDepartmentAssignments } = await import("./role-departments");
@@ -2346,6 +2351,46 @@ export async function ensureScannerDocsSchema(): Promise<void> {
     logger.info("Scanner docs schema ensured");
   } catch (err) {
     logger.warn({ err }, "Scanner docs schema ensure failed");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+const RECEPTION_LOGS_SQL = `
+CREATE TABLE IF NOT EXISTS reception_logs (
+  id SERIAL PRIMARY KEY,
+  visit_type TEXT NOT NULL,
+  topic TEXT,
+  visitor_full_name TEXT NOT NULL,
+  visitor_phone TEXT,
+  visitor_role_hint TEXT,
+  host_name TEXT,
+  host_user_id INTEGER,
+  interviewer_name TEXT,
+  interviewer_user_id INTEGER,
+  purpose TEXT,
+  notes TEXT,
+  status TEXT NOT NULL DEFAULT 'waiting',
+  visit_at TIMESTAMPTZ NOT NULL,
+  left_at TIMESTAMPTZ,
+  logged_by_user_id INTEGER NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS reception_logs_visit_at_idx ON reception_logs (visit_at);
+CREATE INDEX IF NOT EXISTS reception_logs_type_idx ON reception_logs (visit_type);
+CREATE INDEX IF NOT EXISTS reception_logs_status_idx ON reception_logs (status);
+CREATE INDEX IF NOT EXISTS reception_logs_logged_by_idx ON reception_logs (logged_by_user_id);
+`;
+
+export async function ensureReceptionSchema(): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query(RECEPTION_LOGS_SQL);
+    logger.info("Reception logs schema ensured");
+  } catch (err) {
+    logger.warn({ err }, "Reception logs schema ensure failed");
     throw err;
   } finally {
     client.release();

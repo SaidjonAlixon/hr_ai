@@ -44,6 +44,7 @@ import {
   Wallet,
   PhoneCall,
   Phone,
+  ConciergeBell,
   Truck,
   Fuel,
   GripVertical,
@@ -1007,6 +1008,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         location.startsWith('/vazifalar') ||
         location.startsWith('/eslatmalar') ||
         location.startsWith('/javob-olish') ||
+        location.startsWith('/resepsion') ||
         location.startsWith('/davomat-face') ||
         location.startsWith('/davomat-kochma') ||
         location.startsWith('/omborxona-ish') ||
@@ -1016,7 +1018,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         location.startsWith('/admin/scanner') ||
         location === '/notifications';
       if (!allowed) {
-        setLocation('/vazifalar');
+        setLocation(user.role === 'resepsion' ? '/resepsion' : '/vazifalar');
       }
     }
   }, [isLoading, isAuthenticated, user, setLocation, location, canSeeSmenaFilial, isKoordinator, smenaAccessQ.isLoading]);
@@ -1052,6 +1054,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const smenaNav = { name: 'Smena va filial', path: '/smena-filial', icon: AlarmClock };
   const javobNav = { name: 'Javob olish', path: '/javob-olish', icon: PhoneCall };
   const javobHolatNav = { name: 'Javob olish holati', path: '/javob-olish/holat', icon: Eye };
+  const resepsionNav = { name: 'Resepshin', path: '/resepsion', icon: ConciergeBell };
   const davomatQrNav = { name: 'Davomat QR', path: '/davomat-qr', icon: ScanFace };
   const oylikNav = { name: 'Oylik', path: '/oylik', icon: Banknote };
   const txNav = { name: 'Tushuntirish xatlari', path: '/admin/tushuntirish-xatlari', icon: FileSignature };
@@ -1336,6 +1339,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const hrMenejerNav: NavItem[] = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     javobHolatNav,
+    resepsionNav,
     { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
     { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
     orgNav,
@@ -1360,6 +1364,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const hrOversightNav: NavItem[] = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     javobHolatNav,
+    resepsionNav,
     orgNav,
     oylikNav,
     txNav,
@@ -1395,6 +1400,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       javobNav,
       javobHolatNav,
+      resepsionNav,
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -1676,6 +1682,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       davomatFaceNav,
+    ],
+    resepsion: [
+      resepsionNav,
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      davomatFaceNav,
+      javobNav,
     ],
     kassir: [
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
@@ -2714,7 +2727,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 location.startsWith('/admin/kochma-live') ||
                 location.startsWith('/admin/kochma-xarita') ||
                 location.startsWith('/checklist-holati') ||
-                location.startsWith('/distribyutsiya')
+                location.startsWith('/distribyutsiya') ||
+                location.startsWith('/resepsion')
                 ? 'h-full max-w-none'
                 : location === '/pharmacy-network' || location.startsWith('/davomat/bloklash')
                   ? 'max-w-none'

@@ -1344,19 +1344,19 @@ export default function ResepsionPage() {
       <div className="relative overflow-hidden rounded-[1.75rem] border border-border/60 bg-card shadow-xl shadow-primary/5 dark:border-white/10 dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(56,189,248,0.18),transparent_55%)] dark:bg-[radial-gradient(ellipse_at_top_right,rgba(56,189,248,0.22),transparent_50%)]" />
         <div className="pointer-events-none absolute -bottom-20 left-0 h-40 w-40 rounded-full bg-violet-500/10 blur-3xl" />
-        <div className="relative flex flex-col gap-5 p-5 sm:flex-row sm:items-stretch sm:justify-between sm:p-6">
-          <div className="flex min-w-0 items-start gap-4">
-            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-indigo-600 text-white shadow-lg shadow-sky-500/30">
-              <ConciergeBell className="h-7 w-7" />
+        <div className="relative flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+          <div className="flex min-w-0 items-start gap-3.5">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-indigo-600 text-white shadow-lg shadow-sky-500/30">
+              <ConciergeBell className="h-6 w-6" />
             </span>
             <div className="min-w-0 pt-0.5">
-              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-sky-600 dark:text-sky-400">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-600 dark:text-sky-400">
                 Vaksina HR · Desk
               </p>
-              <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+              <h1 className="mt-0.5 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
                 Qabulxona
               </h1>
-              <p className="mt-1.5 max-w-lg text-sm leading-relaxed text-muted-foreground">
+              <p className="mt-1 max-w-lg text-xs leading-relaxed text-muted-foreground sm:text-sm">
                 Mehmon, nomzod, xodim, murojaat va posilka — bitta joyda qayd, xabar va uchrashuv
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1368,49 +1368,54 @@ export default function ResepsionPage() {
                   Bugun {stats?.today ?? 0} tashrif
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={openReminderSheet}
-                className="mt-4 inline-flex w-full max-w-sm items-center gap-3 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 px-4 py-3.5 text-left text-white shadow-lg shadow-amber-500/30 transition hover:brightness-110 sm:w-auto"
-              >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 ring-1 ring-white/25">
-                  <AlarmClock className="h-5 w-5" />
-                </span>
-                <span>
-                  <span className="block text-sm font-bold">Eslatma / uchrashuv</span>
-                  <span className="block text-[11px] opacity-90">
-                    Ofis xodimiga — hozir yoki kelgusi vaqt
-                  </span>
-                </span>
-              </button>
             </div>
           </div>
 
-          <div className="flex w-full shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 text-white shadow-lg sm:w-[240px] dark:border-slate-700">
-            <div className="flex items-center gap-2 border-b border-white/10 bg-slate-900 px-4 py-2.5">
-              <CalendarDays className="h-4 w-4 text-sky-400" />
-              <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                  {clock.weekday}
-                </p>
-                <p className="truncate text-sm font-semibold text-white">{clock.dateLine}</p>
+          <div className="flex w-full shrink-0 flex-col gap-2.5 sm:w-auto sm:flex-row sm:items-stretch">
+            <button
+              type="button"
+              onClick={openReminderSheet}
+              className="flex h-[108px] w-full flex-col justify-center gap-1.5 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 px-3.5 py-2.5 text-left text-white shadow-lg shadow-amber-500/25 transition hover:brightness-110 sm:w-[168px]"
+            >
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/20 ring-1 ring-white/25">
+                <AlarmClock className="h-4 w-4" />
+              </span>
+              <span>
+                <span className="block text-sm font-bold leading-tight">Eslatma</span>
+                <span className="mt-0.5 block text-[10px] leading-snug opacity-90">
+                  Ofis xodimiga · kelgusi vaqt
+                </span>
+              </span>
+            </button>
+
+            <div className="flex h-[108px] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 text-white shadow-lg sm:w-[168px] dark:border-slate-700">
+              <div className="flex items-center gap-1.5 border-b border-white/10 bg-slate-900 px-3 py-1.5">
+                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-sky-400" />
+                <div className="min-w-0">
+                  <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+                    {clock.weekday}
+                  </p>
+                  <p className="truncate text-[11px] font-semibold leading-tight text-white">
+                    {clock.dateLine}
+                  </p>
+                </div>
               </div>
-            </div>
-            <div className="flex flex-1 flex-col items-center justify-center px-4 py-4">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                Toshkent vaqti
-              </p>
-              <p className="mt-1 font-mono text-4xl font-bold tabular-nums tracking-tight text-white sm:text-[2.65rem] sm:leading-none">
-                {clock.time}
-                <span className="text-2xl text-sky-400 sm:text-3xl">:{clock.seconds}</span>
-              </p>
+              <div className="flex flex-1 flex-col items-center justify-center px-2 py-1.5">
+                <p className="text-[8px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Toshkent
+                </p>
+                <p className="font-mono text-2xl font-bold tabular-nums tracking-tight text-white leading-none">
+                  {clock.time}
+                  <span className="text-base text-sky-400">:{clock.seconds}</span>
+                </p>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       {/* Stats strip */}
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
         <button
           type="button"
           onClick={scrollToForm}
@@ -1422,19 +1427,6 @@ export default function ResepsionPage() {
           <span>
             <span className="block text-sm font-bold">Yangi qayd</span>
             <span className="block text-[11px] opacity-85">Tezkor ro‘yxatga olish</span>
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={openReminderSheet}
-          className="flex items-center gap-3 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 px-4 py-3.5 text-left text-white shadow-lg shadow-amber-500/30 transition hover:brightness-110"
-        >
-          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/20 ring-1 ring-white/25">
-            <AlarmClock className="h-5 w-5" />
-          </span>
-          <span>
-            <span className="block text-sm font-bold">Eslatma</span>
-            <span className="block text-[11px] opacity-90">Kelgusi vaqtga ham</span>
           </span>
         </button>
         {(

@@ -13,16 +13,21 @@ import {
   Phone,
   Plus,
   QrCode,
+  Building2,
+  ChevronDown,
   Search,
   Send,
+  Store,
   Trash2,
   UserRound,
   Users,
   UserPlus,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
@@ -38,7 +43,11 @@ import {
   type ReceptionLog,
   type ReceptionVisitType,
 } from "@/lib/resepsion-api";
-import { userRoleLabel } from "@/lib/roles";
+import { isPharmacyDeviceStaff, userRoleLabel } from "@/lib/roles";
+
+function isPharmacyHost(role?: string | null) {
+  return isPharmacyDeviceStaff(role);
+}
 
 const TYPE_TABS: {
   value: ReceptionVisitType;
@@ -176,6 +185,9 @@ export default function ResepsionPage() {
   const [leftAt, setLeftAt] = useState("");
   const [hostUserId, setHostUserId] = useState("");
   const [hostName, setHostName] = useState("");
+  /** Sukutda ofis yoqilgan, dorixona o‘chiq */
+  const [showOfisHosts, setShowOfisHosts] = useState(true);
+  const [showPharmacyHosts, setShowPharmacyHosts] = useState(false);
 
   const selectedHost: ReceptionHost | null = useMemo(() => {
     if (!hostUserId) return null;
@@ -185,16 +197,32 @@ export default function ResepsionPage() {
   const filteredHosts = useMemo(() => {
     const list = hostsQ.data?.items || [];
     const s = hostSearch.trim().toLowerCase();
-    if (!s) return list.slice(0, 40);
     return list
-      .filter(
-        (h) =>
+      .filter((h) => {
+        const pharm = isPharmacyHost(h.role);
+        if (pharm && !showPharmacyHosts) return false;
+        if (!pharm && !showOfisHosts) return false;
+        if (!s) return true;
+        return (
           h.fullName.toLowerCase().includes(s) ||
           String(h.role || "").toLowerCase().includes(s) ||
-          String(h.phone || "").includes(s),
-      )
-      .slice(0, 40);
-  }, [hostsQ.data?.items, hostSearch]);
+          String(h.phone || "").includes(s) ||
+          userRoleLabel(h.role).toLowerCase().includes(s)
+        );
+      })
+      .slice(0, 60);
+  }, [hostsQ.data?.items, hostSearch, showOfisHosts, showPharmacyHosts]);
+
+  const hostCounts = useMemo(() => {
+    const list = hostsQ.data?.items || [];
+    let ofis = 0;
+    let pharmacy = 0;
+    for (const h of list) {
+      if (isPharmacyHost(h.role)) pharmacy += 1;
+      else ofis += 1;
+    }
+    return { ofis, pharmacy };
+  }, [hostsQ.data?.items]);
 
   function resetForm() {
     setVisitorFullName("");
@@ -434,73 +462,199 @@ export default function ResepsionPage() {
             </div>
 
             <div className="relative">
-              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Kimning oldiga keldi?
               </label>
+
+              {selectedHost ? (
+                <div className="mb-2 flex items-center gap-3 rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 via-card to-card p-2.5 shadow-sm">
+                  <AvatarBubble name={selectedHost.fullName} size="md" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-foreground">
+                      {selectedHost.fullName}
+                    </p>
+                    <p className="truncate text-[11px] text-muted-foreground">
+                      {userRoleLabel(selectedHost.role) || selectedHost.role}
+                      {isPharmacyHost(selectedHost.role) ? " · Dorixona" : " · Ofis"}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 shrink-0 rounded-xl px-2 text-xs"
+                    onClick={() => setHostPickerOpen(true)}
+                  >
+                    Almashtirish
+                  </Button>
+                  <button
+                    type="button"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted"
+                    onClick={() => {
+                      setHostUserId("");
+                      setHostName("");
+                    }}
+                    aria-label="Tozalash"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : null}
+
               <button
                 type="button"
                 onClick={() => setHostPickerOpen((v) => !v)}
-                className="flex h-11 w-full items-center gap-3 rounded-xl border border-input bg-background px-3 text-left text-sm transition hover:bg-muted/40"
+                className={cn(
+                  "flex h-12 w-full items-center gap-3 rounded-2xl border bg-background px-3.5 text-left text-sm shadow-sm transition",
+                  hostPickerOpen
+                    ? "border-primary/40 ring-2 ring-primary/15"
+                    : "border-border/80 hover:border-primary/30 hover:bg-muted/30",
+                )}
               >
-                {selectedHost ? (
+                {!selectedHost ? (
                   <>
-                    <AvatarBubble name={selectedHost.fullName} size="sm" />
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                      <UserRound className="h-4 w-4" />
+                    </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">{selectedHost.fullName}</span>
-                      <span className="block truncate text-[11px] text-muted-foreground">
-                        {userRoleLabel(selectedHost.role) || selectedHost.role}
+                      <span className="block font-medium text-foreground">Xodimni tanlang</span>
+                      <span className="block text-[11px] text-muted-foreground">
+                        Sukutda faqat ofis xodimlari
                       </span>
                     </span>
                   </>
                 ) : (
                   <>
-                    <UserRound className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">Xodimni tanlang…</span>
+                    <span className="min-w-0 flex-1 text-xs text-muted-foreground">
+                      Ro‘yxatni ochish / qidirish
+                    </span>
                   </>
                 )}
+                <ChevronDown
+                  className={cn(
+                    "h-4 w-4 shrink-0 text-muted-foreground transition",
+                    hostPickerOpen && "rotate-180",
+                  )}
+                />
               </button>
+
               {hostPickerOpen ? (
-                <div className="absolute z-30 mt-1 max-h-64 w-full overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
-                  <div className="border-b p-2">
+                <div className="absolute z-30 mt-2 w-full overflow-hidden rounded-2xl border border-border/80 bg-card shadow-2xl shadow-primary/5 ring-1 ring-black/5">
+                  <div className="space-y-2 border-b bg-gradient-to-b from-muted/40 to-card p-3">
                     <div className="relative">
-                      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
                         value={hostSearch}
                         onChange={(e) => setHostSearch(e.target.value)}
-                        placeholder="Qidirish…"
-                        className="h-8 rounded-lg pl-8 text-xs"
+                        placeholder="Ism, lavozim yoki telefon…"
+                        className="h-10 rounded-xl border-border/70 bg-background pl-9 text-sm shadow-inner"
                         autoFocus
                       />
                     </div>
-                  </div>
-                  <div className="max-h-52 overflow-y-auto p-1">
-                    {filteredHosts.map((h) => (
-                      <button
-                        key={h.id}
-                        type="button"
-                        onClick={() => pickHost(h)}
+                    <div className="flex flex-wrap gap-2">
+                      <label
                         className={cn(
-                          "flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left transition hover:bg-muted/60",
-                          hostUserId === String(h.id) && "bg-primary/10",
+                          "inline-flex cursor-pointer items-center gap-2 rounded-xl border px-2.5 py-1.5 text-xs font-semibold transition",
+                          showOfisHosts
+                            ? "border-primary/30 bg-primary/10 text-primary"
+                            : "border-border bg-background text-muted-foreground",
                         )}
                       >
-                        <AvatarBubble name={h.fullName} size="sm" tone="soft" />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium">{h.fullName}</span>
-                          <span className="block truncate text-[11px] text-muted-foreground">
-                            {userRoleLabel(h.role) || h.role}
-                            {h.phone ? ` · ${h.phone}` : ""}
-                          </span>
+                        <Checkbox
+                          checked={showOfisHosts}
+                          onCheckedChange={(v) => setShowOfisHosts(v === true)}
+                        />
+                        <Building2 className="h-3.5 w-3.5" />
+                        Ofis
+                        <span className="rounded-md bg-background/80 px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+                          {hostCounts.ofis}
                         </span>
-                        {h.phone ? (
-                          <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        ) : null}
-                      </button>
-                    ))}
-                    {!filteredHosts.length ? (
-                      <p className="px-3 py-4 text-center text-xs text-muted-foreground">
-                        Xodim topilmadi
+                      </label>
+                      <label
+                        className={cn(
+                          "inline-flex cursor-pointer items-center gap-2 rounded-xl border px-2.5 py-1.5 text-xs font-semibold transition",
+                          showPharmacyHosts
+                            ? "border-violet-400/40 bg-violet-500/10 text-violet-800"
+                            : "border-border bg-background text-muted-foreground",
+                        )}
+                      >
+                        <Checkbox
+                          checked={showPharmacyHosts}
+                          onCheckedChange={(v) => setShowPharmacyHosts(v === true)}
+                        />
+                        <Store className="h-3.5 w-3.5" />
+                        Dorixona
+                        <span className="rounded-md bg-background/80 px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+                          {hostCounts.pharmacy}
+                        </span>
+                      </label>
+                    </div>
+                    {!showPharmacyHosts ? (
+                      <p className="text-[10px] leading-snug text-muted-foreground">
+                        Dorixona xodimlari yashirin — kerak bo‘lsa «Dorixona»ni belgilang.
                       </p>
+                    ) : null}
+                  </div>
+                  <div className="max-h-56 overflow-y-auto p-1.5">
+                    {filteredHosts.map((h) => {
+                      const pharm = isPharmacyHost(h.role);
+                      const active = hostUserId === String(h.id);
+                      return (
+                        <button
+                          key={h.id}
+                          type="button"
+                          onClick={() => pickHost(h)}
+                          className={cn(
+                            "group flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition",
+                            active
+                              ? "bg-primary/10 ring-1 ring-primary/20"
+                              : "hover:bg-muted/70",
+                          )}
+                        >
+                          <AvatarBubble
+                            name={h.fullName}
+                            size="sm"
+                            tone={pharm ? "violet" : "primary"}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center gap-1.5">
+                              <span className="truncate text-sm font-semibold text-foreground">
+                                {h.fullName}
+                              </span>
+                              <span
+                                className={cn(
+                                  "shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                                  pharm
+                                    ? "bg-violet-100 text-violet-800"
+                                    : "bg-sky-100 text-sky-800",
+                                )}
+                              >
+                                {pharm ? "Dorixona" : "Ofis"}
+                              </span>
+                            </span>
+                            <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                              {userRoleLabel(h.role) || h.role}
+                              {h.phone ? ` · ${h.phone}` : ""}
+                            </span>
+                          </span>
+                          {h.phone ? (
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground group-hover:bg-background">
+                              <Phone className="h-3.5 w-3.5" />
+                            </span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                    {!filteredHosts.length ? (
+                      <div className="px-3 py-8 text-center">
+                        <Users className="mx-auto mb-2 h-7 w-7 text-muted-foreground/40" />
+                        <p className="text-xs font-medium text-foreground">Xodim topilmadi</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          {!showOfisHosts && !showPharmacyHosts
+                            ? "Kamida Ofis yoki Dorixona filtrini yoqing"
+                            : "Qidiruvni o‘zgartiring yoki Dorixona filtrini yoqing"}
+                        </p>
+                      </div>
                     ) : null}
                   </div>
                 </div>

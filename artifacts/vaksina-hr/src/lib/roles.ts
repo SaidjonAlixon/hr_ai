@@ -703,7 +703,7 @@ export const HR_ROLE_LABELS: Record<string, string> = {
 export const USER_ROLE_LABELS: Record<string, string> = {
   admin: "",
   ...HR_ROLE_LABELS,
-  resepsion: "Qabulxoona",
+  resepsion: "Qabulxona",
   recruiter: "Rekruter",
   trainer: "Trener",
   director: "Direktor",

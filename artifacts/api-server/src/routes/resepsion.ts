@@ -1,5 +1,5 @@
 /**
- * Qabulxoona — ofis tashrif / suhbat / murojaat qaydlari.
+ * Qabulxona — ofis tashrif / suhbat / murojaat qaydlari.
  */
 import { Router, type IRouter } from "express";
 import { and, desc, eq, gte, inArray, isNotNull, lte, or, sql } from "drizzle-orm";
@@ -108,7 +108,7 @@ function buildReceptionNotifyText(opts: {
 }) {
   const tur = typeLabel(opts.visitType);
   const lines = [
-    "🏢 Qabulxoona",
+    "🏢 Qabulxona",
     "",
     receptionHeadline(opts.visitType),
     "",
@@ -136,7 +136,7 @@ function buildReceptionTelegramHtml(opts: {
   const purpose = escapeHtml(opts.purpose);
   const note = opts.note ? escapeHtml(opts.note) : null;
   const lines = [
-    "<b>🏢 Qabulxoona</b>",
+    "<b>🏢 Qabulxona</b>",
     "──────────────",
     `<b>${escapeHtml(receptionHeadline(opts.visitType))}</b>`,
     "",
@@ -568,7 +568,7 @@ router.post("/resepsion/logs", requireAuth, async (req: AuthRequest, res): Promi
       telegramHtml: buildReceptionTelegramHtml(payload),
       type: "resepsion_visit",
       linkUrl: "/resepsion",
-      title: "🏢 Qabulxoona",
+      title: "🏢 Qabulxona",
     }).catch(() => undefined);
   }
 

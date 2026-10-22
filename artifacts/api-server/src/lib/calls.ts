@@ -9,7 +9,7 @@ import { logger } from "./logger";
 import { countUserPushSubscriptions, sendWebPushToUser } from "./web-push";
 
 export const CALL_ADMIN_ROLES = new Set(["admin"]);
-/** Qabulxoona / rekruter / rahbariyat — onlayn istalgan xodimga qo‘ng‘iroq */
+/** Qabulxona / rekruter / rahbariyat — onlayn istalgan xodimga qo‘ng‘iroq */
 export const CALL_DESK_ROLES = new Set([
   "resepsion",
   "recruiter",
@@ -26,7 +26,7 @@ export function isCallAdmin(role?: string | null): boolean {
   return CALL_ADMIN_ROLES.has(String(role || "").trim().toLowerCase());
 }
 
-/** Istalgan onlayn xodimga qo‘ng‘iroq (admin yoki qabulxoona stoli rollari) */
+/** Istalgan onlayn xodimga qo‘ng‘iroq (admin yoki qabulxona stoli rollari) */
 export function canCallAnyone(role?: string | null): boolean {
   const r = String(role || "").trim().toLowerCase();
   return isCallAdmin(r) || CALL_DESK_ROLES.has(r);

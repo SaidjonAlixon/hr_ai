@@ -89,7 +89,7 @@ export const uz: Messages = {
   "nav.smena": "Smena va filial",
   "nav.javobOlish": "Javob olish",
   "nav.javobOlishHolat": "Javob olish holati",
-  "nav.resepsion": "Qabulxoona",
+  "nav.resepsion": "Qabulxona",
   "nav.checklistStatus": "Cheklist holati",
   "nav.pharmacy": "Aptekalar tarmog‘i",
   "nav.boglanish": "Bog‘lanish",

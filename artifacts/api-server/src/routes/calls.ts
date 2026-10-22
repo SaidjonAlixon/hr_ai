@@ -73,7 +73,7 @@ router.get("/calls/config", requireAuth, async (req: AuthRequest, res): Promise<
   }
 });
 
-/** Admin / qabulxoona / rekruter — istalgan xodim; oddiy xodim — faqat adminlar */
+/** Admin / qabulxona / rekruter — istalgan xodim; oddiy xodim — faqat adminlar */
 router.get("/calls/contacts", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
     await ensureCallSchema();

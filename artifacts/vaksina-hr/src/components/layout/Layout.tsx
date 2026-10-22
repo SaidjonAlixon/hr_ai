@@ -1055,7 +1055,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const smenaNav = { name: 'Smena va filial', path: '/smena-filial', icon: AlarmClock };
   const javobNav = { name: 'Javob olish', path: '/javob-olish', icon: PhoneCall };
   const javobHolatNav = { name: 'Javob olish holati', path: '/javob-olish/holat', icon: Eye };
-  const resepsionNav = { name: 'Qabulxoona', path: '/resepsion', icon: ConciergeBell };
+  const resepsionNav = { name: 'Qabulxona', path: '/resepsion', icon: ConciergeBell };
   const davomatQrNav = { name: 'Davomat QR', path: '/davomat-qr', icon: ScanFace };
   const oylikNav = { name: 'Oylik', path: '/oylik', icon: Banknote };
   const txNav = { name: 'Tushuntirish xatlari', path: '/admin/tushuntirish-xatlari', icon: FileSignature };

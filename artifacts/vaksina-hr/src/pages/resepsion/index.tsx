@@ -1002,7 +1002,7 @@ export default function ResepsionPage() {
               ? "📦 Sizga posilka / kuryer keldi!"
               : "👋 Sizga mehmon keldi!";
     const lines = [
-      "🏢 Qabulxoona",
+      "🏢 Qabulxona",
       "",
       headline,
       "",
@@ -1145,7 +1145,7 @@ export default function ResepsionPage() {
                 Vaksina HR · Desk
               </p>
               <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-                Qabulxoona
+                Qabulxona
               </h1>
               <p className="mt-1.5 max-w-lg text-sm leading-relaxed text-muted-foreground">
                 Mehmon, nomzod, xodim, murojaat va posilka — bitta joyda qayd, xabar va uchrashuv

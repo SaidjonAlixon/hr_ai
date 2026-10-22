@@ -47,7 +47,7 @@ const ROLES = [
   { value: 'hr_kadr_rahbar', label: 'HR kadr b/m' },
   { value: 'hr_auditor', label: 'HR Auditor' },
   { value: 'hr_menejer', label: 'HR Menejer' },
-  { value: 'resepsion', label: 'Qabulxoona' },
+  { value: 'resepsion', label: 'Qabulxona' },
   { value: 'recruiter', label: 'Rekruter' },
   { value: 'trainer', label: 'Trener' },
   { value: 'director', label: 'Direktor' },

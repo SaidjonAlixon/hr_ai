@@ -1,4 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  formatTashkentDt,
+  formatTashkentHm,
+  fromTashkentInputValue,
+  toTashkentInputValue,
+} from "./tashkent-time";
 
 export type ReceptionVisitType = "guest" | "staff" | "candidate" | "request" | "package" | string;
 export type ReceptionStatus = "waiting" | "in_progress" | "done" | "cancelled" | "no_show";
@@ -201,42 +207,22 @@ export function useReceptionMutations() {
   return { create, update, remove };
 }
 
+/** datetime-local — Toshkent wall-clock (brauzer zonasi emas) */
 export function toLocalInputValue(iso?: string | Date | null): string {
-  const d = iso ? new Date(iso) : new Date();
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return toTashkentInputValue(iso);
 }
 
+/** datetime-local — Toshkent deb o‘qiladi, UTC ISO qaytadi */
 export function fromLocalInputValue(local: string): string | null {
-  if (!local) return null;
-  const d = new Date(local);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  return fromTashkentInputValue(local);
 }
 
 export function formatVisitDt(iso: string | null | undefined) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("uz-UZ", {
-    timeZone: "Asia/Tashkent",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatTashkentDt(iso);
 }
 
 export function formatVisitTime(iso: string | null | undefined) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleTimeString("uz-UZ", {
-    timeZone: "Asia/Tashkent",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatTashkentHm(iso);
 }
 
 export function initialsOf(name: string) {

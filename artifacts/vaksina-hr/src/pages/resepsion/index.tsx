@@ -43,6 +43,19 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
+  addTashkentDaysYmd,
+  calendarDayToTashkentYmd,
+  endOfTashkentDayIso,
+  parseTashkentInput,
+  startOfTashkentDayIso,
+  tashkentInputFromParts,
+  tashkentParts,
+  tashkentWeekday,
+  tashkentYmd,
+  tashkentYmdToCalendarDate,
+  toTashkentInputValue,
+} from "@/lib/tashkent-time";
+import {
   formatVisitDt,
   formatVisitTime,
   fromLocalInputValue,
@@ -425,17 +438,19 @@ const UZ_MONTH = [
 
 function parseLocalDateTime(value: string): Date | null {
   if (!value) return null;
-  const d = new Date(value);
+  const iso = fromLocalInputValue(value);
+  if (!iso) return null;
+  const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
 function formatLocalCard(value: string): { date: string; time: string } | null {
-  const d = parseLocalDateTime(value);
-  if (!d) return null;
+  const p = parseTashkentInput(value);
+  if (!p) return null;
   const pad = (n: number) => String(n).padStart(2, "0");
   return {
-    date: `${d.getDate()} ${UZ_MONTH[d.getMonth()] || ""} ${d.getFullYear()}`,
-    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+    date: `${p.day} ${UZ_MONTH[p.month - 1] || ""} ${p.year}`,
+    time: `${pad(p.hour)}:${pad(p.minute)}`,
   };
 }
 
@@ -461,46 +476,46 @@ function VisitDateTimeField({
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const selectedParts = parseTashkentInput(value) || tashkentParts();
   const selected = parseLocalDateTime(value);
   const shown = formatLocalCard(value);
 
-  function applyDate(base: Date) {
-    onChange(toLocalInputValue(base));
+  function applyParts(p: { year: number; month: number; day: number; hour: number; minute: number }) {
+    onChange(tashkentInputFromParts(p));
   }
 
   function setDay(day: Date | undefined) {
     if (!day) return;
-    const next = selected ? new Date(selected) : new Date();
-    next.setFullYear(day.getFullYear(), day.getMonth(), day.getDate());
-    if (!selected) {
-      const now = new Date();
-      next.setHours(now.getHours(), now.getMinutes(), 0, 0);
-    }
-    applyDate(next);
+    const ymd = calendarDayToTashkentYmd(day);
+    const [y, mo, da] = ymd.split("-").map(Number) as [number, number, number];
+    const now = tashkentParts();
+    applyParts({
+      year: y,
+      month: mo,
+      day: da,
+      hour: selected ? selectedParts.hour : now.hour,
+      minute: selected ? selectedParts.minute : now.minute,
+    });
   }
 
   function setHour(h: number) {
-    const next = selected ? new Date(selected) : new Date();
-    next.setHours(h, next.getMinutes(), 0, 0);
-    applyDate(next);
+    applyParts({ ...selectedParts, hour: h });
   }
 
   function setMinute(m: number) {
-    const next = selected ? new Date(selected) : new Date();
-    next.setMinutes(m, 0, 0);
-    applyDate(next);
+    applyParts({ ...selectedParts, minute: m });
   }
 
   function presetMinutes(add: number) {
-    const next = new Date();
-    next.setSeconds(0, 0);
-    next.setMinutes(next.getMinutes() + add);
-    applyDate(next);
+    const iso = fromLocalInputValue(toTashkentInputValue(new Date()));
+    const base = iso ? new Date(iso) : new Date();
+    base.setTime(base.getTime() + add * 60_000);
+    onChange(toTashkentInputValue(base));
     setOpen(false);
   }
 
-  const hour = selected?.getHours() ?? new Date().getHours();
-  const minute = selected?.getMinutes() ?? 0;
+  const hour = selectedParts.hour;
+  const minute = selectedParts.minute;
 
   return (
     <Popover open={disabled ? false : open} onOpenChange={(o) => !disabled && setOpen(o)}>
@@ -584,7 +599,11 @@ function VisitDateTimeField({
         </div>
         <DayPickerCalendar
           mode="single"
-          selected={selected ?? undefined}
+          selected={
+            tashkentYmdToCalendarDate(
+              `${selectedParts.year}-${String(selectedParts.month).padStart(2, "0")}-${String(selectedParts.day).padStart(2, "0")}`,
+            ) ?? undefined
+          }
           onSelect={setDay}
           initialFocus
         />
@@ -647,77 +666,69 @@ function VisitDateTimeField({
 
 type PeriodPreset = "today" | "yesterday" | "week" | "month" | "all" | "custom";
 
-function startOfLocalDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-
-function endOfLocalDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x;
-}
-
 function parseYmdLocal(ymd: string): Date | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
-  const d = new Date(`${ymd}T12:00:00`);
-  return Number.isNaN(d.getTime()) ? null : d;
+  return tashkentYmdToCalendarDate(ymd);
 }
 
 function toYmdLocal(d: Date) {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return tashkentYmd(d);
 }
 
 function formatYmdShort(ymd: string) {
-  const d = parseYmdLocal(ymd);
-  if (!d) return ymd;
-  return `${d.getDate()} ${UZ_MONTH[d.getMonth()] || ""}`;
+  const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return ymd;
+  return `${Number(m[3])} ${UZ_MONTH[Number(m[2]) - 1] || ""}`;
 }
 
 function periodRange(period: PeriodPreset, customFrom: string, customTo: string) {
-  const now = new Date();
+  const today = tashkentYmd();
   if (period === "all") return {} as { from?: string; to?: string };
   if (period === "today") {
     return {
-      from: startOfLocalDay(now).toISOString(),
-      to: endOfLocalDay(now).toISOString(),
+      from: new Date(startOfTashkentDayIso(today)).toISOString(),
+      to: new Date(endOfTashkentDayIso(today)).toISOString(),
     };
   }
   if (period === "yesterday") {
-    const y = new Date(now);
-    y.setDate(y.getDate() - 1);
+    const y = addTashkentDaysYmd(today, -1);
     return {
-      from: startOfLocalDay(y).toISOString(),
-      to: endOfLocalDay(y).toISOString(),
+      from: new Date(startOfTashkentDayIso(y)).toISOString(),
+      to: new Date(endOfTashkentDayIso(y)).toISOString(),
     };
   }
   if (period === "week") {
-    const d = new Date(now);
-    const monOffset = (d.getDay() + 6) % 7;
-    const start = startOfLocalDay(d);
-    start.setDate(start.getDate() - monOffset);
-    const end = endOfLocalDay(new Date(start));
-    end.setDate(start.getDate() + 6);
-    return { from: start.toISOString(), to: end.toISOString() };
+    // Toshkent dushanba — yakshanba
+    const monOffset = (tashkentWeekday(today) + 6) % 7;
+    const startYmd = addTashkentDaysYmd(today, -monOffset);
+    const endYmd = addTashkentDaysYmd(startYmd, 6);
+    return {
+      from: new Date(startOfTashkentDayIso(startYmd)).toISOString(),
+      to: new Date(endOfTashkentDayIso(endYmd)).toISOString(),
+    };
   }
   if (period === "month") {
-    const start = startOfLocalDay(new Date(now.getFullYear(), now.getMonth(), 1));
-    const end = endOfLocalDay(new Date(now.getFullYear(), now.getMonth() + 1, 0));
-    return { from: start.toISOString(), to: end.toISOString() };
+    const p = tashkentParts();
+    const startYmd = `${p.year}-${String(p.month).padStart(2, "0")}-01`;
+    const nextMonth = p.month === 12 ? 1 : p.month + 1;
+    const nextYear = p.month === 12 ? p.year + 1 : p.year;
+    const nextStart = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+    const endYmd = addTashkentDaysYmd(nextStart, -1);
+    return {
+      from: new Date(startOfTashkentDayIso(startYmd)).toISOString(),
+      to: new Date(endOfTashkentDayIso(endYmd)).toISOString(),
+    };
   }
   // custom
-  let fromD = customFrom ? parseYmdLocal(customFrom) : null;
-  let toD = customTo ? parseYmdLocal(customTo) : null;
-  if (fromD && toD && fromD.getTime() > toD.getTime()) {
-    const tmp = fromD;
-    fromD = toD;
-    toD = tmp;
+  let fromY = customFrom && /^\d{4}-\d{2}-\d{2}$/.test(customFrom) ? customFrom : null;
+  let toY = customTo && /^\d{4}-\d{2}-\d{2}$/.test(customTo) ? customTo : null;
+  if (fromY && toY && fromY > toY) {
+    const tmp = fromY;
+    fromY = toY;
+    toY = tmp;
   }
   const out: { from?: string; to?: string } = {};
-  if (fromD) out.from = startOfLocalDay(fromD).toISOString();
-  if (toD) out.to = endOfLocalDay(toD).toISOString();
+  if (fromY) out.from = new Date(startOfTashkentDayIso(fromY)).toISOString();
+  if (toY) out.to = new Date(endOfTashkentDayIso(toY)).toISOString();
   return out;
 }
 
@@ -824,28 +835,27 @@ export default function ResepsionPage() {
   function applyPeriod(next: PeriodPreset) {
     setPeriod(next);
     if (next === "today") {
-      const d = toYmdLocal(new Date());
+      const d = tashkentYmd();
       setCustomFrom(d);
       setCustomTo(d);
     } else if (next === "yesterday") {
-      const y = new Date();
-      y.setDate(y.getDate() - 1);
-      const d = toYmdLocal(y);
+      const d = addTashkentDaysYmd(tashkentYmd(), -1);
       setCustomFrom(d);
       setCustomTo(d);
     } else if (next === "week") {
-      const now = new Date();
-      const monOffset = (now.getDay() + 6) % 7;
-      const start = new Date(now);
-      start.setDate(start.getDate() - monOffset);
-      const end = new Date(start);
-      end.setDate(start.getDate() + 6);
-      setCustomFrom(toYmdLocal(start));
-      setCustomTo(toYmdLocal(end));
+      const today = tashkentYmd();
+      const monOffset = (tashkentWeekday(today) + 6) % 7;
+      const start = addTashkentDaysYmd(today, -monOffset);
+      setCustomFrom(start);
+      setCustomTo(addTashkentDaysYmd(start, 6));
     } else if (next === "month") {
-      const now = new Date();
-      setCustomFrom(toYmdLocal(new Date(now.getFullYear(), now.getMonth(), 1)));
-      setCustomTo(toYmdLocal(new Date(now.getFullYear(), now.getMonth() + 1, 0)));
+      const p = tashkentParts();
+      const startYmd = `${p.year}-${String(p.month).padStart(2, "0")}-01`;
+      const nextMonth = p.month === 12 ? 1 : p.month + 1;
+      const nextYear = p.month === 12 ? p.year + 1 : p.year;
+      const nextStart = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+      setCustomFrom(startYmd);
+      setCustomTo(addTashkentDaysYmd(nextStart, -1));
     } else if (next === "all") {
       setCustomFrom("");
       setCustomTo("");
@@ -993,14 +1003,19 @@ export default function ResepsionPage() {
   }
 
   function shiftVisitDays(days: number) {
-    const keep = parseLocalDateTime(editDraft.visitAt) || new Date();
-    const next = new Date();
-    next.setHours(0, 0, 0, 0);
-    next.setDate(next.getDate() + days);
-    next.setHours(keep.getHours(), keep.getMinutes(), 0, 0);
+    const keep = parseTashkentInput(editDraft.visitAt) || tashkentParts();
+    const baseYmd = tashkentYmd();
+    const ymd = addTashkentDaysYmd(baseYmd, days);
+    const [y, mo, da] = ymd.split("-").map(Number) as [number, number, number];
     setEditDraft((d) => ({
       ...d,
-      visitAt: toLocalInputValue(next),
+      visitAt: tashkentInputFromParts({
+        year: y,
+        month: mo,
+        day: da,
+        hour: keep.hour,
+        minute: keep.minute,
+      }),
       status: d.status === "cancelled" || d.status === "done" ? "waiting" : d.status,
     }));
   }
@@ -1077,11 +1092,10 @@ export default function ResepsionPage() {
 
   const hostVisitHistory = useMemo(() => {
     const list = hostHistoryQ.data?.items ?? [];
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const todayStartMs = new Date(startOfTashkentDayIso()).getTime();
     let today = 0;
     for (const r of list) {
-      if (new Date(r.visitAt).getTime() >= todayStart.getTime()) today += 1;
+      if (new Date(r.visitAt).getTime() >= todayStartMs) today += 1;
     }
     return {
       items: list.slice(0, 12),
@@ -2596,12 +2610,12 @@ export default function ResepsionPage() {
                         onSelect={(range, day) => {
                           setPeriod("custom");
                           if (range?.from || range?.to) {
-                            setCustomFrom(range.from ? toYmdLocal(range.from) : "");
-                            setCustomTo(range.to ? toYmdLocal(range.to) : "");
+                            setCustomFrom(range.from ? calendarDayToTashkentYmd(range.from) : "");
+                            setCustomTo(range.to ? calendarDayToTashkentYmd(range.to) : "");
                             return;
                           }
                           if (day) {
-                            const ymd = toYmdLocal(day);
+                            const ymd = calendarDayToTashkentYmd(day);
                             if (!customFrom || (customFrom && customTo)) {
                               setCustomFrom(ymd);
                               setCustomTo("");
@@ -3009,23 +3023,41 @@ export default function ResepsionPage() {
                     key={key}
                     type="button"
                     onClick={() => {
-                      const next = new Date();
-                      if (key === "1h") next.setHours(next.getHours() + 1, next.getMinutes(), 0, 0);
-                      else if (key === "3h") next.setHours(next.getHours() + 3, next.getMinutes(), 0, 0);
-                      else if (key === "tomorrow10") {
-                        next.setDate(next.getDate() + 1);
-                        next.setHours(10, 0, 0, 0);
-                      } else if (key === "tomorrow14") {
-                        next.setDate(next.getDate() + 1);
-                        next.setHours(14, 0, 0, 0);
-                      } else if (key === "2d") {
-                        next.setDate(next.getDate() + 2);
-                        next.setHours(10, 0, 0, 0);
-                      } else if (key === "week") {
-                        next.setDate(next.getDate() + 7);
-                        next.setHours(10, 0, 0, 0);
+                      const now = tashkentParts();
+                      let ymd = tashkentYmd();
+                      let hour = now.hour;
+                      let minute = now.minute;
+                      if (key === "1h") {
+                        const iso = fromLocalInputValue(toTashkentInputValue(new Date()));
+                        const d = iso ? new Date(new Date(iso).getTime() + 3_600_000) : new Date(Date.now() + 3_600_000);
+                        setReminderDueAt(toTashkentInputValue(d));
+                        return;
                       }
-                      setReminderDueAt(toLocalInputValue(next));
+                      if (key === "3h") {
+                        const iso = fromLocalInputValue(toTashkentInputValue(new Date()));
+                        const d = iso ? new Date(new Date(iso).getTime() + 3 * 3_600_000) : new Date(Date.now() + 3 * 3_600_000);
+                        setReminderDueAt(toTashkentInputValue(d));
+                        return;
+                      }
+                      if (key === "tomorrow10") {
+                        ymd = addTashkentDaysYmd(ymd, 1);
+                        hour = 10;
+                        minute = 0;
+                      } else if (key === "tomorrow14") {
+                        ymd = addTashkentDaysYmd(ymd, 1);
+                        hour = 14;
+                        minute = 0;
+                      } else if (key === "2d") {
+                        ymd = addTashkentDaysYmd(ymd, 2);
+                        hour = 10;
+                        minute = 0;
+                      } else if (key === "week") {
+                        ymd = addTashkentDaysYmd(ymd, 7);
+                        hour = 10;
+                        minute = 0;
+                      }
+                      const [y, mo, da] = ymd.split("-").map(Number) as [number, number, number];
+                      setReminderDueAt(tashkentInputFromParts({ year: y, month: mo, day: da, hour, minute }));
                     }}
                     className="rounded-lg border border-amber-300/50 bg-amber-500/10 px-2 py-1 text-[10px] font-bold text-amber-950 hover:bg-amber-500/20 dark:border-amber-500/30 dark:text-amber-100"
                   >

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Film,
   History,
   Lock,
   Phone,
@@ -19,6 +20,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { hasFullPlatformAccess } from "@/lib/roles";
 import { ConferenceTab } from "./ConferenceTab";
+import { RecordingsTab } from "./RecordingsTab";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -27,6 +29,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { callEngine, useCall, type CallPeer } from "@/lib/calls/engine";
 import { CallAvatar, formatDuration } from "@/components/calls/CallLayer";
+import { formatTashkentRelative } from "@/lib/tashkent-time";
 
 type Contact = {
   id: number;
@@ -98,13 +101,7 @@ const STATUS_TEXT: Record<string, string> = {
 };
 
 function whenText(iso: string) {
-  const d = new Date(iso);
-  const today = new Date();
-  const yest = new Date(Date.now() - 86_400_000);
-  const time = d.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
-  if (d.toDateString() === today.toDateString()) return `Bugun, ${time}`;
-  if (d.toDateString() === yest.toDateString()) return `Kecha, ${time}`;
-  return `${d.toLocaleDateString("uz-UZ", { day: "2-digit", month: "2-digit", year: "numeric" })}, ${time}`;
+  return formatTashkentRelative(iso);
 }
 
 function roleText(c: { role: string; position?: string | null; branch?: string | null }) {
@@ -241,9 +238,12 @@ export default function QongiroqPage() {
   const { user } = useAuth();
   const isAdmin = Boolean(s.me?.isAdmin);
   const canCall = Boolean(s.me?.canCall || isAdmin);
-  const [tab, setTab] = useState(() =>
-    new URLSearchParams(window.location.search).get("tab") === "konferensiya" ? "conference" : "contacts",
-  );
+  const [tab, setTab] = useState(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t === "konferensiya") return "conference";
+    if (t === "zapislar") return "recordings";
+    return "contacts";
+  });
   const [q, setQ] = useState("");
   const [scope, setScope] = useState<"online" | "all">("online");
   const dq = useDebounced(q.trim());
@@ -397,7 +397,7 @@ export default function QongiroqPage() {
       ) : null}
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className={cn("grid w-full", isAdmin ? "grid-cols-4" : "grid-cols-3")}>
+        <TabsList className={cn("grid w-full", isAdmin ? "grid-cols-5" : "grid-cols-3")}>
           <TabsTrigger value="contacts" className="gap-1.5">
             <Users className="h-4 w-4" /> <span className="hidden sm:inline">{isAdmin ? "Xodimlar" : "Adminlar"}</span>
           </TabsTrigger>
@@ -407,6 +407,11 @@ export default function QongiroqPage() {
           <TabsTrigger value="history" className="gap-1.5">
             <History className="h-4 w-4" /> <span className="hidden sm:inline">Tarix</span>
           </TabsTrigger>
+          {isAdmin ? (
+            <TabsTrigger value="recordings" className="gap-1.5">
+              <Film className="h-4 w-4" /> <span className="hidden sm:inline">Zapislar</span>
+            </TabsTrigger>
+          ) : null}
           {isAdmin ? (
             <TabsTrigger value="permissions" className="gap-1.5">
               <ShieldCheck className="h-4 w-4" /> <span className="hidden sm:inline">Ruxsatlar</span>
@@ -522,6 +527,12 @@ export default function QongiroqPage() {
             </div>
           )}
         </TabsContent>
+
+        {isAdmin ? (
+          <TabsContent value="recordings" className="mt-3">
+            <RecordingsTab />
+          </TabsContent>
+        ) : null}
 
         {isAdmin ? (
           <TabsContent value="permissions" className="mt-3 space-y-3">

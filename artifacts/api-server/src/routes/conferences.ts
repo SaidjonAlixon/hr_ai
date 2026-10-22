@@ -821,7 +821,13 @@ router.post(
         160,
       );
       const mimeType = String(req.headers["content-type"] || "video/webm").split(";")[0]!.trim();
-      const saved = await saveConferenceRecordingUpload(ctx.conf, { buffer, filename: fileName, mimeType });
+      const saved = await saveConferenceRecordingUpload(ctx.conf, {
+        buffer,
+        filename: fileName,
+        mimeType,
+        uploadedBy: ctx.actor.id,
+        hostName: ctx.actor.fullName,
+      });
 
       const history = await conferenceHistory(ctx.conf);
       const hostName = ctx.actor.fullName;
@@ -831,11 +837,12 @@ router.post(
         invitedCount: history.invitedCount,
         actualSeconds: history.actualSeconds,
         hostName,
+        recordingId: saved.recordingId,
       }).catch((err) => {
         console.error("conference recording deliver", ctx.conf.code, err);
       });
 
-      res.json({ ok: true, bytes: saved.bytes, queued: true });
+      res.json({ ok: true, bytes: saved.bytes, queued: true, recordingId: saved.recordingId });
     } catch (err) {
       serverError(res, "POST /conferences/:code/recording", err);
     }

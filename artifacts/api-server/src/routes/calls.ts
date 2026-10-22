@@ -23,6 +23,7 @@ import {
   setCallPin,
   startCall,
 } from "../lib/calls";
+import { deleteAdminRecording, listAdminRecordings } from "../lib/conference-recording";
 
 const router: IRouter = Router();
 
@@ -347,6 +348,38 @@ router.put("/calls/permissions/:userId", requireAuth, async (req: AuthRequest, r
   } catch (err) {
     console.error("PUT /calls/permissions", err);
     res.status(503).json({ error: "Saqlanmadi" });
+  }
+});
+
+/** Admin: konferensiya yozuvlari (Telegram holati / foiz / ETA) */
+router.get("/calls/recordings", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (denyUnlessAdmin(req, res)) return;
+  try {
+    const items = await listAdminRecordings(150);
+    res.json({ items });
+  } catch (err) {
+    console.error("GET /calls/recordings", err);
+    res.status(503).json({ error: "Zapislar yuklanmadi" });
+  }
+});
+
+router.delete("/calls/recordings/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (denyUnlessAdmin(req, res)) return;
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Noto‘g‘ri id" });
+    return;
+  }
+  try {
+    const out = await deleteAdminRecording(id);
+    if (!out.ok) {
+      res.status(404).json({ error: out.error || "Topilmadi" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("DELETE /calls/recordings", err);
+    res.status(503).json({ error: "O‘chirilmadi" });
   }
 });
 

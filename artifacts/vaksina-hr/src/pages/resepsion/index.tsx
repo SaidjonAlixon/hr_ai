@@ -1372,42 +1372,47 @@ export default function ResepsionPage() {
             </div>
           </div>
 
-          <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:items-stretch">
+          <div className="flex w-full shrink-0 flex-col gap-2.5 sm:w-auto sm:flex-row sm:items-stretch">
             <button
               type="button"
               onClick={openReminderSheet}
-              className="flex h-[78px] w-full items-center gap-2.5 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 px-3 text-left text-white shadow-md shadow-amber-500/25 transition hover:brightness-110 sm:w-[156px]"
+              className="group relative flex h-[96px] w-full flex-col justify-between overflow-hidden rounded-2xl bg-gradient-to-br from-amber-400 via-orange-500 to-orange-600 p-3 text-left text-white shadow-lg shadow-orange-500/30 transition hover:scale-[1.02] hover:shadow-orange-500/40 sm:w-[178px]"
             >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/20 ring-1 ring-white/25">
-                <AlarmClock className="h-4 w-4" />
+              <span className="pointer-events-none absolute -right-4 -top-4 h-16 w-16 rounded-full bg-white/15 blur-md" />
+              <span className="pointer-events-none absolute -bottom-6 left-6 h-14 w-14 rounded-full bg-amber-200/20 blur-lg" />
+              <span className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-white/20 ring-1 ring-white/30 shadow-inner backdrop-blur-sm">
+                <AlarmClock className="h-[18px] w-[18px]" />
               </span>
-              <span className="min-w-0">
-                <span className="block text-[13px] font-bold leading-tight">Eslatma</span>
-                <span className="mt-0.5 block text-[10px] leading-snug opacity-90">
+              <span className="relative min-w-0">
+                <span className="block text-[15px] font-bold leading-none tracking-tight">Eslatma</span>
+                <span className="mt-1 block text-[11px] font-medium leading-snug text-white/90">
                   Ofis · uchrashuv
                 </span>
               </span>
             </button>
 
-            <div className="flex h-[78px] w-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-slate-950 text-white shadow-md sm:w-[156px] dark:border-slate-700">
-              <div className="flex items-center gap-1.5 border-b border-white/10 bg-slate-900 px-2.5 py-1">
-                <CalendarDays className="h-3 w-3 shrink-0 text-sky-400" />
-                <div className="min-w-0">
-                  <p className="text-[8px] font-semibold uppercase tracking-wider text-slate-400 leading-none">
+            <div className="relative flex h-[96px] w-full flex-col overflow-hidden rounded-2xl border border-slate-700/80 bg-gradient-to-b from-slate-900 to-slate-950 text-white shadow-lg shadow-slate-900/30 sm:w-[178px] dark:border-slate-600">
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-400/50 to-transparent" />
+              <div className="flex items-center gap-2 border-b border-white/10 bg-white/[0.04] px-3 py-1.5">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-sky-500/15 ring-1 ring-sky-400/30">
+                  <CalendarDays className="h-3.5 w-3.5 text-sky-400" />
+                </span>
+                <div className="min-w-0 leading-tight">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-sky-300/90">
                     {clock.weekday}
                   </p>
-                  <p className="truncate text-[10px] font-semibold leading-tight text-white">
+                  <p className="truncate text-[11px] font-semibold text-white">
                     {clock.dateLine}
                   </p>
                 </div>
               </div>
               <div className="flex flex-1 flex-col items-center justify-center px-2">
-                <p className="text-[7px] font-semibold uppercase tracking-[0.16em] text-slate-500 leading-none">
+                <p className="text-[8px] font-semibold uppercase tracking-[0.2em] text-slate-400">
                   Toshkent
                 </p>
-                <p className="mt-0.5 font-mono text-xl font-bold tabular-nums tracking-tight text-white leading-none">
+                <p className="mt-1 font-mono text-[22px] font-bold tabular-nums tracking-tight text-white leading-none">
                   {clock.time}
-                  <span className="text-sm text-sky-400">:{clock.seconds}</span>
+                  <span className="text-[15px] font-semibold text-sky-400">:{clock.seconds}</span>
                 </p>
               </div>
             </div>

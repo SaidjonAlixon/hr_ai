@@ -2462,6 +2462,7 @@ export default function ResepsionPage() {
                 </PopoverTrigger>
                 <PopoverContent
                   align="end"
+                  onOpenAutoFocus={(e) => e.preventDefault()}
                   className="z-50 w-[min(100vw-1.25rem,340px)] rounded-2xl border border-border/70 p-0 shadow-2xl dark:border-white/10"
                 >
                   <div className="border-b border-border/60 bg-muted/30 px-3.5 py-2.5 dark:border-white/10">
@@ -2528,35 +2529,86 @@ export default function ResepsionPage() {
                       </div>
 
                       <div className="grid grid-cols-2 gap-2">
-                        <div className="rounded-xl border border-border/60 bg-muted/30 px-2.5 py-2 dark:border-white/10">
-                          <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        <label className="cursor-pointer rounded-xl border border-border/60 bg-muted/30 px-2.5 py-2 transition hover:border-sky-400/50 hover:bg-sky-500/5 dark:border-white/10">
+                          <span className="block text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
                             Boshlanish
-                          </p>
-                          <p className="mt-0.5 text-[12px] font-bold tabular-nums text-foreground">
-                            {customFrom ? formatYmdShort(customFrom) : "—"}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-border/60 bg-muted/30 px-2.5 py-2 dark:border-white/10">
-                          <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          </span>
+                          <span className="mt-0.5 block text-[12px] font-bold tabular-nums text-foreground">
+                            {customFrom ? formatYmdShort(customFrom) : "Sana tanlang"}
+                          </span>
+                          <Input
+                            type="date"
+                            value={customFrom}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setCustomFrom(v);
+                              setPeriod("custom");
+                              if (customTo && v && customTo < v) setCustomTo(v);
+                            }}
+                            className="mt-1 h-8 rounded-lg px-2 text-[12px]"
+                          />
+                        </label>
+                        <label className="cursor-pointer rounded-xl border border-border/60 bg-muted/30 px-2.5 py-2 transition hover:border-sky-400/50 hover:bg-sky-500/5 dark:border-white/10">
+                          <span className="block text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
                             Tugash
-                          </p>
-                          <p className="mt-0.5 text-[12px] font-bold tabular-nums text-foreground">
-                            {customTo ? formatYmdShort(customTo) : "—"}
-                          </p>
-                        </div>
+                          </span>
+                          <span className="mt-0.5 block text-[12px] font-bold tabular-nums text-foreground">
+                            {customTo ? formatYmdShort(customTo) : "Sana tanlang"}
+                          </span>
+                          <Input
+                            type="date"
+                            value={customTo}
+                            min={customFrom || undefined}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setCustomTo(v);
+                              setPeriod("custom");
+                              if (customFrom && v && v < customFrom) setCustomFrom(v);
+                            }}
+                            className="mt-1 h-8 rounded-lg px-2 text-[12px]"
+                          />
+                        </label>
                       </div>
 
                       <DayPickerCalendar
                         mode="range"
                         numberOfMonths={1}
-                        selected={{
-                          from: customFrom ? parseYmdLocal(customFrom) ?? undefined : undefined,
-                          to: customTo ? parseYmdLocal(customTo) ?? undefined : undefined,
-                        }}
-                        onSelect={(range) => {
+                        defaultMonth={
+                          parseYmdLocal(customFrom || customTo) ?? new Date()
+                        }
+                        selected={
+                          customFrom || customTo
+                            ? {
+                                from: customFrom
+                                  ? parseYmdLocal(customFrom) ?? undefined
+                                  : undefined,
+                                to: customTo
+                                  ? parseYmdLocal(customTo) ?? undefined
+                                  : undefined,
+                              }
+                            : undefined
+                        }
+                        onSelect={(range, day) => {
                           setPeriod("custom");
-                          setCustomFrom(range?.from ? toYmdLocal(range.from) : "");
-                          setCustomTo(range?.to ? toYmdLocal(range.to) : "");
+                          if (range?.from || range?.to) {
+                            setCustomFrom(range.from ? toYmdLocal(range.from) : "");
+                            setCustomTo(range.to ? toYmdLocal(range.to) : "");
+                            return;
+                          }
+                          if (day) {
+                            const ymd = toYmdLocal(day);
+                            if (!customFrom || (customFrom && customTo)) {
+                              setCustomFrom(ymd);
+                              setCustomTo("");
+                            } else {
+                              if (ymd < customFrom) {
+                                setCustomTo(customFrom);
+                                setCustomFrom(ymd);
+                              } else {
+                                setCustomTo(ymd);
+                              }
+                            }
+                          }
                         }}
                         className="mx-auto rounded-xl border border-border/50 p-1 dark:border-white/10"
                       />

@@ -14,6 +14,7 @@ import {
   Plus,
   QrCode,
   Building2,
+  CalendarDays,
   ChevronDown,
   PhoneCall,
   Search,
@@ -221,19 +222,24 @@ function liveClock() {
     const id = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(id);
   }, []);
+  const opts = { timeZone: "Asia/Tashkent" } as const;
   const time = now.toLocaleTimeString("uz-UZ", {
-    timeZone: "Asia/Tashkent",
+    ...opts,
     hour: "2-digit",
     minute: "2-digit",
+    hour12: false,
   });
-  const date = now.toLocaleDateString("uz-UZ", {
-    timeZone: "Asia/Tashkent",
+  const weekday = now.toLocaleDateString("uz-UZ", {
+    ...opts,
     weekday: "long",
+  });
+  const dateLine = now.toLocaleDateString("uz-UZ", {
+    ...opts,
     day: "numeric",
     month: "long",
     year: "numeric",
   });
-  return { time, date };
+  return { time, weekday, dateLine };
 }
 
 export default function ResepsionPage() {
@@ -439,9 +445,19 @@ export default function ResepsionPage() {
             </div>
           </div>
         </div>
-        <div className="rounded-2xl border border-border/70 bg-card px-4 py-2.5 text-right shadow-sm">
-          <p className="text-[11px] font-medium capitalize text-muted-foreground">{clock.date}</p>
-          <p className="text-2xl font-semibold tabular-nums tracking-tight text-foreground">
+        <div className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card px-3.5 py-3 shadow-sm sm:gap-4 sm:px-4">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-foreground">
+            <CalendarDays className="h-5 w-5" strokeWidth={1.75} />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[12px] font-medium capitalize leading-tight text-muted-foreground">
+              {clock.weekday}
+            </p>
+            <p className="mt-0.5 text-sm font-semibold leading-tight text-foreground sm:text-[15px]">
+              {clock.dateLine}
+            </p>
+          </div>
+          <p className="ml-1 pl-3 text-2xl font-bold tabular-nums tracking-tight text-primary sm:ml-2 sm:pl-4 sm:text-[28px] sm:leading-none">
             {clock.time}
           </p>
         </div>

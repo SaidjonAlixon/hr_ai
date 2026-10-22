@@ -9,6 +9,13 @@ export type ConfSettings = {
   chat: boolean;
   muteOnJoin: boolean;
   camOffOnJoin: boolean;
+  /** Moderator kirganda yozuvni avtomatik boshlash */
+  autoRecord: boolean;
+  /**
+   * Yozuv davomiyligi (daqiqa). 0 = qo‘lda to‘xtatilguncha / konferensiya tugaguncha.
+   * Belgilansa — shuncha vaqtdan keyin to‘xtab Telegramga yuboriladi.
+   */
+  recordMinutes: number;
 };
 
 export const DEFAULT_SETTINGS: ConfSettings = {
@@ -18,7 +25,19 @@ export const DEFAULT_SETTINGS: ConfSettings = {
   chat: true,
   muteOnJoin: true,
   camOffOnJoin: false,
+  autoRecord: false,
+  recordMinutes: 0,
 };
+
+export const RECORD_DURATION_OPTS = [
+  [0, "Cheksiz (qo‘lda)"],
+  [15, "15 daq"],
+  [30, "30 daq"],
+  [45, "45 daq"],
+  [60, "1 soat"],
+  [90, "1.5 soat"],
+  [120, "2 soat"],
+] as const;
 
 export type ConfStatus = "scheduled" | "live" | "ended" | "cancelled";
 export type MemberRole = "host" | "cohost" | "participant";

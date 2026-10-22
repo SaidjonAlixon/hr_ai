@@ -63,6 +63,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { formatDuration } from "@/components/calls/CallLayer";
 import {
+  RECORD_DURATION_OPTS,
   conferenceApi,
   conferenceLink,
   copyText,
@@ -75,7 +76,7 @@ import { RotateLinkDialog } from "../qongiroq/RotateLinkDialog";
 import { mediaErrorText } from "./PreJoin";
 import { AudioRenderer, RoomUiContext, VideoTile, tileKey, type RoomUi, type TileSource } from "./Tile";
 import { ChatPanel, PanelShell, PeoplePanel, useUnread } from "./SidePanel";
-import { useRoomRecorder } from "./useRoomRecorder";
+import { formatRecClock, useRoomRecorder } from "./useRoomRecorder";
 import {
   bestGrid,
   canPublish,
@@ -344,8 +345,49 @@ export function ConferenceRoom({
   const settings = meta.settings ?? details.conference.settings;
   const moderator = isMod(local) || details.me.moderator;
   const owner = details.me.owner;
-  const recorder = useRoomRecorder(room, moderator);
   const meUid = details.me.userId;
+  const [recPickOpen, setRecPickOpen] = useState(false);
+  const [recBusy, setRecBusy] = useState(false);
+  const sentBlobsRef = useRef(new WeakSet<Blob>());
+
+  const sendRecording = useCallback(
+    async (blob: Blob | null, reason: string) => {
+      if (!blob || blob.size < 1000) return;
+      if (sentBlobsRef.current.has(blob)) return;
+      sentBlobsRef.current.add(blob);
+      setRecBusy(true);
+      try {
+        await conferenceApi.uploadRecording(code, blob);
+        toast({
+          title: "Yozuv guruhga yuborilmoqda",
+          description:
+            reason === "limit"
+              ? "Belgilangan vaqt tugadi — Telegramga yuklanadi, platformadan o‘chiriladi"
+              : "VAKSINA tushuntirish xatlari guruhiga yuklanadi, keyin platformadan o‘chiriladi",
+        });
+      } catch (e) {
+        sentBlobsRef.current.delete(blob);
+        toast({
+          title: "Yozuv yuborilmadi",
+          description: e instanceof Error ? e.message : "Xato",
+          variant: "destructive",
+        });
+      } finally {
+        setRecBusy(false);
+      }
+    },
+    [code, toast],
+  );
+
+  const recorder = useRoomRecorder(room, {
+    canRecord: moderator,
+    autoStart: Boolean(settings.autoRecord),
+    defaultLimitMinutes: settings.recordMinutes > 0 ? settings.recordMinutes : null,
+    onStopped: (blob, reason) => {
+      if (reason === "unmount") return;
+      void sendRecording(blob, reason);
+    },
+  });
   const [panel, setPanel] = useState<null | "chat" | "people">(null);
   const [layout, setLayout] = useState<"auto" | "grid">("auto");
   const [localPin, setLocalPin] = useState<string | null>(null);
@@ -724,14 +766,38 @@ export function ConferenceRoom({
             >
               {fullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
             </button>
-            {moderator && recorder.isRecording ? (
-              <span
-                title="Konferensiya yozib olinmoqda — tugagach VAKSINA tushuntirish xatlari guruhiga yuboriladi"
-                className="inline-flex items-center gap-1.5 rounded-full bg-red-500/20 px-2.5 py-1 text-[11px] font-bold text-red-200 ring-1 ring-red-400/40"
-              >
-                <Circle className="h-2.5 w-2.5 fill-red-400 text-red-400 animate-pulse" />
-                REC
-              </span>
+            {moderator ? (
+              recorder.isRecording ? (
+                <button
+                  type="button"
+                  disabled={recBusy || recorder.state === "stopping"}
+                  onClick={() => {
+                    void (async () => {
+                      const blob = await recorder.stop();
+                      await sendRecording(blob, "manual");
+                    })();
+                  }}
+                  title="Yozuvni to‘xtatish va Telegramga yuborish"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-red-500 px-2.5 py-1 text-[11px] font-bold text-white shadow-lg shadow-red-500/30 transition hover:bg-red-600 disabled:opacity-60"
+                >
+                  <Circle className="h-2.5 w-2.5 fill-white animate-pulse" />
+                  REC {formatRecClock(recorder.elapsedSec)}
+                  {recorder.remainingSec != null ? (
+                    <span className="opacity-80">· qoldi {formatRecClock(recorder.remainingSec)}</span>
+                  ) : null}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={recBusy}
+                  onClick={() => setRecPickOpen(true)}
+                  title="Yozib olishni boshlash"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-bold text-white/90 ring-1 ring-white/20 transition hover:bg-white/20"
+                >
+                  <Circle className="h-2.5 w-2.5 text-red-400" />
+                  REC
+                </button>
+              )
             ) : null}
             {moderator ? (
               <button
@@ -970,6 +1036,50 @@ export function ConferenceRoom({
             onRotated={(next) => onCodeChanged(next)}
           />
         ) : null}
+
+        <Dialog open={recPickOpen} onOpenChange={setRecPickOpen}>
+          <DialogContent className="max-w-sm rounded-3xl">
+            <DialogHeader>
+              <DialogTitle>Yozib olishni boshlash</DialogTitle>
+              <DialogDescription>
+                Qancha vaqt yozilishini tanlang. Vaqt tugasa yoki REC ni bossangiz — yozuv Telegram
+                guruhiga yuboriladi va platformadan o‘chiriladi.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-wrap gap-1.5">
+              {RECORD_DURATION_OPTS.map(([m, lab]) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => {
+                    setRecPickOpen(false);
+                    void recorder.start(m > 0 ? m : null).then((ok) => {
+                      if (!ok) {
+                        toast({
+                          title: "Yozuv boshlanmadi",
+                          description: "Brauzer MediaRecorder qo‘llab-quvvatlamaydi yoki ruxsat yo‘q",
+                          variant: "destructive",
+                        });
+                      } else {
+                        toast({
+                          title: "Yozuv boshlandi",
+                          description: m > 0 ? `${m} daqiqadan keyin avtomatik to‘xtaydi` : "REC tugmasi bilan to‘xtating",
+                        });
+                      }
+                    });
+                  }}
+                  className={cn(
+                    "rounded-xl border px-3 py-2 text-xs font-semibold transition hover:bg-muted",
+                    settings.recordMinutes === m && "border-primary bg-primary/10 text-primary",
+                  )}
+                >
+                  {lab}
+                </button>
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
+
         <AlertDialog open={endOpen} onOpenChange={(v) => !ending && setEndOpen(v)}>
           <AlertDialogContent className="max-w-md rounded-3xl">
             <AlertDialogHeader>
@@ -987,8 +1097,16 @@ export function ConferenceRoom({
                   e.preventDefault();
                   setEnding(true);
                   void (async () => {
-                    const blob = await recorder.stop();
-                    await Promise.resolve(onLeave(true, blob));
+                    let blob: Blob | null = null;
+                    if (recorder.isRecording || recorder.state === "stopping") {
+                      blob = await recorder.stop();
+                      // Agar onStopped allaqachon yuborgan bo‘lmasa — leave orqali
+                      if (blob && !sentBlobsRef.current.has(blob)) {
+                        await Promise.resolve(onLeave(true, blob));
+                        return;
+                      }
+                    }
+                    await Promise.resolve(onLeave(true, null));
                   })().finally(() => setEnding(false));
                 }}
                 className="bg-red-600 text-white hover:bg-red-700"

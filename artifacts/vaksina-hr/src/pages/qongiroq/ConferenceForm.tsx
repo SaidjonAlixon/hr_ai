@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { CallAvatar } from "@/components/calls/CallLayer";
 import {
   DEFAULT_SETTINGS,
+  RECORD_DURATION_OPTS,
   conferenceApi,
   conferenceLink,
   copyText,
@@ -737,6 +738,41 @@ export function ConferenceFormDialog({
                       checked={settings.camOffOnJoin}
                       onChange={(v) => setSettings((s) => ({ ...s, camOffOnJoin: v }))}
                     />
+                  </div>
+                </Section>
+
+                <Section icon={<Video className="h-4 w-4" />} title="Yozib olish (zapis)">
+                  <ToggleRow
+                    label="Kirganda avtomatik yozish"
+                    hint="Moderator/raxbar kirishi bilan yozuv boshlanadi"
+                    checked={settings.autoRecord}
+                    onChange={(v) => setSettings((s) => ({ ...s, autoRecord: v }))}
+                  />
+                  <div className="space-y-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      Qancha vaqt yozilsin (keyin to‘xtab Telegramga yuboriladi)
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {RECORD_DURATION_OPTS.map(([m, lab]) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setSettings((s) => ({ ...s, recordMinutes: m }))}
+                          className={cn(
+                            "rounded-xl border px-2.5 py-1.5 text-[11px] font-semibold transition",
+                            settings.recordMinutes === m
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "hover:bg-muted",
+                          )}
+                        >
+                          {lab}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                      Xona ichida ham REC tugmasi bilan boshlash/to‘xtatish mumkin. To‘xtagach yozuv VAKSINA
+                      tushuntirish xatlari guruhiga ketadi va platformadan o‘chiriladi.
+                    </p>
                   </div>
                 </Section>
               </div>

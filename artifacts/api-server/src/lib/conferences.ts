@@ -129,6 +129,10 @@ export type ConfSettings = {
   muteOnJoin: boolean;
   /** Kirganda kamera o‘chiq */
   camOffOnJoin: boolean;
+  /** Moderator kirganda yozuvni avtomatik boshlash */
+  autoRecord: boolean;
+  /** Yozuv limiti (daq). 0 = cheksiz / qo‘lda */
+  recordMinutes: number;
 };
 
 export const DEFAULT_SETTINGS: ConfSettings = {
@@ -138,6 +142,8 @@ export const DEFAULT_SETTINGS: ConfSettings = {
   chat: true,
   muteOnJoin: true,
   camOffOnJoin: false,
+  autoRecord: false,
+  recordMinutes: 0,
 };
 
 export function normalizeSettings(raw: unknown, base: ConfSettings = DEFAULT_SETTINGS): ConfSettings {
@@ -145,6 +151,10 @@ export function normalizeSettings(raw: unknown, base: ConfSettings = DEFAULT_SET
   const pick = <T extends string>(v: unknown, allowed: readonly T[], fallback: T): T =>
     typeof v === "string" && (allowed as readonly string[]).includes(v) ? (v as T) : fallback;
   const bool = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
+  const recordMinutesRaw = Number(r.recordMinutes);
+  const recordMinutes = Number.isFinite(recordMinutesRaw)
+    ? Math.max(0, Math.min(240, Math.round(recordMinutesRaw)))
+    : base.recordMinutes;
   return {
     speakMode: pick(r.speakMode, ["all", "selected"] as const, base.speakMode),
     cameraMode: pick(r.cameraMode, ["all", "speakers"] as const, base.cameraMode),
@@ -152,6 +162,8 @@ export function normalizeSettings(raw: unknown, base: ConfSettings = DEFAULT_SET
     chat: bool(r.chat, base.chat),
     muteOnJoin: bool(r.muteOnJoin, base.muteOnJoin),
     camOffOnJoin: bool(r.camOffOnJoin, base.camOffOnJoin),
+    autoRecord: bool(r.autoRecord, base.autoRecord),
+    recordMinutes,
   };
 }
 

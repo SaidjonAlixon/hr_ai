@@ -18,8 +18,8 @@ function ensureVazifalar(paths: string[], byPath: Map<string, MobileNavItem>): s
 }
 
 const ROLE_MOBILE_PATHS: Record<string, string[]> = {
-  admin: ['/dashboard', '/vazifalar', '/employees', '/davomat', '/davomat-face', '/admin/atestatsiya'],
-  director: ['/dashboard', '/it', '/vazifalar', '/employees', '/davomat-face'],
+  admin: ['/dashboard', '/resepsion', '/vazifalar', '/employees', '/davomat-face'],
+  director: ['/dashboard', '/resepsion', '/vazifalar', '/employees', '/davomat-face'],
   hr: ['/dashboard', '/vazifalar', '/employees', '/davomat', '/davomat-face'],
   hr_menejer: ['/dashboard', '/vazifalar', '/employees', '/davomat', '/davomat-face'],
   hr_direktor: ['/dashboard', '/vazifalar', '/employees', '/davomat/analytics', '/davomat-face'],
@@ -95,6 +95,7 @@ const MOBILE_SHORT_KEYS: Record<string, string> = {
   '/davomat/ofisda': 'mobile.ofisda',
   '/it': 'mobile.it',
   '/tashkiliy-tuzilma': 'mobile.org',
+  '/resepsion': 'nav.resepsion',
 };
 
 function pathIsActive(location: string, path: string) {

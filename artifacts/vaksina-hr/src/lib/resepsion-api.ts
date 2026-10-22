@@ -100,6 +100,7 @@ export function fetchReceptionMeta() {
     statuses: { value: string; label: string }[];
     roleHints: string[];
     canWrite: boolean;
+    canDelete: boolean;
   }>("/resepsion/meta");
 }
 
@@ -128,6 +129,7 @@ export function fetchReceptionLogs(params?: {
     items: ReceptionLog[];
     stats: ReceptionStats;
     canWrite: boolean;
+    canDelete: boolean;
   }>(`/resepsion/logs${qs}`);
 }
 

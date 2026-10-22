@@ -415,17 +415,10 @@ function parseLocalDateTime(value: string): Date | null {
 function formatLocalCard(value: string): { date: string; time: string } | null {
   const d = parseLocalDateTime(value);
   if (!d) return null;
+  const pad = (n: number) => String(n).padStart(2, "0");
   return {
-    date: d.toLocaleDateString("uz-UZ", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    }),
-    time: d.toLocaleTimeString("uz-UZ", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }),
+    date: `${d.getDate()} ${UZ_MONTH[d.getMonth()] || ""} ${d.getFullYear()}`,
+    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
   };
 }
 
@@ -437,6 +430,8 @@ function VisitDateTimeField({
   clearable,
   placeholder = "Sana va vaqt tanlang",
   accentClass = "border-border/70 from-card to-muted/40",
+  iconClass = "text-primary",
+  disabled,
 }: {
   label: string;
   icon: typeof Clock3;
@@ -445,6 +440,8 @@ function VisitDateTimeField({
   clearable?: boolean;
   placeholder?: string;
   accentClass?: string;
+  iconClass?: string;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const selected = parseLocalDateTime(value);
@@ -489,20 +486,22 @@ function VisitDateTimeField({
   const minute = selected?.getMinutes() ?? 0;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={disabled ? false : open} onOpenChange={(o) => !disabled && setOpen(o)}>
       <PopoverTrigger asChild>
         <button
           type="button"
+          disabled={disabled}
           className={cn(
             "group flex w-full flex-col gap-1 rounded-2xl border bg-gradient-to-br px-3.5 py-3 text-left shadow-sm transition",
             "hover:border-primary/35 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25",
             open && "border-primary/40 ring-2 ring-primary/15",
+            disabled && "cursor-not-allowed opacity-70 hover:shadow-sm",
             accentClass,
           )}
         >
           <span className="flex items-center justify-between gap-2">
             <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              <Icon className="h-3.5 w-3.5" />
+              <Icon className={cn("h-3.5 w-3.5", iconClass)} />
               {label}
             </span>
             <ChevronDown
@@ -708,6 +707,7 @@ export default function ResepsionPage() {
   });
 
   const canWrite = metaQ.data?.canWrite ?? logsQ.data?.canWrite ?? false;
+  const canDelete = metaQ.data?.canDelete ?? logsQ.data?.canDelete ?? false;
   const stats = logsQ.data?.stats;
   const allItems = logsQ.data?.items ?? [];
 
@@ -795,16 +795,81 @@ export default function ResepsionPage() {
   }
 
   async function rescheduleToNow(row: ReceptionLog) {
+    const nowLocal = toLocalInputValue(new Date());
+    setEditDraft((d) => ({
+      ...d,
+      visitAt: nowLocal,
+      status: d.status === "cancelled" || d.status === "done" ? "waiting" : d.status,
+    }));
     try {
       await mut.update.mutateAsync({
         id: row.id,
         body: {
           visitAt: new Date().toISOString(),
-          status: row.status === "cancelled" || row.status === "done" ? "in_progress" : row.status,
+          status: row.status === "cancelled" || row.status === "done" ? "waiting" : row.status,
         },
       });
       toast({ title: "Vaqt yangilandi — hozir" });
-      setEditRow(null);
+      openEdit({
+        ...row,
+        visitAt: new Date().toISOString(),
+        status:
+          row.status === "cancelled" || row.status === "done" ? "waiting" : row.status,
+      });
+    } catch (e) {
+      toast({
+        title: "Ko‘chirilmadi",
+        description: e instanceof Error ? e.message : "Xato",
+        variant: "destructive",
+      });
+    }
+  }
+
+  function shiftVisitDays(days: number) {
+    const keep = parseLocalDateTime(editDraft.visitAt) || new Date();
+    const next = new Date();
+    next.setHours(0, 0, 0, 0);
+    next.setDate(next.getDate() + days);
+    next.setHours(keep.getHours(), keep.getMinutes(), 0, 0);
+    setEditDraft((d) => ({
+      ...d,
+      visitAt: toLocalInputValue(next),
+      status: d.status === "cancelled" || d.status === "done" ? "waiting" : d.status,
+    }));
+  }
+
+  async function applyReschedule() {
+    if (!editRow) return;
+    const visitAtIso = fromLocalInputValue(editDraft.visitAt);
+    if (!visitAtIso) {
+      toast({ title: "Yangi sana tanlang", variant: "destructive" });
+      return;
+    }
+    try {
+      const nextStatus =
+        editDraft.status === "cancelled" || editDraft.status === "done"
+          ? "waiting"
+          : editDraft.status;
+      await mut.update.mutateAsync({
+        id: editRow.id,
+        body: {
+          visitAt: visitAtIso,
+          status: nextStatus,
+          leftAt: null,
+        },
+      });
+      const shown = formatLocalCard(editDraft.visitAt);
+      toast({
+        title: "Uchrashuv ko‘chirildi",
+        description: shown ? `${shown.date}, ${shown.time}` : undefined,
+      });
+      setEditDraft((d) => ({ ...d, status: nextStatus, leftAt: "" }));
+      setEditRow({
+        ...editRow,
+        visitAt: visitAtIso,
+        status: nextStatus,
+        leftAt: null,
+      });
     } catch (e) {
       toast({
         title: "Ko‘chirilmadi",
@@ -2179,129 +2244,208 @@ export default function ResepsionPage() {
       </section>
 
       <Sheet open={Boolean(editRow)} onOpenChange={(o) => !o && setEditRow(null)}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-md">
-          <SheetHeader>
-            <SheetTitle>Tashrif ma’lumotlari</SheetTitle>
-          </SheetHeader>
+        <SheetContent className="w-full overflow-y-auto border-l border-border/60 bg-gradient-to-b from-slate-50 via-white to-white p-0 sm:max-w-lg">
+          <div className="border-b border-border/60 bg-gradient-to-r from-sky-50 via-white to-violet-50 px-5 pb-4 pt-5">
+            <SheetHeader className="space-y-1 text-left">
+              <SheetTitle className="flex items-center gap-2 text-lg">
+                <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-sky-500 text-white shadow-md shadow-sky-500/25">
+                  <ConciergeBell className="h-4.5 w-4.5 h-4 w-4" />
+                </span>
+                Tashrif ma’lumotlari
+              </SheetTitle>
+              <p className="text-xs text-muted-foreground">
+                Tahrirlash, boshqa kunga ko‘chirish yoki bekor qilish
+              </p>
+            </SheetHeader>
+          </div>
           {editRow ? (
-            <div className="mt-4 space-y-3.5">
+            <div className="space-y-4 px-5 py-4">
               <div className="flex flex-wrap gap-1.5">
-                {TYPE_TABS.map((t) => (
-                  <button
-                    key={t.value}
-                    type="button"
+                {TYPE_TABS.map((t) => {
+                  const Icon = t.icon;
+                  const active = editDraft.visitType === t.value;
+                  return (
+                    <button
+                      key={t.value}
+                      type="button"
+                      disabled={!canWrite}
+                      onClick={() => setEditDraft((d) => ({ ...d, visitType: t.value }))}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition",
+                        active ? t.activeTab : "border-border/60 bg-white text-foreground/80 hover:bg-muted/40",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "flex h-5 w-5 items-center justify-center rounded-lg text-white shadow-sm",
+                          t.iconBg,
+                        )}
+                      >
+                        <Icon className="h-3 w-3" />
+                      </span>
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="rounded-2xl border border-border/60 bg-white p-3.5 shadow-sm space-y-3">
+                <div>
+                  <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Ism familiya
+                  </label>
+                  <Input
+                    value={editDraft.visitorFullName}
                     disabled={!canWrite}
-                    onClick={() => setEditDraft((d) => ({ ...d, visitType: t.value }))}
-                    className={cn(
-                      "rounded-xl border px-2.5 py-1 text-[11px] font-bold",
-                      editDraft.visitType === t.value ? t.activeTab : "border-border/60 text-muted-foreground",
-                    )}
-                  >
-                    {t.label}
-                  </button>
-                ))}
+                    onChange={(e) => setEditDraft((d) => ({ ...d, visitorFullName: e.target.value }))}
+                    className="h-10 rounded-xl"
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Telefon
+                    </label>
+                    <Input
+                      value={editDraft.visitorPhone}
+                      disabled={!canWrite}
+                      onChange={(e) =>
+                        setEditDraft((d) => ({ ...d, visitorPhone: formatVisitorPhone(e.target.value) }))
+                      }
+                      className="h-10 rounded-xl font-medium tabular-nums"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Sabab / maqsad
+                    </label>
+                    <Input
+                      value={editDraft.purpose}
+                      disabled={!canWrite}
+                      onChange={(e) => setEditDraft((d) => ({ ...d, purpose: e.target.value }))}
+                      className="h-10 rounded-xl"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Kimning oldiga
+                  </label>
+                  <Input
+                    value={editDraft.hostName}
+                    disabled={!canWrite}
+                    onChange={(e) => setEditDraft((d) => ({ ...d, hostName: e.target.value }))}
+                    className="h-10 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Izoh
+                  </label>
+                  <Textarea
+                    value={editDraft.notes}
+                    disabled={!canWrite}
+                    onChange={(e) => setEditDraft((d) => ({ ...d, notes: e.target.value }))}
+                    className="min-h-[72px] rounded-xl"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
-                  Ism familiya
-                </label>
-                <Input
-                  value={editDraft.visitorFullName}
-                  disabled={!canWrite}
-                  onChange={(e) => setEditDraft((d) => ({ ...d, visitorFullName: e.target.value }))}
-                  className="h-10 rounded-xl"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
-                  Telefon
-                </label>
-                <Input
-                  value={editDraft.visitorPhone}
-                  disabled={!canWrite}
-                  onChange={(e) =>
-                    setEditDraft((d) => ({ ...d, visitorPhone: formatVisitorPhone(e.target.value) }))
-                  }
-                  className="h-10 rounded-xl font-medium tabular-nums"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
-                  Sabab / maqsad
-                </label>
-                <Input
-                  value={editDraft.purpose}
-                  disabled={!canWrite}
-                  onChange={(e) => setEditDraft((d) => ({ ...d, purpose: e.target.value }))}
-                  className="h-10 rounded-xl"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
-                  Kimning oldiga
-                </label>
-                <Input
-                  value={editDraft.hostName}
-                  disabled={!canWrite}
-                  onChange={(e) => setEditDraft((d) => ({ ...d, hostName: e.target.value }))}
-                  className="h-10 rounded-xl"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
-                  Izoh
-                </label>
-                <Textarea
-                  value={editDraft.notes}
-                  disabled={!canWrite}
-                  onChange={(e) => setEditDraft((d) => ({ ...d, notes: e.target.value }))}
-                  className="min-h-[72px] rounded-xl"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2.5">
                 <VisitDateTimeField
                   label="Kirish / uchrashuv"
                   icon={Clock3}
                   value={editDraft.visitAt}
                   onChange={(v) => setEditDraft((d) => ({ ...d, visitAt: v }))}
+                  disabled={!canWrite}
                   accentClass="border-sky-200/80 from-sky-50/90 to-card"
+                  iconClass="text-sky-600"
                 />
                 <VisitDateTimeField
                   label="Chiqish"
                   icon={LogOut}
                   value={editDraft.leftAt}
                   onChange={(v) => setEditDraft((d) => ({ ...d, leftAt: v }))}
+                  disabled={!canWrite}
                   clearable
                   placeholder="Ixtiyoriy"
                   accentClass="border-violet-200/80 from-violet-50/80 to-card"
+                  iconClass="text-violet-600"
                 />
               </div>
 
+              {canWrite ? (
+                <div className="rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-3.5 shadow-sm">
+                  <p className="flex items-center gap-2 text-sm font-bold text-amber-950">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm shadow-amber-500/30">
+                      <CalendarDays className="h-4 w-4" />
+                    </span>
+                    Uchrashuvni ko‘chirish
+                  </p>
+                  <p className="mt-1.5 text-xs leading-relaxed text-amber-950/70">
+                    Boshqa kun yoki vaqtga o‘tkazing — pastdagi kartadan sana tanlang, so‘ng qo‘llang.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {(
+                      [
+                        [0, "Bugun"],
+                        [1, "Ertaga"],
+                        [2, "+2 kun"],
+                        [7, "+1 hafta"],
+                      ] as const
+                    ).map(([days, lab]) => (
+                      <button
+                        key={lab}
+                        type="button"
+                        onClick={() => shiftVisitDays(days)}
+                        className="rounded-xl border border-amber-200/90 bg-white/90 px-2.5 py-1.5 text-[11px] font-bold text-amber-950 shadow-sm hover:bg-amber-100/80"
+                      >
+                        {lab}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => void rescheduleToNow(editRow)}
+                      className="rounded-xl border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-[11px] font-bold text-sky-900 shadow-sm hover:bg-sky-100"
+                    >
+                      Hozir
+                    </button>
+                  </div>
+                  <Button
+                    type="button"
+                    className="mt-3 h-10 w-full rounded-xl bg-amber-600 hover:bg-amber-700 shadow-amber-600/25"
+                    disabled={mut.update.isPending}
+                    onClick={() => void applyReschedule()}
+                  >
+                    {mut.update.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Ko‘chirishni qo‘llash
+                  </Button>
+                </div>
+              ) : null}
+
               <div>
-                <label className="mb-1.5 block text-[11px] font-semibold uppercase text-muted-foreground">
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Holat
                 </label>
                 <div className="flex flex-wrap gap-1.5">
                   {(
                     [
-                      ["waiting", "Kutilmoqda"],
-                      ["in_progress", "Ofisda"],
-                      ["done", "Chiqdi"],
-                      ["cancelled", "Bekor"],
+                      ["waiting", "Kutilmoqda", "border-amber-200 bg-amber-50 text-amber-950"],
+                      ["in_progress", "Ofisda", "border-sky-200 bg-sky-50 text-sky-900"],
+                      ["done", "Chiqdi", "border-emerald-200 bg-emerald-50 text-emerald-900"],
+                      ["cancelled", "Bekor", "border-rose-200 bg-rose-50 text-rose-900"],
                     ] as const
-                  ).map(([k, lab]) => (
+                  ).map(([k, lab, idle]) => (
                     <button
                       key={k}
                       type="button"
                       disabled={!canWrite}
                       onClick={() => setEditDraft((d) => ({ ...d, status: k }))}
                       className={cn(
-                        "rounded-xl border px-2.5 py-1.5 text-[11px] font-bold",
+                        "rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition",
                         editDraft.status === k
-                          ? "border-primary/40 bg-primary text-primary-foreground"
-                          : "border-border/70 bg-muted/30",
+                          ? "border-primary/40 bg-primary text-primary-foreground shadow-sm"
+                          : idle,
                       )}
                     >
                       {lab}
@@ -2311,15 +2455,7 @@ export default function ResepsionPage() {
               </div>
 
               {canWrite ? (
-                <div className="grid grid-cols-2 gap-2 pt-1">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="h-10 rounded-xl"
-                    onClick={() => void rescheduleToNow(editRow)}
-                  >
-                    Hozirga ko‘chirish
-                  </Button>
+                <div className="grid grid-cols-2 gap-2">
                   <Button
                     type="button"
                     variant="secondary"
@@ -2327,30 +2463,34 @@ export default function ResepsionPage() {
                     disabled={editDraft.status === "done"}
                     onClick={() => void markDone(editRow)}
                   >
-                    Chiqdi deb belgilash
+                    <CheckCircle2 className="mr-1.5 h-3.5 w-3.5 text-emerald-600" />
+                    Chiqdi
                   </Button>
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-10 rounded-xl text-rose-700"
+                    className="h-10 rounded-xl border-rose-200 text-rose-700 hover:bg-rose-50"
                     onClick={() => void cancelVisit(editRow)}
                   >
+                    <X className="mr-1.5 h-3.5 w-3.5" />
                     Bekor qilish
                   </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-10 rounded-xl text-rose-700"
-                    onClick={() => void onDelete(editRow).then(() => setEditRow(null))}
-                  >
-                    <Trash2 className="mr-1 h-3.5 w-3.5" />
-                    O‘chirish
-                  </Button>
+                  {canDelete ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="col-span-2 h-10 rounded-xl border-rose-300 bg-rose-50/50 text-rose-700 hover:bg-rose-100"
+                      onClick={() => void onDelete(editRow).then(() => setEditRow(null))}
+                    >
+                      <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                      O‘chirish (faqat admin)
+                    </Button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
           ) : null}
-          <SheetFooter className="mt-6 gap-2 sm:space-x-0">
+          <SheetFooter className="sticky bottom-0 gap-2 border-t border-border/60 bg-white/95 px-5 py-3 backdrop-blur sm:space-x-0">
             <Button type="button" variant="outline" className="rounded-xl" onClick={() => setEditRow(null)}>
               Yopish
             </Button>

@@ -55,6 +55,11 @@ function canWrite(role: string) {
   return role === "resepsion" || isHrRole(role) || hasFullPlatformAccess(role) || isDirectorRole(role);
 }
 
+/** Yozuvni butunlay o‘chirish — faqat admin. Resepsion faqat tahrirlaydi. */
+function canDelete(role: string) {
+  return role === "admin";
+}
+
 function parseDate(raw: unknown): Date | null {
   if (raw == null || raw === "") return null;
   const d = new Date(String(raw));
@@ -268,6 +273,7 @@ router.get("/resepsion/meta", requireAuth, async (req: AuthRequest, res): Promis
       "Boshqa",
     ],
     canWrite: canWrite(role),
+    canDelete: canDelete(role),
   });
 });
 
@@ -480,6 +486,7 @@ router.get("/resepsion/logs", requireAuth, async (req: AuthRequest, res): Promis
       visitsToday: todayRows.filter((r) => normalizeVisitType(r.visitType) === "guest").length,
     },
     canWrite: canWrite(role),
+    canDelete: canDelete(role),
   });
 });
 
@@ -635,8 +642,8 @@ router.patch("/resepsion/logs/:id", requireAuth, async (req: AuthRequest, res): 
 
 router.delete("/resepsion/logs/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole || "";
-  if (!canWrite(role)) {
-    res.status(403).json({ error: "O‘chirishga ruxsat yo‘q" });
+  if (!canDelete(role)) {
+    res.status(403).json({ error: "O‘chirish faqat admin uchun" });
     return;
   }
   const id = Number(req.params.id);

@@ -109,16 +109,23 @@ class TelegramApiError extends Error {}
 
 const RETRY_DELAYS_MS = [700, 2_000, 5_000];
 const REQUEST_TIMEOUT_MS = 20_000;
+/** Katta video/hujjat (konferensiya yozuvi) — 20s yetmaydi */
+const UPLOAD_TIMEOUT_MS = 180_000;
 
 /** VPS → api.telegram.org ulanishi ba’zan uziladi: tarmoq xatosi, 429 va 5xx da qayta urinadi */
-async function tgRequest<T>(method: string, init: () => RequestInit): Promise<T> {
+async function tgRequest<T>(
+  method: string,
+  init: () => RequestInit,
+  opts?: { timeoutMs?: number },
+): Promise<T> {
   const token = botToken();
   if (!token) throw new Error("TELEGRAM_BOT_TOKEN sozlanmagan");
+  const timeoutMs = opts?.timeoutMs ?? REQUEST_TIMEOUT_MS;
   for (let attempt = 0; ; attempt++) {
     try {
       const res = await fetch(`${TG_API}/bot${token}/${method}`, {
         ...init(),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs),
       });
       const data = (await res.json()) as {
         ok: boolean;
@@ -217,16 +224,20 @@ export async function sendDocument(
   const blob = new Blob([new Uint8Array(file)], {
     type: opts?.mimeType || "application/octet-stream",
   });
-  const result = await tgRequest<unknown>("sendDocument", () => {
-    const form = new FormData();
-    form.append("chat_id", String(chatId));
-    form.append("document", blob, safeName);
-    if (opts?.caption) form.append("caption", opts.caption.slice(0, 1024));
-    if (opts?.parseMode) form.append("parse_mode", opts.parseMode);
-    if (opts?.messageThreadId) form.append("message_thread_id", String(opts.messageThreadId));
-    if (opts?.businessConnectionId) form.append("business_connection_id", opts.businessConnectionId);
-    return { method: "POST", body: form };
-  });
+  const result = await tgRequest<unknown>(
+    "sendDocument",
+    () => {
+      const form = new FormData();
+      form.append("chat_id", String(chatId));
+      form.append("document", blob, safeName);
+      if (opts?.caption) form.append("caption", opts.caption.slice(0, 1024));
+      if (opts?.parseMode) form.append("parse_mode", opts.parseMode);
+      if (opts?.messageThreadId) form.append("message_thread_id", String(opts.messageThreadId));
+      if (opts?.businessConnectionId) form.append("business_connection_id", opts.businessConnectionId);
+      return { method: "POST", body: form };
+    },
+    { timeoutMs: UPLOAD_TIMEOUT_MS },
+  );
   return { ok: true as const, result };
 }
 
@@ -250,16 +261,20 @@ export async function sendVideo(
   const blob = new Blob([new Uint8Array(file)], {
     type: opts?.mimeType || "video/mp4",
   });
-  const result = await tgRequest<unknown>("sendVideo", () => {
-    const form = new FormData();
-    form.append("chat_id", String(chatId));
-    form.append("video", blob, safeName);
-    form.append("supports_streaming", "true");
-    if (opts?.caption) form.append("caption", opts.caption.slice(0, 1024));
-    if (opts?.parseMode) form.append("parse_mode", opts.parseMode);
-    if (opts?.messageThreadId) form.append("message_thread_id", String(opts.messageThreadId));
-    return { method: "POST", body: form };
-  });
+  const result = await tgRequest<unknown>(
+    "sendVideo",
+    () => {
+      const form = new FormData();
+      form.append("chat_id", String(chatId));
+      form.append("video", blob, safeName);
+      form.append("supports_streaming", "true");
+      if (opts?.caption) form.append("caption", opts.caption.slice(0, 1024));
+      if (opts?.parseMode) form.append("parse_mode", opts.parseMode);
+      if (opts?.messageThreadId) form.append("message_thread_id", String(opts.messageThreadId));
+      return { method: "POST", body: form };
+    },
+    { timeoutMs: UPLOAD_TIMEOUT_MS },
+  );
   return { ok: true as const, result };
 }
 

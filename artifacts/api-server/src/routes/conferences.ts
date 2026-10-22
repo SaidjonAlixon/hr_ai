@@ -825,13 +825,15 @@ router.post(
 
       const history = await conferenceHistory(ctx.conf);
       const hostName = ctx.actor.fullName;
-      // Async: Telegramga yuborish + platformadan o‘chirish
+      // Fon: Telegramga yuborish (katta fayl 1–3 daqiqa). Xato logga yoziladi, yutib yuborilmaydi.
       void deliverConferenceRecordingAndPurge(ctx.conf, saved.path, {
         attendedCount: history.attendedCount,
         invitedCount: history.invitedCount,
         actualSeconds: history.actualSeconds,
         hostName,
-      }).catch(() => undefined);
+      }).catch((err) => {
+        console.error("conference recording deliver", ctx.conf.code, err);
+      });
 
       res.json({ ok: true, bytes: saved.bytes, queued: true });
     } catch (err) {

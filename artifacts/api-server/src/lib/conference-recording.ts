@@ -90,6 +90,10 @@ export async function convertRecordingToMp4(inputPath: string): Promise<string> 
   try {
     await runFfmpeg([
       "-y",
+      "-fflags",
+      "+genpts+igndts",
+      "-err_detect",
+      "ignore_err",
       "-i",
       inputPath,
       "-c:v",
@@ -97,22 +101,34 @@ export async function convertRecordingToMp4(inputPath: string): Promise<string> 
       "-preset",
       "fast",
       "-crf",
-      "20",
+      "23",
       "-pix_fmt",
       "yuv420p",
       "-c:a",
       "aac",
       "-b:a",
-      "160k",
+      "128k",
       "-movflags",
       "+faststart",
       "-vf",
       "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+      "-shortest",
       outPath,
     ]);
     await safeUnlink(inputPath);
     return outPath;
   } catch (err) {
+    // Ba’zan ffmpeg exit≠0 lekin MP4 yozilgan bo‘ladi
+    try {
+      const st = await fs.stat(outPath);
+      if (st.size > 10_000) {
+        logger.warn({ err, inputPath, outPath, bytes: st.size }, "ffmpeg exit error but mp4 usable");
+        await safeUnlink(inputPath);
+        return outPath;
+      }
+    } catch {
+      /* no out */
+    }
     logger.warn({ err, inputPath }, "ffmpeg MP4 convert failed — original file used");
     return inputPath;
   }
@@ -170,36 +186,44 @@ export async function deliverConferenceRecordingAndPurge(
 
   const isMp4 = sendPath.toLowerCase().endsWith(".mp4");
   const filename = `konferensiya_${conf.code}_${Date.now()}.${isMp4 ? "mp4" : "webm"}`;
+  const mimeType = isMp4 ? "video/mp4" : "video/webm";
   try {
     await setRecordingStatus(conf.id, "sending");
-    try {
-      if (buf.length <= 48 * 1024 * 1024) {
-        await sendVideo(chatId, buf, filename, {
-          caption,
-          parseMode: "HTML",
-          mimeType: isMp4 ? "video/mp4" : "video/webm",
-        });
-      } else {
-        throw new Error("too-large-for-sendVideo");
+    let sentAs: "video" | "document" = "document";
+    // MP4 va ≤45MB → sendVideo (guruhda player); aks holda / muvaffaqiyatsiz → sendDocument (ishonchli)
+    const tryVideo = isMp4 && buf.length <= 45 * 1024 * 1024;
+    if (tryVideo) {
+      try {
+        await sendVideo(chatId, buf, filename, { caption, parseMode: "HTML", mimeType });
+        sentAs = "video";
+      } catch (vidErr) {
+        logger.warn({ err: vidErr, code: conf.code, bytes: buf.length }, "sendVideo failed — sendDocument");
+        await sendDocument(chatId, buf, filename, { caption, parseMode: "HTML", mimeType });
       }
-    } catch {
-      await sendDocument(chatId, buf, filename, {
-        caption,
-        parseMode: "HTML",
-        mimeType: isMp4 ? "video/mp4" : "video/webm",
-      });
+    } else {
+      await sendDocument(chatId, buf, filename, { caption, parseMode: "HTML", mimeType });
     }
     await setRecordingStatus(conf.id, "sent", { sentAt: new Date(), fileId: null });
-    logger.info({ code: conf.code, chatId, bytes: buf.length, mp4: isMp4 }, "conference recording sent to Telegram");
+    logger.info(
+      { code: conf.code, chatId, bytes: buf.length, mp4: isMp4, sentAs },
+      "conference recording sent to Telegram",
+    );
   } catch (err) {
-    logger.error({ err, code: conf.code, chatId }, "conference recording Telegram send failed");
+    logger.error({ err, code: conf.code, chatId, bytes: buf.length }, "conference recording Telegram send failed");
     await setRecordingStatus(conf.id, "failed");
-    await safeUnlink(sendPath);
-    if (sendPath !== filePath) await safeUnlink(filePath);
+    // Muvaffaqiyatsiz — faylni saqlab qolamiz (qayta urinish / tashxis)
+    try {
+      await sendMessage(
+        chatId,
+        `⚠️ <b>Konferensiya yozuvi yuborilmadi</b>\nKod: <code>${escapeHtml(conf.code)}</code>\n${escapeHtml(err instanceof Error ? err.message : "xato")}\nHajm: ${Math.round(buf.length / 1024 / 1024)} MB`,
+      ).catch(() => undefined);
+    } catch {
+      /* */
+    }
     return { ok: false, error: err instanceof Error ? err.message : "Telegramga yuborilmadi" };
   }
 
-  // Diskdan to‘liq o‘chirish + DB dagi fayl havolalarini tozalash (faqat status/vaqt qoladi)
+  // Faqat shu yozuv fayllarini o‘chirish (boshqa parallel yozuvlarni yo‘qotmasin!)
   await safeUnlink(sendPath);
   if (sendPath !== filePath) await safeUnlink(filePath);
   await pool.query(
@@ -210,18 +234,6 @@ export async function deliverConferenceRecordingAndPurge(
       WHERE id = $1`,
     [conf.id],
   );
-  // Temp papkadagi shu kodga tegishli qoldiqlar
-  try {
-    const dir = await ensureRecordingDir();
-    const files = await fs.readdir(dir);
-    await Promise.all(
-      files
-        .filter((f) => f.startsWith(`${conf.code}-`))
-        .map((f) => safeUnlink(path.join(dir, f))),
-    );
-  } catch {
-    /* ignore */
-  }
   return { ok: true };
 }
 

@@ -360,11 +360,11 @@ export function ConferenceRoom({
       try {
         await conferenceApi.uploadRecording(code, blob);
         toast({
-          title: "Yozuv guruhga yuborilmoqda",
+          title: "Yozuv serverga yuklandi",
           description:
             reason === "limit"
-              ? "Belgilangan vaqt tugadi — Telegramga yuklanadi, platformadan o‘chiriladi"
-              : "VAKSINA tushuntirish xatlari guruhiga yuklanadi, keyin platformadan o‘chiriladi",
+              ? "Vaqt tugadi — endi VAKSINA guruhiga yuboriladi (bir necha daqiqa olishi mumkin)"
+              : "Telegram guruhiga yuborilmoqda. Yetib borgach platformadan o‘chiriladi",
         });
       } catch (e) {
         sentBlobsRef.current.delete(blob);

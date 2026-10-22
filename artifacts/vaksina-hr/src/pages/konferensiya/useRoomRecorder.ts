@@ -80,7 +80,7 @@ function drawCover(
   ctx.restore();
 }
 
-type Tile = { video: HTMLVideoElement; name: string; screen: boolean };
+type Tile = { video: HTMLVideoElement; name: string; screen: boolean; identity: string };
 type BagEntry = { el: HTMLVideoElement; sid: string; track: { detach: (el: HTMLMediaElement) => void } };
 
 function collectTiles(room: Room, bag: Map<string, BagEntry>): Tile[] {
@@ -92,6 +92,7 @@ function collectTiles(room: Room, bag: Map<string, BagEntry>): Tile[] {
     track: { attach: (el: HTMLMediaElement) => HTMLMediaElement; detach: (el: HTMLMediaElement) => void; sid?: string },
     name: string,
     screen: boolean,
+    identity: string,
   ) => {
     const sid = track.sid || key;
     alive.add(key);
@@ -121,7 +122,7 @@ function collectTiles(room: Room, bag: Map<string, BagEntry>): Tile[] {
         /* */
       }
     }
-    tiles.push({ video: entry.el, name, screen });
+    tiles.push({ video: entry.el, name, screen, identity });
   };
 
   const addPub = (p: Participant, screen: boolean) => {
@@ -130,7 +131,7 @@ function collectTiles(room: Room, bag: Map<string, BagEntry>): Tile[] {
     const track = pub?.track;
     if (!track || pub.isMuted) return;
     const name = p.name || p.identity || "Ishtirokchi";
-    ensure(`${p.identity}:${screen ? "screen" : "cam"}`, track, name, screen);
+    ensure(`${p.identity}:${screen ? "screen" : "cam"}`, track, name, screen, p.identity);
   };
 
   const all: Participant[] = [room.localParticipant, ...room.remoteParticipants.values()];
@@ -148,6 +149,64 @@ function collectTiles(room: Room, bag: Map<string, BagEntry>): Tile[] {
     bag.delete(key);
   }
   return tiles;
+}
+
+/** Asosiy kadr: ekran > gapiruvchi > birinchi kamera; qolganlar pastki strip */
+function pickMainAndStrip(tiles: Tile[], room: Room): { main: Tile | null; strip: Tile[] } {
+  const ready = tiles.filter((t) => t.video.readyState >= 2 && t.video.videoWidth > 0);
+  if (!ready.length) return { main: null, strip: [] };
+  const screens = ready.filter((t) => t.screen);
+  const cams = ready.filter((t) => !t.screen);
+  if (screens.length) {
+    return { main: screens[0]!, strip: cams };
+  }
+  const speakers = room.activeSpeakers ?? [];
+  let main: Tile | null = null;
+  for (const sp of speakers) {
+    const hit = cams.find((c) => c.identity === sp.identity);
+    if (hit) {
+      main = hit;
+      break;
+    }
+  }
+  if (!main) main = cams[0] ?? null;
+  const strip = cams.filter((c) => c !== main);
+  return { main, strip };
+}
+
+function drawMainPlusStrip(
+  ctx: CanvasRenderingContext2D,
+  main: Tile,
+  strip: Tile[],
+  canvasW: number,
+  canvasH: number,
+  gap: number,
+  labelH: number,
+) {
+  const stripH = strip.length ? Math.round(canvasH * 0.22) : 0;
+  const mainH = canvasH - stripH - (strip.length ? gap : 0);
+  if (main.screen) drawContain(ctx, main.video, gap, gap, canvasW - gap * 2, mainH - gap);
+  else drawCover(ctx, main.video, gap, gap, canvasW - gap * 2, mainH - gap);
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  ctx.fillRect(gap, gap + mainH - gap - labelH, canvasW - gap * 2, labelH);
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 22px Segoe UI, sans-serif";
+  ctx.fillText(`${main.screen ? "🖥 " : "🎤 "}${main.name}`.slice(0, 48), gap + 14, gap + mainH - gap - 12);
+
+  if (!strip.length || !stripH) return;
+  const maxStrip = Math.min(strip.length, 8);
+  const shown = strip.slice(0, maxStrip);
+  const cellW = (canvasW - gap * (shown.length + 1)) / shown.length;
+  shown.forEach((t, i) => {
+    const x = gap + i * (cellW + gap);
+    const y = mainH + gap;
+    drawCover(ctx, t.video, x, y, cellW, stripH - gap);
+    ctx.fillStyle = "rgba(0,0,0,0.5)";
+    ctx.fillRect(x, y + stripH - gap - 28, cellW, 28);
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 14px Segoe UI, sans-serif";
+    ctx.fillText(t.name.slice(0, 22), x + 6, y + stripH - gap - 8);
+  });
 }
 
 function connectAllAudio(room: Room, audioCtx: AudioContext, dest: MediaStreamAudioDestinationNode, linked: Set<string>) {
@@ -327,76 +386,21 @@ export function useRoomRecorder(
           return;
         }
         lastFrameAtRef.current = now;
-        if (document.hidden) {
-          rafRef.current = requestAnimationFrame(draw);
-          return;
-        }
+        // Tab yashirin bo‘lsa ham chizamiz — aks holda qora/qisqa video chiqadi
         ctx.fillStyle = "#020617";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        const tiles = collectTiles(room, videoBagRef.current).filter((t) => t.video.readyState >= 2 && t.video.videoWidth > 0);
-        const screens = tiles.filter((t) => t.screen);
-        const cams = tiles.filter((t) => !t.screen);
+        const tiles = collectTiles(room, videoBagRef.current);
+        const { main, strip } = pickMainAndStrip(tiles, room);
 
-        if (!tiles.length) {
+        if (!main) {
           ctx.fillStyle = "#94a3b8";
           ctx.font = "bold 40px Segoe UI, sans-serif";
           ctx.fillText("Konferensiya yozilmoqda…", 56, 100);
           ctx.font = "28px Segoe UI, sans-serif";
           ctx.fillText("Kamera yoki ekran ulashing", 56, 150);
-        } else if (screens.length) {
-          // Ekran — asosiy; kameralar pastki strip
-          const stripH = cams.length ? Math.round(canvas.height * 0.22) : 0;
-          const mainH = canvas.height - stripH - (cams.length ? gap : 0);
-          const main = screens[0]!;
-          drawContain(ctx, main.video, gap, gap, canvas.width - gap * 2, mainH - gap);
-          ctx.fillStyle = "rgba(0,0,0,0.55)";
-          ctx.fillRect(gap, gap + mainH - gap - labelH, canvas.width - gap * 2, labelH);
-          ctx.fillStyle = "#fff";
-          ctx.font = "bold 22px Segoe UI, sans-serif";
-          ctx.fillText(`🖥 ${main.name}`, gap + 14, gap + mainH - gap - 12);
-
-          if (cams.length && stripH) {
-            const cellW = (canvas.width - gap * (cams.length + 1)) / cams.length;
-            cams.forEach((t, i) => {
-              const x = gap + i * (cellW + gap);
-              const y = mainH + gap;
-              drawCover(ctx, t.video, x, y, cellW, stripH - gap);
-              ctx.fillStyle = "rgba(0,0,0,0.5)";
-              ctx.fillRect(x, y + stripH - gap - 28, cellW, 28);
-              ctx.fillStyle = "#fff";
-              ctx.font = "bold 16px Segoe UI, sans-serif";
-              ctx.fillText(t.name.slice(0, 28), x + 8, y + stripH - gap - 8);
-            });
-          }
         } else {
-          const n = cams.length;
-          const cols = Math.ceil(Math.sqrt(n));
-          const rows = Math.ceil(n / cols);
-          const cellW = (canvas.width - gap * (cols + 1)) / cols;
-          const cellH = (canvas.height - gap * (rows + 1)) / rows;
-          cams.forEach((t, i) => {
-            const col = i % cols;
-            const row = Math.floor(i / cols);
-            const x = gap + col * (cellW + gap);
-            const y = gap + row * (cellH + gap);
-            ctx.save();
-            const r = 14;
-            ctx.beginPath();
-            ctx.moveTo(x + r, y);
-            ctx.arcTo(x + cellW, y, x + cellW, y + cellH, r);
-            ctx.arcTo(x + cellW, y + cellH, x, y + cellH, r);
-            ctx.arcTo(x, y + cellH, x, y, r);
-            ctx.arcTo(x, y, x + cellW, y, r);
-            ctx.closePath();
-            ctx.clip();
-            drawCover(ctx, t.video, x, y, cellW, cellH);
-            ctx.fillStyle = "rgba(0,0,0,0.55)";
-            ctx.fillRect(x, y + cellH - labelH, cellW, labelH);
-            ctx.fillStyle = "#fff";
-            ctx.font = `bold ${Math.max(16, Math.min(24, cellW / 14))}px Segoe UI, sans-serif`;
-            ctx.fillText(t.name.slice(0, 36), x + 12, y + cellH - 12);
-            ctx.restore();
-          });
+          // Ekran yoki gapiruvchi — katta; qolganlar pastida (hamma ko‘rinadi)
+          drawMainPlusStrip(ctx, main, strip, canvas.width, canvas.height, gap, labelH);
         }
         rafRef.current = requestAnimationFrame(draw);
       };

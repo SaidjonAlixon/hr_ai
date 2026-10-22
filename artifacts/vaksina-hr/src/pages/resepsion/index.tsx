@@ -780,6 +780,7 @@ export default function ResepsionPage() {
   const callBusy = callSnap.phase !== "idle" && callSnap.phase !== "ended";
 
   const [period, setPeriod] = useState<PeriodPreset>("today");
+  const [periodOpen, setPeriodOpen] = useState(false);
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [statusFilter, setStatusFilter] = useState<
@@ -1371,42 +1372,42 @@ export default function ResepsionPage() {
             </div>
           </div>
 
-          <div className="flex w-full shrink-0 flex-col gap-2.5 sm:w-auto sm:flex-row sm:items-stretch">
+          <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:items-stretch">
             <button
               type="button"
               onClick={openReminderSheet}
-              className="flex h-[108px] w-full flex-col justify-center gap-1.5 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 px-3.5 py-2.5 text-left text-white shadow-lg shadow-amber-500/25 transition hover:brightness-110 sm:w-[168px]"
+              className="flex h-[78px] w-full items-center gap-2.5 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 px-3 text-left text-white shadow-md shadow-amber-500/25 transition hover:brightness-110 sm:w-[156px]"
             >
-              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/20 ring-1 ring-white/25">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/20 ring-1 ring-white/25">
                 <AlarmClock className="h-4 w-4" />
               </span>
-              <span>
-                <span className="block text-sm font-bold leading-tight">Eslatma</span>
+              <span className="min-w-0">
+                <span className="block text-[13px] font-bold leading-tight">Eslatma</span>
                 <span className="mt-0.5 block text-[10px] leading-snug opacity-90">
-                  Ofis xodimiga · kelgusi vaqt
+                  Ofis · uchrashuv
                 </span>
               </span>
             </button>
 
-            <div className="flex h-[108px] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 text-white shadow-lg sm:w-[168px] dark:border-slate-700">
-              <div className="flex items-center gap-1.5 border-b border-white/10 bg-slate-900 px-3 py-1.5">
-                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-sky-400" />
+            <div className="flex h-[78px] w-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-slate-950 text-white shadow-md sm:w-[156px] dark:border-slate-700">
+              <div className="flex items-center gap-1.5 border-b border-white/10 bg-slate-900 px-2.5 py-1">
+                <CalendarDays className="h-3 w-3 shrink-0 text-sky-400" />
                 <div className="min-w-0">
-                  <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+                  <p className="text-[8px] font-semibold uppercase tracking-wider text-slate-400 leading-none">
                     {clock.weekday}
                   </p>
-                  <p className="truncate text-[11px] font-semibold leading-tight text-white">
+                  <p className="truncate text-[10px] font-semibold leading-tight text-white">
                     {clock.dateLine}
                   </p>
                 </div>
               </div>
-              <div className="flex flex-1 flex-col items-center justify-center px-2 py-1.5">
-                <p className="text-[8px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              <div className="flex flex-1 flex-col items-center justify-center px-2">
+                <p className="text-[7px] font-semibold uppercase tracking-[0.16em] text-slate-500 leading-none">
                   Toshkent
                 </p>
-                <p className="font-mono text-2xl font-bold tabular-nums tracking-tight text-white leading-none">
+                <p className="mt-0.5 font-mono text-xl font-bold tabular-nums tracking-tight text-white leading-none">
                   {clock.time}
-                  <span className="text-base text-sky-400">:{clock.seconds}</span>
+                  <span className="text-sm text-sky-400">:{clock.seconds}</span>
                 </p>
               </div>
             </div>
@@ -2432,12 +2433,12 @@ export default function ResepsionPage() {
                   className="h-8 rounded-lg pl-8 text-sm"
                 />
               </div>
-              <Popover>
+              <Popover open={periodOpen} onOpenChange={setPeriodOpen}>
                 <PopoverTrigger asChild>
                   <button
                     type="button"
                     className={cn(
-                      "inline-flex h-8 max-w-[200px] items-center gap-1.5 rounded-lg border px-2.5 text-left text-[11px] font-bold shadow-sm transition",
+                      "inline-flex h-8 min-w-[7.5rem] max-w-[240px] items-center gap-1.5 rounded-lg border px-2.5 text-left text-[11px] font-bold shadow-sm transition",
                       "border-border/70 bg-card hover:bg-muted/50 dark:border-white/10",
                       period !== "today" && "border-sky-400/40 bg-sky-50 text-sky-900 dark:bg-sky-500/15 dark:text-sky-100",
                     )}
@@ -2461,61 +2462,117 @@ export default function ResepsionPage() {
                 </PopoverTrigger>
                 <PopoverContent
                   align="end"
-                  className="z-50 w-[min(100vw-1.5rem,280px)] rounded-xl border border-border/70 p-2.5 shadow-xl"
+                  className="z-50 w-[min(100vw-1.25rem,340px)] rounded-2xl border border-border/70 p-0 shadow-2xl dark:border-white/10"
                 >
-                  <p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                    Davr
-                  </p>
-                  <div className="grid grid-cols-3 gap-1">
-                    {(
-                      [
-                        ["today", "Bugun"],
-                        ["yesterday", "Kecha"],
-                        ["week", "Hafta"],
-                        ["month", "Oy"],
-                        ["all", "Barchasi"],
-                      ] as const
-                    ).map(([key, lab]) => (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => applyPeriod(key)}
-                        className={cn(
-                          "rounded-lg border px-2 py-1.5 text-[11px] font-bold transition",
-                          period === key
-                            ? "border-primary/40 bg-primary text-primary-foreground"
-                            : "border-border/60 bg-background hover:bg-muted/50",
-                          key === "all" && "col-span-1",
-                        )}
-                      >
-                        {lab}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="mt-2 space-y-1.5 border-t border-border/50 pt-2">
-                    <p className="px-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                      Sanadan — sanaga
+                  <div className="border-b border-border/60 bg-muted/30 px-3.5 py-2.5 dark:border-white/10">
+                    <p className="text-[11px] font-bold text-foreground">Davr filtri</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      Tezkor tugma yoki kalendardan oralik tanlang
                     </p>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <Input
-                        type="date"
-                        value={customFrom}
-                        onChange={(e) => {
-                          setCustomFrom(e.target.value);
-                          setPeriod("custom");
+                  </div>
+
+                  <div className="space-y-3 p-3">
+                    <div>
+                      <p className="mb-1.5 px-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                        Tezkor
+                      </p>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {(
+                          [
+                            ["today", "Bugun"],
+                            ["yesterday", "Kecha"],
+                            ["week", "Hafta"],
+                            ["month", "Oy"],
+                            ["all", "Barchasi"],
+                          ] as const
+                        ).map(([key, lab]) => (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => {
+                              applyPeriod(key);
+                              setPeriodOpen(false);
+                            }}
+                            className={cn(
+                              "rounded-xl border px-2 py-2 text-[11px] font-bold transition",
+                              period === key
+                                ? "border-primary/40 bg-primary text-primary-foreground shadow-sm"
+                                : "border-border/60 bg-background hover:bg-muted/60 dark:border-white/10",
+                              key === "all" && "col-span-1",
+                            )}
+                          >
+                            {lab}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 border-t border-border/50 pt-3 dark:border-white/10">
+                      <div className="flex items-center justify-between gap-2 px-0.5">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                          Sanadan — sanaga
+                        </p>
+                        {(customFrom || customTo) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCustomFrom("");
+                              setCustomTo("");
+                              setPeriod("all");
+                            }}
+                            className="text-[10px] font-semibold text-sky-600 hover:underline dark:text-sky-400"
+                          >
+                            Tozalash
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-xl border border-border/60 bg-muted/30 px-2.5 py-2 dark:border-white/10">
+                          <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            Boshlanish
+                          </p>
+                          <p className="mt-0.5 text-[12px] font-bold tabular-nums text-foreground">
+                            {customFrom ? formatYmdShort(customFrom) : "—"}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-border/60 bg-muted/30 px-2.5 py-2 dark:border-white/10">
+                          <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            Tugash
+                          </p>
+                          <p className="mt-0.5 text-[12px] font-bold tabular-nums text-foreground">
+                            {customTo ? formatYmdShort(customTo) : "—"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <DayPickerCalendar
+                        mode="range"
+                        numberOfMonths={1}
+                        selected={{
+                          from: customFrom ? parseYmdLocal(customFrom) ?? undefined : undefined,
+                          to: customTo ? parseYmdLocal(customTo) ?? undefined : undefined,
                         }}
-                        className="h-8 rounded-lg px-2 text-[11px]"
-                      />
-                      <Input
-                        type="date"
-                        value={customTo}
-                        min={customFrom || undefined}
-                        onChange={(e) => {
-                          setCustomTo(e.target.value);
+                        onSelect={(range) => {
                           setPeriod("custom");
+                          setCustomFrom(range?.from ? toYmdLocal(range.from) : "");
+                          setCustomTo(range?.to ? toYmdLocal(range.to) : "");
                         }}
-                        className="h-8 rounded-lg px-2 text-[11px]"
+                        className="mx-auto rounded-xl border border-border/50 p-1 dark:border-white/10"
                       />
+
+                      <Button
+                        type="button"
+                        className="h-9 w-full rounded-xl"
+                        disabled={!customFrom && !customTo}
+                        onClick={() => {
+                          if (!customFrom && !customTo) return;
+                          setPeriod("custom");
+                          setPeriodOpen(false);
+                        }}
+                      >
+                        Oraliqni qo‘llash
+                      </Button>
                     </div>
                   </div>
                 </PopoverContent>

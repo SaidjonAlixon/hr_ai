@@ -642,6 +642,96 @@ function VisitDateTimeField({
   );
 }
 
+type PeriodPreset = "today" | "yesterday" | "week" | "month" | "all" | "custom";
+
+function startOfLocalDay(d: Date) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function endOfLocalDay(d: Date) {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
+}
+
+function parseYmdLocal(ymd: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+  const d = new Date(`${ymd}T12:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function toYmdLocal(d: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function formatYmdShort(ymd: string) {
+  const d = parseYmdLocal(ymd);
+  if (!d) return ymd;
+  return `${d.getDate()} ${UZ_MONTH[d.getMonth()] || ""}`;
+}
+
+function periodRange(period: PeriodPreset, customFrom: string, customTo: string) {
+  const now = new Date();
+  if (period === "all") return {} as { from?: string; to?: string };
+  if (period === "today") {
+    return {
+      from: startOfLocalDay(now).toISOString(),
+      to: endOfLocalDay(now).toISOString(),
+    };
+  }
+  if (period === "yesterday") {
+    const y = new Date(now);
+    y.setDate(y.getDate() - 1);
+    return {
+      from: startOfLocalDay(y).toISOString(),
+      to: endOfLocalDay(y).toISOString(),
+    };
+  }
+  if (period === "week") {
+    const d = new Date(now);
+    const monOffset = (d.getDay() + 6) % 7;
+    const start = startOfLocalDay(d);
+    start.setDate(start.getDate() - monOffset);
+    const end = endOfLocalDay(new Date(start));
+    end.setDate(start.getDate() + 6);
+    return { from: start.toISOString(), to: end.toISOString() };
+  }
+  if (period === "month") {
+    const start = startOfLocalDay(new Date(now.getFullYear(), now.getMonth(), 1));
+    const end = endOfLocalDay(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+    return { from: start.toISOString(), to: end.toISOString() };
+  }
+  // custom
+  let fromD = customFrom ? parseYmdLocal(customFrom) : null;
+  let toD = customTo ? parseYmdLocal(customTo) : null;
+  if (fromD && toD && fromD.getTime() > toD.getTime()) {
+    const tmp = fromD;
+    fromD = toD;
+    toD = tmp;
+  }
+  const out: { from?: string; to?: string } = {};
+  if (fromD) out.from = startOfLocalDay(fromD).toISOString();
+  if (toD) out.to = endOfLocalDay(toD).toISOString();
+  return out;
+}
+
+function periodTitle(period: PeriodPreset, customFrom: string, customTo: string) {
+  if (period === "today") return "Bugungi tashriflar";
+  if (period === "yesterday") return "Kechagi tashriflar";
+  if (period === "week") return "Haftalik tashriflar";
+  if (period === "month") return "Oylik tashriflar";
+  if (period === "all") return "Barcha tashriflar";
+  if (customFrom && customTo) {
+    return `${formatYmdShort(customFrom)} — ${formatYmdShort(customTo)}`;
+  }
+  if (customFrom) return `${formatYmdShort(customFrom)} dan`;
+  if (customTo) return `${formatYmdShort(customTo)} gacha`;
+  return "Sana oralig‘i";
+}
+
 function liveClock() {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -685,7 +775,9 @@ export default function ResepsionPage() {
   const mut = useReceptionMutations();
   const callBusy = callSnap.phase !== "idle" && callSnap.phase !== "ended";
 
-  const [dayScope, setDayScope] = useState<"today" | "all">("today");
+  const [period, setPeriod] = useState<PeriodPreset>("today");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [statusFilter, setStatusFilter] = useState<
     "all" | "in_progress" | "done" | "waiting" | "cancelled"
   >("all");
@@ -706,19 +798,46 @@ export default function ResepsionPage() {
     hostName: "",
   });
 
-  const range = useMemo(() => {
-    if (dayScope !== "today") return {};
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = new Date();
-    end.setHours(23, 59, 59, 999);
-    return { from: start.toISOString(), to: end.toISOString() };
-  }, [dayScope]);
+  const range = useMemo(
+    () => periodRange(period, customFrom, customTo),
+    [period, customFrom, customTo],
+  );
 
   const logsQ = useReceptionLogs({
     q: q.trim() || undefined,
     ...range,
   });
+
+  function applyPeriod(next: PeriodPreset) {
+    setPeriod(next);
+    if (next === "today") {
+      const d = toYmdLocal(new Date());
+      setCustomFrom(d);
+      setCustomTo(d);
+    } else if (next === "yesterday") {
+      const y = new Date();
+      y.setDate(y.getDate() - 1);
+      const d = toYmdLocal(y);
+      setCustomFrom(d);
+      setCustomTo(d);
+    } else if (next === "week") {
+      const now = new Date();
+      const monOffset = (now.getDay() + 6) % 7;
+      const start = new Date(now);
+      start.setDate(start.getDate() - monOffset);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      setCustomFrom(toYmdLocal(start));
+      setCustomTo(toYmdLocal(end));
+    } else if (next === "month") {
+      const now = new Date();
+      setCustomFrom(toYmdLocal(new Date(now.getFullYear(), now.getMonth(), 1)));
+      setCustomTo(toYmdLocal(new Date(now.getFullYear(), now.getMonth() + 1, 0)));
+    } else if (next === "all") {
+      setCustomFrom("");
+      setCustomTo("");
+    }
+  }
 
   const canWrite = metaQ.data?.canWrite ?? logsQ.data?.canWrite ?? false;
   const canDelete = metaQ.data?.canDelete ?? logsQ.data?.canDelete ?? false;
@@ -1209,7 +1328,7 @@ export default function ResepsionPage() {
               ring: "border-amber-200/80 from-amber-50 to-card dark:border-amber-500/25 dark:from-amber-500/10",
               num: "text-amber-700 dark:text-amber-300",
               onClick: () => {
-                setDayScope("today");
+                applyPeriod("today");
                 setStatusFilter("waiting");
               },
             },
@@ -1220,7 +1339,7 @@ export default function ResepsionPage() {
               ring: "border-emerald-200/80 from-emerald-50 to-card dark:border-emerald-500/25 dark:from-emerald-500/10",
               num: "text-emerald-700 dark:text-emerald-300",
               onClick: () => {
-                setDayScope("today");
+                applyPeriod("today");
                 setStatusFilter("in_progress");
               },
             },
@@ -1231,7 +1350,7 @@ export default function ResepsionPage() {
               ring: "border-slate-200/80 from-slate-50 to-card dark:border-slate-500/30 dark:from-slate-500/10",
               num: "text-slate-700 dark:text-slate-200",
               onClick: () => {
-                setDayScope("today");
+                applyPeriod("today");
                 setStatusFilter("done");
               },
             },
@@ -1242,7 +1361,7 @@ export default function ResepsionPage() {
               ring: "border-sky-200/80 from-sky-50 to-card dark:border-sky-500/25 dark:from-sky-500/10",
               num: "text-sky-700 dark:text-sky-300",
               onClick: () => {
-                setDayScope("today");
+                applyPeriod("today");
                 setStatusFilter("all");
               },
             },
@@ -2020,7 +2139,7 @@ export default function ResepsionPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setDayScope("today");
+                  applyPeriod("today");
                   setStatusFilter("all");
                 }}
                 className="flex w-full items-center gap-2.5 rounded-xl border border-transparent px-2.5 py-2 text-left text-sm transition hover:border-border/60 hover:bg-muted/50"
@@ -2033,7 +2152,7 @@ export default function ResepsionPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setDayScope("all");
+                  applyPeriod("all");
                   setStatusFilter("all");
                 }}
                 className="flex w-full items-center gap-2.5 rounded-xl border border-transparent px-2.5 py-2 text-left text-sm transition hover:border-border/60 hover:bg-muted/50"
@@ -2135,7 +2254,7 @@ export default function ResepsionPage() {
                     key={t.value}
                     type="button"
                     onClick={() => {
-                      setDayScope("today");
+                      applyPeriod("today");
                       setTypeFilter(t.value);
                       setStatusFilter("all");
                     }}
@@ -2189,7 +2308,7 @@ export default function ResepsionPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-bold tracking-tight">
-                {dayScope === "today" ? "Bugungi tashriflar" : "Barcha tashriflar"}
+                {periodTitle(period, customFrom, customTo)}
               </h2>
               <p className="text-xs text-muted-foreground">
                 {items.length} ta ko‘rsatilmoqda
@@ -2200,42 +2319,97 @@ export default function ResepsionPage() {
                 qatorni bosing — ochish / tahrirlash
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative min-w-[180px]">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <div className="relative min-w-[180px] flex-1 sm:max-w-[220px] sm:flex-none">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Qidirish…"
+                className="h-9 rounded-xl pl-8"
+              />
+            </div>
+          </div>
+
+          {/* Davr filtrlari */}
+          <div className="space-y-2.5 rounded-2xl border border-border/60 bg-background/70 p-3 dark:border-white/10 dark:bg-muted/20">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="mr-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                <CalendarDays className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" />
+                Davr
+              </span>
+              {(
+                [
+                  ["today", "Bugun"],
+                  ["yesterday", "Kecha"],
+                  ["week", "Hafta"],
+                  ["month", "Oy"],
+                  ["all", "Barchasi"],
+                ] as const
+              ).map(([key, lab]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => applyPeriod(key)}
+                  className={cn(
+                    "rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition",
+                    period === key
+                      ? "border-primary/40 bg-primary text-primary-foreground shadow-sm"
+                      : "border-border/70 bg-card text-muted-foreground hover:bg-muted/50 dark:border-white/10",
+                  )}
+                >
+                  {lab}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="min-w-[140px] flex-1 space-y-1">
+                <span className="block text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                  Sanadan
+                </span>
                 <Input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Qidirish…"
-                  className="h-9 rounded-xl pl-8"
+                  type="date"
+                  value={customFrom}
+                  onChange={(e) => {
+                    setCustomFrom(e.target.value);
+                    setPeriod("custom");
+                  }}
+                  className="h-9 rounded-xl text-sm"
                 />
-              </div>
-              <div className="flex rounded-xl border bg-card p-0.5 text-xs font-semibold shadow-sm">
-                <button
-                  type="button"
-                  className={cn(
-                    "rounded-lg px-3 py-1.5",
-                    dayScope === "today"
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground",
-                  )}
-                  onClick={() => setDayScope("today")}
-                >
-                  Bugun
-                </button>
-                <button
-                  type="button"
-                  className={cn(
-                    "rounded-lg px-3 py-1.5",
-                    dayScope === "all"
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground",
-                  )}
-                  onClick={() => setDayScope("all")}
-                >
-                  Barchasi
-                </button>
-              </div>
+              </label>
+              <span className="mb-2 hidden text-muted-foreground sm:inline">—</span>
+              <label className="min-w-[140px] flex-1 space-y-1">
+                <span className="block text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                  Sanaga
+                </span>
+                <Input
+                  type="date"
+                  value={customTo}
+                  min={customFrom || undefined}
+                  onChange={(e) => {
+                    setCustomTo(e.target.value);
+                    setPeriod("custom");
+                  }}
+                  className="h-9 rounded-xl text-sm"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  if (customFrom && customTo && customFrom > customTo) {
+                    setCustomFrom(customTo);
+                    setCustomTo(customFrom);
+                  }
+                  setPeriod("custom");
+                }}
+                className={cn(
+                  "h-9 rounded-xl border px-3 text-[11px] font-bold transition",
+                  period === "custom"
+                    ? "border-sky-500/40 bg-sky-600 text-white shadow-sm"
+                    : "border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100 dark:border-sky-500/30 dark:bg-sky-500/15 dark:text-sky-200",
+                )}
+              >
+                Oraliq
+              </button>
             </div>
           </div>
 

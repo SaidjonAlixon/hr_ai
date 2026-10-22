@@ -210,8 +210,8 @@ router.get("/resepsion/meta", requireAuth, async (req: AuthRequest, res): Promis
   res.json({
     visitTypes: [
       { value: "guest", label: "Mehmon" },
-      { value: "staff", label: "Xodim" },
       { value: "candidate", label: "Nomzod" },
+      { value: "staff", label: "Xodim" },
       { value: "request", label: "Murojaat" },
       { value: "package", label: "Posilka" },
     ],

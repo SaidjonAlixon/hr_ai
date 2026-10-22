@@ -45,6 +45,7 @@ function normalizeVisitType(raw: string): string {
 function canUseDesk(role: string) {
   return (
     role === "resepsion" ||
+    role === "recruiter" ||
     isHrRole(role) ||
     hasFullPlatformAccess(role) ||
     isDirectorRole(role)
@@ -52,7 +53,13 @@ function canUseDesk(role: string) {
 }
 
 function canWrite(role: string) {
-  return role === "resepsion" || isHrRole(role) || hasFullPlatformAccess(role) || isDirectorRole(role);
+  return (
+    role === "resepsion" ||
+    role === "recruiter" ||
+    isHrRole(role) ||
+    hasFullPlatformAccess(role) ||
+    isDirectorRole(role)
+  );
 }
 
 /** Yozuvni butunlay o‘chirish — faqat admin. Resepsion faqat tahrirlaydi. */

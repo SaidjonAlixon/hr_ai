@@ -25,7 +25,7 @@ const ROLE_MOBILE_PATHS: Record<string, string[]> = {
   hr_direktor: ['/dashboard', '/vazifalar', '/employees', '/davomat/analytics', '/davomat-face'],
   hr_kadr_rahbar: ['/dashboard', '/vazifalar', '/employees', '/davomat/analytics', '/davomat-face'],
   hr_auditor: ['/dashboard', '/vazifalar', '/employees', '/davomat/analytics', '/davomat-face'],
-  recruiter: ['/dashboard', '/vazifalar', '/employees', '/davomat', '/davomat-face'],
+  recruiter: ['/dashboard', '/resepsion', '/vazifalar', '/employees', '/davomat-face'],
   trainer: ['/dashboard', '/vazifalar', '/admin/atestatsiya', '/davomat-face', '/internships'],
   mudir: ['/dashboard', '/vazifalar', '/atestatsiya', '/davomat-face', '/xodim-kerak'],
   koordinator: ['/dashboard', '/vazifalar', '/davomat/ofisda', '/davomat-face', '/checklist'],

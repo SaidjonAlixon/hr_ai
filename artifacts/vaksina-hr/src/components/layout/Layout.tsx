@@ -1494,6 +1494,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     recruiter: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+      resepsionNav,
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,

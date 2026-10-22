@@ -405,6 +405,10 @@ class CallEngine {
     on<{ id: string; reason: string }>("ended", (d) => {
       if (this.snap.callId === d.id) void this.finish(d.reason);
     });
+    on<{ id: string; code: string }>("promoted", (d) => {
+      if (this.snap.callId !== d.id || !d.code) return;
+      void this.handoffToConference(d.code);
+    });
     on<{ id: string; data: Signal }>("signal", (d) => {
       if (this.snap.callId === d.id) void this.handleSignal(d.data);
     });
@@ -651,6 +655,47 @@ class CallEngine {
     }
     this.sendEnd(id, "hangup");
     await this.finish(this.snap.phase === "outgoing" ? "cancelled" : "ended");
+  }
+
+  /**
+   * Faol qo‘ng‘iroqni konferensiyaga o‘tkazish (qo‘shimcha odam / yozuv).
+   * Faqat qo‘ng‘iroq qilgan tomon (outgoing).
+   */
+  async promote(opts: { inviteeIds?: number[]; autoRecord?: boolean; recordMinutes?: number } = {}): Promise<{
+    code: string;
+  } | null> {
+    const id = this.snap.callId;
+    if (!id || this.snap.phase !== "active" || !this.snap.outgoing) {
+      this.notify("Faqat siz qo‘ng‘iroq qilganingizda taklif/yozuv ochiladi", "warn");
+      return null;
+    }
+    try {
+      const out = await this.post<{ ok: true; code: string }>(`/${id}/promote`, {
+        inviteeIds: opts.inviteeIds ?? [],
+        autoRecord: Boolean(opts.autoRecord),
+        recordMinutes: opts.recordMinutes ?? 0,
+      });
+      // SSE `promoted` ham keladi — ikki marta navigatsiya bo‘lmasin
+      await this.handoffToConference(out.code);
+      return { code: out.code };
+    } catch (err) {
+      this.notify((err as Error).message || "Konferensiyaga o‘tkazilmadi", "error");
+      return null;
+    }
+  }
+
+  private promotingCode: string | null = null;
+
+  private async handoffToConference(code: string) {
+    if (this.promotingCode === code) return;
+    this.promotingCode = code;
+    await this.finish("promoted", { silent: true });
+    this.scheduleIdle(0);
+    try {
+      window.location.assign(`/konferensiya/${code}`);
+    } catch {
+      this.promotingCode = null;
+    }
   }
 
   private scheduleIdle(ms: number) {

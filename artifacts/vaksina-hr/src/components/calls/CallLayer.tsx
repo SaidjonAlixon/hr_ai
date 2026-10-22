@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import {
   ArrowLeft,
   ChevronDown,
+  CircleDot,
   CornerDownLeft,
   Delete,
   Hand,
@@ -18,11 +19,13 @@ import {
   Phone,
   PhoneOff,
   ScreenShareOff,
+  Search,
   SendHorizontal,
   ShieldCheck,
   SignalLow,
   SignalMedium,
   SwitchCamera,
+  UserPlus,
   Video,
   VideoOff,
   WifiOff,
@@ -30,7 +33,18 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { callEngine, endedText, isControllableShare, useCall, type CallSnapshot } from "@/lib/calls/engine";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import type { MirrorPicker } from "./MirrorView";
+
+type CallContact = {
+  id: number;
+  fullName: string;
+  role: string;
+  position: string | null;
+  branch: string | null;
+  online: boolean;
+};
 
 const MirrorView = lazy(() => import("./MirrorView"));
 
@@ -621,6 +635,8 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
   const [mirrorRect, setMirrorRect] = useState<Rect | null>(null);
   const [mirrorPick, setMirrorPick] = useState<MirrorPicker | null>(null);
   const [pipRatio, setPipRatio] = useState(3 / 4);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [promoteBusy, setPromoteBusy] = useState(false);
   const remoteSharing = s.remote.share !== "none";
   const mirror = s.phase === "active" && s.remoteMirror && remoteSharing;
   const showRemoteVideo = !mirror && remoteVideoVisible(s);
@@ -629,11 +645,22 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
   const videoRect = useVideoRect(showRemoteVideo ? videoEl : null, stage);
   const isAdmin = Boolean(s.me?.isAdmin);
   const live = s.phase === "active";
+  const canPromote = live && s.outgoing;
   const controller = s.controlSide === "controller";
   // Boshqaruvda xodim ekrani hech narsa bilan yopilmasin: sarlavha — kichik belgi, ekran — panellar orasida
   const compact = controller && showRemote;
   const [bottomBar, setBottomBar] = useState<HTMLDivElement | null>(null);
   const [barH, setBarH] = useState(0);
+
+  const startRecordOnly = async () => {
+    if (promoteBusy) return;
+    setPromoteBusy(true);
+    try {
+      await callEngine.promote({ autoRecord: true, recordMinutes: 0 });
+    } finally {
+      setPromoteBusy(false);
+    }
+  };
   useLayoutEffect(() => {
     if (!bottomBar) return;
     const ro = new ResizeObserver(() => setBarH(bottomBar.offsetHeight));
@@ -836,28 +863,50 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
             <ControlToolbar />
           </div>
         ) : null}
-        {live && isAdmin && !controller ? (
+        {live && (canPromote || (isAdmin && !controller)) ? (
           <div className="mx-auto mb-3 flex max-w-md flex-wrap justify-center gap-2">
-            {s.remote.share === "none" ? (
-              <Chip
-                onClick={() => callEngine.requestScreen()}
-                disabled={s.waiting.screen}
-                icon={s.waiting.screen ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MonitorSmartphone className="h-3.5 w-3.5" />}
-              >
-                {s.waiting.screen ? "Kutilmoqda…" : "Ekranini so‘rash"}
-              </Chip>
-            ) : (
-              <Chip onClick={() => callEngine.stopRemoteShare()} icon={<ScreenShareOff className="h-3.5 w-3.5" />}>
-                Ulashishni to‘xtatish
-              </Chip>
-            )}
-            <Chip
-              onClick={() => callEngine.requestControl()}
-              disabled={s.waiting.control}
-              icon={s.waiting.control ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MousePointerClick className="h-3.5 w-3.5" />}
-            >
-              {s.waiting.control ? "Ruxsat kutilmoqda…" : "Qurilmani boshqarish"}
-            </Chip>
+            {canPromote ? (
+              <>
+                <Chip
+                  onClick={() => setInviteOpen(true)}
+                  disabled={promoteBusy}
+                  icon={promoteBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserPlus className="h-3.5 w-3.5" />}
+                >
+                  Taklif qilish
+                </Chip>
+                <Chip
+                  onClick={() => void startRecordOnly()}
+                  disabled={promoteBusy}
+                  icon={promoteBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CircleDot className="h-3.5 w-3.5" />}
+                >
+                  Yozib olish
+                </Chip>
+              </>
+            ) : null}
+            {isAdmin && !controller ? (
+              <>
+                {s.remote.share === "none" ? (
+                  <Chip
+                    onClick={() => callEngine.requestScreen()}
+                    disabled={s.waiting.screen}
+                    icon={s.waiting.screen ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MonitorSmartphone className="h-3.5 w-3.5" />}
+                  >
+                    {s.waiting.screen ? "Kutilmoqda…" : "Ekranini so‘rash"}
+                  </Chip>
+                ) : (
+                  <Chip onClick={() => callEngine.stopRemoteShare()} icon={<ScreenShareOff className="h-3.5 w-3.5" />}>
+                    Ulashishni to‘xtatish
+                  </Chip>
+                )}
+                <Chip
+                  onClick={() => callEngine.requestControl()}
+                  disabled={s.waiting.control}
+                  icon={s.waiting.control ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MousePointerClick className="h-3.5 w-3.5" />}
+                >
+                  {s.waiting.control ? "Ruxsat kutilmoqda…" : "Qurilmani boshqarish"}
+                </Chip>
+              </>
+            ) : null}
           </div>
         ) : null}
         <div className={cn("mx-auto flex max-w-lg flex-wrap items-start justify-center gap-x-2 sm:gap-x-4", compact ? "gap-y-1" : "gap-y-3")}>
@@ -887,8 +936,173 @@ function ActiveScreen({ s }: { s: CallSnapshot }) {
           </RoundButton>
         </div>
       </div>
+
+      {inviteOpen ? (
+        <CallPromotePanel
+          peerId={peer.id}
+          busy={promoteBusy}
+          onClose={() => setInviteOpen(false)}
+          onSubmit={async (inviteeIds, autoRecord) => {
+            setPromoteBusy(true);
+            try {
+              const out = await callEngine.promote({ inviteeIds, autoRecord, recordMinutes: 0 });
+              if (out) setInviteOpen(false);
+            } finally {
+              setPromoteBusy(false);
+            }
+          }}
+        />
+      ) : null}
     </div>
   );
+}
+
+function CallPromotePanel({
+  peerId,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  peerId: number;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (inviteeIds: number[], autoRecord: boolean) => Promise<void>;
+}) {
+  const [q, setQ] = useState("");
+  const [items, setItems] = useState<CallContact[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [autoRecord, setAutoRecord] = useState(true);
+  const dq = useDebounced(q, 250);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    const url = `/api/calls/contacts?q=${encodeURIComponent(dq)}`;
+    void fetch(url, { credentials: "include" })
+      .then(async (res) => {
+        const data = (await res.json().catch(() => ({}))) as { items?: CallContact[]; error?: string };
+        if (!res.ok) throw new Error(data.error || "Ro‘yxat yuklanmadi");
+        if (!cancelled) {
+          setItems((data.items ?? []).filter((c) => c.id !== peerId));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setItems([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dq, peerId]);
+
+  const toggle = (id: number) => {
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : prev.length >= 20 ? prev : [...prev, id]));
+  };
+
+  return (
+    <div className="absolute inset-0 z-40 flex flex-col justify-end bg-black/55 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="max-h-[78vh] overflow-hidden rounded-t-3xl bg-slate-950 text-white shadow-2xl ring-1 ring-white/10"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-white/10 px-5 pb-3 pt-4">
+          <div>
+            <p className="text-base font-semibold">Konferensiyaga o‘tkazish</p>
+            <p className="mt-0.5 text-xs text-white/60">
+              Suhbat LiveKit xonasiga o‘tadi — qo‘shimcha odam va to‘liq yozuv ochiladi
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium hover:bg-white/15">
+            Yopish
+          </button>
+        </div>
+        <div className="space-y-3 px-5 py-3">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Ism bo‘yicha qidirish…"
+              className="h-11 border-white/10 bg-white/5 pl-9 text-white placeholder:text-white/40"
+            />
+          </div>
+          <label className="flex items-center justify-between gap-3 rounded-2xl bg-white/5 px-3 py-2.5 ring-1 ring-white/10">
+            <span className="text-sm">
+              <span className="font-medium">Yozib olish</span>
+              <span className="mt-0.5 block text-[11px] text-white/55">Tugagach Telegram guruhiga yuboriladi</span>
+            </span>
+            <Switch checked={autoRecord} onCheckedChange={setAutoRecord} />
+          </label>
+        </div>
+        <div className="max-h-[42vh] overflow-y-auto px-2 pb-2">
+          {loading ? (
+            <p className="px-3 py-8 text-center text-sm text-white/50">Yuklanmoqda…</p>
+          ) : items.length ? (
+            items.map((c) => {
+              const on = selected.includes(c.id);
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => toggle(c.id)}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition",
+                    on ? "bg-sky-500/20 ring-1 ring-sky-400/40" : "hover:bg-white/5",
+                  )}
+                >
+                  <CallAvatar id={c.id} name={c.fullName} className="h-10 w-10 text-xs" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{c.fullName}</p>
+                    <p className="truncate text-[11px] text-white/55">
+                      {[c.position, c.branch].filter(Boolean).join(" · ") || c.role}
+                      {c.online ? " · onlayn" : ""}
+                    </p>
+                  </div>
+                  <span
+                    className={cn(
+                      "flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold",
+                      on ? "bg-sky-400 text-slate-950" : "bg-white/10 text-white/40",
+                    )}
+                  >
+                    {on ? "✓" : ""}
+                  </span>
+                </button>
+              );
+            })
+          ) : (
+            <p className="px-3 py-8 text-center text-sm text-white/50">Kontakt topilmadi</p>
+          )}
+        </div>
+        <div className="border-t border-white/10 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
+          <button
+            type="button"
+            disabled={busy || (!selected.length && !autoRecord)}
+            onClick={() => void onSubmit(selected, autoRecord)}
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-sky-500 text-sm font-semibold text-white transition hover:bg-sky-400 disabled:opacity-50"
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+            {selected.length
+              ? `${selected.length} kishini taklif qilish`
+              : autoRecord
+                ? "Yozuv bilan konferensiyaga o‘tish"
+                : "Kamida bitta odam tanlang"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function useDebounced(value: string, ms: number) {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
 }
 
 function Chip({ onClick, disabled, icon, children }: { onClick: () => void; disabled?: boolean; icon: ReactNode; children: ReactNode }) {

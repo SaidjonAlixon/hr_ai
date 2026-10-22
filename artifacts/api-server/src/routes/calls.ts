@@ -16,6 +16,7 @@ import {
   isOnline,
   loadCallUser,
   onlineUserIds,
+  promoteCallToConference,
   rejoinCall,
   relaySignal,
   setCallPermission,
@@ -250,6 +251,33 @@ router.post("/calls/:id/end", requireAuth, async (req: AuthRequest, res): Promis
   const reason = ["hangup", "declined", "failed"].includes(raw) ? raw : "hangup";
   await endCall(id, req.userId!, reason);
   res.json({ ok: true });
+});
+
+/** Faol 1:1 → konferensiya: qo‘shimcha odam taklif + yozib olish */
+router.post("/calls/:id/promote", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const id = String(req.params.id);
+  const inviteeIds = Array.isArray(req.body?.inviteeIds)
+    ? (req.body.inviteeIds as unknown[]).map(Number).filter((n) => Number.isInteger(n) && n > 0)
+    : [];
+  const recordMinutesRaw = Number(req.body?.recordMinutes);
+  const recordMinutes = Number.isFinite(recordMinutesRaw)
+    ? Math.max(0, Math.min(240, Math.round(recordMinutesRaw)))
+    : 0;
+  try {
+    const out = await promoteCallToConference(id, req.userId!, {
+      inviteeIds,
+      autoRecord: Boolean(req.body?.autoRecord),
+      recordMinutes,
+    });
+    if (!out.ok) {
+      res.status(out.status).json({ error: out.error });
+      return;
+    }
+    res.json(out);
+  } catch (err) {
+    console.error("POST /calls/:id/promote", err);
+    res.status(503).json({ error: "Konferensiyaga o‘tkazilmadi" });
+  }
 });
 
 router.post("/calls/:id/signal", requireAuth, (req: AuthRequest, res): void => {

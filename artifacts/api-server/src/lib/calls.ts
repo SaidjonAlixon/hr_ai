@@ -485,6 +485,7 @@ const FINAL: Record<string, string> = {
   hangup: "ended",
   disconnected: "ended",
   failed: "failed",
+  promoted: "ended",
 };
 
 export async function endCall(id: string, byUserId: number | null, reason: string): Promise<boolean> {
@@ -497,6 +498,8 @@ export async function endCall(id: string, byUserId: number | null, reason: strin
   let status = FINAL[reason] ?? "ended";
   if (wasRinging && reason === "hangup") status = byUserId === call.callerId ? "cancelled" : "declined";
   await logStatus(id, status, { ended: true, reason });
+  // Konferensiyaga o‘tkazilganda `promoted` event alohida ketadi — ended jiringlatmasin
+  if (reason === "promoted") return true;
   const payload = { id, reason: status, by: byUserId };
   if (byUserId !== call.callerId) pushTo(call.callerId, "ended", payload, call.callerCid);
   // Jiringlayotgan bo‘lsa — barcha qurilmalarida to‘xtasin
@@ -506,6 +509,131 @@ export async function endCall(id: string, byUserId: number | null, reason: strin
     if (status !== "declined") stopRingPush(call, true);
   } else if (byUserId !== call.calleeId) pushTo(call.calleeId, "ended", payload, call.calleeCid);
   return true;
+}
+
+export type PromoteResult =
+  | { ok: true; code: string; link: string; invited: number }
+  | { ok: false; status: number; error: string };
+
+/**
+ * Faol 1:1 qo‘ng‘iroqni LiveKit konferensiyaga o‘tkazadi — qo‘shimcha odam taklif
+ * va to‘liq yozib olish (konferensiya REC) shu yerda ochiladi.
+ */
+export async function promoteCallToConference(
+  id: string,
+  byUserId: number,
+  opts: { inviteeIds?: number[]; autoRecord?: boolean; recordMinutes?: number } = {},
+): Promise<PromoteResult> {
+  const call = calls.get(id);
+  if (!call || call.status !== "active") {
+    return { ok: false, status: 409, error: "Faqat faol qo‘ng‘iroqni konferensiyaga o‘tkazish mumkin" };
+  }
+  if (byUserId !== call.callerId) {
+    return { ok: false, status: 403, error: "Faqat qo‘ng‘iroq qilgan odam taklif qila oladi" };
+  }
+
+  const {
+    ensureConferenceSchema,
+    liveKitConfig,
+    newConferenceCode,
+    loadConference,
+    normalizeSettings,
+    roomNameFor,
+    conferenceUrl,
+    notifyConferenceUsers,
+  } = await import("./conferences");
+
+  if (!liveKitConfig()) {
+    return { ok: false, status: 503, error: "Konferensiya serveri sozlanmagan — hozircha taklif/yozuv ishlamaydi" };
+  }
+
+  await ensureConferenceSchema();
+
+  const inviteeIds = [...new Set((opts.inviteeIds ?? []).map(Number))]
+    .filter((uid) => Number.isInteger(uid) && uid > 0 && uid !== call.callerId && uid !== call.calleeId)
+    .slice(0, 40);
+
+  let code = newConferenceCode();
+  for (let i = 0; i < 5; i++) {
+    const { rows } = await pool.query(`SELECT 1 FROM conferences WHERE code = $1`, [code]);
+    if (!rows.length) break;
+    code = newConferenceCode();
+  }
+
+  const title = `Qo‘ng‘iroq · ${call.callerName.split(" ")[0]} + ${call.calleeName.split(" ")[0]}`.slice(0, 120);
+  const settings = normalizeSettings({
+    speakMode: "all",
+    cameraMode: "all",
+    screenMode: "all",
+    chat: true,
+    muteOnJoin: false,
+    camOffOnJoin: !call.video,
+    autoRecord: Boolean(opts.autoRecord),
+    recordMinutes: opts.recordMinutes ?? 0,
+  });
+  const room = roomNameFor(code);
+  const durationMin = 120;
+
+  await pool.query(
+    `INSERT INTO conferences (code, title, description, host_id, scheduled_at, duration_min, settings, status, started_at, room)
+     VALUES ($1, $2, $3, $4, NOW(), $5, $6::jsonb, 'live', NOW(), $7)`,
+    [
+      code,
+      title,
+      "1:1 qo‘ng‘iroqdan konferensiyaga o‘tkazildi",
+      call.callerId,
+      durationMin,
+      JSON.stringify(settings),
+      room,
+    ],
+  );
+
+  const conf = (await loadConference(code))!;
+  await pool.query(
+    `INSERT INTO conference_members (conference_id, user_id, role, invited)
+     VALUES ($1, $2, 'host', TRUE)
+     ON CONFLICT (conference_id, user_id) DO UPDATE SET role = 'host', invited = TRUE`,
+    [conf.id, call.callerId],
+  );
+  await pool.query(
+    `INSERT INTO conference_members (conference_id, user_id, role, invited)
+     VALUES ($1, $2, 'cohost', TRUE)
+     ON CONFLICT (conference_id, user_id) DO UPDATE SET role = 'cohost', invited = TRUE`,
+    [conf.id, call.calleeId],
+  );
+
+  const notifiedExtra: number[] = [];
+  if (inviteeIds.length) {
+    const { rows: valid } = await pool.query(
+      `SELECT id FROM users WHERE id = ANY($1::int[]) AND status <> 'terminated'`,
+      [inviteeIds],
+    );
+    const okIds = new Set(valid.map((r) => r.id as number));
+    for (const uid of inviteeIds) {
+      if (!okIds.has(uid)) continue;
+      await pool.query(
+        `INSERT INTO conference_members (conference_id, user_id, role, invited)
+         VALUES ($1, $2, 'participant', TRUE)
+         ON CONFLICT (conference_id, user_id)
+         DO UPDATE SET invited = TRUE, banned = FALSE`,
+        [conf.id, uid],
+      );
+      notifiedExtra.push(uid);
+    }
+  }
+
+  const payload = { id: call.id, code, link: conferenceUrl(code) };
+  pushTo(call.callerId, "promoted", payload, call.callerCid);
+  pushTo(call.calleeId, "promoted", payload, call.calleeCid);
+  await endCall(id, byUserId, "promoted");
+
+  if (notifiedExtra.length) {
+    void notifyConferenceUsers(conf, notifiedExtra, "invite").catch((err) =>
+      logger.warn({ err }, "promote invite notify"),
+    );
+  }
+
+  return { ok: true, code, link: conferenceUrl(code), invited: notifiedExtra.length };
 }
 
 export function relaySignal(id: string, fromUserId: number, fromCid: string, data: unknown): { ok: boolean; error?: string } {

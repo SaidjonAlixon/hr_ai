@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Bell,
   BriefcaseBusiness,
   CheckCircle2,
   Clock3,
@@ -12,7 +11,6 @@ import {
   Package,
   Phone,
   Plus,
-  QrCode,
   Building2,
   CalendarDays,
   ChevronDown,
@@ -1884,45 +1882,6 @@ export default function ResepsionPage() {
 
         {/* Quick side */}
         <aside className="space-y-3 xl:col-span-3">
-          <div className="rounded-3xl border border-sky-200/80 bg-gradient-to-br from-sky-50 via-white to-indigo-50 p-4 shadow-md shadow-sky-500/5">
-            <p className="flex items-center gap-2 text-sm font-bold text-sky-900">
-              <Bell className="h-4 w-4 text-sky-600" />
-              Xodimga xabar
-            </p>
-            <p className="mt-1.5 text-xs leading-relaxed text-sky-900/75">
-              Tanlangan tur ({typeMeta.label}) bo‘yicha qayd — Telegram + tizim bildirishnomasi.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {TYPE_TABS.map((t) => (
-                <span
-                  key={t.value}
-                  className={cn(
-                    "rounded-lg px-2 py-0.5 text-[9px] font-bold uppercase",
-                    visitType === t.value ? t.live : "bg-muted text-muted-foreground",
-                  )}
-                >
-                  {t.label}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-border/60 bg-gradient-to-br from-card to-muted/30 p-4 shadow-sm">
-            <p className="text-sm font-bold">Tashrifnoma</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Mehmon uchun qisqa yo‘llanma — ism, kimning oldiga, vaqt.
-            </p>
-            <Button
-              type="button"
-              variant="secondary"
-              className="mt-3 h-9 w-full gap-1.5 rounded-xl"
-              onClick={() => window.print()}
-            >
-              <QrCode className="h-4 w-4" />
-              Chop etish
-            </Button>
-          </div>
-
           <div className="rounded-3xl border border-border/70 bg-card p-4 shadow-sm">
             <p className="mb-2 text-sm font-semibold">Tezkor amallar</p>
             <div className="space-y-1.5">

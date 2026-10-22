@@ -94,6 +94,54 @@ function typeLabel(t: string) {
   return TYPE_TABS.find((x) => x.value === t)?.label || t;
 }
 
+/** Sukutda +998 9… — foydalanuvchi qolgan raqamlarni yozadi */
+function formatVisitorPhone(raw: string): string {
+  let digits = raw.replace(/\D/g, "");
+  if (!digits.startsWith("998")) {
+    if (digits.startsWith("9")) digits = `998${digits}`;
+    else digits = `9989${digits}`;
+  }
+  if (!digits.startsWith("9989")) {
+    digits = `9989${digits.slice(3)}`;
+  }
+  digits = digits.slice(0, 12); // 998 + 9 ta raqam
+  const rest = digits.slice(3); // 9XXXXXXXX
+  const a = rest.slice(0, 2);
+  const b = rest.slice(2, 5);
+  const c = rest.slice(5, 7);
+  const d = rest.slice(7, 9);
+  let out = "+998";
+  if (a) out += ` ${a}`;
+  if (b) out += ` ${b}`;
+  if (c) out += ` ${c}`;
+  if (d) out += ` ${d}`;
+  return out.length > 4 ? out : "+998 9";
+}
+
+const PHONE_DEFAULT = "+998 9";
+
+function phoneForSubmit(formatted: string): string | null {
+  const digits = formatted.replace(/\D/g, "");
+  if (digits.length <= 4) return null; // faqat +998 / +9989
+  if (digits.length < 12) return `+${digits}`; // to‘liq emas, lekin yozilgan
+  return `+${digits.slice(0, 12)}`;
+}
+
+const PURPOSE_BY_TYPE: Record<ReceptionVisitType, string[]> = {
+  guest: [
+    "Uchrashuv",
+    "Hujjat topshirish",
+    "Shartnoma / imzo",
+    "Konsultatsiya",
+    "Yetkazib berish",
+    "Shikoyat",
+  ],
+  staff: ["Ish / vazifa", "Hujjat", "Suhbat", "Texnik yordam", "Topshiriq"],
+  candidate: ["Ish suhbat", "HR uchrashuv", "Hujjat topshirish", "Sinov / staj"],
+  request: ["Murojaat", "Shikoyat", "Taklif", "Ma’lumot so‘rash", "Ariza"],
+  package: ["Posilka", "Kuryer", "Hujjat", "Qaytarish", "Ombor"],
+};
+
 function AvatarBubble({
   name,
   tone = "primary",
@@ -178,9 +226,10 @@ export default function ResepsionPage() {
 
   const [visitType, setVisitType] = useState<ReceptionVisitType>("guest");
   const [visitorFullName, setVisitorFullName] = useState("");
-  const [visitorPhone, setVisitorPhone] = useState("");
+  const [visitorPhone, setVisitorPhone] = useState(PHONE_DEFAULT);
   const [purpose, setPurpose] = useState("");
   const [notes, setNotes] = useState("");
+  const purposeOptions = PURPOSE_BY_TYPE[visitType] || PURPOSE_BY_TYPE.guest;
   const [visitAt, setVisitAt] = useState(() => toLocalInputValue(new Date()));
   const [leftAt, setLeftAt] = useState("");
   const [hostUserId, setHostUserId] = useState("");
@@ -226,7 +275,7 @@ export default function ResepsionPage() {
 
   function resetForm() {
     setVisitorFullName("");
-    setVisitorPhone("");
+    setVisitorPhone(PHONE_DEFAULT);
     setPurpose("");
     setNotes("");
     setVisitAt(toLocalInputValue(new Date()));
@@ -234,6 +283,14 @@ export default function ResepsionPage() {
     setHostUserId("");
     setHostName("");
     setHostSearch("");
+  }
+
+  function selectVisitType(next: ReceptionVisitType) {
+    setVisitType(next);
+    const prevPresets = PURPOSE_BY_TYPE[visitType] || [];
+    if (!purpose.trim() || prevPresets.includes(purpose)) {
+      setPurpose("");
+    }
   }
 
   function pickHost(h: ReceptionHost) {
@@ -252,7 +309,7 @@ export default function ResepsionPage() {
       await mut.create.mutateAsync({
         visitType,
         visitorFullName: visitorFullName.trim(),
-        visitorPhone: visitorPhone.trim() || null,
+        visitorPhone: phoneForSubmit(visitorPhone),
         purpose: purpose.trim() || null,
         notes: notes.trim() || null,
         hostName: hostName.trim() || selectedHost?.fullName || null,
@@ -389,7 +446,7 @@ export default function ResepsionPage() {
                 <button
                   key={tab.value}
                   type="button"
-                  onClick={() => setVisitType(tab.value)}
+                  onClick={() => selectVisitType(tab.value)}
                   className={cn(
                     "flex flex-col items-center gap-1 rounded-2xl border px-1 py-2.5 text-center transition",
                     active
@@ -411,53 +468,92 @@ export default function ResepsionPage() {
             })}
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-3.5">
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Ism familiya *
                 </label>
                 <Input
                   value={visitorFullName}
                   onChange={(e) => setVisitorFullName(e.target.value)}
                   placeholder="Aliyev Rustam"
-                  className="h-10 rounded-xl"
+                  className="h-11 rounded-2xl border-border/80 bg-background shadow-sm"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Telefon
                 </label>
-                <Input
-                  value={visitorPhone}
-                  onChange={(e) => setVisitorPhone(e.target.value)}
-                  placeholder="+998 90 111 22 33"
-                  className="h-10 rounded-xl"
-                />
+                <div className="relative">
+                  <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={visitorPhone}
+                    onChange={(e) => setVisitorPhone(formatVisitorPhone(e.target.value))}
+                    onFocus={(e) => {
+                      if (!e.target.value.trim()) setVisitorPhone(PHONE_DEFAULT);
+                    }}
+                    onBlur={() => {
+                      if (visitorPhone.replace(/\D/g, "").length <= 4) {
+                        setVisitorPhone(PHONE_DEFAULT);
+                      }
+                    }}
+                    inputMode="tel"
+                    autoComplete="tel"
+                    placeholder="+998 90 111 22 33"
+                    className="h-11 rounded-2xl border-border/80 bg-background pl-9 font-medium tabular-nums shadow-sm tracking-wide"
+                  />
+                </div>
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  Prefiks tayyor — faqat qolgan raqamlarni yozing
+                </p>
               </div>
             </div>
 
             <div>
-              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Sabab / maqsad
               </label>
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {purposeOptions.map((opt) => {
+                  const active = purpose === opt;
+                  return (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => setPurpose(active ? "" : opt)}
+                      className={cn(
+                        "rounded-xl border px-2.5 py-1.5 text-[11px] font-semibold transition",
+                        active
+                          ? "border-primary/40 bg-primary text-primary-foreground shadow-sm"
+                          : "border-border/70 bg-muted/40 text-foreground hover:border-primary/30 hover:bg-primary/5",
+                      )}
+                    >
+                      {opt}
+                    </button>
+                  );
+                })}
+              </div>
               <Input
                 value={purpose}
                 onChange={(e) => setPurpose(e.target.value)}
-                placeholder="Uchrashuv, suhbat, xizmat…"
-                className="h-10 rounded-xl"
+                placeholder="Yoki o‘zingiz yozing: qisqa sabab…"
+                className="h-11 rounded-2xl border-border/80 bg-background shadow-sm"
               />
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                Tezkor tugmadan tanlang yoki qisqa yozing — batafsil izohga
+              </p>
             </div>
 
             <div>
-              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Izoh
+              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Izoh (batafsil)
               </label>
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Qo‘shimcha ma’lumot…"
-                className="min-h-[72px] rounded-xl"
+                placeholder="Batafsil: kim bilan, nima haqida, qancha vaqt, maxsus eslatma…"
+                className="min-h-[88px] rounded-2xl border-border/80 bg-background shadow-sm"
               />
             </div>
 
@@ -663,32 +759,34 @@ export default function ResepsionPage() {
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <label className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <Clock3 className="h-3.5 w-3.5" />
                   Kirish vaqti
                 </label>
                 <Input
                   type="datetime-local"
                   value={visitAt}
                   onChange={(e) => setVisitAt(e.target.value)}
-                  className="h-10 rounded-xl"
+                  className="h-11 rounded-2xl border-border/80 bg-background shadow-sm"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <label className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <LogOut className="h-3.5 w-3.5" />
                   Kutilayotgan chiqish
                 </label>
                 <Input
                   type="datetime-local"
                   value={leftAt}
                   onChange={(e) => setLeftAt(e.target.value)}
-                  className="h-10 rounded-xl"
+                  className="h-11 rounded-2xl border-border/80 bg-background shadow-sm"
                 />
               </div>
             </div>
 
             <Button
               type="button"
-              className="h-11 w-full rounded-xl text-sm font-semibold"
+              className="h-12 w-full rounded-2xl text-sm font-semibold shadow-md shadow-primary/20"
               disabled={!canWrite || mut.create.isPending}
               onClick={() => void onSubmit()}
             >

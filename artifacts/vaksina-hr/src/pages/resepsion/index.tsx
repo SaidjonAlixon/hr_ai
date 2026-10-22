@@ -1389,7 +1389,7 @@ export default function ResepsionPage() {
         <section
           id="resepsion-form"
           className={cn(
-            "rounded-3xl border p-4 shadow-lg sm:p-5 xl:col-span-5",
+            "rounded-3xl border p-4 shadow-lg sm:p-5 xl:col-span-5 dark:shadow-black/20",
             typeMeta.panel,
           )}
         >
@@ -1418,21 +1418,29 @@ export default function ResepsionPage() {
                   type="button"
                   onClick={() => selectVisitType(tab.value)}
                   className={cn(
-                    "flex flex-col items-center gap-1 rounded-2xl border px-1 py-2.5 text-center shadow-sm transition",
+                    "flex flex-col items-center gap-1.5 rounded-2xl border px-1 py-2.5 text-center transition",
                     active
-                      ? tab.activeTab
-                      : "border-border/50 bg-card/80 text-muted-foreground hover:bg-muted/40 dark:border-white/10",
+                      ? cn(tab.activeTab, "shadow-md ring-2 ring-sky-400/35 dark:ring-sky-400/25")
+                      : "border-border/40 bg-background/60 text-muted-foreground hover:border-border hover:bg-muted/40 dark:border-white/10 dark:bg-slate-950/40",
                   )}
                 >
                   <span
                     className={cn(
-                      "flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-sm",
+                      "flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-md",
                       tab.iconBg,
+                      active ? "scale-105" : "opacity-95",
                     )}
                   >
                     <Icon className="h-4 w-4" />
                   </span>
-                  <span className="text-[10px] font-bold leading-tight">{tab.label}</span>
+                  <span
+                    className={cn(
+                      "text-[10px] font-bold leading-tight",
+                      active ? "text-foreground" : "text-muted-foreground",
+                    )}
+                  >
+                    {tab.label}
+                  </span>
                 </button>
               );
             })}
@@ -1448,7 +1456,7 @@ export default function ResepsionPage() {
                   value={visitorFullName}
                   onChange={(e) => setVisitorFullName(e.target.value)}
                   placeholder={typeMeta.namePh}
-                  className="h-11 rounded-2xl border-border/80 bg-white/90 shadow-sm"
+                  className="h-11 rounded-2xl border-border/70 bg-background shadow-sm dark:border-white/10 dark:bg-slate-950/55"
                 />
               </div>
               <div>
@@ -1456,7 +1464,7 @@ export default function ResepsionPage() {
                   Telefon
                 </label>
                 <div className="relative">
-                  <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sky-600 dark:text-sky-400" />
                   <Input
                     value={visitorPhone}
                     onChange={(e) => setVisitorPhone(formatVisitorPhone(e.target.value))}
@@ -1471,7 +1479,7 @@ export default function ResepsionPage() {
                     inputMode="tel"
                     autoComplete="tel"
                     placeholder="+998 90 111 22 33"
-                    className="h-11 rounded-2xl border-border/80 bg-white/90 pl-9 font-medium tabular-nums tracking-wide shadow-sm"
+                    className="h-11 rounded-2xl border-border/70 bg-background pl-9 font-medium tabular-nums tracking-wide shadow-sm dark:border-white/10 dark:bg-slate-950/55"
                   />
                 </div>
                 <p className="mt-1 text-[10px] text-muted-foreground">
@@ -1489,7 +1497,7 @@ export default function ResepsionPage() {
                   value={visitorRoleHint}
                   onChange={(e) => setVisitorRoleHint(e.target.value)}
                   placeholder={typeMeta.extraPh}
-                  className="h-11 rounded-2xl border-border/80 bg-white/90 shadow-sm"
+                  className="h-11 rounded-2xl border-border/70 bg-background shadow-sm dark:border-white/10 dark:bg-slate-950/55"
                 />
               </div>
             ) : null}
@@ -1546,7 +1554,7 @@ export default function ResepsionPage() {
                 value={purpose}
                 onChange={(e) => setPurpose(e.target.value)}
                 placeholder="Yoki o‘zingiz yozing: qisqa sabab…"
-                className="h-11 rounded-2xl border-border/80 bg-white/90 shadow-sm"
+                className="h-11 rounded-2xl border-border/70 bg-background shadow-sm dark:border-white/10 dark:bg-slate-950/55"
               />
             </div>
 
@@ -1559,7 +1567,7 @@ export default function ResepsionPage() {
                   value={interviewerName}
                   onChange={(e) => setInterviewerName(e.target.value)}
                   placeholder="Agar pastdan tanlamasangiz — shu yerga yozing"
-                  className="h-11 rounded-2xl border-border/80 bg-white/90 shadow-sm"
+                  className="h-11 rounded-2xl border-border/70 bg-background shadow-sm dark:border-white/10 dark:bg-slate-950/55"
                 />
               </div>
             ) : null}
@@ -1572,7 +1580,7 @@ export default function ResepsionPage() {
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder={typeMeta.notesPh}
-                className="min-h-[88px] rounded-2xl border-border/80 bg-white/90 shadow-sm"
+                className="min-h-[88px] rounded-2xl border-border/70 bg-background shadow-sm dark:border-white/10 dark:bg-slate-950/55"
               />
             </div>
 
@@ -1582,7 +1590,7 @@ export default function ResepsionPage() {
               </label>
 
               {selectedHost ? (
-                <div className="mb-2 flex items-center gap-3 rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 via-card to-card p-2.5 shadow-sm">
+                <div className="mb-2 flex items-center gap-2.5 rounded-2xl border border-sky-400/30 bg-gradient-to-r from-sky-500/10 via-card to-card p-2.5 shadow-sm dark:border-sky-400/25 dark:from-sky-500/15">
                   <AvatarBubble
                     name={selectedHost.fullName}
                     size="md"
@@ -1611,9 +1619,9 @@ export default function ResepsionPage() {
                   </div>
                   <Button
                     type="button"
-                    variant="ghost"
+                    variant="secondary"
                     size="sm"
-                    className="h-8 shrink-0 rounded-xl px-2 text-xs"
+                    className="h-8 shrink-0 rounded-xl px-2.5 text-xs"
                     onClick={() => setHostPickerOpen(true)}
                   >
                     Almashtirish
@@ -1632,42 +1640,43 @@ export default function ResepsionPage() {
                 </div>
               ) : null}
 
-              <button
-                type="button"
-                onClick={() => setHostPickerOpen((v) => !v)}
-                className={cn(
-                  "flex h-12 w-full items-center gap-3 rounded-2xl border bg-background px-3.5 text-left text-sm shadow-sm transition",
-                  hostPickerOpen
-                    ? "border-primary/40 ring-2 ring-primary/15"
-                    : "border-border/80 hover:border-primary/30 hover:bg-muted/30",
-                )}
-              >
-                {!selectedHost ? (
-                  <>
-                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                      <UserRound className="h-4 w-4" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-medium text-foreground">Xodimni tanlang</span>
-                      <span className="block text-[11px] text-muted-foreground">
-                        {typeMeta.hostHint}
-                      </span>
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span className="min-w-0 flex-1 text-xs text-muted-foreground">
-                      Ro‘yxatni ochish / qidirish
-                    </span>
-                  </>
-                )}
-                <ChevronDown
+              {!selectedHost || hostPickerOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setHostPickerOpen((v) => !v)}
                   className={cn(
-                    "h-4 w-4 shrink-0 text-muted-foreground transition",
-                    hostPickerOpen && "rotate-180",
+                    "flex h-12 w-full items-center gap-3 rounded-2xl border bg-background px-3.5 text-left text-sm shadow-sm transition dark:border-white/10 dark:bg-slate-950/55",
+                    hostPickerOpen
+                      ? "border-primary/40 ring-2 ring-primary/15"
+                      : "border-border/70 hover:border-primary/30 hover:bg-muted/30",
+                    selectedHost && "mt-0",
                   )}
-                />
-              </button>
+                >
+                  {!selectedHost ? (
+                    <>
+                      <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-500/15 text-sky-600 dark:text-sky-400">
+                        <UserRound className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-medium text-foreground">Xodimni tanlang</span>
+                        <span className="block text-[11px] text-muted-foreground">
+                          {typeMeta.hostHint}
+                        </span>
+                      </span>
+                    </>
+                  ) : (
+                    <span className="min-w-0 flex-1 text-xs font-medium text-muted-foreground">
+                      Ro‘yxatni yashirish
+                    </span>
+                  )}
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 shrink-0 text-muted-foreground transition",
+                      hostPickerOpen && "rotate-180",
+                    )}
+                  />
+                </button>
+              ) : null}
 
               {hostPickerOpen ? (
                 <div className="absolute z-30 mt-2 w-full overflow-hidden rounded-2xl border border-border/80 bg-card shadow-2xl shadow-primary/5 ring-1 ring-black/5">
@@ -1705,7 +1714,7 @@ export default function ResepsionPage() {
                         className={cn(
                           "inline-flex cursor-pointer items-center gap-2 rounded-xl border px-2.5 py-1.5 text-xs font-semibold transition",
                           showPharmacyHosts
-                            ? "border-violet-400/40 bg-violet-500/10 text-violet-800"
+                            ? "border-violet-400/40 bg-violet-500/10 text-violet-800 dark:text-violet-200"
                             : "border-border bg-background text-muted-foreground",
                         )}
                       >
@@ -2022,28 +2031,26 @@ export default function ResepsionPage() {
               </div>
 
               {/* Shu xodimga kelganlar tarixi */}
-              <div className="overflow-hidden rounded-2xl border border-indigo-200/60 bg-gradient-to-b from-indigo-50/80 via-card to-card shadow-sm">
-                <div className="flex items-center justify-between gap-2 border-b border-indigo-100 bg-indigo-500/10 px-3 py-2.5">
+              <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm dark:border-white/10 dark:bg-slate-950/50">
+                <div className="flex items-center justify-between gap-2 border-b border-border/50 px-3 py-2 dark:border-white/10">
                   <div className="min-w-0">
-                    <p className="text-xs font-bold text-indigo-900">Tashriflar tarixi</p>
-                    <p className="text-[10px] text-indigo-800/70">
-                      Kim kelgani, qachon va qanday mavzu bilan
-                    </p>
+                    <p className="text-xs font-bold text-foreground">Tashriflar tarixi</p>
+                    <p className="text-[10px] text-muted-foreground">Bosib ochish / tahrirlash</p>
                   </div>
-                  <div className="flex shrink-0 gap-1.5">
-                    <span className="rounded-lg bg-white/80 px-2 py-1 text-center shadow-sm ring-1 ring-indigo-100">
-                      <span className="block text-[9px] font-semibold uppercase text-muted-foreground">
+                  <div className="flex shrink-0 gap-1">
+                    <span className="rounded-md bg-sky-500/10 px-1.5 py-0.5 text-center dark:bg-sky-500/15">
+                      <span className="block text-[8px] font-bold uppercase text-sky-700 dark:text-sky-300">
                         Bugun
                       </span>
-                      <span className="text-sm font-bold tabular-nums text-indigo-700">
+                      <span className="text-xs font-bold tabular-nums text-sky-800 dark:text-sky-200">
                         {hostVisitHistory.today}
                       </span>
                     </span>
-                    <span className="rounded-lg bg-white/80 px-2 py-1 text-center shadow-sm ring-1 ring-indigo-100">
-                      <span className="block text-[9px] font-semibold uppercase text-muted-foreground">
+                    <span className="rounded-md bg-violet-500/10 px-1.5 py-0.5 text-center dark:bg-violet-500/15">
+                      <span className="block text-[8px] font-bold uppercase text-violet-700 dark:text-violet-300">
                         Jami
                       </span>
-                      <span className="text-sm font-bold tabular-nums text-indigo-700">
+                      <span className="text-xs font-bold tabular-nums text-violet-800 dark:text-violet-200">
                         {hostVisitHistory.total}
                       </span>
                     </span>
@@ -2051,67 +2058,58 @@ export default function ResepsionPage() {
                 </div>
 
                 {hostHistoryQ.isLoading ? (
-                  <div className="flex items-center justify-center gap-2 px-3 py-8 text-xs text-muted-foreground">
+                  <div className="flex items-center justify-center gap-2 px-3 py-6 text-xs text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Tarix yuklanmoqda…
+                    Yuklanmoqda…
                   </div>
                 ) : !hostVisitHistory.items.length ? (
-                  <div className="px-3 py-7 text-center">
-                    <Users className="mx-auto mb-2 h-7 w-7 text-indigo-300" />
-                    <p className="text-xs font-semibold text-foreground">Hali tashrif yo‘q</p>
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      Shu xodimga birinchi mehmon qayd etilganda bu yerda ko‘rinadi.
-                    </p>
+                  <div className="px-3 py-6 text-center">
+                    <Users className="mx-auto mb-1.5 h-6 w-6 text-muted-foreground/40" />
+                    <p className="text-xs font-semibold">Hali tashrif yo‘q</p>
                   </div>
                 ) : (
-                  <ul className="max-h-64 space-y-0 overflow-y-auto divide-y divide-border/50">
+                  <ul className="max-h-56 overflow-y-auto divide-y divide-border/40 dark:divide-white/5">
                     {hostVisitHistory.items.map((row) => {
                       const tur = typeLabel(String(row.visitType));
-                      const mavzu = row.purpose?.trim() || row.visitorRoleHint?.trim() || "Mavzu ko‘rsatilmagan";
+                      const mavzu =
+                        row.purpose?.trim() || row.visitorRoleHint?.trim() || "Mavzu yo‘q";
                       const holat = statusLabel(String(row.status));
                       return (
-                        <li key={row.id} className="flex gap-2.5 px-3 py-2.5">
-                          <AvatarBubble
-                            name={row.visitorFullName}
-                            size="sm"
-                            tone="violet"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <p className="truncate text-sm font-semibold text-foreground">
-                                {row.visitorFullName}
-                              </p>
-                              <span
-                                className={cn(
-                                  "rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase",
-                                  TYPE_BADGE[row.visitType] || "bg-muted",
-                                )}
-                              >
-                                {tur}
+                        <li key={row.id}>
+                          <button
+                            type="button"
+                            onClick={() => openEdit(row)}
+                            className="flex w-full gap-2 px-2.5 py-2 text-left transition hover:bg-muted/40"
+                          >
+                            <AvatarBubble name={row.visitorFullName} size="sm" tone="violet" />
+                            <span className="min-w-0 flex-1">
+                              <span className="flex flex-wrap items-center gap-1">
+                                <span className="truncate text-[12px] font-semibold text-foreground">
+                                  {row.visitorFullName}
+                                </span>
+                                <span
+                                  className={cn(
+                                    "rounded px-1 py-px text-[8px] font-bold uppercase",
+                                    TYPE_BADGE[row.visitType] || "bg-muted",
+                                  )}
+                                >
+                                  {tur}
+                                </span>
+                                <span
+                                  className={cn(
+                                    "rounded px-1 py-px text-[8px] font-semibold",
+                                    STATUS_BADGE[row.status] || "bg-muted",
+                                  )}
+                                >
+                                  {holat}
+                                </span>
                               </span>
-                              <span
-                                className={cn(
-                                  "rounded-md px-1.5 py-0.5 text-[9px] font-semibold",
-                                  STATUS_BADGE[row.status] || "bg-muted",
-                                )}
-                              >
-                                {holat}
+                              <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
+                                {mavzu} · {formatVisitTime(row.visitAt)}
+                                {row.visitorPhone ? ` · ${row.visitorPhone}` : ""}
                               </span>
-                            </div>
-                            <p className="mt-0.5 truncate text-[11px] text-foreground/80">
-                              <span className="font-medium text-indigo-700 dark:text-indigo-300">Mavzu:</span>{" "}
-                              {mavzu}
-                            </p>
-                            <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[10px] text-muted-foreground">
-                              <span>{formatVisitDt(row.visitAt)}</span>
-                              {row.visitorPhone ? <span>· {row.visitorPhone}</span> : null}
-                            </p>
-                            {row.notes?.trim() ? (
-                              <p className="mt-1 line-clamp-2 text-[10px] leading-snug text-muted-foreground">
-                                Izoh: {row.notes.trim()}
-                              </p>
-                            ) : null}
-                          </div>
+                            </span>
+                          </button>
                         </li>
                       );
                     })}
@@ -2305,111 +2303,113 @@ export default function ResepsionPage() {
       {/* Table */}
       <section className="overflow-hidden rounded-3xl border border-border/70 bg-card shadow-lg shadow-primary/5 dark:border-white/10">
         <div className="space-y-3 border-b border-border/60 bg-gradient-to-r from-muted/40 via-card to-card px-4 py-4 dark:from-muted/20">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
+            <div className="min-w-0">
               <h2 className="text-base font-bold tracking-tight">
                 {periodTitle(period, customFrom, customTo)}
               </h2>
               <p className="text-xs text-muted-foreground">
-                {items.length} ta ko‘rsatilmoqda
-                {statusFilter !== "all" || typeFilter !== "all"
-                  ? ` · jami ${allItems.length}`
-                  : ""}
-                {" · "}
-                qatorni bosing — ochish / tahrirlash
+                {items.length} ta · qatorni bosing — ochish / tahrirlash
               </p>
             </div>
-            <div className="relative min-w-[180px] flex-1 sm:max-w-[220px] sm:flex-none">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Qidirish…"
-                className="h-9 rounded-xl pl-8"
-              />
-            </div>
-          </div>
-
-          {/* Davr filtrlari */}
-          <div className="space-y-2.5 rounded-2xl border border-border/60 bg-background/70 p-3 dark:border-white/10 dark:bg-muted/20">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="mr-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                <CalendarDays className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" />
-                Davr
-              </span>
-              {(
-                [
-                  ["today", "Bugun"],
-                  ["yesterday", "Kecha"],
-                  ["week", "Hafta"],
-                  ["month", "Oy"],
-                  ["all", "Barchasi"],
-                ] as const
-              ).map(([key, lab]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => applyPeriod(key)}
-                  className={cn(
-                    "rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition",
-                    period === key
-                      ? "border-primary/40 bg-primary text-primary-foreground shadow-sm"
-                      : "border-border/70 bg-card text-muted-foreground hover:bg-muted/50 dark:border-white/10",
-                  )}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[150px] flex-1 sm:max-w-[200px] sm:flex-none">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Qidirish…"
+                  className="h-8 rounded-lg pl-8 text-sm"
+                />
+              </div>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      "inline-flex h-8 max-w-[200px] items-center gap-1.5 rounded-lg border px-2.5 text-left text-[11px] font-bold shadow-sm transition",
+                      "border-border/70 bg-card hover:bg-muted/50 dark:border-white/10",
+                      period !== "today" && "border-sky-400/40 bg-sky-50 text-sky-900 dark:bg-sky-500/15 dark:text-sky-100",
+                    )}
+                  >
+                    <CalendarDays className="h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-400" />
+                    <span className="min-w-0 truncate">
+                      {period === "today"
+                        ? "Bugun"
+                        : period === "yesterday"
+                          ? "Kecha"
+                          : period === "week"
+                            ? "Hafta"
+                            : period === "month"
+                              ? "Oy"
+                              : period === "all"
+                                ? "Barchasi"
+                                : periodTitle(period, customFrom, customTo)}
+                    </span>
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="end"
+                  className="z-50 w-[min(100vw-1.5rem,280px)] rounded-xl border border-border/70 p-2.5 shadow-xl"
                 >
-                  {lab}
-                </button>
-              ))}
-            </div>
-            <div className="flex flex-wrap items-end gap-2">
-              <label className="min-w-[140px] flex-1 space-y-1">
-                <span className="block text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                  Sanadan
-                </span>
-                <Input
-                  type="date"
-                  value={customFrom}
-                  onChange={(e) => {
-                    setCustomFrom(e.target.value);
-                    setPeriod("custom");
-                  }}
-                  className="h-9 rounded-xl text-sm"
-                />
-              </label>
-              <span className="mb-2 hidden text-muted-foreground sm:inline">—</span>
-              <label className="min-w-[140px] flex-1 space-y-1">
-                <span className="block text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                  Sanaga
-                </span>
-                <Input
-                  type="date"
-                  value={customTo}
-                  min={customFrom || undefined}
-                  onChange={(e) => {
-                    setCustomTo(e.target.value);
-                    setPeriod("custom");
-                  }}
-                  className="h-9 rounded-xl text-sm"
-                />
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  if (customFrom && customTo && customFrom > customTo) {
-                    setCustomFrom(customTo);
-                    setCustomTo(customFrom);
-                  }
-                  setPeriod("custom");
-                }}
-                className={cn(
-                  "h-9 rounded-xl border px-3 text-[11px] font-bold transition",
-                  period === "custom"
-                    ? "border-sky-500/40 bg-sky-600 text-white shadow-sm"
-                    : "border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100 dark:border-sky-500/30 dark:bg-sky-500/15 dark:text-sky-200",
-                )}
-              >
-                Oraliq
-              </button>
+                  <p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                    Davr
+                  </p>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(
+                      [
+                        ["today", "Bugun"],
+                        ["yesterday", "Kecha"],
+                        ["week", "Hafta"],
+                        ["month", "Oy"],
+                        ["all", "Barchasi"],
+                      ] as const
+                    ).map(([key, lab]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => applyPeriod(key)}
+                        className={cn(
+                          "rounded-lg border px-2 py-1.5 text-[11px] font-bold transition",
+                          period === key
+                            ? "border-primary/40 bg-primary text-primary-foreground"
+                            : "border-border/60 bg-background hover:bg-muted/50",
+                          key === "all" && "col-span-1",
+                        )}
+                      >
+                        {lab}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-2 space-y-1.5 border-t border-border/50 pt-2">
+                    <p className="px-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                      Sanadan — sanaga
+                    </p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <Input
+                        type="date"
+                        value={customFrom}
+                        onChange={(e) => {
+                          setCustomFrom(e.target.value);
+                          setPeriod("custom");
+                        }}
+                        className="h-8 rounded-lg px-2 text-[11px]"
+                      />
+                      <Input
+                        type="date"
+                        value={customTo}
+                        min={customFrom || undefined}
+                        onChange={(e) => {
+                          setCustomTo(e.target.value);
+                          setPeriod("custom");
+                        }}
+                        className="h-8 rounded-lg px-2 text-[11px]"
+                      />
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
 
@@ -2622,23 +2622,23 @@ export default function ResepsionPage() {
       </section>
 
       <Sheet open={Boolean(editRow)} onOpenChange={(o) => !o && setEditRow(null)}>
-        <SheetContent className="w-full overflow-y-auto border-l border-border/60 bg-gradient-to-b from-slate-50 via-white to-white p-0 sm:max-w-lg">
-          <div className="border-b border-border/60 bg-gradient-to-r from-sky-50 via-white to-violet-50 px-5 pb-4 pt-5">
-            <SheetHeader className="space-y-1 text-left">
-              <SheetTitle className="flex items-center gap-2 text-lg">
-                <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-sky-500 text-white shadow-md shadow-sky-500/25">
-                  <ConciergeBell className="h-4.5 w-4.5 h-4 w-4" />
+        <SheetContent className="w-full overflow-y-auto border-l border-border/60 bg-card p-0 sm:max-w-md dark:border-white/10 dark:bg-slate-950">
+          <div className="border-b border-border/60 px-4 pb-3 pt-4 dark:border-white/10">
+            <SheetHeader className="space-y-0.5 text-left">
+              <SheetTitle className="flex items-center gap-2 text-base">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-500 text-white shadow-sm">
+                  <ConciergeBell className="h-4 w-4" />
                 </span>
                 Tashrif ma’lumotlari
               </SheetTitle>
-              <p className="text-xs text-muted-foreground">
-                Tahrirlash, boshqa kunga ko‘chirish yoki bekor qilish
+              <p className="pl-10 text-[11px] text-muted-foreground">
+                Tahrirlash · ko‘chirish · bekor
               </p>
             </SheetHeader>
           </div>
           {editRow ? (
-            <div className="space-y-4 px-5 py-4">
-              <div className="flex flex-wrap gap-1.5">
+            <div className="space-y-3 px-4 py-3">
+              <div className="flex flex-wrap gap-1">
                 {TYPE_TABS.map((t) => {
                   const Icon = t.icon;
                   const active = editDraft.visitType === t.value;
@@ -2649,17 +2649,19 @@ export default function ResepsionPage() {
                       disabled={!canWrite}
                       onClick={() => setEditDraft((d) => ({ ...d, visitType: t.value }))}
                       className={cn(
-                        "inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition",
-                        active ? t.activeTab : "border-border/60 bg-white text-foreground/80 hover:bg-muted/40",
+                        "inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-bold transition",
+                        active
+                          ? t.activeTab
+                          : "border-border/60 bg-background text-muted-foreground hover:bg-muted/40 dark:border-white/10",
                       )}
                     >
                       <span
                         className={cn(
-                          "flex h-5 w-5 items-center justify-center rounded-lg text-white shadow-sm",
+                          "flex h-4 w-4 items-center justify-center rounded-md text-white",
                           t.iconBg,
                         )}
                       >
-                        <Icon className="h-3 w-3" />
+                        <Icon className="h-2.5 w-2.5" />
                       </span>
                       {t.label}
                     </button>
@@ -2667,21 +2669,21 @@ export default function ResepsionPage() {
                 })}
               </div>
 
-              <div className="rounded-2xl border border-border/60 bg-white p-3.5 shadow-sm space-y-3">
+              <div className="space-y-2.5 rounded-xl border border-border/60 bg-background/80 p-3 dark:border-white/10 dark:bg-slate-900/60">
                 <div>
-                  <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <label className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Ism familiya
                   </label>
                   <Input
                     value={editDraft.visitorFullName}
                     disabled={!canWrite}
                     onChange={(e) => setEditDraft((d) => ({ ...d, visitorFullName: e.target.value }))}
-                    className="h-10 rounded-xl"
+                    className="h-9 rounded-lg dark:border-white/10 dark:bg-slate-950/60"
                   />
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    <label className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                       Telefon
                     </label>
                     <Input
@@ -2690,54 +2692,54 @@ export default function ResepsionPage() {
                       onChange={(e) =>
                         setEditDraft((d) => ({ ...d, visitorPhone: formatVisitorPhone(e.target.value) }))
                       }
-                      className="h-10 rounded-xl font-medium tabular-nums"
+                      className="h-9 rounded-lg font-medium tabular-nums dark:border-white/10 dark:bg-slate-950/60"
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      Sabab / maqsad
+                    <label className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Sabab
                     </label>
                     <Input
                       value={editDraft.purpose}
                       disabled={!canWrite}
                       onChange={(e) => setEditDraft((d) => ({ ...d, purpose: e.target.value }))}
-                      className="h-10 rounded-xl"
+                      className="h-9 rounded-lg dark:border-white/10 dark:bg-slate-950/60"
                     />
                   </div>
                 </div>
                 <div>
-                  <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <label className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Kimning oldiga
                   </label>
                   <Input
                     value={editDraft.hostName}
                     disabled={!canWrite}
                     onChange={(e) => setEditDraft((d) => ({ ...d, hostName: e.target.value }))}
-                    className="h-10 rounded-xl"
+                    className="h-9 rounded-lg dark:border-white/10 dark:bg-slate-950/60"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <label className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Izoh
                   </label>
                   <Textarea
                     value={editDraft.notes}
                     disabled={!canWrite}
                     onChange={(e) => setEditDraft((d) => ({ ...d, notes: e.target.value }))}
-                    className="min-h-[72px] rounded-xl"
+                    className="min-h-[56px] rounded-lg dark:border-white/10 dark:bg-slate-950/60"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-2 gap-2">
                 <VisitDateTimeField
-                  label="Kirish / uchrashuv"
+                  label="Kirish"
                   icon={Clock3}
                   value={editDraft.visitAt}
                   onChange={(v) => setEditDraft((d) => ({ ...d, visitAt: v }))}
                   disabled={!canWrite}
-                  accentClass="border-sky-200/80 from-sky-50/90 to-card"
-                  iconClass="text-sky-600"
+                  accentClass="border-sky-200/80 from-sky-50/90 to-card dark:border-sky-500/30 dark:from-sky-500/10"
+                  iconClass="text-sky-600 dark:text-sky-400"
                 />
                 <VisitDateTimeField
                   label="Chiqish"
@@ -2747,71 +2749,80 @@ export default function ResepsionPage() {
                   disabled={!canWrite}
                   clearable
                   placeholder="Ixtiyoriy"
-                  accentClass="border-violet-200/80 from-violet-50/80 to-card"
-                  iconClass="text-violet-600"
+                  accentClass="border-violet-200/80 from-violet-50/80 to-card dark:border-violet-500/30 dark:from-violet-500/10"
+                  iconClass="text-violet-600 dark:text-violet-400"
                 />
               </div>
 
               {canWrite ? (
-                <div className="rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-3.5 shadow-sm">
-                  <p className="flex items-center gap-2 text-sm font-bold text-amber-950">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm shadow-amber-500/30">
-                      <CalendarDays className="h-4 w-4" />
-                    </span>
-                    Uchrashuvni ko‘chirish
-                  </p>
-                  <p className="mt-1.5 text-xs leading-relaxed text-amber-950/70">
-                    Boshqa kun yoki vaqtga o‘tkazing — pastdagi kartadan sana tanlang, so‘ng qo‘llang.
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {(
-                      [
-                        [0, "Bugun"],
-                        [1, "Ertaga"],
-                        [2, "+2 kun"],
-                        [7, "+1 hafta"],
-                      ] as const
-                    ).map(([days, lab]) => (
-                      <button
-                        key={lab}
-                        type="button"
-                        onClick={() => shiftVisitDays(days)}
-                        className="rounded-xl border border-amber-200/90 bg-white/90 px-2.5 py-1.5 text-[11px] font-bold text-amber-950 shadow-sm hover:bg-amber-100/80"
-                      >
-                        {lab}
-                      </button>
-                    ))}
+                <Popover>
+                  <PopoverTrigger asChild>
                     <button
                       type="button"
-                      onClick={() => void rescheduleToNow(editRow)}
-                      className="rounded-xl border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-[11px] font-bold text-sky-900 shadow-sm hover:bg-sky-100"
+                      className="flex h-9 w-full items-center justify-between gap-2 rounded-xl border border-amber-300/50 bg-amber-500/10 px-3 text-left text-[11px] font-bold text-amber-950 transition hover:bg-amber-500/15 dark:border-amber-500/30 dark:text-amber-100"
                     >
-                      Hozir
+                      <span className="flex items-center gap-2">
+                        <CalendarDays className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                        Uchrashuvni ko‘chirish
+                      </span>
+                      <ChevronDown className="h-3.5 w-3.5 opacity-60" />
                     </button>
-                  </div>
-                  <Button
-                    type="button"
-                    className="mt-3 h-10 w-full rounded-xl bg-amber-600 hover:bg-amber-700 shadow-amber-600/25"
-                    disabled={mut.update.isPending}
-                    onClick={() => void applyReschedule()}
-                  >
-                    {mut.update.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Ko‘chirishni qo‘llash
-                  </Button>
-                </div>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="z-50 w-[min(100vw-2rem,300px)] rounded-xl p-2.5">
+                    <div className="flex flex-wrap gap-1">
+                      {(
+                        [
+                          [0, "Bugun"],
+                          [1, "Ertaga"],
+                          [2, "+2 kun"],
+                          [7, "+1 hafta"],
+                        ] as const
+                      ).map(([days, lab]) => (
+                        <button
+                          key={lab}
+                          type="button"
+                          onClick={() => shiftVisitDays(days)}
+                          className="rounded-lg border border-border/70 px-2 py-1 text-[10px] font-bold hover:bg-muted/50"
+                        >
+                          {lab}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => void rescheduleToNow(editRow)}
+                        className="rounded-lg border border-sky-300/50 bg-sky-500/10 px-2 py-1 text-[10px] font-bold text-sky-900 dark:text-sky-200"
+                      >
+                        Hozir
+                      </button>
+                    </div>
+                    <p className="mt-2 text-[10px] text-muted-foreground">
+                      Yoki yuqoridagi «Kirish» kartasidan sana tanlang
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="mt-2 h-8 w-full rounded-lg bg-amber-600 text-xs hover:bg-amber-700"
+                      disabled={mut.update.isPending}
+                      onClick={() => void applyReschedule()}
+                    >
+                      {mut.update.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+                      Qo‘llash
+                    </Button>
+                  </PopoverContent>
+                </Popover>
               ) : null}
 
               <div>
-                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Holat
                 </label>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex flex-wrap gap-1">
                   {(
                     [
-                      ["waiting", "Kutilmoqda", "border-amber-200 bg-amber-50 text-amber-950"],
-                      ["in_progress", "Ofisda", "border-sky-200 bg-sky-50 text-sky-900"],
-                      ["done", "Chiqdi", "border-emerald-200 bg-emerald-50 text-emerald-900"],
-                      ["cancelled", "Bekor", "border-rose-200 bg-rose-50 text-rose-900"],
+                      ["waiting", "Kutilmoqda", "border-amber-200/80 bg-amber-500/10 text-amber-950 dark:text-amber-100"],
+                      ["in_progress", "Ofisda", "border-sky-200/80 bg-sky-500/10 text-sky-900 dark:text-sky-100"],
+                      ["done", "Chiqdi", "border-emerald-200/80 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100"],
+                      ["cancelled", "Bekor", "border-rose-200/80 bg-rose-500/10 text-rose-900 dark:text-rose-100"],
                     ] as const
                   ).map(([k, lab, idle]) => (
                     <button
@@ -2820,9 +2831,9 @@ export default function ResepsionPage() {
                       disabled={!canWrite}
                       onClick={() => setEditDraft((d) => ({ ...d, status: k }))}
                       className={cn(
-                        "rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition",
+                        "rounded-lg border px-2 py-1 text-[10px] font-bold transition",
                         editDraft.status === k
-                          ? "border-primary/40 bg-primary text-primary-foreground shadow-sm"
+                          ? "border-primary/40 bg-primary text-primary-foreground"
                           : idle,
                       )}
                     >
@@ -2833,49 +2844,49 @@ export default function ResepsionPage() {
               </div>
 
               {canWrite ? (
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-1.5">
                   <Button
                     type="button"
                     variant="secondary"
-                    className="h-10 rounded-xl"
+                    className="h-9 rounded-lg text-xs"
                     disabled={editDraft.status === "done"}
                     onClick={() => void markDone(editRow)}
                   >
-                    <CheckCircle2 className="mr-1.5 h-3.5 w-3.5 text-emerald-600" />
+                    <CheckCircle2 className="mr-1 h-3.5 w-3.5 text-emerald-600" />
                     Chiqdi
                   </Button>
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-10 rounded-xl border-rose-200 text-rose-700 hover:bg-rose-50"
+                    className="h-9 rounded-lg border-rose-200 text-xs text-rose-700 hover:bg-rose-50 dark:border-rose-500/30 dark:text-rose-300"
                     onClick={() => void cancelVisit(editRow)}
                   >
-                    <X className="mr-1.5 h-3.5 w-3.5" />
-                    Bekor qilish
+                    <X className="mr-1 h-3.5 w-3.5" />
+                    Bekor
                   </Button>
                   {canDelete ? (
                     <Button
                       type="button"
                       variant="outline"
-                      className="col-span-2 h-10 rounded-xl border-rose-300 bg-rose-50/50 text-rose-700 hover:bg-rose-100"
+                      className="col-span-2 h-9 rounded-lg border-rose-300 text-xs text-rose-700 dark:border-rose-500/40 dark:text-rose-300"
                       onClick={() => void onDelete(editRow).then(() => setEditRow(null))}
                     >
-                      <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                      O‘chirish (faqat admin)
+                      <Trash2 className="mr-1 h-3.5 w-3.5" />
+                      O‘chirish
                     </Button>
                   ) : null}
                 </div>
               ) : null}
             </div>
           ) : null}
-          <SheetFooter className="sticky bottom-0 gap-2 border-t border-border/60 bg-white/95 px-5 py-3 backdrop-blur sm:space-x-0">
-            <Button type="button" variant="outline" className="rounded-xl" onClick={() => setEditRow(null)}>
+          <SheetFooter className="sticky bottom-0 gap-2 border-t border-border/60 bg-card/95 px-4 py-2.5 backdrop-blur dark:border-white/10 dark:bg-slate-950/95 sm:space-x-0">
+            <Button type="button" variant="outline" className="h-9 rounded-lg" onClick={() => setEditRow(null)}>
               Yopish
             </Button>
             {canWrite ? (
               <Button
                 type="button"
-                className="rounded-xl"
+                className="h-9 rounded-lg"
                 disabled={mut.update.isPending}
                 onClick={() => void saveEdit()}
               >

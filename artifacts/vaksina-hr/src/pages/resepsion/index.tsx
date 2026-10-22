@@ -367,30 +367,62 @@ function presenceBadgeClass(status?: string) {
   return "bg-rose-100 text-rose-800 ring-1 ring-rose-200";
 }
 
+const UZ_WEEKDAY: Record<string, string> = {
+  Mon: "Dushanba",
+  Tue: "Seshanba",
+  Wed: "Chorshanba",
+  Thu: "Payshanba",
+  Fri: "Juma",
+  Sat: "Shanba",
+  Sun: "Yakshanba",
+};
+const UZ_MONTH = [
+  "Yanvar",
+  "Fevral",
+  "Mart",
+  "Aprel",
+  "May",
+  "Iyun",
+  "Iyul",
+  "Avgust",
+  "Sentabr",
+  "Oktabr",
+  "Noyabr",
+  "Dekabr",
+];
+
 function liveClock() {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(id);
   }, []);
-  const opts = { timeZone: "Asia/Tashkent" } as const;
-  const time = now.toLocaleTimeString("uz-UZ", {
-    ...opts,
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Tashkent",
+    weekday: "short",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
     hour12: false,
-  });
-  const weekday = now.toLocaleDateString("uz-UZ", {
-    ...opts,
-    weekday: "long",
-  });
-  const dateLine = now.toLocaleDateString("uz-UZ", {
-    ...opts,
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-  return { time, weekday, dateLine };
+  }).formatToParts(now);
+  const get = (t: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === t)?.value || "";
+  const wdEn = get("weekday");
+  const monthNum = Math.max(1, Number(get("month")) || 1);
+  const day = get("day");
+  const year = get("year");
+  const hh = get("hour").padStart(2, "0");
+  const mm = get("minute").padStart(2, "0");
+  const ss = get("second").padStart(2, "0");
+  return {
+    weekday: UZ_WEEKDAY[wdEn] || wdEn,
+    dateLine: `${Number(day)} ${UZ_MONTH[monthNum - 1] || ""} ${year}`,
+    time: `${hh}:${mm}`,
+    seconds: ss,
+  };
 }
 
 export default function ResepsionPage() {
@@ -663,21 +695,24 @@ export default function ResepsionPage() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-3 rounded-2xl border border-white/15 bg-white/10 px-3.5 py-3 shadow-lg backdrop-blur-md sm:gap-4 sm:px-4">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15">
+          <div className="flex items-center gap-3 rounded-2xl border border-white/20 bg-white/12 px-3.5 py-3 shadow-lg ring-1 ring-white/10 backdrop-blur-md sm:gap-4 sm:px-4">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20">
               <CalendarDays className="h-5 w-5" strokeWidth={1.75} />
             </span>
             <div className="min-w-0">
-              <p className="text-[12px] font-medium capitalize leading-tight text-white/70">
-                {clock.weekday}
-              </p>
+              <p className="text-[12px] font-medium leading-tight text-white/70">{clock.weekday}</p>
               <p className="mt-0.5 text-sm font-semibold leading-tight sm:text-[15px]">
                 {clock.dateLine}
               </p>
             </div>
-            <p className="ml-1 pl-3 text-2xl font-bold tabular-nums tracking-tight text-sky-200 sm:ml-2 sm:pl-4 sm:text-[28px] sm:leading-none">
-              {clock.time}
-            </p>
+            <div className="ml-1 flex items-baseline gap-1 rounded-2xl bg-sky-400/20 px-3 py-1.5 ring-1 ring-sky-300/30 sm:ml-2 sm:px-3.5">
+              <span className="text-2xl font-bold tabular-nums tracking-tight text-sky-100 sm:text-[28px] sm:leading-none">
+                {clock.time}
+              </span>
+              <span className="text-base font-semibold tabular-nums text-sky-200/90 sm:text-lg">
+                :{clock.seconds}
+              </span>
+            </div>
           </div>
         </div>
       </div>

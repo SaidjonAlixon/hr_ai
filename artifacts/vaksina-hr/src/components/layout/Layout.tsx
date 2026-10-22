@@ -1450,6 +1450,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     asoschi: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+      resepsionNav,
       javobNav,
       javobHolatNav,
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
@@ -1511,6 +1512,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     director: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+      resepsionNav,
       javobHolatNav,
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },

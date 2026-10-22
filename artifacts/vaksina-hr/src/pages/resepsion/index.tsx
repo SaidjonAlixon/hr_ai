@@ -1367,15 +1367,22 @@ export default function ResepsionPage() {
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-[11px] font-semibold text-sky-700 dark:text-sky-300">
                   Bugun {stats?.today ?? 0} tashrif
                 </span>
-                <button
-                  type="button"
-                  onClick={openReminderSheet}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500 px-3 py-1.5 text-[11px] font-bold text-white shadow-md shadow-amber-500/25 transition hover:bg-amber-600"
-                >
-                  <AlarmClock className="h-3.5 w-3.5" />
-                  Eslatma
-                </button>
               </div>
+              <button
+                type="button"
+                onClick={openReminderSheet}
+                className="mt-4 inline-flex w-full max-w-sm items-center gap-3 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 px-4 py-3.5 text-left text-white shadow-lg shadow-amber-500/30 transition hover:brightness-110 sm:w-auto"
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 ring-1 ring-white/25">
+                  <AlarmClock className="h-5 w-5" />
+                </span>
+                <span>
+                  <span className="block text-sm font-bold">Eslatma / uchrashuv</span>
+                  <span className="block text-[11px] opacity-90">
+                    Ofis xodimiga — hozir yoki kelgusi vaqt
+                  </span>
+                </span>
+              </button>
             </div>
           </div>
 
@@ -1403,7 +1410,7 @@ export default function ResepsionPage() {
       </div>
 
       {/* Stats strip */}
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
         <button
           type="button"
           onClick={scrollToForm}
@@ -1415,6 +1422,19 @@ export default function ResepsionPage() {
           <span>
             <span className="block text-sm font-bold">Yangi qayd</span>
             <span className="block text-[11px] opacity-85">Tezkor ro‘yxatga olish</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={openReminderSheet}
+          className="flex items-center gap-3 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 px-4 py-3.5 text-left text-white shadow-lg shadow-amber-500/30 transition hover:brightness-110"
+        >
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/20 ring-1 ring-white/25">
+            <AlarmClock className="h-5 w-5" />
+          </span>
+          <span>
+            <span className="block text-sm font-bold">Eslatma</span>
+            <span className="block text-[11px] opacity-90">Kelgusi vaqtga ham</span>
           </span>
         </button>
         {(
@@ -2864,14 +2884,61 @@ export default function ResepsionPage() {
               />
             </div>
 
-            <VisitDateTimeField
-              label="Uchrashuv vaqti"
-              icon={Clock3}
-              value={reminderDueAt}
-              onChange={setReminderDueAt}
-              accentClass="border-amber-200/80 from-amber-50/90 to-card dark:border-amber-500/30 dark:from-amber-500/10"
-              iconClass="text-amber-600 dark:text-amber-400"
-            />
+            <div>
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Tezkor vaqt (kelgusi)
+              </p>
+              <div className="mb-2 flex flex-wrap gap-1">
+                {(
+                  [
+                    ["1h", "+1 soat"],
+                    ["3h", "+3 soat"],
+                    ["tomorrow10", "Ertaga 10:00"],
+                    ["tomorrow14", "Ertaga 14:00"],
+                    ["2d", "+2 kun"],
+                    ["week", "+1 hafta"],
+                  ] as const
+                ).map(([key, lab]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => {
+                      const next = new Date();
+                      if (key === "1h") next.setHours(next.getHours() + 1, next.getMinutes(), 0, 0);
+                      else if (key === "3h") next.setHours(next.getHours() + 3, next.getMinutes(), 0, 0);
+                      else if (key === "tomorrow10") {
+                        next.setDate(next.getDate() + 1);
+                        next.setHours(10, 0, 0, 0);
+                      } else if (key === "tomorrow14") {
+                        next.setDate(next.getDate() + 1);
+                        next.setHours(14, 0, 0, 0);
+                      } else if (key === "2d") {
+                        next.setDate(next.getDate() + 2);
+                        next.setHours(10, 0, 0, 0);
+                      } else if (key === "week") {
+                        next.setDate(next.getDate() + 7);
+                        next.setHours(10, 0, 0, 0);
+                      }
+                      setReminderDueAt(toLocalInputValue(next));
+                    }}
+                    className="rounded-lg border border-amber-300/50 bg-amber-500/10 px-2 py-1 text-[10px] font-bold text-amber-950 hover:bg-amber-500/20 dark:border-amber-500/30 dark:text-amber-100"
+                  >
+                    {lab}
+                  </button>
+                ))}
+              </div>
+              <VisitDateTimeField
+                label="Uchrashuv / eslatma vaqti"
+                icon={Clock3}
+                value={reminderDueAt}
+                onChange={setReminderDueAt}
+                accentClass="border-amber-200/80 from-amber-50/90 to-card dark:border-amber-500/30 dark:from-amber-500/10"
+                iconClass="text-amber-600 dark:text-amber-400"
+              />
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                Istalgan kelgusi sanani tanlang — xodimga shu vaqtda eslatma ketadi
+              </p>
+            </div>
 
             <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-border/60 px-3 py-2.5 dark:border-white/10">
               <Checkbox

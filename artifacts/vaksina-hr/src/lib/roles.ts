@@ -638,6 +638,25 @@ export function isPharmacyDeviceStaff(role?: string | null): boolean {
   return r === "mudir" || r === "farmasevt" || r === "stajyor" || r === "koordinator";
 }
 
+/**
+ * Ofis xodimi (dorixona/SB/ombor/admin emas) — Face ID bir martalik enroll majburiy.
+ * Backend `isOfisStaffEmp` bilan mos.
+ */
+export function isOfisStaffRole(role?: string | null): boolean {
+  const r = normalizeUserRole(role);
+  if (!r) return false;
+  if (r === "admin" || r === "oquvchi") return false;
+  if (r === "mudir" || r === "farmasevt" || r === "stajyor" || r === "koordinator") return false;
+  if (r === "sb" || r === "sb_boshliq") return false;
+  if (r === "ombor" || r === "ombor_rahbar") return false;
+  return true;
+}
+
+/** Face ID ro‘yxatdan o‘tish majburiy: dorixona yoki ofis */
+export function requiresMandatoryFaceEnroll(role?: string | null): boolean {
+  return isPharmacyDeviceStaff(role) || isOfisStaffRole(role);
+}
+
 /** Filial reytingi (cheklist ball) — o‘z filiali */
 export function canViewPharmacyReyting(role?: string | null): boolean {
   return isPharmacyBranchRole(role);

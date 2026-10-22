@@ -1,130 +1,153 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  Briefcase,
-  Building2,
-  CalendarClock,
+  Bell,
+  BriefcaseBusiness,
   CheckCircle2,
+  Clock3,
   ConciergeBell,
+  Download,
+  FileText,
   Loader2,
-  MessageSquare,
+  LogOut,
   Package,
   Phone,
   Plus,
+  QrCode,
   Search,
+  Send,
   Trash2,
   UserRound,
   Users,
+  UserPlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
-  formatVisitDt,
+  formatVisitTime,
   fromLocalInputValue,
+  initialsOf,
   toLocalInputValue,
   useReceptionHosts,
   useReceptionLogs,
   useReceptionMeta,
   useReceptionMutations,
+  type ReceptionHost,
   type ReceptionLog,
   type ReceptionVisitType,
 } from "@/lib/resepsion-api";
 import { userRoleLabel } from "@/lib/roles";
 
-type FormState = {
-  visitType: ReceptionVisitType;
-  topic: string;
-  visitorFullName: string;
-  visitorPhone: string;
-  visitorRoleHint: string;
-  hostName: string;
-  hostUserId: string;
-  interviewerName: string;
-  interviewerUserId: string;
-  purpose: string;
-  notes: string;
-  status: string;
-  visitAt: string;
-  leftAt: string;
+const TYPE_TABS: {
+  value: ReceptionVisitType;
+  label: string;
+  icon: typeof UserRound;
+  color: string;
+}[] = [
+  { value: "guest", label: "Mehmon", icon: UserRound, color: "bg-sky-500" },
+  { value: "staff", label: "Xodim", icon: Users, color: "bg-emerald-500" },
+  { value: "candidate", label: "Nomzod", icon: UserPlus, color: "bg-violet-500" },
+  { value: "request", label: "Murojaat", icon: FileText, color: "bg-amber-500" },
+  { value: "package", label: "Posilka", icon: Package, color: "bg-rose-500" },
+];
+
+const TYPE_BADGE: Record<string, string> = {
+  guest: "bg-sky-100 text-sky-800",
+  staff: "bg-emerald-100 text-emerald-800",
+  candidate: "bg-violet-100 text-violet-800",
+  request: "bg-amber-100 text-amber-900",
+  package: "bg-rose-100 text-rose-800",
+  interview: "bg-violet-100 text-violet-800",
+  office_visit: "bg-sky-100 text-sky-800",
+  other: "bg-amber-100 text-amber-900",
 };
 
-const emptyForm = (type: ReceptionVisitType = "interview"): FormState => ({
-  visitType: type,
-  topic: "other",
-  visitorFullName: "",
-  visitorPhone: "",
-  visitorRoleHint: "",
-  hostName: "",
-  hostUserId: "",
-  interviewerName: "",
-  interviewerUserId: "",
-  purpose: "",
-  notes: "",
-  status: "waiting",
-  visitAt: toLocalInputValue(new Date()),
-  leftAt: "",
-});
-
-const TYPE_META: Record<
-  string,
-  { label: string; hint: string; icon: typeof ConciergeBell; tone: string }
-> = {
-  interview: {
-    label: "Suhbat",
-    hint: "Nomzod / stajyor / farmasevt — ism, raqam, kim suhbat oladi",
-    icon: Briefcase,
-    tone: "from-sky-500/15 to-sky-500/5 border-sky-500/20",
-  },
-  office_visit: {
-    label: "Ofis tashrifi",
-    hint: "Kim keldi, kimning oldiga, nima uchun",
-    icon: Building2,
-    tone: "from-violet-500/15 to-violet-500/5 border-violet-500/20",
-  },
-  other: {
-    label: "Boshqa murojaat",
-    hint: "Posilka, qo‘ng‘iroq, hujjat, shikoyat…",
-    icon: Package,
-    tone: "from-amber-500/15 to-amber-500/5 border-amber-500/20",
-  },
-};
-
-const STATUS_STYLE: Record<string, string> = {
+const STATUS_BADGE: Record<string, string> = {
   waiting: "bg-amber-100 text-amber-900",
-  in_progress: "bg-sky-100 text-sky-900",
-  done: "bg-emerald-100 text-emerald-900",
+  in_progress: "bg-emerald-100 text-emerald-800",
+  done: "bg-slate-100 text-slate-700",
   cancelled: "bg-muted text-muted-foreground",
-  no_show: "bg-rose-100 text-rose-900",
+  no_show: "bg-rose-100 text-rose-800",
 };
 
-function statusLabel(v: string, map?: { value: string; label: string }[]) {
-  return map?.find((x) => x.value === v)?.label || v;
+function statusLabel(s: string) {
+  if (s === "waiting") return "Kutilmoqda";
+  if (s === "in_progress") return "Ofisda";
+  if (s === "done") return "Chiqdi";
+  if (s === "cancelled") return "Bekor";
+  if (s === "no_show") return "Kelmadi";
+  return s;
+}
+
+function typeLabel(t: string) {
+  return TYPE_TABS.find((x) => x.value === t)?.label || t;
+}
+
+function AvatarBubble({
+  name,
+  tone = "primary",
+  size = "md",
+}: {
+  name: string;
+  tone?: "primary" | "soft" | "violet" | "emerald";
+  size?: "sm" | "md" | "lg";
+}) {
+  const sz = size === "lg" ? "h-14 w-14 text-base" : size === "sm" ? "h-8 w-8 text-[10px]" : "h-10 w-10 text-xs";
+  const bg =
+    tone === "violet"
+      ? "bg-violet-500/15 text-violet-700"
+      : tone === "emerald"
+        ? "bg-emerald-500/15 text-emerald-700"
+        : tone === "soft"
+          ? "bg-slate-100 text-slate-600"
+          : "bg-primary/15 text-primary";
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center justify-center rounded-full font-bold",
+        sz,
+        bg,
+      )}
+    >
+      {initialsOf(name)}
+    </span>
+  );
+}
+
+function liveClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  const time = now.toLocaleTimeString("uz-UZ", {
+    timeZone: "Asia/Tashkent",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const date = now.toLocaleDateString("uz-UZ", {
+    timeZone: "Asia/Tashkent",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  return { time, date };
 }
 
 export default function ResepsionPage() {
   const { toast } = useToast();
+  const clock = liveClock();
   const metaQ = useReceptionMeta();
-  const [visitTypeFilter, setVisitTypeFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [q, setQ] = useState("");
+  const hostsQ = useReceptionHosts();
+  const mut = useReceptionMutations();
+
   const [dayScope, setDayScope] = useState<"today" | "all">("today");
+  const [q, setQ] = useState("");
+  const [hostSearch, setHostSearch] = useState("");
+  const [hostPickerOpen, setHostPickerOpen] = useState(false);
 
   const range = useMemo(() => {
     if (dayScope !== "today") return {};
@@ -136,97 +159,87 @@ export default function ResepsionPage() {
   }, [dayScope]);
 
   const logsQ = useReceptionLogs({
-    visitType: visitTypeFilter === "all" ? undefined : visitTypeFilter,
-    status: statusFilter === "all" ? undefined : statusFilter,
     q: q.trim() || undefined,
     ...range,
   });
-
-  const hostsQ = useReceptionHosts();
-  const mut = useReceptionMutations();
-
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<ReceptionLog | null>(null);
-  const [form, setForm] = useState<FormState>(emptyForm());
 
   const canWrite = metaQ.data?.canWrite ?? logsQ.data?.canWrite ?? false;
   const stats = logsQ.data?.stats;
   const items = logsQ.data?.items ?? [];
 
-  function openCreate(type: ReceptionVisitType) {
-    setEditing(null);
-    setForm(emptyForm(type));
-    setOpen(true);
+  const [visitType, setVisitType] = useState<ReceptionVisitType>("guest");
+  const [visitorFullName, setVisitorFullName] = useState("");
+  const [visitorPhone, setVisitorPhone] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [notes, setNotes] = useState("");
+  const [visitAt, setVisitAt] = useState(() => toLocalInputValue(new Date()));
+  const [leftAt, setLeftAt] = useState("");
+  const [hostUserId, setHostUserId] = useState("");
+  const [hostName, setHostName] = useState("");
+
+  const selectedHost: ReceptionHost | null = useMemo(() => {
+    if (!hostUserId) return null;
+    return hostsQ.data?.items.find((h) => String(h.id) === hostUserId) || null;
+  }, [hostUserId, hostsQ.data?.items]);
+
+  const filteredHosts = useMemo(() => {
+    const list = hostsQ.data?.items || [];
+    const s = hostSearch.trim().toLowerCase();
+    if (!s) return list.slice(0, 40);
+    return list
+      .filter(
+        (h) =>
+          h.fullName.toLowerCase().includes(s) ||
+          String(h.role || "").toLowerCase().includes(s) ||
+          String(h.phone || "").includes(s),
+      )
+      .slice(0, 40);
+  }, [hostsQ.data?.items, hostSearch]);
+
+  function resetForm() {
+    setVisitorFullName("");
+    setVisitorPhone("");
+    setPurpose("");
+    setNotes("");
+    setVisitAt(toLocalInputValue(new Date()));
+    setLeftAt("");
+    setHostUserId("");
+    setHostName("");
+    setHostSearch("");
   }
 
-  function openEdit(row: ReceptionLog) {
-    setEditing(row);
-    setForm({
-      visitType: (row.visitType as ReceptionVisitType) || "interview",
-      topic: row.topic || "other",
-      visitorFullName: row.visitorFullName || "",
-      visitorPhone: row.visitorPhone || "",
-      visitorRoleHint: row.visitorRoleHint || "",
-      hostName: row.hostName || "",
-      hostUserId: row.hostUserId ? String(row.hostUserId) : "",
-      interviewerName: row.interviewerName || "",
-      interviewerUserId: row.interviewerUserId ? String(row.interviewerUserId) : "",
-      purpose: row.purpose || "",
-      notes: row.notes || "",
-      status: row.status || "waiting",
-      visitAt: toLocalInputValue(row.visitAt),
-      leftAt: row.leftAt ? toLocalInputValue(row.leftAt) : "",
-    });
-    setOpen(true);
+  function pickHost(h: ReceptionHost) {
+    setHostUserId(String(h.id));
+    setHostName(h.fullName);
+    setHostPickerOpen(false);
+    setHostSearch("");
   }
 
-  function pickHost(userId: string, field: "host" | "interviewer") {
-    const u = hostsQ.data?.items.find((x) => String(x.id) === userId);
-    if (field === "host") {
-      setForm((f) => ({
-        ...f,
-        hostUserId: userId,
-        hostName: u?.fullName || f.hostName,
-      }));
-    } else {
-      setForm((f) => ({
-        ...f,
-        interviewerUserId: userId,
-        interviewerName: u?.fullName || f.interviewerName,
-      }));
-    }
-  }
-
-  async function onSave() {
-    if (form.visitorFullName.trim().length < 2) {
+  async function onSubmit() {
+    if (visitorFullName.trim().length < 2) {
       toast({ title: "Ism familiya yozing", variant: "destructive" });
       return;
     }
-    const body = {
-      visitType: form.visitType,
-      topic: form.visitType === "other" ? form.topic : null,
-      visitorFullName: form.visitorFullName.trim(),
-      visitorPhone: form.visitorPhone.trim() || null,
-      visitorRoleHint: form.visitorRoleHint.trim() || null,
-      hostName: form.hostName.trim() || null,
-      hostUserId: form.hostUserId ? Number(form.hostUserId) : null,
-      interviewerName: form.interviewerName.trim() || null,
-      interviewerUserId: form.interviewerUserId ? Number(form.interviewerUserId) : null,
-      purpose: form.purpose.trim() || null,
-      notes: form.notes.trim() || null,
-      status: form.status,
-      visitAt: fromLocalInputValue(form.visitAt),
-      leftAt: fromLocalInputValue(form.leftAt),
-    };
     try {
-      if (editing) {
-        await mut.update.mutateAsync({ id: editing.id, body });
-        toast({ title: "Yangilandi" });
-      } else {
-        await mut.create.mutateAsync(body);
-        toast({ title: "Qayd qo‘shildi" });
-      }
-      setOpen(false);
+      await mut.create.mutateAsync({
+        visitType,
+        visitorFullName: visitorFullName.trim(),
+        visitorPhone: visitorPhone.trim() || null,
+        purpose: purpose.trim() || null,
+        notes: notes.trim() || null,
+        hostName: hostName.trim() || selectedHost?.fullName || null,
+        hostUserId: hostUserId ? Number(hostUserId) : null,
+        visitAt: fromLocalInputValue(visitAt),
+        leftAt: fromLocalInputValue(leftAt),
+        status: "in_progress",
+      });
+      toast({
+        title: "Qayd etildi",
+        description: selectedHost
+          ? `${selectedHost.fullName} ga xabarnoma yuborildi`
+          : "Tashrif jurnalga yozildi",
+      });
+      resetForm();
     } catch (e) {
       toast({
         title: "Saqlanmadi",
@@ -236,8 +249,23 @@ export default function ResepsionPage() {
     }
   }
 
+  async function markDone(row: ReceptionLog) {
+    try {
+      await mut.update.mutateAsync({
+        id: row.id,
+        body: { status: "done", leftAt: new Date().toISOString() },
+      });
+    } catch (e) {
+      toast({
+        title: "Yangilanmadi",
+        description: e instanceof Error ? e.message : "Xato",
+        variant: "destructive",
+      });
+    }
+  }
+
   async function onDelete(row: ReceptionLog) {
-    if (!confirm(`«${row.visitorFullName}» yozuvini o‘chirasizmi?`)) return;
+    if (!confirm(`«${row.visitorFullName}» ni o‘chirasizmi?`)) return;
     try {
       await mut.remove.mutateAsync(row.id);
       toast({ title: "O‘chirildi" });
@@ -250,102 +278,425 @@ export default function ResepsionPage() {
     }
   }
 
-  async function quickStatus(row: ReceptionLog, status: string) {
-    try {
-      await mut.update.mutateAsync({ id: row.id, body: { status } });
-    } catch (e) {
-      toast({
-        title: "Holat o‘zgarmadi",
-        description: e instanceof Error ? e.message : "Xato",
-        variant: "destructive",
-      });
-    }
+  function scrollToForm() {
+    document.getElementById("resepsion-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   return (
-    <div className="w-full space-y-5 pb-28">
-      <header className="relative overflow-hidden rounded-3xl border border-border/60 bg-gradient-to-br from-primary/10 via-card to-card p-5 sm:p-7">
-        <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-primary/10 blur-3xl" />
-        <div className="relative flex flex-wrap items-start gap-4">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
-            <ConciergeBell className="h-6 w-6" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Resepshin</h1>
-            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Suhbatlar, ofis tashriflari va boshqa murojaatlarni bitta joyda qayd eting — ism,
-              telefon, kimning oldiga, sabab, sana va soat.
-            </p>
-          </div>
-          {canWrite ? (
-            <Button className="rounded-xl gap-1.5" onClick={() => openCreate("interview")}>
-              <Plus className="h-4 w-4" />
-              Yangi qayd
-            </Button>
-          ) : null}
-        </div>
-
-        <div className="relative mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {[
-            { label: "Bugun", value: stats?.today ?? 0, icon: CalendarClock },
-            { label: "Suhbat", value: stats?.interviewsToday ?? 0, icon: Briefcase },
-            { label: "Tashrif", value: stats?.visitsToday ?? 0, icon: Users },
-            { label: "Kutilmoqda", value: stats?.waiting ?? 0, icon: MessageSquare },
-          ].map((s) => (
-            <div
-              key={s.label}
-              className="rounded-2xl border border-border/70 bg-card/80 px-3 py-2.5 backdrop-blur"
-            >
-              <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                <s.icon className="h-3.5 w-3.5" />
-                {s.label}
-              </div>
-              <p className="mt-1 text-2xl font-semibold tabular-nums">{s.value}</p>
+    <div className="w-full space-y-4 pb-28">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-3">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
+              <ConciergeBell className="h-5 w-5" />
+            </span>
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">Resepshin</h1>
+              <p className="text-sm text-muted-foreground">
+                Ofisga keluvchi barcha mehmonlar, xodimlar, nomzodlar va murojaatlar yagona joyda
+              </p>
             </div>
-          ))}
+          </div>
         </div>
-      </header>
+        <div className="rounded-2xl border border-border/70 bg-card px-4 py-2.5 text-right shadow-sm">
+          <p className="text-[11px] font-medium capitalize text-muted-foreground">{clock.date}</p>
+          <p className="text-2xl font-semibold tabular-nums tracking-tight text-foreground">
+            {clock.time}
+          </p>
+        </div>
+      </div>
 
-      {canWrite ? (
-        <div className="grid gap-3 sm:grid-cols-3">
-          {(Object.keys(TYPE_META) as ReceptionVisitType[]).map((key) => {
-            const m = TYPE_META[key];
-            const Icon = m.icon;
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => openCreate(key)}
-                className={cn(
-                  "group rounded-2xl border bg-gradient-to-br p-4 text-left transition hover:shadow-md",
-                  m.tone,
-                )}
-              >
-                <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-card shadow-sm">
-                    <Icon className="h-5 w-5 text-foreground" />
+      {/* Stats strip */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        <button
+          type="button"
+          onClick={scrollToForm}
+          className="flex items-center gap-3 rounded-2xl bg-primary px-4 py-3 text-left text-primary-foreground shadow-md transition hover:brightness-105"
+        >
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15">
+            <Plus className="h-5 w-5" />
+          </span>
+          <span>
+            <span className="block text-sm font-semibold">Yangi qayd</span>
+            <span className="block text-[11px] opacity-80">Mehmon / Xodim / Nomzod</span>
+          </span>
+        </button>
+        {[
+          { label: "Kelayotganlar", value: stats?.waiting ?? 0, hint: "Bugun", tone: "amber" },
+          { label: "Ofisda hozir", value: stats?.inProgress ?? 0, hint: "Hozir", tone: "emerald" },
+          { label: "Chiqqanlar", value: stats?.done ?? 0, hint: "Bugun", tone: "slate" },
+          { label: "Barcha tashriflar", value: stats?.today ?? 0, hint: "Bugun", tone: "sky" },
+        ].map((s) => (
+          <div
+            key={s.label}
+            className="rounded-2xl border border-border/70 bg-card px-4 py-3 shadow-sm"
+          >
+            <p className="text-[11px] font-medium text-muted-foreground">{s.label}</p>
+            <p className="mt-0.5 text-2xl font-semibold tabular-nums">{s.value}</p>
+            <p className="text-[10px] text-muted-foreground">{s.hint}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Main workspace */}
+      <div className="grid gap-4 xl:grid-cols-12">
+        {/* Form */}
+        <section
+          id="resepsion-form"
+          className="rounded-3xl border border-border/70 bg-card p-4 shadow-sm sm:p-5 xl:col-span-5"
+        >
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h2 className="text-base font-semibold">Yangi tashrif qayd etish</h2>
+            <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-semibold text-primary">
+              Live
+            </span>
+          </div>
+
+          <div className="mb-4 grid grid-cols-5 gap-1.5">
+            {TYPE_TABS.map((tab) => {
+              const Icon = tab.icon;
+              const active = visitType === tab.value;
+              return (
+                <button
+                  key={tab.value}
+                  type="button"
+                  onClick={() => setVisitType(tab.value)}
+                  className={cn(
+                    "flex flex-col items-center gap-1 rounded-2xl border px-1 py-2.5 text-center transition",
+                    active
+                      ? "border-primary/40 bg-primary/10 text-primary shadow-sm"
+                      : "border-border/60 bg-muted/30 text-muted-foreground hover:bg-muted/50",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex h-8 w-8 items-center justify-center rounded-xl text-white",
+                      active ? tab.color : "bg-slate-300",
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
                   </span>
-                  <div>
-                    <p className="font-semibold text-foreground">{m.label}</p>
-                    <p className="text-xs text-muted-foreground">{m.hint}</p>
+                  <span className="text-[10px] font-semibold leading-tight">{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Ism familiya *
+                </label>
+                <Input
+                  value={visitorFullName}
+                  onChange={(e) => setVisitorFullName(e.target.value)}
+                  placeholder="Aliyev Rustam"
+                  className="h-10 rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Telefon
+                </label>
+                <Input
+                  value={visitorPhone}
+                  onChange={(e) => setVisitorPhone(e.target.value)}
+                  placeholder="+998 90 111 22 33"
+                  className="h-10 rounded-xl"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Sabab / maqsad
+              </label>
+              <Input
+                value={purpose}
+                onChange={(e) => setPurpose(e.target.value)}
+                placeholder="Uchrashuv, suhbat, xizmat…"
+                className="h-10 rounded-xl"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Izoh
+              </label>
+              <Textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Qo‘shimcha ma’lumot…"
+                className="min-h-[72px] rounded-xl"
+              />
+            </div>
+
+            <div className="relative">
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Kimning oldiga keldi?
+              </label>
+              <button
+                type="button"
+                onClick={() => setHostPickerOpen((v) => !v)}
+                className="flex h-11 w-full items-center gap-3 rounded-xl border border-input bg-background px-3 text-left text-sm transition hover:bg-muted/40"
+              >
+                {selectedHost ? (
+                  <>
+                    <AvatarBubble name={selectedHost.fullName} size="sm" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">{selectedHost.fullName}</span>
+                      <span className="block truncate text-[11px] text-muted-foreground">
+                        {userRoleLabel(selectedHost.role) || selectedHost.role}
+                      </span>
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <UserRound className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">Xodimni tanlang…</span>
+                  </>
+                )}
+              </button>
+              {hostPickerOpen ? (
+                <div className="absolute z-30 mt-1 max-h-64 w-full overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
+                  <div className="border-b p-2">
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        value={hostSearch}
+                        onChange={(e) => setHostSearch(e.target.value)}
+                        placeholder="Qidirish…"
+                        className="h-8 rounded-lg pl-8 text-xs"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-52 overflow-y-auto p-1">
+                    {filteredHosts.map((h) => (
+                      <button
+                        key={h.id}
+                        type="button"
+                        onClick={() => pickHost(h)}
+                        className={cn(
+                          "flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left transition hover:bg-muted/60",
+                          hostUserId === String(h.id) && "bg-primary/10",
+                        )}
+                      >
+                        <AvatarBubble name={h.fullName} size="sm" tone="soft" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium">{h.fullName}</span>
+                          <span className="block truncate text-[11px] text-muted-foreground">
+                            {userRoleLabel(h.role) || h.role}
+                            {h.phone ? ` · ${h.phone}` : ""}
+                          </span>
+                        </span>
+                        {h.phone ? (
+                          <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        ) : null}
+                      </button>
+                    ))}
+                    {!filteredHosts.length ? (
+                      <p className="px-3 py-4 text-center text-xs text-muted-foreground">
+                        Xodim topilmadi
+                      </p>
+                    ) : null}
                   </div>
                 </div>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
+              ) : null}
+            </div>
 
-      <Card className="overflow-hidden border-border/70 shadow-sm">
-        <CardHeader className="space-y-3 border-b bg-muted/30 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle className="text-base">Qaydlar jadvasi</CardTitle>
-            <div className="flex rounded-xl border border-border bg-card p-0.5 text-xs font-semibold">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Kirish vaqti
+                </label>
+                <Input
+                  type="datetime-local"
+                  value={visitAt}
+                  onChange={(e) => setVisitAt(e.target.value)}
+                  className="h-10 rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Kutilayotgan chiqish
+                </label>
+                <Input
+                  type="datetime-local"
+                  value={leftAt}
+                  onChange={(e) => setLeftAt(e.target.value)}
+                  className="h-10 rounded-xl"
+                />
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              className="h-11 w-full rounded-xl text-sm font-semibold"
+              disabled={!canWrite || mut.create.isPending}
+              onClick={() => void onSubmit()}
+            >
+              {mut.create.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="mr-2 h-4 w-4" />
+              )}
+              Qayd etish va xabarnoma yuborish
+            </Button>
+          </div>
+        </section>
+
+        {/* Host preview */}
+        <section className="rounded-3xl border border-border/70 bg-gradient-to-br from-primary/5 via-card to-card p-4 shadow-sm sm:p-5 xl:col-span-4">
+          <h2 className="mb-3 text-base font-semibold">Kimning oldiga</h2>
+          {selectedHost ? (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3">
+                <AvatarBubble name={selectedHost.fullName} size="lg" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="truncate text-lg font-semibold">{selectedHost.fullName}</p>
+                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                      Ofisda
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {userRoleLabel(selectedHost.role) || selectedHost.role}
+                  </p>
+                </div>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="rounded-2xl border bg-card/80 px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase text-muted-foreground">Telefon</p>
+                  <p className="mt-0.5 text-sm font-medium">{selectedHost.phone || "—"}</p>
+                </div>
+                <div className="rounded-2xl border bg-card/80 px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase text-muted-foreground">
+                    Tashrif turi
+                  </p>
+                  <p className="mt-0.5 text-sm font-medium">{typeLabel(String(visitType))}</p>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-primary/20 bg-primary/5 px-3 py-3 text-sm">
+                <p className="flex items-center gap-2 font-semibold text-primary">
+                  <Bell className="h-4 w-4" />
+                  Xabarnoma
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  Qayd etilganda {selectedHost.fullName} ga avtomatik bildirishnoma ketadi — kim
+                  kelgani, telefon va sabab bilan.
+                </p>
+              </div>
+              {selectedHost.phone ? (
+                <a
+                  href={`tel:${selectedHost.phone.replace(/\s/g, "")}`}
+                  className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground"
+                >
+                  <Phone className="h-4 w-4" />
+                  Qo‘ng‘iroq qilish
+                </a>
+              ) : null}
+            </div>
+          ) : (
+            <div className="flex min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 px-4 text-center">
+              <BriefcaseBusiness className="mb-2 h-8 w-8 text-muted-foreground/50" />
+              <p className="text-sm font-medium text-foreground">Xodim tanlanmagan</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Chapdagi formadan «Kimning oldiga» ni tanlang — profil shu yerda ochiladi.
+              </p>
+            </div>
+          )}
+        </section>
+
+        {/* Quick side */}
+        <aside className="space-y-3 xl:col-span-3">
+          <div className="rounded-3xl border border-sky-200 bg-sky-50 p-4 text-sky-950 shadow-sm dark:border-sky-900/40 dark:bg-sky-950/30 dark:text-sky-50">
+            <p className="flex items-center gap-2 text-sm font-semibold">
+              <Bell className="h-4 w-4" />
+              Xodimga xabar
+            </p>
+            <p className="mt-1.5 text-xs leading-relaxed opacity-90">
+              Tashrif qayd etilganda tanlangan xodimga tizim ichida bildirishnoma yuboriladi.
+            </p>
+          </div>
+
+          <div className="rounded-3xl border border-border/70 bg-card p-4 shadow-sm">
+            <p className="text-sm font-semibold">Tashrifnoma</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Mehmon uchun qisqa yo‘llanma — ism, kimning oldiga, vaqt.
+            </p>
+            <Button
+              type="button"
+              variant="secondary"
+              className="mt-3 h-9 w-full rounded-xl gap-1.5"
+              onClick={() => window.print()}
+            >
+              <QrCode className="h-4 w-4" />
+              Chop etish
+            </Button>
+          </div>
+
+          <div className="rounded-3xl border border-border/70 bg-card p-4 shadow-sm">
+            <p className="mb-2 text-sm font-semibold">Tezkor amallar</p>
+            <div className="space-y-1.5">
+              <button
+                type="button"
+                onClick={() => setDayScope("today")}
+                className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm hover:bg-muted/50"
+              >
+                <Clock3 className="h-4 w-4 text-primary" />
+                Bugungi jurnal
+              </button>
+              <button
+                type="button"
+                onClick={() => setDayScope("all")}
+                className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm hover:bg-muted/50"
+              >
+                <FileText className="h-4 w-4 text-primary" />
+                Barcha tashriflar
+              </button>
+              <button
+                type="button"
+                onClick={scrollToForm}
+                className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm hover:bg-muted/50"
+              >
+                <Download className="h-4 w-4 text-primary" />
+                Yangi qayd
+              </button>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      {/* Table */}
+      <section className="overflow-hidden rounded-3xl border border-border/70 bg-card shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/30 px-4 py-3">
+          <div>
+            <h2 className="text-base font-semibold">
+              {dayScope === "today" ? "Bugungi tashriflar" : "Barcha tashriflar"}
+            </h2>
+            <p className="text-xs text-muted-foreground">{items.length} ta yozuv</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[180px]">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Qidirish…"
+                className="h-9 rounded-xl pl-8"
+              />
+            </div>
+            <div className="flex rounded-xl border bg-card p-0.5 text-xs font-semibold">
               <button
                 type="button"
                 className={cn(
                   "rounded-lg px-3 py-1.5",
-                  dayScope === "today" ? "bg-primary text-primary-foreground" : "text-muted-foreground",
+                  dayScope === "today"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground",
                 )}
                 onClick={() => setDayScope("today")}
               >
@@ -355,7 +706,9 @@ export default function ResepsionPage() {
                 type="button"
                 className={cn(
                   "rounded-lg px-3 py-1.5",
-                  dayScope === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground",
+                  dayScope === "all"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground",
                 )}
                 onClick={() => setDayScope("all")}
               >
@@ -363,437 +716,136 @@ export default function ResepsionPage() {
               </button>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <div className="relative min-w-[200px] flex-1">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Ism, telefon, kimning oldiga…"
-                className="h-9 rounded-xl pl-8"
-              />
-            </div>
-            <Select value={visitTypeFilter} onValueChange={setVisitTypeFilter}>
-              <SelectTrigger className="h-9 w-[160px] rounded-xl">
-                <SelectValue placeholder="Tur" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Barcha turlar</SelectItem>
-                <SelectItem value="interview">Suhbat</SelectItem>
-                <SelectItem value="office_visit">Ofis tashrifi</SelectItem>
-                <SelectItem value="other">Boshqa</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-9 w-[150px] rounded-xl">
-                <SelectValue placeholder="Holat" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Barcha holat</SelectItem>
-                {(metaQ.data?.statuses || []).map((s) => (
-                  <SelectItem key={s.value} value={s.value}>
-                    {s.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        </div>
+
+        {logsQ.isLoading ? (
+          <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Yuklanmoqda…
           </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          {logsQ.isLoading ? (
-            <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Yuklanmoqda…
-            </div>
-          ) : items.length === 0 ? (
-            <div className="px-4 py-16 text-center text-sm text-muted-foreground">
-              Hali qayd yo‘q. Yuqoridan yangi suhbat yoki tashrif qo‘shing.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[920px] text-left text-sm">
-                <thead className="border-b bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2.5 font-semibold">Sana / soat</th>
-                    <th className="px-3 py-2.5 font-semibold">Tur</th>
-                    <th className="px-3 py-2.5 font-semibold">Mehmon</th>
-                    <th className="px-3 py-2.5 font-semibold">Kimning oldiga</th>
-                    <th className="px-3 py-2.5 font-semibold">Suhbat / sabab</th>
-                    <th className="px-3 py-2.5 font-semibold">Holat</th>
-                    <th className="px-3 py-2.5 font-semibold">Amal</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((row) => {
-                    const typeLabel = TYPE_META[row.visitType]?.label || row.visitType;
-                    return (
-                      <tr key={row.id} className="border-b border-border/60 hover:bg-muted/20">
-                        <td className="px-3 py-3 align-top tabular-nums text-xs">
-                          {formatVisitDt(row.visitAt)}
-                          {row.leftAt ? (
-                            <div className="mt-0.5 text-[10px] text-muted-foreground">
-                              chiqish: {formatVisitDt(row.leftAt)}
-                            </div>
+        ) : items.length === 0 ? (
+          <div className="px-4 py-16 text-center text-sm text-muted-foreground">
+            Hali tashrif yo‘q. Yuqoridan yangi qayd qo‘shing.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[960px] text-left text-sm">
+              <thead className="border-b bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2.5 font-semibold">#</th>
+                  <th className="px-3 py-2.5 font-semibold">Vaqt</th>
+                  <th className="px-3 py-2.5 font-semibold">Mehmon</th>
+                  <th className="px-3 py-2.5 font-semibold">Turi</th>
+                  <th className="px-3 py-2.5 font-semibold">Kimning oldiga</th>
+                  <th className="px-3 py-2.5 font-semibold">Maqsad</th>
+                  <th className="px-3 py-2.5 font-semibold">Holat</th>
+                  <th className="px-3 py-2.5 font-semibold">Chiqish</th>
+                  <th className="px-3 py-2.5 font-semibold">Amal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((row, idx) => (
+                  <tr key={row.id} className="border-b border-border/50 hover:bg-muted/20">
+                    <td className="px-3 py-3 tabular-nums text-muted-foreground">{idx + 1}</td>
+                    <td className="px-3 py-3 tabular-nums font-medium">
+                      {formatVisitTime(row.visitAt)}
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <AvatarBubble name={row.visitorFullName} size="sm" tone="violet" />
+                        <div className="min-w-0">
+                          <p className="truncate font-medium">{row.visitorFullName}</p>
+                          {row.visitorPhone ? (
+                            <p className="truncate text-[11px] text-muted-foreground">
+                              {row.visitorPhone}
+                            </p>
                           ) : null}
-                        </td>
-                        <td className="px-3 py-3 align-top">
-                          <span className="rounded-lg bg-muted px-2 py-0.5 text-[11px] font-medium">
-                            {typeLabel}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 align-top">
-                          <div className="font-medium">{row.visitorFullName}</div>
-                          <div className="mt-0.5 flex flex-wrap gap-x-2 text-[11px] text-muted-foreground">
-                            {row.visitorPhone ? (
-                              <span className="inline-flex items-center gap-0.5">
-                                <Phone className="h-3 w-3" />
-                                {row.visitorPhone}
-                              </span>
-                            ) : null}
-                            {row.visitorRoleHint ? <span>{row.visitorRoleHint}</span> : null}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 align-top text-xs">
-                          <div className="inline-flex items-center gap-1">
-                            <UserRound className="h-3.5 w-3.5 text-muted-foreground" />
-                            {row.hostName || row.hostUserName || "—"}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 align-top text-xs">
-                          {row.visitType === "interview" ? (
-                            <div>
-                              <span className="text-muted-foreground">Suhbat: </span>
-                              {row.interviewerName || row.interviewerUserName || "—"}
-                            </div>
-                          ) : null}
-                          <div className="mt-0.5 line-clamp-2 text-muted-foreground">
-                            {row.purpose || "—"}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 align-top">
-                          <span
-                            className={cn(
-                              "inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold",
-                              STATUS_STYLE[row.status] || "bg-muted",
-                            )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <span
+                        className={cn(
+                          "inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                          TYPE_BADGE[row.visitType] || "bg-muted",
+                        )}
+                      >
+                        {row.visitTypeLabel || typeLabel(String(row.visitType))}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-2">
+                        <AvatarBubble
+                          name={row.hostName || row.hostUserName || "?"}
+                          size="sm"
+                          tone="emerald"
+                        />
+                        <span className="truncate text-xs">
+                          {row.hostName || row.hostUserName || "—"}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="max-w-[160px] truncate px-3 py-3 text-xs text-muted-foreground">
+                      {row.purpose || "—"}
+                    </td>
+                    <td className="px-3 py-3">
+                      <span
+                        className={cn(
+                          "inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                          STATUS_BADGE[row.status] || "bg-muted",
+                        )}
+                      >
+                        {statusLabel(row.status)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 tabular-nums text-xs text-muted-foreground">
+                      {row.leftAt ? formatVisitTime(row.leftAt) : "—"}
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {canWrite && row.status !== "done" ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            className="h-7 rounded-lg px-2 text-[11px]"
+                            onClick={() => void markDone(row)}
                           >
-                            {statusLabel(row.status, metaQ.data?.statuses)}
+                            <LogOut className="mr-1 h-3 w-3" />
+                            Chiqdi
+                          </Button>
+                        ) : (
+                          <span className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] text-emerald-700">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            OK
                           </span>
-                        </td>
-                        <td className="px-3 py-3 align-top">
-                          <div className="flex flex-wrap gap-1">
-                            {canWrite && row.status === "waiting" ? (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="secondary"
-                                className="h-7 rounded-lg px-2 text-[11px]"
-                                onClick={() => void quickStatus(row, "in_progress")}
-                              >
-                                Boshlash
-                              </Button>
-                            ) : null}
-                            {canWrite && (row.status === "waiting" || row.status === "in_progress") ? (
-                              <Button
-                                type="button"
-                                size="sm"
-                                className="h-7 rounded-lg px-2 text-[11px]"
-                                onClick={() => void quickStatus(row, "done")}
-                              >
-                                <CheckCircle2 className="mr-1 h-3 w-3" />
-                                Tugatish
-                              </Button>
-                            ) : null}
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 rounded-lg px-2 text-[11px]"
-                              onClick={() => openEdit(row)}
-                            >
-                              Ochish
-                            </Button>
-                            {canWrite ? (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 rounded-lg px-2 text-[11px] text-rose-600"
-                                onClick={() => void onDelete(row)}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[92vh] w-[calc(100%-1rem)] max-w-lg overflow-y-auto rounded-2xl p-0 sm:max-w-xl">
-          <DialogHeader className="border-b px-5 py-4">
-            <DialogTitle>
-              {editing ? "Qaydni tahrirlash" : TYPE_META[form.visitType]?.label || "Yangi qayd"}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 px-5 py-4">
-            {!editing ? (
-              <div className="grid grid-cols-3 gap-1.5 rounded-xl border bg-muted/40 p-1">
-                {(Object.keys(TYPE_META) as ReceptionVisitType[]).map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className={cn(
-                      "rounded-lg px-2 py-2 text-xs font-semibold",
-                      form.visitType === key
-                        ? "bg-card text-foreground shadow-sm"
-                        : "text-muted-foreground",
-                    )}
-                    onClick={() => setForm((f) => ({ ...f, visitType: key }))}
-                  >
-                    {TYPE_META[key].label}
-                  </button>
+                        )}
+                        {row.visitorPhone ? (
+                          <a
+                            href={`tel:${row.visitorPhone.replace(/\s/g, "")}`}
+                            className="inline-flex h-7 items-center rounded-lg px-2 text-muted-foreground hover:bg-muted"
+                          >
+                            <Phone className="h-3.5 w-3.5" />
+                          </a>
+                        ) : null}
+                        {canWrite ? (
+                          <button
+                            type="button"
+                            className="inline-flex h-7 items-center rounded-lg px-2 text-rose-600 hover:bg-rose-50"
+                            onClick={() => void onDelete(row)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
                 ))}
-              </div>
-            ) : null}
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="sm:col-span-2">
-                <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
-                  Ism familiya *
-                </label>
-                <Input
-                  value={form.visitorFullName}
-                  onChange={(e) => setForm((f) => ({ ...f, visitorFullName: e.target.value }))}
-                  placeholder="Masalan: Karimova Dilnoza"
-                  className="rounded-xl"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
-                  Telefon
-                </label>
-                <Input
-                  value={form.visitorPhone}
-                  onChange={(e) => setForm((f) => ({ ...f, visitorPhone: e.target.value }))}
-                  placeholder="+998…"
-                  className="rounded-xl"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
-                  Lavozim / kim
-                </label>
-                <Select
-                  value={form.visitorRoleHint || "__none"}
-                  onValueChange={(v) =>
-                    setForm((f) => ({ ...f, visitorRoleHint: v === "__none" ? "" : v }))
-                  }
-                >
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue placeholder="Tanlang" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none">—</SelectItem>
-                    {(metaQ.data?.roleHints || []).map((h) => (
-                      <SelectItem key={h} value={h}>
-                        {h}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
-                  Kelish sana / soat *
-                </label>
-                <Input
-                  type="datetime-local"
-                  value={form.visitAt}
-                  onChange={(e) => setForm((f) => ({ ...f, visitAt: e.target.value }))}
-                  className="rounded-xl"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
-                  Chiqish sana / soat
-                </label>
-                <Input
-                  type="datetime-local"
-                  value={form.leftAt}
-                  onChange={(e) => setForm((f) => ({ ...f, leftAt: e.target.value }))}
-                  className="rounded-xl"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
-                Kimning oldiga
-              </label>
-              <Select
-                value={form.hostUserId || "__manual"}
-                onValueChange={(v) => {
-                  if (v === "__manual") {
-                    setForm((f) => ({ ...f, hostUserId: "" }));
-                    return;
-                  }
-                  pickHost(v, "host");
-                }}
-              >
-                <SelectTrigger className="rounded-xl">
-                  <SelectValue placeholder="Xodim tanlang" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__manual">Qo‘lda yozish</SelectItem>
-                  {(hostsQ.data?.items || []).map((u) => (
-                    <SelectItem key={u.id} value={String(u.id)}>
-                      {u.fullName} · {userRoleLabel(u.role) || u.role}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Input
-                className="mt-2 rounded-xl"
-                value={form.hostName}
-                onChange={(e) => setForm((f) => ({ ...f, hostName: e.target.value }))}
-                placeholder="Ism (agar ro‘yxatda yo‘q)"
-              />
-            </div>
-
-            {form.visitType === "interview" ? (
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
-                  Suhbatni kim oladi
-                </label>
-                <Select
-                  value={form.interviewerUserId || "__manual"}
-                  onValueChange={(v) => {
-                    if (v === "__manual") {
-                      setForm((f) => ({ ...f, interviewerUserId: "" }));
-                      return;
-                    }
-                    pickHost(v, "interviewer");
-                  }}
-                >
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue placeholder="Suhbatchi" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__manual">Qo‘lda yozish</SelectItem>
-                    {(hostsQ.data?.items || []).map((u) => (
-                      <SelectItem key={u.id} value={String(u.id)}>
-                        {u.fullName} · {userRoleLabel(u.role) || u.role}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Input
-                  className="mt-2 rounded-xl"
-                  value={form.interviewerName}
-                  onChange={(e) => setForm((f) => ({ ...f, interviewerName: e.target.value }))}
-                  placeholder="Suhbatchi ismi"
-                />
-              </div>
-            ) : null}
-
-            {form.visitType === "other" ? (
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
-                  Murojaat turi
-                </label>
-                <Select
-                  value={form.topic}
-                  onValueChange={(v) => setForm((f) => ({ ...f, topic: v }))}
-                >
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(metaQ.data?.topics || []).map((t) => (
-                      <SelectItem key={t.value} value={t.value}>
-                        {t.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : null}
-
-            <div>
-              <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
-                Nima uchun kelgan
-              </label>
-              <Textarea
-                value={form.purpose}
-                onChange={(e) => setForm((f) => ({ ...f, purpose: e.target.value }))}
-                placeholder="Qisqa sabab…"
-                className="min-h-[72px] rounded-xl"
-              />
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
-                  Holat
-                </label>
-                <Select
-                  value={form.status}
-                  onValueChange={(v) => setForm((f) => ({ ...f, status: v }))}
-                >
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(metaQ.data?.statuses || []).map((s) => (
-                      <SelectItem key={s.value} value={s.value}>
-                        {s.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
-                  Izoh
-                </label>
-                <Input
-                  value={form.notes}
-                  onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                  placeholder="Ixtiyoriy"
-                  className="rounded-xl"
-                />
-              </div>
-            </div>
+              </tbody>
+            </table>
           </div>
-          <DialogFooter className="border-t px-5 py-3">
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-              Bekor
-            </Button>
-            <Button
-              type="button"
-              className="rounded-xl"
-              disabled={mut.create.isPending || mut.update.isPending || !canWrite}
-              onClick={() => void onSave()}
-            >
-              {mut.create.isPending || mut.update.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Saqlash
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        )}
+      </section>
     </div>
   );
 }

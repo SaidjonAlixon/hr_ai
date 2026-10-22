@@ -1,12 +1,12 @@
 import { useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
-import { isPharmacyDeviceStaff } from "@/lib/roles";
+import { requiresMandatoryFaceEnroll } from "@/lib/roles";
 import { fetchFaceIdStatus } from "@/lib/face-id";
 
 /**
- * Dorixona xodimi: Face ID bo‘lmasa /davomat-face?enroll=1 ga yo‘naltiradi.
- * Qurilma tasdiqlangandan keyin ham tizimga to‘liq tanilish shart.
+ * Dorixona + ofis xodimi: Face ID bo‘lmasa /davomat-face?enroll=1 ga yo‘naltiradi.
+ * Bir martalik ro‘yxatdan o‘tmaguncha boshqa sahifalar ochilmaydi.
  */
 export function PharmacyFaceGate() {
   const { user, isAuthenticated } = useAuth();
@@ -14,7 +14,7 @@ export function PharmacyFaceGate() {
   const checking = useRef(false);
 
   useEffect(() => {
-    if (!isAuthenticated || !user || !isPharmacyDeviceStaff(user.role)) return;
+    if (!isAuthenticated || !user || !requiresMandatoryFaceEnroll(user.role)) return;
     const path = location.split("?")[0] || location;
     if (
       path === "/login" ||

@@ -25,6 +25,7 @@ import {
   isReviziyaRole,
   isStudentRole,
   isPharmacyDeviceStaff,
+  requiresMandatoryFaceEnroll,
 } from '../lib/roles';
 import { loginWithDevice, requestDeviceChange } from '../lib/device-security-api';
 import { takeAfterLogin } from '../lib/conference/api';
@@ -82,19 +83,30 @@ export default function Login() {
       return;
     }
 
-    // Dorixona: avval Face ID, keyin davomat
-    if (isPharmacyDeviceStaff(user.role)) {
+    // Dorixona + ofis: Face ID bir martalik majburiy
+    if (requiresMandatoryFaceEnroll(user.role)) {
       try {
         const face = await fetchFaceIdStatus();
-        setLocation(face.registered ? '/davomat-face' : '/davomat-face?enroll=1');
+        if (!face.registered) {
+          setLocation('/davomat-face?enroll=1');
+          return;
+        }
+        if (isPharmacyDeviceStaff(user.role)) {
+          setLocation('/davomat-face');
+          return;
+        }
       } catch {
         setLocation('/davomat-face?enroll=1');
+        return;
       }
-      return;
     }
 
     if (isStajyor(user.role)) {
       setLocation('/kirish');
+      return;
+    }
+    if (user.role === 'resepsion') {
+      setLocation('/resepsion');
       return;
     }
     if (isLimitedOfficeStaffRole(user.role)) {

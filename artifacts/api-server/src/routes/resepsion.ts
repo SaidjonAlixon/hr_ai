@@ -7,12 +7,30 @@ import { db, receptionLogsTable, usersTable } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { isHrRole, hasFullPlatformAccess, isDirectorRole } from "../lib/roles";
 import { ensureReceptionSchema } from "../lib/ensure-schema";
+import { notifyUser } from "../lib/notify";
 
 const router: IRouter = Router();
 
-const VISIT_TYPES = new Set(["interview", "office_visit", "other"]);
+/** guest | staff | candidate | request | package (+ legacy) */
+const VISIT_TYPES = new Set([
+  "guest",
+  "staff",
+  "candidate",
+  "request",
+  "package",
+  "interview",
+  "office_visit",
+  "other",
+]);
 const TOPICS = new Set(["delivery", "complaint", "call", "document", "package", "other"]);
 const STATUSES = new Set(["waiting", "in_progress", "done", "cancelled", "no_show"]);
+
+function normalizeVisitType(raw: string): string {
+  if (raw === "interview") return "candidate";
+  if (raw === "office_visit") return "guest";
+  if (raw === "other") return "request";
+  return raw;
+}
 
 function canUseDesk(role: string) {
   return (
@@ -39,6 +57,16 @@ function trimOrNull(v: unknown, max = 400): string | null {
   return s.slice(0, max);
 }
 
+function typeLabel(vt: string) {
+  const n = normalizeVisitType(vt);
+  if (n === "guest") return "Mehmon";
+  if (n === "staff") return "Xodim";
+  if (n === "candidate") return "Nomzod";
+  if (n === "request") return "Murojaat";
+  if (n === "package") return "Posilka";
+  return vt;
+}
+
 async function enrich(rows: (typeof receptionLogsTable.$inferSelect)[]) {
   if (!rows.length) return [];
   const ids = new Set<number>();
@@ -49,19 +77,31 @@ async function enrich(rows: (typeof receptionLogsTable.$inferSelect)[]) {
   }
   const users = ids.size
     ? await db
-        .select({ id: usersTable.id, fullName: usersTable.fullName, role: usersTable.role })
+        .select({
+          id: usersTable.id,
+          fullName: usersTable.fullName,
+          role: usersTable.role,
+          phone: usersTable.phone,
+        })
         .from(usersTable)
         .where(inArray(usersTable.id, [...ids]))
     : [];
   const byId = new Map(users.map((u) => [u.id, u]));
-  return rows.map((r) => ({
-    ...r,
-    loggedByName: byId.get(r.loggedByUserId)?.fullName || null,
-    hostUserName: r.hostUserId ? byId.get(r.hostUserId)?.fullName || null : null,
-    interviewerUserName: r.interviewerUserId
-      ? byId.get(r.interviewerUserId)?.fullName || null
-      : null,
-  }));
+  return rows.map((r) => {
+    const host = r.hostUserId ? byId.get(r.hostUserId) : null;
+    return {
+      ...r,
+      visitType: normalizeVisitType(r.visitType),
+      visitTypeLabel: typeLabel(r.visitType),
+      loggedByName: byId.get(r.loggedByUserId)?.fullName || null,
+      hostUserName: host?.fullName || null,
+      hostUserRole: host?.role || null,
+      hostUserPhone: host?.phone || null,
+      interviewerUserName: r.interviewerUserId
+        ? byId.get(r.interviewerUserId)?.fullName || null
+        : null,
+    };
+  });
 }
 
 router.get("/resepsion/meta", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -72,9 +112,11 @@ router.get("/resepsion/meta", requireAuth, async (req: AuthRequest, res): Promis
   }
   res.json({
     visitTypes: [
-      { value: "interview", label: "Suhbat" },
-      { value: "office_visit", label: "Ofis tashrifi" },
-      { value: "other", label: "Boshqa murojaat" },
+      { value: "guest", label: "Mehmon" },
+      { value: "staff", label: "Xodim" },
+      { value: "candidate", label: "Nomzod" },
+      { value: "request", label: "Murojaat" },
+      { value: "package", label: "Posilka" },
     ],
     topics: [
       { value: "delivery", label: "Yetkazib berish" },
@@ -86,8 +128,8 @@ router.get("/resepsion/meta", requireAuth, async (req: AuthRequest, res): Promis
     ],
     statuses: [
       { value: "waiting", label: "Kutilmoqda" },
-      { value: "in_progress", label: "Jarayonda" },
-      { value: "done", label: "Yakunlandi" },
+      { value: "in_progress", label: "Ofisda" },
+      { value: "done", label: "Chiqdi" },
       { value: "no_show", label: "Kelmadi" },
       { value: "cancelled", label: "Bekor" },
     ],
@@ -106,7 +148,6 @@ router.get("/resepsion/meta", requireAuth, async (req: AuthRequest, res): Promis
   });
 });
 
-/** Ofis xodimlari ro‘yxati — kimning oldiga / suhbatchi tanlash */
 router.get("/resepsion/hosts", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole || "";
   if (!canUseDesk(role)) {
@@ -119,6 +160,7 @@ router.get("/resepsion/hosts", requireAuth, async (req: AuthRequest, res): Promi
       id: usersTable.id,
       fullName: usersTable.fullName,
       role: usersTable.role,
+      phone: usersTable.phone,
     })
     .from(usersTable)
     .where(eq(usersTable.status, "active"))
@@ -128,7 +170,8 @@ router.get("/resepsion/hosts", requireAuth, async (req: AuthRequest, res): Promi
     ? rows.filter(
         (u) =>
           u.fullName.toLowerCase().includes(q) ||
-          String(u.role || "").toLowerCase().includes(q),
+          String(u.role || "").toLowerCase().includes(q) ||
+          String(u.phone || "").includes(q),
       )
     : rows;
   res.json({
@@ -136,6 +179,7 @@ router.get("/resepsion/hosts", requireAuth, async (req: AuthRequest, res): Promi
       id: u.id,
       fullName: u.fullName,
       role: u.role,
+      phone: u.phone || null,
     })),
   });
 });
@@ -148,14 +192,25 @@ router.get("/resepsion/logs", requireAuth, async (req: AuthRequest, res): Promis
   }
   await ensureReceptionSchema().catch(() => undefined);
 
-  const visitType = String(req.query.visitType || "").trim();
+  const visitTypeRaw = String(req.query.visitType || "").trim();
+  const visitType = visitTypeRaw ? normalizeVisitType(visitTypeRaw) : "";
   const status = String(req.query.status || "").trim();
   const from = parseDate(req.query.from);
   const to = parseDate(req.query.to);
   const search = String(req.query.q || "").trim().toLowerCase();
 
   const conds = [];
-  if (VISIT_TYPES.has(visitType)) conds.push(eq(receptionLogsTable.visitType, visitType));
+  if (visitType && VISIT_TYPES.has(visitType)) {
+    const aliases =
+      visitType === "candidate"
+        ? ["candidate", "interview"]
+        : visitType === "guest"
+          ? ["guest", "office_visit"]
+          : visitType === "request"
+            ? ["request", "other"]
+            : [visitType];
+    conds.push(inArray(receptionLogsTable.visitType, aliases));
+  }
   if (STATUSES.has(status)) conds.push(eq(receptionLogsTable.status, status));
   if (from) conds.push(gte(receptionLogsTable.visitAt, from));
   if (to) conds.push(lte(receptionLogsTable.visitAt, to));
@@ -201,10 +256,12 @@ router.get("/resepsion/logs", requireAuth, async (req: AuthRequest, res): Promis
     stats: {
       total: items.length,
       today: todayRows.length,
-      waiting: items.filter((r) => r.status === "waiting").length,
-      inProgress: items.filter((r) => r.status === "in_progress").length,
-      interviewsToday: todayRows.filter((r) => r.visitType === "interview").length,
-      visitsToday: todayRows.filter((r) => r.visitType === "office_visit").length,
+      waiting: todayRows.filter((r) => r.status === "waiting").length,
+      inProgress: todayRows.filter((r) => r.status === "in_progress").length,
+      done: todayRows.filter((r) => r.status === "done").length,
+      interviewsToday: todayRows.filter((r) => normalizeVisitType(r.visitType) === "candidate")
+        .length,
+      visitsToday: todayRows.filter((r) => normalizeVisitType(r.visitType) === "guest").length,
     },
     canWrite: canWrite(role),
   });
@@ -218,21 +275,31 @@ router.post("/resepsion/logs", requireAuth, async (req: AuthRequest, res): Promi
   }
   await ensureReceptionSchema().catch(() => undefined);
 
-  const visitType = String(req.body?.visitType || "").trim();
-  if (!VISIT_TYPES.has(visitType)) {
-    res.status(400).json({ error: "Tur noto‘g‘ri (suhbat / ofis tashrifi / boshqa)" });
+  const visitTypeRaw = String(req.body?.visitType || "").trim();
+  if (!VISIT_TYPES.has(visitTypeRaw)) {
+    res.status(400).json({ error: "Tur noto‘g‘ri" });
     return;
   }
+  const visitType = normalizeVisitType(visitTypeRaw);
   const visitorFullName = String(req.body?.visitorFullName || "").trim();
   if (visitorFullName.length < 2) {
     res.status(400).json({ error: "Ism familiya majburiy" });
     return;
   }
   const visitAt = parseDate(req.body?.visitAt) || new Date();
-  const statusRaw = String(req.body?.status || "waiting").trim();
-  const status = STATUSES.has(statusRaw) ? statusRaw : "waiting";
+  const statusRaw = String(req.body?.status || "in_progress").trim();
+  const status = STATUSES.has(statusRaw) ? statusRaw : "in_progress";
   const topicRaw = trimOrNull(req.body?.topic, 40);
-  const topic = topicRaw && TOPICS.has(topicRaw) ? topicRaw : visitType === "other" ? "other" : null;
+  const topic =
+    topicRaw && TOPICS.has(topicRaw)
+      ? topicRaw
+      : visitType === "package"
+        ? "package"
+        : visitType === "request"
+          ? "other"
+          : null;
+
+  const hostUserId = req.body?.hostUserId ? Number(req.body.hostUserId) || null : null;
 
   const [row] = await db
     .insert(receptionLogsTable)
@@ -243,7 +310,7 @@ router.post("/resepsion/logs", requireAuth, async (req: AuthRequest, res): Promi
       visitorPhone: trimOrNull(req.body?.visitorPhone, 40),
       visitorRoleHint: trimOrNull(req.body?.visitorRoleHint, 80),
       hostName: trimOrNull(req.body?.hostName, 200),
-      hostUserId: req.body?.hostUserId ? Number(req.body.hostUserId) || null : null,
+      hostUserId,
       interviewerName: trimOrNull(req.body?.interviewerName, 200),
       interviewerUserId: req.body?.interviewerUserId
         ? Number(req.body.interviewerUserId) || null
@@ -256,6 +323,17 @@ router.post("/resepsion/logs", requireAuth, async (req: AuthRequest, res): Promi
       loggedByUserId: req.userId!,
     })
     .returning();
+
+  if (hostUserId) {
+    const purpose = trimOrNull(req.body?.purpose, 200) || "—";
+    const phone = trimOrNull(req.body?.visitorPhone, 40) || "—";
+    await notifyUser({
+      userId: hostUserId,
+      text: `Resepshin: sizning oldingizga keldi — ${visitorFullName} (${phone}). Sabab: ${purpose}. Tur: ${typeLabel(visitType)}.`,
+      type: "resepsion_visit",
+      linkUrl: "/resepsion",
+    }).catch(() => undefined);
+  }
 
   const [item] = await enrich([row]);
   res.status(201).json({ ok: true, item });
@@ -285,7 +363,7 @@ router.patch("/resepsion/logs/:id", requireAuth, async (req: AuthRequest, res): 
   const patch: Partial<typeof receptionLogsTable.$inferInsert> = { updatedAt: new Date() };
   if (req.body?.visitType != null) {
     const vt = String(req.body.visitType).trim();
-    if (VISIT_TYPES.has(vt)) patch.visitType = vt;
+    if (VISIT_TYPES.has(vt)) patch.visitType = normalizeVisitType(vt);
   }
   if (req.body?.status != null) {
     const st = String(req.body.status).trim();

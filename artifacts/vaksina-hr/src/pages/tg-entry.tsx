@@ -5,7 +5,7 @@ import { useToast } from "../hooks/use-toast";
 import type { User } from "@workspace/api-client-react";
 import { Loader2, RefreshCw, ShieldAlert, ShieldQuestion } from "lucide-react";
 import { useI18n } from "../i18n/I18nProvider";
-import { isPharmacyDeviceStaff, isReviziyaRole } from "../lib/roles";
+import { isPharmacyDeviceStaff, isReviziyaRole, requiresMandatoryFaceEnroll } from "../lib/roles";
 import {
   getOrCreateClientDeviceKey,
   readDeviceBind,
@@ -138,10 +138,18 @@ async function redirectAfterLogin(
     clean = "/davomat-face?tg=1";
   } else if (next && /^[a-zA-Z0-9/_?=&.%-]+$/.test(next) && !next.includes("..")) {
     clean = next.startsWith("/") ? next : `/${next}`;
-  } else if (isPharmacyDeviceStaff(user.role)) {
+  } else if (requiresMandatoryFaceEnroll(user.role)) {
     try {
       const face = await fetchFaceIdStatus();
-      clean = face.registered ? "/davomat-face?tg=1" : "/davomat-face?enroll=1&tg=1";
+      if (!face.registered) {
+        clean = "/davomat-face?enroll=1&tg=1";
+      } else if (isPharmacyDeviceStaff(user.role)) {
+        clean = "/davomat-face?tg=1";
+      } else if (user.role === "resepsion") {
+        clean = "/resepsion";
+      } else {
+        clean = "/dashboard";
+      }
     } catch {
       clean = "/davomat-face?enroll=1&tg=1";
     }

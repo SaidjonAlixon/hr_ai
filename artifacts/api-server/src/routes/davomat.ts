@@ -77,7 +77,29 @@ import {
   staffFilterLabelUz,
   warehouseShiftKeyOf,
 } from "../lib/davomat-staff-filter";
-import { scheduledRestInfo, isWeekendYmd } from "../lib/ofis-weekend";
+import { scheduledRestInfo, isWeekendYmd, requiresMandatoryFaceEnroll } from "../lib/ofis-weekend";
+
+/** Ofis xodimi Face ID ro‘yxatdan o‘tmagan bo‘lsa davomat blok. */
+async function denyOfisWithoutFaceEnroll(
+  res: import("express").Response,
+  emp: { userRole?: string | null; orgRole?: string | null; position?: string | null },
+  userId: number,
+): Promise<boolean> {
+  if (!requiresMandatoryFaceEnroll(emp)) return false;
+  const [profile] = await db
+    .select({ id: faceProfilesTable.id })
+    .from(faceProfilesTable)
+    .where(eq(faceProfilesTable.userId, userId))
+    .limit(1);
+  if (profile) return false;
+  res.status(403).json({
+    error:
+      "Ofis xodimi uchun Face ID bir martalik ro‘yxatdan o‘tish majburiy. Avval yuzingizni ulang — keyin davomat qilasiz.",
+    code: "face_not_registered",
+    enrollRequired: true,
+  });
+  return true;
+}
 import { altDayOn, loadWorkCalendar } from "../lib/work-calendar";
 import {
   loadScheduleOverrides,
@@ -5964,6 +5986,11 @@ router.post("/davomat/fingerprint/punch", requireAuth, async (req: AuthRequest, 
       }
       throw err;
     }
+    if (
+      await denyOfisWithoutFaceEnroll(res, { userRole: user.role, orgRole: emp.orgRole }, user.id)
+    ) {
+      return;
+    }
 
     const verified = await fingerprintPunchVerify(req, user.id);
     if (!verified.ok) {
@@ -7570,6 +7597,11 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
         return;
       }
       throw err;
+    }
+    if (
+      await denyOfisWithoutFaceEnroll(res, { userRole: user.role, orgRole: emp.orgRole }, user.id)
+    ) {
+      return;
     }
     const pharmacy = usesBranchDavomat(user.role, emp.orgRole);
     const reviziyaField = isReviziyaRole(user.role);

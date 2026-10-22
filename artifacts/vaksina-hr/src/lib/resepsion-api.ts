@@ -1,18 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-export type ReceptionVisitType = "interview" | "office_visit" | "other";
+export type ReceptionVisitType = "guest" | "staff" | "candidate" | "request" | "package" | string;
 export type ReceptionStatus = "waiting" | "in_progress" | "done" | "cancelled" | "no_show";
-export type ReceptionTopic =
-  | "delivery"
-  | "complaint"
-  | "call"
-  | "document"
-  | "package"
-  | "other";
 
 export type ReceptionLog = {
   id: number;
-  visitType: ReceptionVisitType | string;
+  visitType: ReceptionVisitType;
+  visitTypeLabel?: string | null;
   topic: string | null;
   visitorFullName: string;
   visitorPhone: string | null;
@@ -29,13 +23,15 @@ export type ReceptionLog = {
   loggedByUserId: number;
   loggedByName?: string | null;
   hostUserName?: string | null;
+  hostUserRole?: string | null;
+  hostUserPhone?: string | null;
   interviewerUserName?: string | null;
   createdAt: string;
   updatedAt: string;
 };
 
 export type ReceptionLogInput = {
-  visitType: ReceptionVisitType | string;
+  visitType: ReceptionVisitType;
   topic?: string | null;
   visitorFullName: string;
   visitorPhone?: string | null;
@@ -51,7 +47,22 @@ export type ReceptionLogInput = {
   leftAt?: string | null;
 };
 
-export type ReceptionHost = { id: number; fullName: string; role: string };
+export type ReceptionHost = {
+  id: number;
+  fullName: string;
+  role: string;
+  phone?: string | null;
+};
+
+export type ReceptionStats = {
+  total: number;
+  today: number;
+  waiting: number;
+  inProgress: number;
+  done: number;
+  interviewsToday: number;
+  visitsToday: number;
+};
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -100,14 +111,7 @@ export function fetchReceptionLogs(params?: {
   const qs = sp.toString() ? `?${sp}` : "";
   return apiFetch<{
     items: ReceptionLog[];
-    stats: {
-      total: number;
-      today: number;
-      waiting: number;
-      inProgress: number;
-      interviewsToday: number;
-      visitsToday: number;
-    };
+    stats: ReceptionStats;
     canWrite: boolean;
   }>(`/resepsion/logs${qs}`);
 }
@@ -151,6 +155,7 @@ export function useReceptionLogs(params?: {
   return useQuery({
     queryKey: ["resepsion", "logs", params],
     queryFn: () => fetchReceptionLogs(params),
+    refetchInterval: 20_000,
   });
 }
 
@@ -173,7 +178,6 @@ export function useReceptionMutations() {
   return { create, update, remove };
 }
 
-/** Local datetime-local value from ISO / Date */
 export function toLocalInputValue(iso?: string | Date | null): string {
   const d = iso ? new Date(iso) : new Date();
   if (Number.isNaN(d.getTime())) return "";
@@ -199,4 +203,22 @@ export function formatVisitDt(iso: string | null | undefined) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+export function formatVisitTime(iso: string | null | undefined) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString("uz-UZ", {
+    timeZone: "Asia/Tashkent",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export function initialsOf(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return `${parts[0]![0] || ""}${parts[1]![0] || ""}`.toUpperCase();
 }

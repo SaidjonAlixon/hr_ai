@@ -74,7 +74,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import type { User } from "@workspace/api-client-react";
-import { canViewDavomat, isReviziyaRole } from "@/lib/roles";
+import { canViewDavomat, isReviziyaRole, requiresMandatoryFaceEnroll } from "@/lib/roles";
 import { roleLabel } from "@/lib/candidate-access";
 import { formatPersonName } from "@/lib/person-name";
 import { ensureMobileTrack, endMobileAttendance } from "@/lib/mobile-attendance-api";
@@ -1734,7 +1734,9 @@ export default function DavomatFacePage() {
    * Face ID skani davomat profilini aniqlaydi (tizim login emas).
    * faceRegistered === false kutish — status 401 bo‘lsa tugma abadiy yopiq qolardi.
    */
-  /** Face ID: barcha xodimlar — enroll bo‘lmasa ham tugma ochilsin */
+  /** Ofis: Face ID enroll majburiy — o‘tmaguncha QR/barmoq ham yopiq */
+  const mustEnrollFace =
+    requiresMandatoryFaceEnroll(user?.role) && faceRegistered === false;
   const zoneLocked = workplace?.zonePresence?.status === "blocked";
   const zoneDue = workplace?.zonePresence?.status === "due";
   const canOpenFace =
@@ -1748,8 +1750,9 @@ export default function DavomatFacePage() {
     geoOk &&
     !done;
 
-  /** QR: koordinator uchun o‘chirilgan; boshqalar — GPS + zona */
+  /** QR: koordinator uchun o‘chirilgan; ofis — avval Face ID enroll */
   const canOpenQr =
+    !mustEnrollFace &&
     !zoneLocked &&
     qrMethodAllowed &&
     methodsReady &&
@@ -1757,8 +1760,9 @@ export default function DavomatFacePage() {
     !done &&
     (adminQrAnywhere || mobileAnywhere || (Boolean(gps) && !gpsError && inside));
 
-  /** Barmoq izi: kamera kerak emas — GPS + hudud yetarli */
+  /** Barmoq izi: ofis uchun ham avval Face ID enroll */
   const canOpenFinger =
+    !mustEnrollFace &&
     !zoneLocked &&
     fingerAllowed &&
     methodsReady &&
@@ -1903,7 +1907,7 @@ export default function DavomatFacePage() {
 
   const guideStep = useMemo((): GuideStep => {
     if (done) return "done";
-    if (!showDualMethods && faceRegistered === false) return "enroll";
+    if (mustEnrollFace || (!showDualMethods && faceRegistered === false)) return "enroll";
     // Face/QR uchun kamera majburiy (admin ham)
     if (showDualMethods && !cameraGranted) return "permission";
     if (!adminQrAnywhere && (!gps || gpsError)) return "permission";
@@ -1922,6 +1926,7 @@ export default function DavomatFacePage() {
   }, [
     done,
     faceRegistered,
+    mustEnrollFace,
     gps,
     gpsError,
     geoInside,

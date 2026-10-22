@@ -159,6 +159,7 @@ const NAV_SECTIONS: {
     icon: Home,
     paths: [
       '/dashboard',
+      '/resepsion',
       '/kirish',
       '/preboarding',
       '/darsliklar',

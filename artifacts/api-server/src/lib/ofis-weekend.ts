@@ -48,6 +48,18 @@ export function isWeekendYmd(ymd: string): boolean {
   return wd === 0 || wd === 6;
 }
 
+/**
+ * Ofis xodimi uchun Face ID bir martalik ro‘yxatdan o‘tish majburiy.
+ * (Dorixona — alohida PharmacyFaceGate; SB/ombor/admin — bu qoida emas.)
+ */
+export function requiresMandatoryFaceEnroll(emp: {
+  userRole?: string | null;
+  orgRole?: string | null;
+  position?: string | null;
+}): boolean {
+  return isOfisStaffEmp(emp);
+}
+
 /** Ofis (dorixona/smena emas) */
 export function isOfisStaffEmp(emp: {
   userRole?: string | null;

@@ -146,11 +146,13 @@ function AvatarBubble({
   tone = "primary",
   size = "md",
   photoUrl,
+  onOpen,
 }: {
   name: string;
   tone?: "primary" | "soft" | "violet" | "emerald";
   size?: "sm" | "md" | "lg" | "xl";
   photoUrl?: string | null;
+  onOpen?: () => void;
 }) {
   const sz =
     size === "xl"
@@ -169,16 +171,29 @@ function AvatarBubble({
           ? "bg-slate-100 text-slate-600"
           : "bg-primary/15 text-primary";
   if (photoUrl) {
-    return (
-      <span
-        className={cn(
-          "inline-flex shrink-0 overflow-hidden rounded-full ring-2 ring-primary/15 ring-offset-2 ring-offset-card",
-          sz,
-        )}
-      >
-        <img src={photoUrl} alt={name} className="h-full w-full object-cover" />
-      </span>
+    const img = (
+      <img src={photoUrl} alt={name} className="h-full w-full object-cover" />
     );
+    const shell = cn(
+      "inline-flex shrink-0 overflow-hidden rounded-full ring-2 ring-primary/15 ring-offset-2 ring-offset-card",
+      sz,
+    );
+    if (onOpen) {
+      return (
+        <button
+          type="button"
+          onClick={onOpen}
+          title="Rasmni kattalashtirish"
+          className={cn(
+            shell,
+            "cursor-zoom-in transition hover:ring-primary/40 focus-visible:outline-none focus-visible:ring-primary/50",
+          )}
+        >
+          {img}
+        </button>
+      );
+    }
+    return <span className={shell}>{img}</span>;
   }
   return (
     <span
@@ -266,6 +281,7 @@ export default function ResepsionPage() {
   /** Sukutda ofis yoqilgan, dorixona o‘chiq */
   const [showOfisHosts, setShowOfisHosts] = useState(true);
   const [showPharmacyHosts, setShowPharmacyHosts] = useState(false);
+  const [photoPreview, setPhotoPreview] = useState<{ url: string; name: string } | null>(null);
 
   const selectedHost: ReceptionHost | null = useMemo(() => {
     if (!hostUserId) return null;
@@ -608,6 +624,15 @@ export default function ResepsionPage() {
                     name={selectedHost.fullName}
                     size="md"
                     photoUrl={selectedHost.photoUrl}
+                    onOpen={
+                      selectedHost.photoUrl
+                        ? () =>
+                            setPhotoPreview({
+                              url: selectedHost.photoUrl!,
+                              name: selectedHost.fullName,
+                            })
+                        : undefined
+                    }
                   />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-foreground">
@@ -857,6 +882,15 @@ export default function ResepsionPage() {
                   name={selectedHost.fullName}
                   size="xl"
                   photoUrl={selectedHost.photoUrl}
+                  onOpen={
+                    selectedHost.photoUrl
+                      ? () =>
+                          setPhotoPreview({
+                            url: selectedHost.photoUrl!,
+                            name: selectedHost.fullName,
+                          })
+                      : undefined
+                  }
                 />
                 <div className="min-w-0 flex-1 space-y-1.5">
                   <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
@@ -1240,6 +1274,39 @@ export default function ResepsionPage() {
           </div>
         )}
       </section>
+
+      {photoPreview ? (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${photoPreview.name} rasmi`}
+          onClick={() => setPhotoPreview(null)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setPhotoPreview(null);
+          }}
+        >
+          <button
+            type="button"
+            className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25"
+            onClick={() => setPhotoPreview(null)}
+            aria-label="Yopish"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <div
+            className="flex max-h-[90vh] max-w-[min(92vw,420px)] flex-col items-center gap-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={photoPreview.url}
+              alt={photoPreview.name}
+              className="max-h-[78vh] w-full rounded-3xl object-cover shadow-2xl ring-1 ring-white/20"
+            />
+            <p className="text-sm font-semibold text-white drop-shadow">{photoPreview.name}</p>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

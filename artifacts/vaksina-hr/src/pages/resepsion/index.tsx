@@ -790,6 +790,7 @@ export default function ResepsionPage() {
   const [editDraft, setEditDraft] = useState({
     visitorFullName: "",
     visitorPhone: "",
+    visitorRoleHint: "",
     purpose: "",
     notes: "",
     visitType: "guest" as ReceptionVisitType,
@@ -887,6 +888,7 @@ export default function ResepsionPage() {
     setEditDraft({
       visitorFullName: row.visitorFullName || "",
       visitorPhone: row.visitorPhone || PHONE_DEFAULT,
+      visitorRoleHint: row.visitorRoleHint || "",
       purpose: row.purpose || "",
       notes: row.notes || "",
       visitType: row.visitType || "guest",
@@ -909,6 +911,7 @@ export default function ResepsionPage() {
         body: {
           visitorFullName: editDraft.visitorFullName.trim(),
           visitorPhone: phoneForSubmit(editDraft.visitorPhone),
+          visitorRoleHint: editDraft.visitorRoleHint.trim() || null,
           purpose: editDraft.purpose.trim() || null,
           notes: editDraft.notes.trim() || null,
           visitType: editDraft.visitType,
@@ -2753,6 +2756,22 @@ export default function ResepsionPage() {
                 </div>
                 <div>
                   <label className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {typeMetaOf(editDraft.visitType).extraLabel || "Tashkilot nomi"}
+                  </label>
+                  <Input
+                    value={editDraft.visitorRoleHint}
+                    disabled={!canWrite}
+                    onChange={(e) =>
+                      setEditDraft((d) => ({ ...d, visitorRoleHint: e.target.value }))
+                    }
+                    placeholder={
+                      typeMetaOf(editDraft.visitType).extraPh || "Ixtiyoriy — bo‘sh qoldirish mumkin"
+                    }
+                    className="h-9 rounded-lg dark:border-white/10 dark:bg-slate-950/60"
+                  />
+                </div>
+                <div>
+                  <label className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Kimning oldiga
                   </label>
                   <Input
@@ -2761,6 +2780,11 @@ export default function ResepsionPage() {
                     onChange={(e) => setEditDraft((d) => ({ ...d, hostName: e.target.value }))}
                     className="h-9 rounded-lg dark:border-white/10 dark:bg-slate-950/60"
                   />
+                  {editRow.hostUserRole ? (
+                    <p className="mt-0.5 text-[10px] text-muted-foreground">
+                      Lavozim: {userRoleLabel(editRow.hostUserRole) || editRow.hostUserRole}
+                    </p>
+                  ) : null}
                 </div>
                 <div>
                   <label className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">

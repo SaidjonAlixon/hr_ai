@@ -292,7 +292,7 @@ export default function ResepsionPage() {
               <ConciergeBell className="h-5 w-5" />
             </span>
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">Resepshin</h1>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">Qabulxoona</h1>
               <p className="text-sm text-muted-foreground">
                 Ofisga keluvchi barcha mehmonlar, xodimlar, nomzodlar va murojaatlar yagona joyda
               </p>

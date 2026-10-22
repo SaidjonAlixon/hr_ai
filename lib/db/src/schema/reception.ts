@@ -1,7 +1,7 @@
 import { pgTable, text, serial, timestamp, integer, index } from "drizzle-orm/pg-core";
 
 /**
- * Resepshin qaydlari — suhbat, ofis tashrifi, boshqa murojaatlar.
+ * Qabulxoona qaydlari — suhbat, ofis tashrifi, boshqa murojaatlar.
  * visitType: interview | office_visit | other
  * status: waiting | in_progress | done | cancelled | no_show
  */

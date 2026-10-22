@@ -80,7 +80,7 @@ const ROLE_LABEL_UZ: Record<string, string> = {
   hr_kadr_rahbar: "HR kadr b/m",
   hr_auditor: "HR Auditor",
   hr_menejer: "HR Menejer",
-  resepsion: "Resepshin",
+  resepsion: "Qabulxoona",
   trainer: "Trener",
   director: "Direktor",
   asoschi: "Asoschi",

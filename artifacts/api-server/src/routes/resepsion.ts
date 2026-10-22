@@ -1,5 +1,5 @@
 /**
- * Resepshin — ofis tashrif / suhbat / murojaat qaydlari.
+ * Qabulxoona — ofis tashrif / suhbat / murojaat qaydlari.
  */
 import { Router, type IRouter } from "express";
 import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
@@ -329,7 +329,7 @@ router.post("/resepsion/logs", requireAuth, async (req: AuthRequest, res): Promi
     const phone = trimOrNull(req.body?.visitorPhone, 40) || "—";
     await notifyUser({
       userId: hostUserId,
-      text: `Resepshin: sizning oldingizga keldi — ${visitorFullName} (${phone}). Sabab: ${purpose}. Tur: ${typeLabel(visitType)}.`,
+      text: `Qabulxoona: sizning oldingizga keldi — ${visitorFullName} (${phone}). Sabab: ${purpose}. Tur: ${typeLabel(visitType)}.`,
       type: "resepsion_visit",
       linkUrl: "/resepsion",
     }).catch(() => undefined);

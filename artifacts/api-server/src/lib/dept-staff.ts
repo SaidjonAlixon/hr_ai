@@ -68,7 +68,7 @@ export const ROLE_LABEL_UZ: Record<string, string> = {
   hr_menejer: "HR Menejer",
   hr_kadr_rahbar: "HR kadr b/m",
   hr_auditor: "HR Auditor",
-  resepsion: "Resepshin",
+  resepsion: "Qabulxoona",
   recruiter: "Rekruter",
   trainer: "Trener",
   it_rahbar: "AyTi bo‘lim boshlig‘i",

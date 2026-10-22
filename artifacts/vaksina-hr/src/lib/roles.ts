@@ -652,8 +652,10 @@ export function isOfisStaffRole(role?: string | null): boolean {
   return true;
 }
 
-/** Face ID ro‘yxatdan o‘tish majburiy: dorixona yoki ofis */
+/** Face ID ro‘yxatdan o‘tish majburiy: dorixona yoki ofis (resepsion istisno) */
 export function requiresMandatoryFaceEnroll(role?: string | null): boolean {
+  const r = normalizeUserRole(role);
+  if (r === "resepsion") return false;
   return isPharmacyDeviceStaff(role) || isOfisStaffRole(role);
 }
 
@@ -701,7 +703,7 @@ export const HR_ROLE_LABELS: Record<string, string> = {
 export const USER_ROLE_LABELS: Record<string, string> = {
   admin: "",
   ...HR_ROLE_LABELS,
-  resepsion: "Resepshin",
+  resepsion: "Qabulxoona",
   recruiter: "Rekruter",
   trainer: "Trener",
   director: "Direktor",

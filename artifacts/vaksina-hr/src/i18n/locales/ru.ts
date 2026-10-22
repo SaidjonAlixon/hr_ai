@@ -89,7 +89,7 @@ export const ru: Messages = {
   "nav.smena": "Смена и филиал",
   "nav.javobOlish": "Ответ на звонок",
   "nav.javobOlishHolat": "Статус ответа на звонок",
-  "nav.resepsion": "Ресепшн",
+  "nav.resepsion": "Приёмная",
   "nav.checklistStatus": "Статус чек-листа",
   "nav.pharmacy": "Сеть аптек",
   "nav.boglanish": "Связь",

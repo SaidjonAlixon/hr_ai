@@ -2794,7 +2794,8 @@ export default function ResepsionPage() {
                     value={editDraft.notes}
                     disabled={!canWrite}
                     onChange={(e) => setEditDraft((d) => ({ ...d, notes: e.target.value }))}
-                    className="min-h-[56px] rounded-lg dark:border-white/10 dark:bg-slate-950/60"
+                    rows={Math.min(14, Math.max(5, (editDraft.notes || "").split("\n").length + 2))}
+                    className="min-h-[140px] max-h-[320px] resize-y rounded-lg dark:border-white/10 dark:bg-slate-950/60"
                   />
                 </div>
               </div>

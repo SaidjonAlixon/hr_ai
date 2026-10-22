@@ -240,19 +240,38 @@ export function ConferenceFormDialog({
 
   const selectedIds = useMemo(() => new Set(selected.map((s) => s.userId)), [selected]);
 
-  const addPeople = (list: Person[], opts?: { canSpeak?: boolean | null }) => {
+  const addPeople = (
+    list: Person[],
+    opts?: { canSpeak?: boolean | null; role?: "cohost" | "participant" },
+  ) => {
     setSelected((prev) => {
       const have = new Set(prev.map((p) => p.userId));
-      const add = list
-        .filter((p) => !have.has(p.id))
-        .map<Selected>((p) => ({
+      const role = opts?.role ?? "participant";
+      const canSpeak = opts?.canSpeak === undefined ? null : opts.canSpeak;
+      const next = [...prev];
+      for (const p of list) {
+        if (have.has(p.id)) {
+          // Allaqachon ro‘yxatda — kerak bo‘lsa raxbar / gapirishga ko‘tarish
+          const i = next.findIndex((x) => x.userId === p.id);
+          if (i >= 0 && (role === "cohost" || canSpeak === true)) {
+            next[i] = {
+              ...next[i]!,
+              role: role === "cohost" ? "cohost" : next[i]!.role,
+              canSpeak: canSpeak === true ? true : next[i]!.canSpeak,
+            };
+          }
+          continue;
+        }
+        next.push({
           userId: p.id,
           fullName: p.fullName,
           position: p.position,
-          role: "participant",
-          canSpeak: opts?.canSpeak === undefined ? null : opts.canSpeak,
-        }));
-      return [...prev, ...add];
+          role,
+          canSpeak,
+        });
+        have.add(p.id);
+      }
+      return next;
     });
   };
 
@@ -283,15 +302,29 @@ export function ConferenceFormDialog({
         roles: coordRoles,
         code: editCode ?? undefined,
       });
+      const coord = coordinators.data?.items.find((c) => c.id === id);
+      const coordName = coord?.fullName ?? "Koordinator";
       if (!items.length) {
         toast({ title: "Tanlangan lavozimda xodim topilmadi", variant: "destructive" });
         return;
       }
+      // Xodimlar + koordinatorning o‘zi (raxbar) — bemalol kiradi, boshqaradi, xabar oladi
       addPeople(items, { canSpeak: true });
-      const coordName = coordinators.data?.items.find((c) => c.id === id)?.fullName ?? "Koordinator";
+      addPeople(
+        [
+          {
+            id,
+            fullName: coordName,
+            role: "koordinator",
+            position: coord?.position ?? "Koordinator",
+            department: null,
+          },
+        ],
+        { canSpeak: true, role: "cohost" },
+      );
       toast({
-        title: `${items.length} xodim qo‘shildi`,
-        description: `${coordName} · to‘liq kirish + boshlanish xabari`,
+        title: `${items.length} xodim + koordinator qo‘shildi`,
+        description: `${coordName} ham taklifda — bemalol kiradi va boshqaradi`,
       });
     } catch (e) {
       toast({ title: "Xatolik", description: (e as Error).message, variant: "destructive" });
@@ -520,8 +553,8 @@ export function ConferenceFormDialog({
                       Koordinator xodimlari
                     </div>
                     <p className="text-[11px] leading-relaxed text-muted-foreground">
-                      Koordinatorni tanlang, keyin mudir / farmasevt / stajyor — tanlanganlarga to‘liq kirish ochiladi va
-                      boshlanish vaqti haqida xabar ketadi.
+                      Koordinatorni tanlang, keyin mudir / farmasevt / stajyor. Tanlangan xodimlar va koordinatorning o‘zi
+                      ham taklifga tushadi — bemalol kiradi, boshqaradi, boshlanish xabarini oladi.
                     </p>
                     <select
                       value={coordId}

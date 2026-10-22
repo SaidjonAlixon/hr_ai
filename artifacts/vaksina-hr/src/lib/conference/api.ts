@@ -187,6 +187,26 @@ export const conferenceApi = {
   cancel: (code: string) => request<{ ok: true }>(base(code), { method: "DELETE", json: {} }),
   join: (code: string) => request<JoinTicket>(`${base(code)}/join`, { method: "POST", json: {} }),
   end: (code: string) => request<{ ok: true }>(`${base(code)}/end`, { method: "POST", json: {} }),
+  /** Yozuvni yuklash — server Telegramga yuboradi va platformadan o‘chiradi */
+  uploadRecording: async (code: string, blob: Blob, filename = `konferensiya-${code}.webm`) => {
+    let res: Response;
+    try {
+      res = await fetch(`${base(code)}/recording`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": blob.type || "video/webm",
+          "X-File-Name": encodeURIComponent(filename),
+        },
+        body: blob,
+      });
+    } catch {
+      throw new ApiError("Internet aloqasi yo‘q — yozuv yuborilmadi", 0);
+    }
+    const data = (await res.json().catch(() => ({}))) as { error?: string; bytes?: number };
+    if (!res.ok) throw new ApiError(data.error || "Yozuv yuklanmadi", res.status);
+    return data as { ok: true; bytes: number; queued: boolean };
+  },
   history: (code: string) => request<ConferenceHistory>(`${base(code)}/history`),
   purge: (code: string) => request<{ ok: true }>(`${base(code)}/purge`, { method: "DELETE", json: {} }),
   rotateLink: (code: string, notify: boolean) =>

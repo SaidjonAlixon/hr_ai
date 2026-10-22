@@ -39,8 +39,16 @@ import {
   type MemberRole,
   type ModAction,
 } from "../lib/conferences";
+import {
+  deliverConferenceRecordingAndPurge,
+  ensureRecordingSchema,
+  saveConferenceRecordingUpload,
+  sendConferenceStatsToGroup,
+} from "../lib/conference-recording";
 
 const router: IRouter = Router();
+
+const RECORDING_MAX_BYTES = 95 * 1024 * 1024;
 
 type Actor = { id: number; fullName: string; role: string };
 
@@ -722,11 +730,77 @@ router.post("/conferences/:code/join", requireAuth, async (req: AuthRequest, res
   }
 });
 
+/** Moderator yozuvni yuklaydi — Telegramga yuboriladi va diskdan o‘chiriladi */
+router.post(
+  "/conferences/:code/recording",
+  requireAuth,
+  express.raw({ type: () => true, limit: RECORDING_MAX_BYTES }),
+  async (req: AuthRequest, res): Promise<void> => {
+    try {
+      const ctx = await requireModerator(req, res, true);
+      if (!ctx) return;
+      await ensureConferenceSchema();
+      await ensureRecordingSchema();
+      const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? []);
+      if (!buffer.length) {
+        fail(res, 400, "Yozuv fayli bo‘sh");
+        return;
+      }
+      if (buffer.length > RECORDING_MAX_BYTES) {
+        fail(res, 413, "Yozuv juda katta (max ~95 MB)");
+        return;
+      }
+      const fileName = decodeURIComponent(String(req.headers["x-file-name"] || `konferensiya-${ctx.conf.code}.webm`)).slice(
+        0,
+        160,
+      );
+      const mimeType = String(req.headers["content-type"] || "video/webm").split(";")[0]!.trim();
+      const saved = await saveConferenceRecordingUpload(ctx.conf, { buffer, filename: fileName, mimeType });
+
+      const history = await conferenceHistory(ctx.conf);
+      const hostName = ctx.actor.fullName;
+      // Async: Telegramga yuborish + platformadan o‘chirish
+      void deliverConferenceRecordingAndPurge(ctx.conf, saved.path, {
+        attendedCount: history.attendedCount,
+        invitedCount: history.invitedCount,
+        actualSeconds: history.actualSeconds,
+        hostName,
+      }).catch(() => undefined);
+
+      res.json({ ok: true, bytes: saved.bytes, queued: true });
+    } catch (err) {
+      serverError(res, "POST /conferences/:code/recording", err);
+    }
+  },
+);
+
 router.post("/conferences/:code/end", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
     const ctx = await requireModerator(req, res, true);
     if (!ctx) return;
     await endConference(ctx.conf, "ended");
+    // Statistika — VAKSINA tushuntirish xatlari guruhiga (video alohida recording endpoint orqali)
+    void (async () => {
+      try {
+        const history = await conferenceHistory(ctx.conf);
+        const lines = history.attendance
+          .filter((a) => a.firstJoin)
+          .slice(0, 40)
+          .map((a) => {
+            const mins = Math.max(1, Math.round(a.seconds / 60));
+            return `• ${a.fullName}${a.position ? ` (${a.position})` : ""} — ${mins} daq`;
+          });
+        await sendConferenceStatsToGroup(ctx.conf, {
+          attendedCount: history.attendedCount,
+          invitedCount: history.invitedCount,
+          actualSeconds: history.actualSeconds,
+          hostName: ctx.actor.fullName,
+          attendanceLines: lines,
+        });
+      } catch {
+        /* ignore */
+      }
+    })();
     res.json({ ok: true });
   } catch (err) {
     serverError(res, "POST /conferences/:code/end", err);

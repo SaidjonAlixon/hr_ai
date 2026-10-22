@@ -230,6 +230,39 @@ export async function sendDocument(
   return { ok: true as const, result };
 }
 
+/** Video yuborish (Telegram ~50 MB limit). Katta fayl uchun sendDocument ishlating. */
+export async function sendVideo(
+  chatId: number | string,
+  file: Buffer,
+  filename: string,
+  opts?: {
+    mimeType?: string;
+    caption?: string;
+    parseMode?: "HTML";
+    messageThreadId?: number | null;
+  },
+) {
+  if (!botToken()) throw new Error("TELEGRAM_BOT_TOKEN sozlanmagan");
+  if (!file?.length) throw new Error("Fayl bo‘sh");
+  const safeName = String(filename || "video.mp4")
+    .replace(/[/\\]/g, "_")
+    .slice(0, 120);
+  const blob = new Blob([new Uint8Array(file)], {
+    type: opts?.mimeType || "video/mp4",
+  });
+  const result = await tgRequest<unknown>("sendVideo", () => {
+    const form = new FormData();
+    form.append("chat_id", String(chatId));
+    form.append("video", blob, safeName);
+    form.append("supports_streaming", "true");
+    if (opts?.caption) form.append("caption", opts.caption.slice(0, 1024));
+    if (opts?.parseMode) form.append("parse_mode", opts.parseMode);
+    if (opts?.messageThreadId) form.append("message_thread_id", String(opts.messageThreadId));
+    return { method: "POST", body: form };
+  });
+  return { ok: true as const, result };
+}
+
 export async function getChatMember(chatId: number | string, userId: number | string) {
   return tgCall<{ status: string; user: TelegramUser }>("getChatMember", { chat_id: chatId, user_id: Number(userId) });
 }

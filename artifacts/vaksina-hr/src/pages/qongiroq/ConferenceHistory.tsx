@@ -24,6 +24,7 @@ import {
   type AttendanceRow,
   type ConferenceHistory,
 } from "@/lib/conference/api";
+import { downloadConferenceHistoryPdf } from "@/lib/conference-history-pdf";
 
 function Stat({ icon, label, value, hint }: { icon: ReactNode; label: string; value: ReactNode; hint?: ReactNode }) {
   return (
@@ -85,47 +86,6 @@ function AttendanceItem({ a, total }: { a: AttendanceRow; total: number }) {
   );
 }
 
-function buildReport(h: ConferenceHistory): string {
-  const c = h.conference;
-  const lines: string[] = [];
-  lines.push(`Konferensiya: ${c.title}`);
-  lines.push(`Tashkilotchi: ${c.host.fullName}`);
-  lines.push(`Sana: ${formatDate(h.actualStart ?? c.scheduledAt, { weekday: true })}`);
-  if (h.actualStart) lines.push(`Boshlandi: ${hhmmOf(h.actualStart)}`);
-  if (h.actualEnd) lines.push(`Tugadi: ${hhmmOf(h.actualEnd)}`);
-  lines.push(`Davomiyligi: ${h.actualSeconds ? formatSpan(h.actualSeconds) : "—"}`);
-  lines.push(`Qatnashdi: ${h.attendedCount} / ${h.invitedCount} taklif`);
-  lines.push("");
-  lines.push("QATNASHUVCHILAR");
-  for (const a of h.attendance.filter((x) => x.firstJoin)) {
-    lines.push(
-      `- ${a.fullName}${a.position ? ` (${a.position})` : ""}: ${hhmmOf(a.firstJoin!)}–${a.lastLeave ? hhmmOf(a.lastLeave) : "…"}, ${formatSpan(a.seconds)}${a.sessions > 1 ? `, ${a.sessions} marta kirgan` : ""}`,
-    );
-  }
-  const absent = h.attendance.filter((x) => !x.firstJoin && x.invited);
-  if (absent.length) {
-    lines.push("");
-    lines.push("KIRMAGANLAR");
-    for (const a of absent) lines.push(`- ${a.fullName}${a.position ? ` (${a.position})` : ""}`);
-  }
-  if (h.messages.length) {
-    lines.push("");
-    lines.push("CHAT");
-    for (const m of h.messages) lines.push(`[${hhmmOf(m.at)}] ${m.name}: ${m.text}`);
-  }
-  return lines.join("\n");
-}
-
-function download(name: string, text: string) {
-  const blob = new Blob(["\ufeff" + text], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 export function ConferenceHistoryDialog({
   code,
   open,
@@ -141,6 +101,7 @@ export function ConferenceHistoryDialog({
   const [tab, setTab] = useState<"people" | "chat">("people");
   const [confirm, setConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const q = useQuery({
     queryKey: ["conference-history", code],
     queryFn: () => conferenceApi.history(code!),
@@ -313,10 +274,24 @@ export function ConferenceHistoryDialog({
               {h ? (
                 <button
                   type="button"
-                  onClick={() => download(`konferensiya-${h.conference.code}.txt`, buildReport(h))}
-                  className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-semibold transition hover:bg-muted"
+                  disabled={pdfBusy}
+                  onClick={() => {
+                    setPdfBusy(true);
+                    void downloadConferenceHistoryPdf(h)
+                      .then(() => toast({ title: "PDF hisobot yuklandi" }))
+                      .catch((e) =>
+                        toast({
+                          title: "PDF yuklanmadi",
+                          description: e instanceof Error ? e.message : "Xato",
+                          variant: "destructive",
+                        }),
+                      )
+                      .finally(() => setPdfBusy(false));
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-semibold transition hover:bg-muted disabled:opacity-60"
                 >
-                  <Download className="h-4 w-4" /> Hisobot
+                  {pdfBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                  Hisobot PDF
                 </button>
               ) : null}
               <button

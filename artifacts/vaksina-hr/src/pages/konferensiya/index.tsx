@@ -326,10 +326,25 @@ export default function KonferensiyaPage({ params }: { params: { code?: string }
   );
 
   const leave = useCallback(
-    async (endForAll: boolean) => {
+    async (endForAll: boolean, recording?: Blob | null) => {
       leavingRef.current = true;
       if (endForAll) {
         try {
+          if (recording && recording.size > 0) {
+            try {
+              await conferenceApi.uploadRecording(code, recording);
+              toast({
+                title: "Yozuv yuborilmoqda",
+                description: "VAKSINA tushuntirish xatlari guruhiga yuklanadi, keyin platformadan o‘chiriladi",
+              });
+            } catch (e) {
+              toast({
+                title: "Yozuv yuborilmadi",
+                description: e instanceof Error ? e.message : "Xato",
+                variant: "destructive",
+              });
+            }
+          }
           await conferenceApi.end(code);
         } catch (e) {
           toast({ title: "Yakunlanmadi", description: (e as Error).message, variant: "destructive" });

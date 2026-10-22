@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Circle,
   Copy,
   Hand,
   LayoutGrid,
@@ -74,6 +75,7 @@ import { RotateLinkDialog } from "../qongiroq/RotateLinkDialog";
 import { mediaErrorText } from "./PreJoin";
 import { AudioRenderer, RoomUiContext, VideoTile, tileKey, type RoomUi, type TileSource } from "./Tile";
 import { ChatPanel, PanelShell, PeoplePanel, useUnread } from "./SidePanel";
+import { useRoomRecorder } from "./useRoomRecorder";
 import {
   bestGrid,
   canPublish,
@@ -329,7 +331,7 @@ export function ConferenceRoom({
   room: Room;
   code: string;
   details: ConferenceDetails;
-  onLeave: (endForAll: boolean) => Promise<void> | void;
+  onLeave: (endForAll: boolean, recording?: Blob | null) => Promise<void> | void;
   /** Tashkilotchi hamma uchun yakunladi */
   onEnded: () => void;
   /** Tashkilotchi yangi taklif havolasi yaratdi */
@@ -342,6 +344,7 @@ export function ConferenceRoom({
   const settings = meta.settings ?? details.conference.settings;
   const moderator = isMod(local) || details.me.moderator;
   const owner = details.me.owner;
+  const recorder = useRoomRecorder(room, moderator);
   const meUid = details.me.userId;
   const [panel, setPanel] = useState<null | "chat" | "people">(null);
   const [layout, setLayout] = useState<"auto" | "grid">("auto");
@@ -721,6 +724,15 @@ export function ConferenceRoom({
             >
               {fullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
             </button>
+            {moderator && recorder.isRecording ? (
+              <span
+                title="Konferensiya yozib olinmoqda — tugagach VAKSINA tushuntirish xatlari guruhiga yuboriladi"
+                className="inline-flex items-center gap-1.5 rounded-full bg-red-500/20 px-2.5 py-1 text-[11px] font-bold text-red-200 ring-1 ring-red-400/40"
+              >
+                <Circle className="h-2.5 w-2.5 fill-red-400 text-red-400 animate-pulse" />
+                REC
+              </span>
+            ) : null}
             {moderator ? (
               <button
                 type="button"
@@ -772,7 +784,7 @@ export function ConferenceRoom({
             ) : null}
 
             {focus ? (
-              <div className={cn("flex min-h-0 flex-1 gap-2", desktop ? "flex-row" : "flex-col")}>
+              <div data-conference-stage className={cn("flex min-h-0 flex-1 gap-2", desktop ? "flex-row" : "flex-col")}>
                 <VideoTile key={tileKey(focus.p, focus.source)} participant={focus.p} source={focus.source} tick={tick} variant="main" className="min-h-0 flex-1" />
                 {stripTiles.length ? (
                   <div
@@ -795,7 +807,7 @@ export function ConferenceRoom({
                 ) : null}
               </div>
             ) : (
-              <div ref={setStageEl} className="relative min-h-0 flex-1">
+              <div ref={setStageEl} data-conference-stage className="relative min-h-0 flex-1">
                 <div className="absolute inset-0 flex flex-wrap content-center items-center justify-center gap-2">
                   {pageTiles.map((t) => (
                     <VideoTile
@@ -963,8 +975,8 @@ export function ConferenceRoom({
             <AlertDialogHeader>
               <AlertDialogTitle>Konferensiyani yakunlaysizmi?</AlertDialogTitle>
               <AlertDialogDescription>
-                Konferensiya hamma uchun to‘liq tugaydi: barcha {participants.length} ishtirokchi chiqariladi va havola orqali qayta kirib
-                bo‘lmaydi. Qatnashuv va chat tarixi saqlanib qoladi.
+                Konferensiya hamma uchun to‘liq tugaydi: barcha {participants.length} ishtirokchi chiqariladi. Yozuv VAKSINA
+                tushuntirish xatlari guruhiga yuboriladi va platformadan o‘chiriladi — faqat statistika qoladi.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -974,7 +986,10 @@ export function ConferenceRoom({
                 onClick={(e) => {
                   e.preventDefault();
                   setEnding(true);
-                  void Promise.resolve(onLeave(true)).finally(() => setEnding(false));
+                  void (async () => {
+                    const blob = await recorder.stop();
+                    await Promise.resolve(onLeave(true, blob));
+                  })().finally(() => setEnding(false));
                 }}
                 className="bg-red-600 text-white hover:bg-red-700"
               >

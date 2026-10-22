@@ -81,27 +81,47 @@ function drawCover(
 }
 
 type Tile = { video: HTMLVideoElement; name: string; screen: boolean };
+type BagEntry = { el: HTMLVideoElement; sid: string; track: { detach: (el: HTMLMediaElement) => void } };
 
-function collectTiles(room: Room, bag: Map<string, HTMLVideoElement>): Tile[] {
+function collectTiles(room: Room, bag: Map<string, BagEntry>): Tile[] {
   const tiles: Tile[] = [];
+  const alive = new Set<string>();
 
-  const ensure = (key: string, track: { attach: (el: HTMLMediaElement) => HTMLMediaElement }, name: string, screen: boolean) => {
-    let el = bag.get(key);
-    if (!el) {
-      el = document.createElement("video");
+  const ensure = (
+    key: string,
+    track: { attach: (el: HTMLMediaElement) => HTMLMediaElement; detach: (el: HTMLMediaElement) => void; sid?: string },
+    name: string,
+    screen: boolean,
+  ) => {
+    const sid = track.sid || key;
+    alive.add(key);
+    let entry = bag.get(key);
+    if (!entry) {
+      const el = document.createElement("video");
       el.muted = true;
       el.playsInline = true;
       el.autoplay = true;
       el.setAttribute("playsinline", "true");
-      bag.set(key, el);
+      entry = { el, sid: "", track };
+      bag.set(key, entry);
     }
-    try {
-      track.attach(el);
-      void el.play().catch(() => undefined);
-    } catch {
-      /* */
+    // Faqat trek o‘zgaganda attach — har kadrda emas (qotish sababi edi)
+    if (entry.sid !== sid) {
+      try {
+        if (entry.sid) entry.track.detach(entry.el);
+      } catch {
+        /* */
+      }
+      entry.sid = sid;
+      entry.track = track;
+      try {
+        track.attach(entry.el);
+        void entry.el.play().catch(() => undefined);
+      } catch {
+        /* */
+      }
     }
-    tiles.push({ video: el, name, screen });
+    tiles.push({ video: entry.el, name, screen });
   };
 
   const addPub = (p: Participant, screen: boolean) => {
@@ -117,6 +137,15 @@ function collectTiles(room: Room, bag: Map<string, HTMLVideoElement>): Tile[] {
   for (const p of all) {
     addPub(p, true);
     addPub(p, false);
+  }
+  for (const [key, entry] of bag) {
+    if (alive.has(key)) continue;
+    try {
+      entry.track.detach(entry.el);
+    } catch {
+      /* */
+    }
+    bag.delete(key);
   }
   return tiles;
 }
@@ -142,11 +171,13 @@ function connectAllAudio(room: Room, audioCtx: AudioContext, dest: MediaStreamAu
   for (const p of room.remoteParticipants.values()) scan(p);
 }
 
-const REC_W = 1920;
-const REC_H = 1080;
-const REC_FPS = 30;
-const REC_VIDEO_BPS = 5_000_000;
-const REC_AUDIO_BPS = 192_000;
+/** 720p — Full HD o‘rniga: UI qotmasin, sifat hali yaxshi */
+const REC_W = 1280;
+const REC_H = 720;
+const REC_FPS = 24;
+const REC_VIDEO_BPS = 2_200_000;
+const REC_AUDIO_BPS = 128_000;
+const FRAME_MS = Math.round(1000 / REC_FPS);
 
 export function useRoomRecorder(
   room: Room | null,
@@ -169,12 +200,13 @@ export function useRoomRecorder(
   const chunksRef = useRef<Blob[]>([]);
   const rafRef = useRef<number>(0);
   const audioCtxRef = useRef<AudioContext | null>(null);
-  const videoBagRef = useRef<Map<string, HTMLVideoElement>>(new Map());
+  const videoBagRef = useRef<Map<string, BagEntry>>(new Map());
   const audioLinkedRef = useRef<Set<string>>(new Set());
   const startedAtRef = useRef<number>(0);
   const limitTimerRef = useRef<number>(0);
   const tickTimerRef = useRef<number>(0);
   const audioPollRef = useRef<number>(0);
+  const lastFrameAtRef = useRef<number>(0);
   const autoStartedRef = useRef(false);
   const onStoppedRef = useRef(onStopped);
   onStoppedRef.current = onStopped;
@@ -191,9 +223,14 @@ export function useRoomRecorder(
     tickTimerRef.current = 0;
     if (audioPollRef.current) window.clearInterval(audioPollRef.current);
     audioPollRef.current = 0;
-    for (const el of videoBagRef.current.values()) {
+    for (const entry of videoBagRef.current.values()) {
       try {
-        el.srcObject = null;
+        entry.track.detach(entry.el);
+      } catch {
+        /* */
+      }
+      try {
+        entry.el.srcObject = null;
       } catch {
         /* */
       }
@@ -263,7 +300,7 @@ export function useRoomRecorder(
       const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
       if (!ctx) return false;
       ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = "high";
+      ctx.imageSmoothingQuality = "medium";
 
       const audioCtx = new AudioContext();
       try {
@@ -278,11 +315,22 @@ export function useRoomRecorder(
       audioPollRef.current = window.setInterval(() => {
         if (!recorderRef.current || !audioCtxRef.current) return;
         connectAllAudio(room, audioCtxRef.current, dest, audioLinkedRef.current);
-      }, 1500);
+      }, 2000);
 
       const gap = 10;
       const labelH = 36;
-      const draw = () => {
+      lastFrameAtRef.current = 0;
+      const draw = (now: number) => {
+        // Capture 24fps — display 60/120Hz da ortiqcha chizilmasin
+        if (now - lastFrameAtRef.current < FRAME_MS - 2) {
+          rafRef.current = requestAnimationFrame(draw);
+          return;
+        }
+        lastFrameAtRef.current = now;
+        if (document.hidden) {
+          rafRef.current = requestAnimationFrame(draw);
+          return;
+        }
         ctx.fillStyle = "#020617";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         const tiles = collectTiles(room, videoBagRef.current).filter((t) => t.video.readyState >= 2 && t.video.videoWidth > 0);
@@ -352,7 +400,7 @@ export function useRoomRecorder(
         }
         rafRef.current = requestAnimationFrame(draw);
       };
-      draw();
+      rafRef.current = requestAnimationFrame(draw);
 
       const videoStream = canvas.captureStream(REC_FPS);
       const mixed = new MediaStream([...videoStream.getVideoTracks(), ...dest.stream.getAudioTracks()]);

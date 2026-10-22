@@ -1633,10 +1633,12 @@ class CallEngine {
     pc.onicecandidate = (e) => {
       if (e.candidate) this.signal({ type: "ice", candidate: e.candidate.toJSON() });
     };
+    this.set({ remoteStream: remote });
     pc.ontrack = (e) => {
       for (const t of remote.getTracks()) if (t.kind === e.track.kind && t.id !== e.track.id) remote.removeTrack(t);
       if (!remote.getTrackById(e.track.id)) remote.addTrack(e.track);
-      this.set({ remoteStream: new MediaStream(remote.getTracks()) });
+      // Bir MediaStream obyekti — UI qayta mount bo‘lmasin; set() baribir yangilaydi
+      this.set({ remoteStream: remote });
     };
     const onState = () => {
       if (this.pc !== pc) return;

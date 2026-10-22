@@ -2,21 +2,26 @@ import { useEffect, useState } from "react";
 import { RoomEvent, Track, type Participant, type Room } from "livekit-client";
 import { hhmmOf, type ConfSettings, type Spotlight } from "@/lib/conference/api";
 
-/** Xona hodisalarida qayta chizish — bir kadrda bir marta (25 kishilik xonada ham silliq) */
+/**
+ * Xona hodisalarida qayta chizish.
+ * Gapirish / sifat o‘zgarishi — sekinroq (xonani qotirib qo‘ymaslik uchun).
+ * Trek/ishtirokchi o‘zgarishi — darhol.
+ */
 export function useRoomTick(room: Room | null): number {
   const [tick, setTick] = useState(0);
   useEffect(() => {
     if (!room) return;
     let frame = 0;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const bump = () => {
-      if (frame || timer) return;
-      // Yashirin tabda rAF ishlamaydi (ekran ulashib boshqa oynaga o‘tganda) — taymer bilan
+    let softTimer: ReturnType<typeof setTimeout> | null = null;
+    let softDue = 0;
+    const bumpNow = () => {
+      if (frame) return;
       if (document.hidden) {
-        timer = setTimeout(() => {
-          timer = null;
+        if (softTimer) return;
+        softTimer = setTimeout(() => {
+          softTimer = null;
           setTick((t) => t + 1);
-        }, 500);
+        }, 400);
         return;
       }
       frame = requestAnimationFrame(() => {
@@ -24,7 +29,18 @@ export function useRoomTick(room: Room | null): number {
         setTick((t) => t + 1);
       });
     };
-    const events = [
+    /** Speaking/quality — max ~4 marta/sek */
+    const bumpSoft = () => {
+      const now = Date.now();
+      const wait = Math.max(0, softDue - now);
+      if (softTimer) return;
+      softTimer = setTimeout(() => {
+        softTimer = null;
+        softDue = Date.now() + 250;
+        bumpNow();
+      }, wait || 250);
+    };
+    const structural = [
       RoomEvent.ParticipantConnected,
       RoomEvent.ParticipantDisconnected,
       RoomEvent.TrackSubscribed,
@@ -35,22 +51,22 @@ export function useRoomTick(room: Room | null): number {
       RoomEvent.LocalTrackUnpublished,
       RoomEvent.TrackMuted,
       RoomEvent.TrackUnmuted,
-      RoomEvent.ActiveSpeakersChanged,
       RoomEvent.ParticipantAttributesChanged,
       RoomEvent.ParticipantPermissionsChanged,
       RoomEvent.ParticipantNameChanged,
       RoomEvent.RoomMetadataChanged,
-      RoomEvent.ConnectionQualityChanged,
       RoomEvent.ConnectionStateChanged,
       RoomEvent.AudioPlaybackStatusChanged,
-      RoomEvent.TrackStreamStateChanged,
       RoomEvent.ActiveDeviceChanged,
     ] as const;
-    for (const e of events) room.on(e, bump);
+    const soft = [RoomEvent.ActiveSpeakersChanged, RoomEvent.ConnectionQualityChanged, RoomEvent.TrackStreamStateChanged] as const;
+    for (const e of structural) room.on(e, bumpNow);
+    for (const e of soft) room.on(e, bumpSoft);
     return () => {
-      for (const e of events) room.off(e, bump);
+      for (const e of structural) room.off(e, bumpNow);
+      for (const e of soft) room.off(e, bumpSoft);
       if (frame) cancelAnimationFrame(frame);
-      if (timer) clearTimeout(timer);
+      if (softTimer) clearTimeout(softTimer);
     };
   }, [room]);
   return tick;

@@ -655,17 +655,21 @@ export function ConferenceRoom({
     else void document.documentElement.requestFullscreen?.().catch(() => undefined);
   };
 
+  const toggleMicRef = useRef(toggleMic);
+  const toggleCamRef = useRef(toggleCam);
+  toggleMicRef.current = toggleMic;
+  toggleCamRef.current = toggleCam;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key === "m" || e.key === "M") void toggleMic();
-      if (e.key === "v" || e.key === "V") void toggleCam();
+      if (e.key === "m" || e.key === "M") void toggleMicRef.current();
+      if (e.key === "v" || e.key === "V") void toggleCamRef.current();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  });
+  }, []);
 
   const sendChat = async (text: string) => {
     try {

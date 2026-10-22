@@ -174,10 +174,12 @@ function CallVideo({
     [videoRef],
   );
   // Faqat video treklari: ovozli trek <video>da bo‘lsa iOS audio sessiyasi bilan to‘qnashadi
+  const trackKey = stream?.getVideoTracks().map((t) => t.id).join("|") ?? "";
   const videoOnly = useMemo(() => {
     const tracks = stream?.getVideoTracks() ?? [];
     return tracks.length ? new MediaStream(tracks) : null;
-  }, [stream]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- trackKey stream ichidagi video o‘zgarishini bildiradi
+  }, [trackKey]);
   useEffect(() => {
     const v = ref.current as FrameVideo | null;
     if (!v) return;
@@ -187,7 +189,7 @@ function CallVideo({
     };
     const attach = (force: boolean) => {
       if (force) {
-        if (Date.now() - lastAttach < 2500) return;
+        if (Date.now() - lastAttach < 4000) return;
         v.srcObject = null;
       }
       lastAttach = Date.now();
@@ -224,11 +226,12 @@ function CallVideo({
         if (v.currentTime !== lastTime) lastFrame = Date.now();
         lastTime = v.currentTime;
       }
-      if (Date.now() - lastFrame > 3000) {
+      // 5s dan keyin qayta ulash — tez-tez force attach qotishga sabab
+      if (Date.now() - lastFrame > 5000) {
         lastFrame = Date.now();
         attach(true);
       }
-    }, 1000);
+    }, 2000);
     return () => {
       clearInterval(watchdog);
       if (frameHandle) v.cancelVideoFrameCallback?.(frameHandle);

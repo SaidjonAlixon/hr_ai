@@ -1561,7 +1561,7 @@ export default function ResepsionPage() {
                   </p>
                   <div className="rounded-2xl rounded-tl-sm bg-white px-3 py-2.5 text-left shadow-sm ring-1 ring-black/5 dark:bg-slate-900">
                     <p className="text-[11px] font-semibold text-[#229ED9]">Vaksina HR · bot</p>
-                    <p className="mt-1.5 whitespace-pre-wrap text-[12px] leading-[1.55] text-foreground">
+                    <p className="mt-1.5 whitespace-pre-line text-[12px] leading-[1.65] text-foreground">
                       {telegramPreview}
                     </p>
                   </div>

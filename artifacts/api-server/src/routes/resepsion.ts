@@ -17,6 +17,7 @@ import { ensureReceptionSchema } from "../lib/ensure-schema";
 import { notifyUser } from "../lib/notify";
 import { todayTashkentYmd } from "../lib/work-calendar";
 import { isOnline } from "../lib/calls";
+import { escapeHtml } from "../lib/telegram";
 
 const router: IRouter = Router();
 
@@ -76,7 +77,16 @@ function typeLabel(vt: string) {
   return vt;
 }
 
-/** Telegram / tizim xabari — chiroyli, qatorma-qator */
+function receptionHeadline(visitType: string): string {
+  const n = normalizeVisitType(visitType);
+  if (n === "staff") return "👥 Sizga xodim keldi!";
+  if (n === "candidate") return "🎯 Sizga nomzod (suhbat) keldi!";
+  if (n === "request") return "📋 Sizga murojaatchi keldi!";
+  if (n === "package") return "📦 Sizga posilka / kuryer keldi!";
+  return "👋 Sizga mehmon keldi!";
+}
+
+/** Tizim / web-push uchun oddiy matn (qatorlar bilan) */
 function buildReceptionNotifyText(opts: {
   visitType: string;
   visitorFullName: string;
@@ -84,32 +94,48 @@ function buildReceptionNotifyText(opts: {
   purpose: string;
   note?: string | null;
 }) {
-  const n = normalizeVisitType(opts.visitType);
   const tur = typeLabel(opts.visitType);
-  const headline =
-    n === "staff"
-      ? "👥 Sizga xodim keldi!"
-      : n === "candidate"
-        ? "🎯 Sizga nomzod (suhbat) keldi!"
-        : n === "request"
-          ? "📋 Sizga murojaatchi keldi!"
-          : n === "package"
-            ? "📦 Sizga posilka / kuryer keldi!"
-            : "👋 Sizga mehmon keldi!";
   const lines = [
     "🏢 Qabulxoona",
     "",
-    headline,
+    receptionHeadline(opts.visitType),
     "",
     `👤 Kim: ${opts.visitorFullName}`,
     `📞 Telefon: ${opts.phone}`,
     `🏷️ Tur: ${tur}`,
     `🎯 Sabab: ${opts.purpose}`,
   ];
-  if (opts.note) {
-    lines.push(`📝 Izoh: ${opts.note}`);
-  }
+  if (opts.note) lines.push(`📝 Izoh: ${opts.note}`);
   lines.push("", "🔔 Iltimos, qabulxonaga chiqing yoki bog‘laning.");
+  return lines.join("\n");
+}
+
+/** Telegram HTML — qalin sarlavha, alohida qatorlar */
+function buildReceptionTelegramHtml(opts: {
+  visitType: string;
+  visitorFullName: string;
+  phone: string;
+  purpose: string;
+  note?: string | null;
+}) {
+  const tur = typeLabel(opts.visitType);
+  const name = escapeHtml(opts.visitorFullName);
+  const phone = escapeHtml(opts.phone);
+  const purpose = escapeHtml(opts.purpose);
+  const note = opts.note ? escapeHtml(opts.note) : null;
+  const lines = [
+    "<b>🏢 Qabulxoona</b>",
+    "──────────────",
+    `<b>${escapeHtml(receptionHeadline(opts.visitType))}</b>`,
+    "",
+    `👤 <b>Kim:</b> ${name}`,
+    `📞 <b>Telefon:</b> ${phone}`,
+    `🏷 <b>Tur:</b> ${escapeHtml(tur)}`,
+    `🎯 <b>Sabab:</b> ${purpose}`,
+  ];
+  if (note) lines.push(`📝 <b>Izoh:</b> ${note}`);
+  lines.push("──────────────", "<i>🔔 Iltimos, qabulxonaga chiqing yoki bog‘laning.</i>");
+  // Telegram HTML: \n saqlanadi; qo'shimcha <br/> ba'zi klientlarda ishonchliroq
   return lines.join("\n");
 }
 
@@ -515,16 +541,17 @@ router.post("/resepsion/logs", requireAuth, async (req: AuthRequest, res): Promi
     .returning();
 
   if (hostUserId) {
-    const text = buildReceptionNotifyText({
+    const payload = {
       visitType,
       visitorFullName,
       phone: trimOrNull(req.body?.visitorPhone, 40) || "—",
       purpose: trimOrNull(req.body?.purpose, 200) || "—",
       note: trimOrNull(req.body?.notes, 300),
-    });
+    };
     await notifyUser({
       userId: hostUserId,
-      text,
+      text: buildReceptionNotifyText(payload),
+      telegramHtml: buildReceptionTelegramHtml(payload),
       type: "resepsion_visit",
       linkUrl: "/resepsion",
       title: "🏢 Qabulxoona",

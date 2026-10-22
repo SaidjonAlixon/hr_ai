@@ -59,6 +59,8 @@ async function pushTelegramToUser(
   userId: number,
   text: string,
   linkUrl?: string,
+  /** Allaqachon HTML (escape qilingan) — qayta escape qilinmaydi */
+  htmlReady?: string,
 ): Promise<void> {
   if (!isTelegramConfigured()) return;
 
@@ -74,11 +76,13 @@ async function pushTelegramToUser(
       ? davomatMiniAppKeyboard()
       : notificationOpenKeyboard(linkUrl, "Ochish");
 
-  const body = reply_markup
-    ? escapeHtml(text)
-    : linkUrl
-      ? `${escapeHtml(text)}\n\n🔗 ${escapeHtml(linkUrl)}`
-      : escapeHtml(text);
+  const body = htmlReady
+    ? htmlReady
+    : reply_markup
+      ? escapeHtml(text)
+      : linkUrl
+        ? `${escapeHtml(text)}\n\n🔗 ${escapeHtml(linkUrl)}`
+        : escapeHtml(text);
 
   try {
     await sendMessage(user.telegramId, body, {
@@ -102,6 +106,8 @@ export async function notifyUser(opts: {
   /** Standart: true — tizim ichidagi xabarlar jadvali */
   system?: boolean;
   title?: string;
+  /** Telegram uchun tayyor HTML (qiymatlar escape qilingan bo‘lishi kerak) */
+  telegramHtml?: string;
 }): Promise<void> {
   if (!opts.userId) return;
   const text = visibleText(opts.text);
@@ -115,7 +121,7 @@ export async function notifyUser(opts: {
   }
   // Default: botga ham yuborish
   if (opts.telegram !== false) {
-    await pushTelegramToUser(opts.userId, text, opts.linkUrl);
+    await pushTelegramToUser(opts.userId, text, opts.linkUrl, opts.telegramHtml);
   }
   if (opts.webPush !== false) {
     try {

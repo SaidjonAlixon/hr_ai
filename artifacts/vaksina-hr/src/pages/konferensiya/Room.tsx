@@ -737,7 +737,12 @@ export function ConferenceRoom({
       </PanelShell>
     ) : panel === "people" ? (
       <PanelShell title={`Ishtirokchilar · ${participants.length}`} onClose={() => setPanel(null)}>
-        <PeoplePanel room={room} tick={tick} members={membersQ.data?.members} />
+        <PeoplePanel
+          room={room}
+          tick={tick}
+          members={membersQ.data?.members}
+          onInvited={() => void membersQ.refetch()}
+        />
       </PanelShell>
     ) : null;
 

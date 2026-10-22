@@ -203,6 +203,12 @@ export const conferenceApi = {
     request<{ ok: true; code: string; link: string; invited: number }>("/api/conferences", { method: "POST", json: input }),
   update: (code: string, input: Partial<ConferenceInput>) =>
     request<{ ok: true; invited: number }>(base(code), { method: "PATCH", json: input }),
+  /** Jonli konferensiyada qo‘shimcha xodimlarni taklif — botga xabar ketadi */
+  invite: (code: string, userIds: number[], opts?: { role?: "cohost" | "participant"; notify?: boolean }) =>
+    request<{ ok: true; invited: number; already: number }>(`${base(code)}/invite`, {
+      method: "POST",
+      json: { userIds, role: opts?.role ?? "participant", notify: opts?.notify !== false },
+    }),
   cancel: (code: string) => request<{ ok: true }>(base(code), { method: "DELETE", json: {} }),
   join: (code: string) => request<JoinTicket>(`${base(code)}/join`, { method: "POST", json: {} }),
   end: (code: string) => request<{ ok: true }>(`${base(code)}/end`, { method: "POST", json: {} }),

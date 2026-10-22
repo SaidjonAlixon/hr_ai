@@ -13,6 +13,7 @@ import {
   SendHorizontal,
   ShieldCheck,
   UserCheck,
+  UserPlus,
   Video,
   VideoOff,
   VolumeX,
@@ -22,9 +23,25 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { CallAvatar } from "@/components/calls/CallLayer";
-import { conferenceLink, copyText, type ChatMessage, type ConferenceMember } from "@/lib/conference/api";
+import {
+  conferenceApi,
+  conferenceLink,
+  copyText,
+  type ChatMessage,
+  type ConferenceMember,
+  type Person,
+} from "@/lib/conference/api";
 import { ParticipantMenu, useModerate, useRoomUi } from "./Tile";
 import { canPublish, displayName, handOf, hhmm, roleOf, userIdOf } from "./room-utils";
+
+function useDebounced(value: string, ms: number) {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
 
 export function PanelShell({ title, onClose, children }: { title: ReactNode; onClose: () => void; children: ReactNode }) {
   return (
@@ -238,16 +255,22 @@ export function PeoplePanel({
   room,
   tick,
   members,
+  onInvited,
 }: {
   room: Room;
   tick: number;
   /** Faqat tashkilotchiga: taklif qilinganlar va chiqarilganlar */
   members: ConferenceMember[] | undefined;
+  onInvited?: () => void;
 }) {
   const ui = useRoomUi();
   const { toast } = useToast();
   const mod = useModerate();
   const [q, setQ] = useState("");
+  const [inviteBusy, setInviteBusy] = useState<number | null>(null);
+  const [directory, setDirectory] = useState<Person[]>([]);
+  const [dirLoading, setDirLoading] = useState(false);
+  const dq = useDebounced(q.trim(), 280);
   void tick;
 
   const all: Participant[] = [room.localParticipant, ...room.remoteParticipants.values()];
@@ -258,6 +281,7 @@ export function PeoplePanel({
   const hosts = visible.filter((p) => roleOf(p) !== "participant");
   const others = visible.filter((p) => roleOf(p) === "participant").sort((a, b) => displayName(a).localeCompare(displayName(b), "uz"));
   const inRoom = new Set(all.map(userIdOf));
+  const invitedIds = useMemo(() => new Set((members ?? []).filter((m) => m.invited && !m.banned).map((m) => m.userId)), [members]);
   const notJoined = useMemo(
     () => (members ?? []).filter((m) => m.invited && !m.banned && !inRoom.has(m.userId) && match(m.fullName)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -265,12 +289,64 @@ export function PeoplePanel({
   );
   const banned = (members ?? []).filter((m) => m.banned);
 
+  useEffect(() => {
+    if (!ui.moderator || dq.length < 2) {
+      setDirectory([]);
+      setDirLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setDirLoading(true);
+    void conferenceApi
+      .people({ q: dq, code: ui.code })
+      .then((out) => {
+        if (!cancelled) setDirectory(out.items ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setDirectory([]);
+      })
+      .finally(() => {
+        if (!cancelled) setDirLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dq, ui.code, ui.moderator]);
+
+  const inviteCandidates = useMemo(() => {
+    if (!ui.moderator || dq.length < 2) return [];
+    return directory.filter((p) => !inRoom.has(p.id) && !invitedIds.has(p.id));
+  }, [directory, inRoom, invitedIds, ui.moderator, dq]);
+
+  const inviteOne = async (person: Person) => {
+    if (inviteBusy != null) return;
+    setInviteBusy(person.id);
+    try {
+      const out = await conferenceApi.invite(ui.code, [person.id]);
+      if (out.invited > 0) {
+        toast({ title: `${person.fullName} taklif qilindi`, description: "Telegram botiga xabar yuborildi" });
+        onInvited?.();
+      } else {
+        toast({ title: "Allaqachon taklif qilingan" });
+      }
+    } catch (e) {
+      toast({ title: "Taklif yuborilmadi", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setInviteBusy(null);
+    }
+  };
+
   return (
     <>
       <div className="shrink-0 space-y-2 border-b p-3">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ishtirokchini qidirish…" className="h-10 rounded-xl pl-9" />
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={ui.moderator ? "Ism familiya — qidirib taklif qiling…" : "Ishtirokchini qidirish…"}
+            className="h-10 rounded-xl pl-9"
+          />
         </div>
         <div className="flex gap-2">
           <button
@@ -297,6 +373,44 @@ export function PeoplePanel({
         </div>
       </div>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-2 [scrollbar-width:thin]">
+        {ui.moderator && dq.length >= 2 ? (
+          <div>
+            <p className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-sky-500">
+              <UserPlus className="h-3.5 w-3.5" /> Taklif qilish
+              {dirLoading ? " · …" : inviteCandidates.length ? ` · ${inviteCandidates.length}` : ""}
+            </p>
+            {dirLoading ? (
+              <p className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Qidirilmoqda…
+              </p>
+            ) : inviteCandidates.length ? (
+              inviteCandidates.slice(0, 40).map((p) => (
+                <div key={p.id} className="flex items-center gap-2.5 rounded-xl px-2 py-2">
+                  <CallAvatar id={p.id} name={p.fullName} className="h-9 w-9 text-xs" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{p.fullName}</p>
+                    <p className="truncate text-[11px] text-muted-foreground">
+                      {[p.position, p.department].filter(Boolean).join(" · ") || p.role}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={inviteBusy != null}
+                    onClick={() => void inviteOne(p)}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-sky-600 px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-sky-500 disabled:opacity-60"
+                  >
+                    {inviteBusy === p.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserPlus className="h-3.5 w-3.5" />}
+                    Taklif
+                  </button>
+                </div>
+              ))
+            ) : (
+              <p className="px-2 py-3 text-xs text-muted-foreground">
+                «{dq}» bo‘yicha taklif qilinadigan xodim topilmadi (yoki allaqachon ichida)
+              </p>
+            )}
+          </div>
+        ) : null}
         {hands.length ? (
           <div>
             <p className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-amber-600">

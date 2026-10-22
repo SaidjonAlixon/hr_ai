@@ -250,6 +250,39 @@ async function saveInvitees(conf: Conference, invitees: InviteeInput[]): Promise
   return ids.filter((id) => validIds.has(id) && !had.has(id));
 }
 
+/** Mavjud takliflarni saqlab, faqat yangilarini qo‘shadi (jonli suhbatdan taklif). */
+async function appendInvitees(conf: Conference, invitees: InviteeInput[]): Promise<number[]> {
+  const list = invitees.filter((i) => i.userId !== conf.hostId).slice(0, 140);
+  if (!list.length) return [];
+  const { rows: before } = await pool.query(
+    `SELECT user_id FROM conference_members WHERE conference_id = $1 AND invited`,
+    [conf.id],
+  );
+  const had = new Set(before.map((r) => r.user_id as number));
+  const ids = list.map((i) => i.userId);
+  const { rows: valid } = await pool.query(`SELECT id FROM users WHERE id = ANY($1::int[]) AND status <> 'terminated'`, [ids]);
+  const validIds = new Set(valid.map((r) => r.id as number));
+  const added: number[] = [];
+  for (const inv of list) {
+    if (!validIds.has(inv.userId)) continue;
+    await pool.query(
+      `INSERT INTO conference_members (conference_id, user_id, role, can_speak, invited, banned)
+       VALUES ($1, $2, $3, $4, TRUE, FALSE)
+       ON CONFLICT (conference_id, user_id)
+       DO UPDATE SET invited = TRUE, banned = FALSE,
+                     role = CASE
+                       WHEN conference_members.role = 'host' THEN conference_members.role
+                       WHEN EXCLUDED.role = 'cohost' THEN 'cohost'
+                       ELSE conference_members.role
+                     END,
+                     can_speak = COALESCE(EXCLUDED.can_speak, conference_members.can_speak)`,
+      [conf.id, inv.userId, inv.role, inv.canSpeak],
+    );
+    if (!had.has(inv.userId)) added.push(inv.userId);
+  }
+  return added;
+}
+
 function confJson(conf: Conference, hostName: string, liveCount: number | undefined) {
   return {
     code: conf.code,
@@ -591,7 +624,7 @@ router.patch("/conferences/:code", requireAuth, async (req: AuthRequest, res): P
     }
     if (body.notify !== false) {
       if (added.length) {
-        void notifyConferenceUsers(conf, added, conf.status === "live" ? "started" : "invite").catch(() => undefined);
+        void notifyConferenceUsers(conf, added, conf.status === "live" ? "call_invite" : "invite").catch(() => undefined);
       }
       if (timeChanged) {
         const others = (await invitedUserIds(conf.id, { excludeUserId: ctx.actor.id })).filter((id) => !added.includes(id));
@@ -601,6 +634,39 @@ router.patch("/conferences/:code", requireAuth, async (req: AuthRequest, res): P
     res.json({ ok: true, invited: added.length });
   } catch (err) {
     serverError(res, "PATCH /conferences/:code", err);
+  }
+});
+
+/** Jonli konferensiyada ism bo‘yicha topilgan xodimlarni qo‘shimcha taklif qilish */
+router.post("/conferences/:code/invite", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const ctx = await requireModerator(req, res);
+    if (!ctx) return;
+    const { conf } = ctx;
+    if (conf.status === "ended" || conf.status === "cancelled") {
+      fail(res, 409, "Konferensiya yakunlangan");
+      return;
+    }
+    const rawIds = Array.isArray(req.body?.userIds) ? (req.body.userIds as unknown[]) : [];
+    const userIds = [...new Set(rawIds.map(Number))]
+      .filter((id) => Number.isInteger(id) && id > 0 && id !== conf.hostId)
+      .slice(0, 140);
+    if (!userIds.length) {
+      fail(res, 400, "Kamida bitta xodim tanlang");
+      return;
+    }
+    const role = req.body?.role === "cohost" ? "cohost" : "participant";
+    const added = await appendInvitees(
+      conf,
+      userIds.map((userId) => ({ userId, role, canSpeak: null })),
+    );
+    void applyLivePerms(conf).catch(() => undefined);
+    if (added.length && req.body?.notify !== false) {
+      void notifyConferenceUsers(conf, added, conf.status === "live" ? "call_invite" : "invite").catch(() => undefined);
+    }
+    res.json({ ok: true, invited: added.length, already: userIds.length - added.length });
+  } catch (err) {
+    serverError(res, "POST /conferences/:code/invite", err);
   }
 });
 

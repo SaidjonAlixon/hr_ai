@@ -114,6 +114,7 @@ export function fetchReceptionLogs(params?: {
   from?: string;
   to?: string;
   q?: string;
+  hostUserId?: number;
 }) {
   const sp = new URLSearchParams();
   if (params?.visitType) sp.set("visitType", params.visitType);
@@ -121,6 +122,7 @@ export function fetchReceptionLogs(params?: {
   if (params?.from) sp.set("from", params.from);
   if (params?.to) sp.set("to", params.to);
   if (params?.q) sp.set("q", params.q);
+  if (params?.hostUserId) sp.set("hostUserId", String(params.hostUserId));
   const qs = sp.toString() ? `?${sp}` : "";
   return apiFetch<{
     items: ReceptionLog[];
@@ -159,17 +161,22 @@ export function useReceptionHosts(q?: string) {
   });
 }
 
-export function useReceptionLogs(params?: {
-  visitType?: string;
-  status?: string;
-  from?: string;
-  to?: string;
-  q?: string;
-}) {
+export function useReceptionLogs(
+  params?: {
+    visitType?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+    q?: string;
+    hostUserId?: number;
+  },
+  opts?: { enabled?: boolean; refetchInterval?: number | false },
+) {
   return useQuery({
     queryKey: ["resepsion", "logs", params],
     queryFn: () => fetchReceptionLogs(params),
-    refetchInterval: 20_000,
+    enabled: opts?.enabled ?? true,
+    refetchInterval: opts?.refetchInterval ?? 20_000,
   });
 }
 

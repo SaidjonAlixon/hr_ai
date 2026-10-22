@@ -347,6 +347,9 @@ router.get("/resepsion/logs", requireAuth, async (req: AuthRequest, res): Promis
   const from = parseDate(req.query.from);
   const to = parseDate(req.query.to);
   const search = String(req.query.q || "").trim().toLowerCase();
+  const hostUserIdQ = Number(req.query.hostUserId);
+  const hostUserIdFilter =
+    Number.isFinite(hostUserIdQ) && hostUserIdQ > 0 ? hostUserIdQ : null;
 
   const conds = [];
   if (visitType && VISIT_TYPES.has(visitType)) {
@@ -363,13 +366,14 @@ router.get("/resepsion/logs", requireAuth, async (req: AuthRequest, res): Promis
   if (STATUSES.has(status)) conds.push(eq(receptionLogsTable.status, status));
   if (from) conds.push(gte(receptionLogsTable.visitAt, from));
   if (to) conds.push(lte(receptionLogsTable.visitAt, to));
+  if (hostUserIdFilter) conds.push(eq(receptionLogsTable.hostUserId, hostUserIdFilter));
 
   let rows = await db
     .select()
     .from(receptionLogsTable)
     .where(conds.length ? and(...conds) : undefined)
     .orderBy(desc(receptionLogsTable.visitAt))
-    .limit(500);
+    .limit(hostUserIdFilter ? 80 : 500);
 
   if (search) {
     rows = rows.filter((r) => {

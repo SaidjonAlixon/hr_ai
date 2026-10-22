@@ -35,6 +35,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
+  formatVisitDt,
   formatVisitTime,
   fromLocalInputValue,
   initialsOf,
@@ -447,6 +448,26 @@ export default function ResepsionPage() {
     if (!hostUserId) return null;
     return hostsQ.data?.items.find((h) => String(h.id) === hostUserId) || null;
   }, [hostUserId, hostsQ.data?.items]);
+
+  const hostHistoryQ = useReceptionLogs(
+    selectedHost ? { hostUserId: selectedHost.id } : undefined,
+    { enabled: Boolean(selectedHost), refetchInterval: 15_000 },
+  );
+
+  const hostVisitHistory = useMemo(() => {
+    const list = hostHistoryQ.data?.items ?? [];
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    let today = 0;
+    for (const r of list) {
+      if (new Date(r.visitAt).getTime() >= todayStart.getTime()) today += 1;
+    }
+    return {
+      items: list.slice(0, 12),
+      total: list.length,
+      today,
+    };
+  }, [hostHistoryQ.data?.items]);
 
   const filteredHosts = useMemo(() => {
     const list = hostsQ.data?.items || [];
@@ -1365,14 +1386,111 @@ export default function ResepsionPage() {
                   </p>
                 ) : null}
               </div>
+
+              {/* Shu xodimga kelganlar tarixi */}
+              <div className="overflow-hidden rounded-2xl border border-indigo-200/60 bg-gradient-to-b from-indigo-50/80 via-card to-card shadow-sm">
+                <div className="flex items-center justify-between gap-2 border-b border-indigo-100 bg-indigo-500/10 px-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-indigo-900">Tashriflar tarixi</p>
+                    <p className="text-[10px] text-indigo-800/70">
+                      Kim kelgani, qachon va qanday mavzu bilan
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 gap-1.5">
+                    <span className="rounded-lg bg-white/80 px-2 py-1 text-center shadow-sm ring-1 ring-indigo-100">
+                      <span className="block text-[9px] font-semibold uppercase text-muted-foreground">
+                        Bugun
+                      </span>
+                      <span className="text-sm font-bold tabular-nums text-indigo-700">
+                        {hostVisitHistory.today}
+                      </span>
+                    </span>
+                    <span className="rounded-lg bg-white/80 px-2 py-1 text-center shadow-sm ring-1 ring-indigo-100">
+                      <span className="block text-[9px] font-semibold uppercase text-muted-foreground">
+                        Jami
+                      </span>
+                      <span className="text-sm font-bold tabular-nums text-indigo-700">
+                        {hostVisitHistory.total}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+
+                {hostHistoryQ.isLoading ? (
+                  <div className="flex items-center justify-center gap-2 px-3 py-8 text-xs text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Tarix yuklanmoqda…
+                  </div>
+                ) : !hostVisitHistory.items.length ? (
+                  <div className="px-3 py-7 text-center">
+                    <Users className="mx-auto mb-2 h-7 w-7 text-indigo-300" />
+                    <p className="text-xs font-semibold text-foreground">Hali tashrif yo‘q</p>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Shu xodimga birinchi mehmon qayd etilganda bu yerda ko‘rinadi.
+                    </p>
+                  </div>
+                ) : (
+                  <ul className="max-h-64 space-y-0 overflow-y-auto divide-y divide-border/50">
+                    {hostVisitHistory.items.map((row) => {
+                      const tur = typeLabel(String(row.visitType));
+                      const mavzu = row.purpose?.trim() || row.visitorRoleHint?.trim() || "Mavzu ko‘rsatilmagan";
+                      const holat = statusLabel(String(row.status));
+                      return (
+                        <li key={row.id} className="flex gap-2.5 px-3 py-2.5">
+                          <AvatarBubble
+                            name={row.visitorFullName}
+                            size="sm"
+                            tone="violet"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <p className="truncate text-sm font-semibold text-foreground">
+                                {row.visitorFullName}
+                              </p>
+                              <span
+                                className={cn(
+                                  "rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase",
+                                  TYPE_BADGE[row.visitType] || "bg-muted",
+                                )}
+                              >
+                                {tur}
+                              </span>
+                              <span
+                                className={cn(
+                                  "rounded-md px-1.5 py-0.5 text-[9px] font-semibold",
+                                  STATUS_BADGE[row.status] || "bg-muted",
+                                )}
+                              >
+                                {holat}
+                              </span>
+                            </div>
+                            <p className="mt-0.5 truncate text-[11px] text-foreground/80">
+                              <span className="font-medium text-indigo-800">Mavzu:</span> {mavzu}
+                            </p>
+                            <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[10px] text-muted-foreground">
+                              <span>{formatVisitDt(row.visitAt)}</span>
+                              {row.visitorPhone ? <span>· {row.visitorPhone}</span> : null}
+                            </p>
+                            {row.notes?.trim() ? (
+                              <p className="mt-1 line-clamp-2 text-[10px] leading-snug text-muted-foreground">
+                                Izoh: {row.notes.trim()}
+                              </p>
+                            ) : null}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
             </div>
           ) : (
             <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 px-4 text-center">
               <BriefcaseBusiness className="mb-2 h-8 w-8 text-muted-foreground/50" />
               <p className="text-sm font-medium text-foreground">Xodim tanlanmagan</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Chapdagi formadan «Kimning oldiga» ni tanlang — rasm, davomat holati, Telegram
-                xabar ko‘rinishi va qo‘ng‘iroq shu yerda ochiladi.
+                Chapdagi formadan «Kimning oldiga» ni tanlang — rasm, davomat, tashriflar tarixi,
+                Telegram va qo‘ng‘iroq shu yerda ochiladi.
               </p>
             </div>
           )}

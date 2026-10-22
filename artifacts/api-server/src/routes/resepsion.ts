@@ -224,8 +224,7 @@ router.get("/resepsion/hosts", requireAuth, async (req: AuthRequest, res): Promi
     })
     .from(usersTable)
     .where(eq(usersTable.status, "active"))
-    .orderBy(usersTable.fullName)
-    .limit(400);
+    .orderBy(usersTable.fullName);
   const filtered = q
     ? rows.filter(
         (u) =>
@@ -234,7 +233,8 @@ router.get("/resepsion/hosts", requireAuth, async (req: AuthRequest, res): Promi
           String(u.phone || "").includes(q),
       )
     : rows;
-  const slice = filtered.slice(0, 120);
+  /** Barcha faol xodimlar — ofis/dorixona soni to‘liq bo‘lishi uchun limit yo‘q */
+  const slice = filtered;
   const ids = slice.map((u) => u.id);
 
   const presenceByUser = new Map<number, HostPresence>();

@@ -303,8 +303,7 @@ export default function ResepsionPage() {
           String(h.phone || "").includes(s) ||
           userRoleLabel(h.role).toLowerCase().includes(s)
         );
-      })
-      .slice(0, 60);
+      });
   }, [hostsQ.data?.items, hostSearch, showOfisHosts, showPharmacyHosts]);
 
   const hostCounts = useMemo(() => {

@@ -23,7 +23,8 @@ import {
   setCallPin,
   startCall,
 } from "../lib/calls";
-import { deleteAdminRecording, listAdminRecordings } from "../lib/conference-recording";
+import { createReadStream } from "node:fs";
+import { deleteAdminRecording, getAdminRecordingFile, listAdminRecordings } from "../lib/conference-recording";
 
 const router: IRouter = Router();
 
@@ -380,6 +381,29 @@ router.delete("/calls/recordings/:id", requireAuth, async (req: AuthRequest, res
   } catch (err) {
     console.error("DELETE /calls/recordings", err);
     res.status(503).json({ error: "O‘chirilmadi" });
+  }
+});
+
+/** Admin: zapis videosini yuklab olish */
+router.get("/calls/recordings/:id/file", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (denyUnlessAdmin(req, res)) return;
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Noto‘g‘ri id" });
+    return;
+  }
+  try {
+    const out = await getAdminRecordingFile(id);
+    if (!out.ok) {
+      res.status(404).json({ error: out.error });
+      return;
+    }
+    res.setHeader("Content-Type", out.mimeType);
+    res.setHeader("Content-Disposition", `attachment; filename="${out.filename.replace(/"/g, "")}"`);
+    createReadStream(out.path).pipe(res);
+  } catch (err) {
+    console.error("GET /calls/recordings/:id/file", err);
+    res.status(503).json({ error: "Yuklab bo‘lmadi" });
   }
 });
 

@@ -251,6 +251,8 @@ export async function sendVideo(
     caption?: string;
     parseMode?: "HTML";
     messageThreadId?: number | null;
+    /** Video davomiyligi (soniya) — Telegram player uchun */
+    durationSec?: number | null;
   },
 ) {
   if (!botToken()) throw new Error("TELEGRAM_BOT_TOKEN sozlanmagan");
@@ -271,6 +273,8 @@ export async function sendVideo(
       if (opts?.caption) form.append("caption", opts.caption.slice(0, 1024));
       if (opts?.parseMode) form.append("parse_mode", opts.parseMode);
       if (opts?.messageThreadId) form.append("message_thread_id", String(opts.messageThreadId));
+      const dur = Number(opts?.durationSec);
+      if (Number.isFinite(dur) && dur > 0) form.append("duration", String(Math.round(dur)));
       return { method: "POST", body: form };
     },
     { timeoutMs: UPLOAD_TIMEOUT_MS },

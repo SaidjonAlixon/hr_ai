@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Film, Loader2, Trash2 } from "lucide-react";
+import { Download, Film, Loader2, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,6 +15,7 @@ export type RecordingItem = {
   progress: number;
   etaSec: number | null;
   bytes: number | null;
+  durationSec: number | null;
   mimeType: string | null;
   error: string | null;
   hasFile: boolean;
@@ -36,6 +37,16 @@ function formatBytes(n: number | null | undefined) {
   if (n == null || n <= 0) return "—";
   if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDuration(sec: number | null | undefined) {
+  if (sec == null || sec <= 0) return null;
+  const s = Math.round(sec);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 0) return m ? `${h} soat ${m} daqiqa` : `${h} soat`;
+  if (m > 0) return `${m} daqiqa`;
+  return `${s} soniya`;
 }
 
 function formatEta(sec: number | null | undefined) {
@@ -61,6 +72,7 @@ type StatusView = {
 function statusView(r: RecordingItem): StatusView {
   const p = Math.max(0, Math.min(100, Math.round(r.progress || 0)));
   const eta = formatEta(r.etaSec);
+  const dur = formatDuration(r.durationSec);
   switch (r.status) {
     case "uploaded":
       return {
@@ -87,9 +99,12 @@ function statusView(r: RecordingItem): StatusView {
     case "sent_purged":
       return {
         label: "Yuborib bo‘lingan",
-        detail: r.sentAt
-          ? `Telegramga yetkazildi · ${whenText(r.sentAt)}`
-          : "Telegramga yetkazildi · platformadan o‘chirilgan",
+        detail: [
+          r.sentAt ? `Telegramga yetkazildi · ${whenText(r.sentAt)}` : "Telegramga yetkazildi",
+          dur ? `Yozuv: ${dur}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
         tone: "ok",
         showBar: false,
       };
@@ -139,6 +154,32 @@ export function RecordingsTab() {
     onError: (e: Error) => toast({ title: "Xatolik", description: e.message, variant: "destructive" }),
   });
 
+  async function downloadRecording(r: RecordingItem) {
+    try {
+      const res = await fetch(`/api/calls/recordings/${r.id}/file`, { credentials: "include" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error || "Yuklab bo‘lmadi");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `konferensiya_${r.code}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast({ title: "Yuklandi", description: formatDuration(r.durationSec) || r.title });
+    } catch (e) {
+      toast({
+        title: "Yuklab bo‘lmadi",
+        description: e instanceof Error ? e.message : "Xato",
+        variant: "destructive",
+      });
+    }
+  }
+
   if (list.isLoading) {
     return (
       <div className="space-y-2">
@@ -166,7 +207,7 @@ export function RecordingsTab() {
         </div>
         <p className="mt-3 text-sm font-semibold">Hali zapis yo‘q</p>
         <p className="mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
-          Konferensiyada yozib olingan videolar shu yerda ko‘rinadi: Telegram holati, foiz va kutish vaqti.
+          Konferensiyada yozib olingan videolar shu yerda ko‘rinadi: davomiylik, Telegram holati va yuklab olish.
         </p>
       </div>
     );
@@ -175,13 +216,14 @@ export function RecordingsTab() {
   return (
     <div className="space-y-3">
       <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3 text-xs leading-relaxed text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
-        Faqat admin ko‘radi. Video Telegramga yuborilgach platformadan o‘chadi — shu yerda faqat holat qoladi. Keraksiz
-        yozuvni qo‘lda o‘chirishingiz mumkin.
+        Faqat admin. Telegramga video + hisobot ketadi. Fayl platformada qoladi — shu yerdan yuklab olishingiz yoki
+        qo‘lda o‘chirishingiz mumkin.
       </div>
       <div className="space-y-2">
         {items.map((r) => {
           const st = statusView(r);
           const p = Math.max(0, Math.min(100, Math.round(r.progress || 0)));
+          const dur = formatDuration(r.durationSec);
           return (
             <div key={r.id} className="rounded-2xl border border-border/60 bg-card p-3 shadow-sm sm:p-4">
               <div className="flex items-start gap-3">
@@ -194,6 +236,11 @@ export function RecordingsTab() {
                     <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", toneCls[st.tone])}>
                       {st.label}
                     </span>
+                    {dur ? (
+                      <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">
+                        Yozuv · {dur}
+                      </span>
+                    ) : null}
                   </div>
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">
                     Kod: {r.code}
@@ -218,23 +265,35 @@ export function RecordingsTab() {
                     </div>
                   ) : null}
                 </div>
-                <button
-                  type="button"
-                  disabled={del.isPending}
-                  title="O‘chirish"
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        `"${r.title}" zapisini o‘chirilsinmi?${r.hasFile ? " Diskdagi fayl ham o‘chadi." : ""}`,
-                      )
-                    ) {
-                      del.mutate(r.id);
-                    }
-                  }}
-                  className="shrink-0 rounded-xl bg-red-50 p-2.5 text-red-600 transition hover:bg-red-100 active:scale-95 disabled:opacity-50 dark:bg-red-500/10"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                <div className="flex shrink-0 flex-col gap-1.5">
+                  {r.hasFile ? (
+                    <button
+                      type="button"
+                      title="Videoni yuklab olish"
+                      onClick={() => void downloadRecording(r)}
+                      className="rounded-xl bg-sky-50 p-2.5 text-sky-700 transition hover:bg-sky-100 active:scale-95 dark:bg-sky-500/10 dark:text-sky-200"
+                    >
+                      <Download className="h-4 w-4" />
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    disabled={del.isPending}
+                    title="O‘chirish"
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `"${r.title}" zapisini o‘chirilsinmi?${r.hasFile ? " Diskdagi fayl ham o‘chadi." : ""}`,
+                        )
+                      ) {
+                        del.mutate(r.id);
+                      }
+                    }}
+                    className="rounded-xl bg-red-50 p-2.5 text-red-600 transition hover:bg-red-100 active:scale-95 disabled:opacity-50 dark:bg-red-500/10"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             </div>
           );

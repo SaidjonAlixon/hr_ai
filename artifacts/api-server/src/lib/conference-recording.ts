@@ -90,6 +90,7 @@ export async function ensureRecordingSchema(): Promise<void> {
       ON conference_recordings (uploaded_at DESC);
     CREATE INDEX IF NOT EXISTS idx_conference_recordings_conf
       ON conference_recordings (conference_id, uploaded_at DESC);
+    ALTER TABLE conference_recordings ADD COLUMN IF NOT EXISTS duration_sec INT;
   `);
 }
 
@@ -123,6 +124,7 @@ async function patchRecordingRow(
     sentAt?: Date | null;
     purgedAt?: Date | null;
     bytes?: number;
+    durationSec?: number | null;
   },
 ): Promise<void> {
   await pool.query(
@@ -135,6 +137,7 @@ async function patchRecordingRow(
         sent_at = COALESCE($10, sent_at),
         purged_at = COALESCE($11, purged_at),
         bytes = COALESCE($12, bytes),
+        duration_sec = COALESCE($13, duration_sec),
         updated_at = NOW()
       WHERE id = $1`,
     [
@@ -150,8 +153,66 @@ async function patchRecordingRow(
       patch.sentAt ?? null,
       patch.purgedAt ?? null,
       patch.bytes ?? null,
+      patch.durationSec ?? null,
     ],
   );
+}
+
+function formatSpanUz(sec: number): string {
+  const s = Math.max(0, Math.round(sec || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 0) return m ? `${h} soat ${m} daqiqa` : `${h} soat`;
+  if (m > 0) return `${m} daqiqa`;
+  return `${s} soniya`;
+}
+
+function hmTz(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString("uz-UZ", {
+    timeZone: "Asia/Tashkent",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function roleLabelUz(role: string): string {
+  if (role === "host") return "Tashkilotchi";
+  if (role === "cohost") return "Raxbar";
+  return "Ishtirokchi";
+}
+
+async function probeMediaDurationSec(filePath: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    const child = spawn(
+      "ffprobe",
+      ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", filePath],
+      { stdio: ["ignore", "pipe", "ignore"] },
+    );
+    let out = "";
+    const t = setTimeout(() => {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        /* */
+      }
+      resolve(null);
+    }, 15_000);
+    child.stdout?.on("data", (d) => {
+      out += String(d);
+    });
+    child.on("error", () => {
+      clearTimeout(t);
+      resolve(null);
+    });
+    child.on("close", () => {
+      clearTimeout(t);
+      const n = Number.parseFloat(out.trim());
+      resolve(Number.isFinite(n) && n > 0 ? Math.round(n) : null);
+    });
+  });
 }
 
 function stopLive(recordingId: number): void {
@@ -234,6 +295,7 @@ export type AdminRecordingItem = {
   progress: number;
   etaSec: number | null;
   bytes: number | null;
+  durationSec: number | null;
   mimeType: string | null;
   error: string | null;
   hasFile: boolean;
@@ -261,7 +323,7 @@ export async function listAdminRecordings(limit = 100): Promise<AdminRecordingIt
   void sweepStaleRecordings().catch((err) => logger.warn({ err }, "stale recording sweep failed"));
   const { rows } = await pool.query(
     `SELECT id, conference_id, conference_code, conference_title, host_name,
-            status, progress, bytes, mime_type, temp_path, error, eta_sec,
+            status, progress, bytes, duration_sec, mime_type, temp_path, error, eta_sec,
             uploaded_by, uploaded_at, sent_at, purged_at, updated_at
        FROM conference_recordings
       WHERE status <> 'deleted'
@@ -272,30 +334,32 @@ export async function listAdminRecordings(limit = 100): Promise<AdminRecordingIt
 
   const items: AdminRecordingItem[] = [];
   for (const r of rows) {
-    let hasFile = false;
-    const tp = r.temp_path as string | null;
-    if (tp) {
+    const code = r.conference_code as string;
+    const tp = (r.temp_path as string) || null;
+    const filePath = await resolveRecordingFile(tp, code);
+    let bytes = r.bytes == null ? null : Number(r.bytes);
+    if (filePath) {
       try {
-        const st = await fs.stat(tp);
-        hasFile = st.isFile() && st.size > 0;
+        bytes = (await fs.stat(filePath)).size;
       } catch {
-        hasFile = false;
+        /* keep */
       }
     }
     items.push(
       enrichFromLive({
         id: r.id as number,
         conferenceId: r.conference_id as number,
-        code: r.conference_code as string,
-        title: (r.conference_title as string) || r.conference_code,
+        code,
+        title: (r.conference_title as string) || code,
         hostName: (r.host_name as string) || null,
         status: r.status as RecStatus,
         progress: Number(r.progress) || 0,
         etaSec: r.eta_sec == null ? null : Number(r.eta_sec),
-        bytes: r.bytes == null ? null : Number(r.bytes),
+        bytes,
+        durationSec: r.duration_sec == null ? null : Number(r.duration_sec),
         mimeType: (r.mime_type as string) || null,
         error: (r.error as string) || null,
-        hasFile,
+        hasFile: Boolean(filePath),
         uploadedBy: r.uploaded_by == null ? null : Number(r.uploaded_by),
         uploadedAt: new Date(r.uploaded_at).toISOString(),
         sentAt: r.sent_at ? new Date(r.sent_at).toISOString() : null,
@@ -307,10 +371,32 @@ export async function listAdminRecordings(limit = 100): Promise<AdminRecordingIt
   return items;
 }
 
+export async function getAdminRecordingFile(
+  id: number,
+): Promise<{ ok: true; path: string; filename: string; mimeType: string } | { ok: false; error: string }> {
+  await ensureRecordingSchema();
+  const { rows } = await pool.query(
+    `SELECT id, conference_code, temp_path, mime_type, status
+       FROM conference_recordings WHERE id = $1 AND status <> 'deleted'`,
+    [id],
+  );
+  if (!rows[0]) return { ok: false, error: "Yozuv topilmadi" };
+  const code = rows[0].conference_code as string;
+  const filePath = await resolveRecordingFile((rows[0].temp_path as string) || null, code);
+  if (!filePath) return { ok: false, error: "Fayl diskda yo‘q" };
+  const isMp4 = filePath.toLowerCase().endsWith(".mp4");
+  return {
+    ok: true,
+    path: filePath,
+    filename: `konferensiya_${code}${isMp4 ? ".mp4" : ".webm"}`,
+    mimeType: isMp4 ? "video/mp4" : String(rows[0].mime_type || "video/webm"),
+  };
+}
+
 export async function deleteAdminRecording(id: number): Promise<{ ok: boolean; error?: string }> {
   await ensureRecordingSchema();
   const { rows } = await pool.query(
-    `SELECT id, temp_path, status FROM conference_recordings WHERE id = $1 AND status <> 'deleted'`,
+    `SELECT id, conference_code, temp_path, status FROM conference_recordings WHERE id = $1 AND status <> 'deleted'`,
     [id],
   );
   if (!rows[0]) return { ok: false, error: "Yozuv topilmadi" };
@@ -318,14 +404,15 @@ export async function deleteAdminRecording(id: number): Promise<{ ok: boolean; e
   if (status === "converting" || status === "sending" || status === "uploaded") {
     stopLive(id);
   }
-  const tp = rows[0].temp_path as string | null;
-  if (tp) await safeUnlink(tp);
-  // Sibling .mp4 / .webm
-  if (tp) {
-    const alt = tp.toLowerCase().endsWith(".mp4")
-      ? tp.replace(/\.mp4$/i, ".webm")
-      : tp.replace(/\.[^.]+$/i, ".mp4");
-    if (alt !== tp) await safeUnlink(alt);
+  const code = rows[0].conference_code as string;
+  const tp = (rows[0].temp_path as string) || null;
+  const found = await resolveRecordingFile(tp, code);
+  if (found) {
+    await safeUnlink(found);
+    const alt = found.toLowerCase().endsWith(".mp4")
+      ? found.replace(/\.mp4$/i, ".webm")
+      : found.replace(/\.[^.]+$/i, ".mp4");
+    if (alt !== found) await safeUnlink(alt);
   }
   await pool.query(
     `UPDATE conference_recordings
@@ -596,16 +683,20 @@ async function deliverConferenceRecordingAndPurgeInner(
     return { ok: false, error: "Yozuv fayli o‘qilmadi" };
   }
 
-  const mins = Math.max(1, Math.round((meta.actualSeconds || 0) / 60));
+  const probed = await probeMediaDurationSec(sendPath);
+  const durationSec = probed || Math.max(0, Math.round(meta.actualSeconds || 0)) || null;
+  const durationLabel = durationSec ? formatSpanUz(durationSec) : "—";
+  if (recordingId && durationSec) {
+    await patchRecordingRow(recordingId, { durationSec, bytes: buf.length, tempPath: sendPath });
+  }
+
   const caption = [
     `<b>🎥 Konferensiya yozuvi (MP4)</b>`,
     `<b>${escapeHtml(conf.title)}</b>`,
     `Tashkilotchi: ${escapeHtml(meta.hostName)}`,
     `Kod: <code>${escapeHtml(conf.code)}</code>`,
-    `Davomiyligi: ~${mins} daqiqa`,
+    `Yozuv davomiyligi: <b>${escapeHtml(durationLabel)}</b>`,
     `Qatnashdi: ${meta.attendedCount} / ${meta.invitedCount} taklif`,
-    ``,
-    `Full HD yozuv. Platformada video saqlanmaydi — faqat statistika qoladi.`,
   ].join("\n");
 
   const isMp4 = sendPath.toLowerCase().endsWith(".mp4");
@@ -622,7 +713,12 @@ async function deliverConferenceRecordingAndPurgeInner(
     const tryVideo = isMp4 && buf.length <= 45 * 1024 * 1024;
     if (tryVideo) {
       try {
-        await sendVideo(chatId, buf, filename, { caption, parseMode: "HTML", mimeType });
+        await sendVideo(chatId, buf, filename, {
+          caption,
+          parseMode: "HTML",
+          mimeType,
+          durationSec,
+        });
         sentAs = "video";
       } catch (vidErr) {
         logger.warn({ err: vidErr, code: conf.code, bytes: buf.length }, "sendVideo failed — sendDocument");
@@ -641,10 +737,13 @@ async function deliverConferenceRecordingAndPurgeInner(
         etaSec: 0,
         sentAt,
         error: null,
+        tempPath: sendPath,
+        bytes: buf.length,
+        durationSec,
       });
     }
     logger.info(
-      { code: conf.code, chatId, bytes: buf.length, mp4: isMp4, sentAs, recordingId },
+      { code: conf.code, chatId, bytes: buf.length, mp4: isMp4, sentAs, recordingId, durationSec },
       "conference recording sent to Telegram",
     );
   } catch (err) {
@@ -671,52 +770,79 @@ async function deliverConferenceRecordingAndPurgeInner(
     return { ok: false, error: err instanceof Error ? err.message : "Telegramga yuborilmadi" };
   }
 
-  // Video muvaffaqiyatidan keyin PDF hisobot
+  // Video muvaffaqiyatidan keyin — UI dagi hisobot (matn + PDF). Fayl platformada qoladi (yuklab olish uchun).
   try {
     const history = await conferenceHistory(conf);
+    const totalSec = Math.max(1, history.actualSeconds || durationSec || 1);
+    const attended = history.attendance.filter((a) => a.firstJoin);
+    const peopleLines = attended.slice(0, 40).map((a, i) => {
+      const share = Math.min(100, Math.round((a.seconds / totalSec) * 100));
+      return (
+        `${i + 1}. <b>${escapeHtml(a.fullName)}</b> · ${escapeHtml(roleLabelUz(a.role))}\n` +
+        `   ${hmTz(a.firstJoin)} → ${hmTz(a.lastLeave)} · ${formatSpanUz(a.seconds)} (${share}%)`
+      );
+    });
+    const reportText = [
+      `<b>📊 Konferensiya hisobot</b>`,
+      `<b>${escapeHtml(conf.title)}</b>`,
+      `Tashkilotchi: ${escapeHtml(meta.hostName)}`,
+      `Kod: <code>${escapeHtml(conf.code)}</code>`,
+      ``,
+      `<b>Boshlandi:</b> ${hmTz(history.actualStart)}`,
+      `<b>Tugadi:</b> ${hmTz(history.actualEnd)}`,
+      `<b>Gaplashildi:</b> ${formatSpanUz(history.actualSeconds || durationSec || 0)}`,
+      `<b>Yozuv:</b> ${escapeHtml(durationLabel)}`,
+      `<b>Qatnashdi:</b> ${history.attendedCount} / ${history.invitedCount} taklif`,
+      ``,
+      `<b>Qatnashuvchilar · ${attended.length}</b>`,
+      peopleLines.join("\n") || "—",
+    ].join("\n");
+    await sendMessage(chatId, reportText, { parse_mode: "HTML" }).catch((err) =>
+      logger.warn({ err, code: conf.code }, "conference text report Telegram failed"),
+    );
+
     const pdf = await renderConferenceReportPdf(conf, history, meta.hostName);
     const pdfName = `konferensiya_hisobot_${conf.code}_${Date.now()}.pdf`;
     await sendDocument(chatId, pdf, pdfName, {
       caption: [
         `<b>📄 Konferensiya hisobot (PDF)</b>`,
         `<b>${escapeHtml(conf.title)}</b>`,
-        `Kod: <code>${escapeHtml(conf.code)}</code>`,
+        `Gaplashildi: ${formatSpanUz(history.actualSeconds || 0)} · Yozuv: ${escapeHtml(durationLabel)}`,
         `Qatnashdi: ${history.attendedCount} / ${history.invitedCount}`,
-        `Chat: ${history.messages.length} xabar`,
       ].join("\n"),
       parseMode: "HTML",
       mimeType: "application/pdf",
     });
     logger.info({ code: conf.code, chatId, pdfBytes: pdf.length }, "conference report PDF sent to Telegram");
   } catch (pdfErr) {
-    logger.warn({ err: pdfErr, code: conf.code }, "conference report PDF send failed");
+    logger.warn({ err: pdfErr, code: conf.code }, "conference report send failed");
     try {
       await sendMessage(
         chatId,
-        `⚠️ <b>Hisobot PDF yuborilmadi</b>\nKod: <code>${escapeHtml(conf.code)}</code>\n${escapeHtml(pdfErr instanceof Error ? pdfErr.message : "xato")}`,
+        `⚠️ <b>Hisobot yuborilmadi</b>\nKod: <code>${escapeHtml(conf.code)}</code>\n${escapeHtml(pdfErr instanceof Error ? pdfErr.message : "xato")}`,
       ).catch(() => undefined);
     } catch {
       /* */
     }
   }
 
-  await safeUnlink(sendPath);
+  // WebM asl nusxani olib tashlash mumkin — MP4 saqlanadi (admin yuklab olishi uchun)
   if (sendPath !== filePath) await safeUnlink(filePath);
   await pool.query(
     `UPDATE conferences
-        SET recording_telegram_file_id = NULL,
-            recording_status = 'sent_purged',
+        SET recording_status = 'sent',
             updated_at = NOW()
       WHERE id = $1`,
     [conf.id],
   );
   if (recordingId) {
     await patchRecordingRow(recordingId, {
-      status: "sent_purged",
+      status: "sent",
       progress: 100,
       etaSec: 0,
-      tempPath: null,
-      purgedAt: new Date(),
+      tempPath: sendPath,
+      bytes: buf.length,
+      durationSec,
     });
   }
   return { ok: true };

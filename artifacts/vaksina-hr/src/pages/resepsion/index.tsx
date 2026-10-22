@@ -53,17 +53,174 @@ function isPharmacyHost(role?: string | null) {
   return isPharmacyDeviceStaff(role);
 }
 
-const TYPE_TABS: {
+type TypeAccent = "sky" | "emerald" | "violet" | "amber" | "rose";
+
+type TypeMeta = {
   value: ReceptionVisitType;
   label: string;
+  title: string;
+  blurb: string;
   icon: typeof UserRound;
-  color: string;
-}[] = [
-  { value: "guest", label: "Mehmon", icon: UserRound, color: "bg-sky-500" },
-  { value: "staff", label: "Xodim", icon: Users, color: "bg-emerald-500" },
-  { value: "candidate", label: "Nomzod", icon: UserPlus, color: "bg-violet-500" },
-  { value: "request", label: "Murojaat", icon: FileText, color: "bg-amber-500" },
-  { value: "package", label: "Posilka", icon: Package, color: "bg-rose-500" },
+  accent: TypeAccent;
+  iconBg: string;
+  activeTab: string;
+  panel: string;
+  chipOn: string;
+  chipOff: string;
+  btn: string;
+  live: string;
+  nameLabel: string;
+  namePh: string;
+  extraLabel?: string;
+  extraPh?: string;
+  hostLabel: string;
+  hostHint: string;
+  notesPh: string;
+  submit: string;
+  purposes: string[];
+  topics?: { value: string; label: string }[];
+};
+
+const TYPE_TABS: TypeMeta[] = [
+  {
+    value: "guest",
+    label: "Mehmon",
+    title: "Mehmon qabuli",
+    blurb: "Tashqi mehmon — uchrashuv, hujjat, hamkorlik",
+    icon: UserRound,
+    accent: "sky",
+    iconBg: "bg-sky-500",
+    activeTab: "border-sky-400/50 bg-sky-50 text-sky-800 shadow-sky-500/10",
+    panel: "border-sky-200/70 bg-gradient-to-br from-sky-50/90 via-card to-card",
+    chipOn: "border-sky-500 bg-sky-600 text-white",
+    chipOff: "border-sky-200 bg-sky-50/80 text-sky-900 hover:border-sky-300",
+    btn: "bg-sky-600 hover:bg-sky-700 shadow-sky-600/25",
+    live: "bg-sky-100 text-sky-800",
+    nameLabel: "Mehmon ismi",
+    namePh: "Aliyev Rustam",
+    extraLabel: "Tashkilot / kompaniya",
+    extraPh: "Masalan: Hamkor MChJ",
+    hostLabel: "Kimning oldiga keldi?",
+    hostHint: "Sukutda faqat ofis xodimlari",
+    notesPh: "Uchrashuv mavzusi, necha kishi, maxsus eslatma…",
+    submit: "Mehmonni qayd etish va xabar",
+    purposes: [
+      "Uchrashuv",
+      "Hujjat topshirish",
+      "Shartnoma / imzo",
+      "Konsultatsiya",
+      "Yetkazib berish",
+      "Shikoyat",
+    ],
+  },
+  {
+    value: "staff",
+    label: "Xodim",
+    title: "Xodim tashrifi",
+    blurb: "Boshqa filial / bo‘lim xodimi ofisga kelganda",
+    icon: Users,
+    accent: "emerald",
+    iconBg: "bg-emerald-500",
+    activeTab: "border-emerald-400/50 bg-emerald-50 text-emerald-900 shadow-emerald-500/10",
+    panel: "border-emerald-200/70 bg-gradient-to-br from-emerald-50/90 via-card to-card",
+    chipOn: "border-emerald-600 bg-emerald-600 text-white",
+    chipOff: "border-emerald-200 bg-emerald-50/80 text-emerald-950 hover:border-emerald-300",
+    btn: "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/25",
+    live: "bg-emerald-100 text-emerald-800",
+    nameLabel: "Xodim ismi",
+    namePh: "Ism Familiya",
+    extraLabel: "Qaysi filial / bo‘limdan",
+    extraPh: "Masalan: 12-filial yoki AyTi",
+    hostLabel: "Kim bilan uchrashadi?",
+    hostHint: "Ofisdagi mas’ul xodim",
+    notesPh: "Vazifa, topshiriq yoki qisqa eslatma…",
+    submit: "Xodim tashrifini qayd etish",
+    purposes: ["Ish / vazifa", "Hujjat", "Suhbat", "Texnik yordam", "Topshiriq", "Yig‘ilish"],
+  },
+  {
+    value: "candidate",
+    label: "Nomzod",
+    title: "Nomzod / suhbat",
+    blurb: "Ish suhbatiga kelgan nomzodni qayd etish",
+    icon: UserPlus,
+    accent: "violet",
+    iconBg: "bg-violet-500",
+    activeTab: "border-violet-400/50 bg-violet-50 text-violet-900 shadow-violet-500/10",
+    panel: "border-violet-200/70 bg-gradient-to-br from-violet-50/90 via-card to-card",
+    chipOn: "border-violet-600 bg-violet-600 text-white",
+    chipOff: "border-violet-200 bg-violet-50/80 text-violet-950 hover:border-violet-300",
+    btn: "bg-violet-600 hover:bg-violet-700 shadow-violet-600/25",
+    live: "bg-violet-100 text-violet-800",
+    nameLabel: "Nomzod ismi",
+    namePh: "Ism Familiya",
+    extraLabel: "Lavozim (ariza)",
+    extraPh: "Masalan: Farmasevt, AyTi…",
+    hostLabel: "Suhbat oluvchi",
+    hostHint: "HR yoki bo‘lim rahbari",
+    notesPh: "Tajriba, manba (Telegram/olx), maxsus eslatma…",
+    submit: "Nomzodni qayd etish va xabar",
+    purposes: ["Ish suhbat", "HR uchrashuv", "Hujjat topshirish", "Sinov / staj", "Takroriy suhbat"],
+  },
+  {
+    value: "request",
+    label: "Murojaat",
+    title: "Murojaat / shikoyat",
+    blurb: "Fuqaro murojaati, shikoyat yoki ariza",
+    icon: FileText,
+    accent: "amber",
+    iconBg: "bg-amber-500",
+    activeTab: "border-amber-400/50 bg-amber-50 text-amber-950 shadow-amber-500/10",
+    panel: "border-amber-200/70 bg-gradient-to-br from-amber-50/90 via-card to-card",
+    chipOn: "border-amber-600 bg-amber-600 text-white",
+    chipOff: "border-amber-200 bg-amber-50/80 text-amber-950 hover:border-amber-300",
+    btn: "bg-amber-600 hover:bg-amber-700 shadow-amber-600/25",
+    live: "bg-amber-100 text-amber-900",
+    nameLabel: "Murojaatchi ismi",
+    namePh: "Ism Familiya",
+    extraLabel: "Qisqa mavzu",
+    extraPh: "Masalan: maosh, grafik…",
+    hostLabel: "Kimga yo‘naltiriladi?",
+    hostHint: "Mas’ul xodim / rahbar",
+    notesPh: "Murojaat matni — batafsil yozing…",
+    submit: "Murojaatni qayd etish",
+    purposes: ["Murojaat", "Shikoyat", "Taklif", "Ma’lumot so‘rash", "Ariza"],
+    topics: [
+      { value: "complaint", label: "Shikoyat" },
+      { value: "document", label: "Hujjat" },
+      { value: "call", label: "Qo‘ng‘iroq" },
+      { value: "other", label: "Boshqa" },
+    ],
+  },
+  {
+    value: "package",
+    label: "Posilka",
+    title: "Posilka / kuryer",
+    blurb: "Yetkazib berish, hujjat yoki yuk qabuli",
+    icon: Package,
+    accent: "rose",
+    iconBg: "bg-rose-500",
+    activeTab: "border-rose-400/50 bg-rose-50 text-rose-900 shadow-rose-500/10",
+    panel: "border-rose-200/70 bg-gradient-to-br from-rose-50/90 via-card to-card",
+    chipOn: "border-rose-600 bg-rose-600 text-white",
+    chipOff: "border-rose-200 bg-rose-50/80 text-rose-950 hover:border-rose-300",
+    btn: "bg-rose-600 hover:bg-rose-700 shadow-rose-600/25",
+    live: "bg-rose-100 text-rose-800",
+    nameLabel: "Kuryer / yetkazuvchi",
+    namePh: "Ism yoki kompaniya",
+    extraLabel: "Trek / buyurtma №",
+    extraPh: "Masalan: YC123456",
+    hostLabel: "Kimga kelgan?",
+    hostHint: "Qabul qiluvchi xodim",
+    notesPh: "Nima kelgani, nechta paket, eslatma…",
+    submit: "Posilkani qayd etish va xabar",
+    purposes: ["Posilka", "Kuryer", "Hujjat", "Qaytarish", "Ombor"],
+    topics: [
+      { value: "package", label: "Posilka" },
+      { value: "delivery", label: "Yetkazib berish" },
+      { value: "document", label: "Hujjat" },
+      { value: "other", label: "Boshqa" },
+    ],
+  },
 ];
 
 const TYPE_BADGE: Record<string, string> = {
@@ -127,20 +284,13 @@ function phoneForSubmit(formatted: string): string | null {
   return `+${digits.slice(0, 12)}`;
 }
 
-const PURPOSE_BY_TYPE: Record<ReceptionVisitType, string[]> = {
-  guest: [
-    "Uchrashuv",
-    "Hujjat topshirish",
-    "Shartnoma / imzo",
-    "Konsultatsiya",
-    "Yetkazib berish",
-    "Shikoyat",
-  ],
-  staff: ["Ish / vazifa", "Hujjat", "Suhbat", "Texnik yordam", "Topshiriq"],
-  candidate: ["Ish suhbat", "HR uchrashuv", "Hujjat topshirish", "Sinov / staj"],
-  request: ["Murojaat", "Shikoyat", "Taklif", "Ma’lumot so‘rash", "Ariza"],
-  package: ["Posilka", "Kuryer", "Hujjat", "Qaytarish", "Ombor"],
-};
+const PURPOSE_BY_TYPE: Record<string, string[]> = Object.fromEntries(
+  TYPE_TABS.map((t) => [t.value, t.purposes]),
+);
+
+function typeMetaOf(v: ReceptionVisitType): TypeMeta {
+  return TYPE_TABS.find((t) => t.value === v) || TYPE_TABS[0]!;
+}
 
 function AvatarBubble({
   name,
@@ -279,7 +429,11 @@ export default function ResepsionPage() {
   const [visitorPhone, setVisitorPhone] = useState(PHONE_DEFAULT);
   const [purpose, setPurpose] = useState("");
   const [notes, setNotes] = useState("");
-  const purposeOptions = PURPOSE_BY_TYPE[visitType] || PURPOSE_BY_TYPE.guest;
+  const [visitorRoleHint, setVisitorRoleHint] = useState("");
+  const [topic, setTopic] = useState<string>("");
+  const [interviewerName, setInterviewerName] = useState("");
+  const typeMeta = typeMetaOf(visitType);
+  const purposeOptions = typeMeta.purposes;
   const [visitAt, setVisitAt] = useState(() => toLocalInputValue(new Date()));
   const [leftAt, setLeftAt] = useState("");
   const [hostUserId, setHostUserId] = useState("");
@@ -339,6 +493,9 @@ export default function ResepsionPage() {
     setVisitorPhone(PHONE_DEFAULT);
     setPurpose("");
     setNotes("");
+    setVisitorRoleHint("");
+    setTopic("");
+    setInterviewerName("");
     setVisitAt(toLocalInputValue(new Date()));
     setLeftAt("");
     setHostUserId("");
@@ -351,6 +508,13 @@ export default function ResepsionPage() {
     const prevPresets = PURPOSE_BY_TYPE[visitType] || [];
     if (!purpose.trim() || prevPresets.includes(purpose)) {
       setPurpose("");
+    }
+    setVisitorRoleHint("");
+    setTopic("");
+    setInterviewerName("");
+    const nextMeta = typeMetaOf(next);
+    if (nextMeta.topics?.length) {
+      setTopic(nextMeta.topics[0]!.value);
     }
   }
 
@@ -369,10 +533,16 @@ export default function ResepsionPage() {
     try {
       await mut.create.mutateAsync({
         visitType,
+        topic: topic || null,
         visitorFullName: visitorFullName.trim(),
         visitorPhone: phoneForSubmit(visitorPhone),
+        visitorRoleHint: visitorRoleHint.trim() || null,
         purpose: purpose.trim() || null,
         notes: notes.trim() || null,
+        interviewerName:
+          visitType === "candidate"
+            ? interviewerName.trim() || selectedHost?.fullName || null
+            : null,
         hostName: hostName.trim() || selectedHost?.fullName || null,
         hostUserId: hostUserId ? Number(hostUserId) : null,
         visitAt: fromLocalInputValue(visitAt),
@@ -429,67 +599,101 @@ export default function ResepsionPage() {
   }
 
   return (
-    <div className="w-full space-y-4 pb-28">
+    <div className="w-full space-y-5 pb-28">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
-              <ConciergeBell className="h-5 w-5" />
-            </span>
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">Qabulxoona</h1>
-              <p className="text-sm text-muted-foreground">
-                Ofisga keluvchi barcha mehmonlar, xodimlar, nomzodlar va murojaatlar yagona joyda
-              </p>
+      <div className="relative overflow-hidden rounded-3xl border border-border/50 bg-gradient-to-br from-slate-900 via-slate-800 to-primary p-5 text-white shadow-xl shadow-primary/15 sm:p-6">
+        <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
+        <div className="pointer-events-none absolute -bottom-16 left-1/3 h-48 w-48 rounded-full bg-sky-400/20 blur-3xl" />
+        <div className="relative flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-3.5">
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/25 backdrop-blur">
+                <ConciergeBell className="h-6 w-6" />
+              </span>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/60">
+                  Vaksina HR
+                </p>
+                <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Qabulxoona</h1>
+                <p className="mt-1 max-w-xl text-sm text-white/75">
+                  Mehmon, xodim, nomzod, murojaat va posilka — har biri o‘z interfeysi bilan
+                </p>
+              </div>
             </div>
           </div>
-        </div>
-        <div className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card px-3.5 py-3 shadow-sm sm:gap-4 sm:px-4">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-foreground">
-            <CalendarDays className="h-5 w-5" strokeWidth={1.75} />
-          </span>
-          <div className="min-w-0">
-            <p className="text-[12px] font-medium capitalize leading-tight text-muted-foreground">
-              {clock.weekday}
-            </p>
-            <p className="mt-0.5 text-sm font-semibold leading-tight text-foreground sm:text-[15px]">
-              {clock.dateLine}
+          <div className="flex items-center gap-3 rounded-2xl border border-white/15 bg-white/10 px-3.5 py-3 shadow-lg backdrop-blur-md sm:gap-4 sm:px-4">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15">
+              <CalendarDays className="h-5 w-5" strokeWidth={1.75} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[12px] font-medium capitalize leading-tight text-white/70">
+                {clock.weekday}
+              </p>
+              <p className="mt-0.5 text-sm font-semibold leading-tight sm:text-[15px]">
+                {clock.dateLine}
+              </p>
+            </div>
+            <p className="ml-1 pl-3 text-2xl font-bold tabular-nums tracking-tight text-sky-200 sm:ml-2 sm:pl-4 sm:text-[28px] sm:leading-none">
+              {clock.time}
             </p>
           </div>
-          <p className="ml-1 pl-3 text-2xl font-bold tabular-nums tracking-tight text-primary sm:ml-2 sm:pl-4 sm:text-[28px] sm:leading-none">
-            {clock.time}
-          </p>
         </div>
       </div>
 
       {/* Stats strip */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
         <button
           type="button"
           onClick={scrollToForm}
-          className="flex items-center gap-3 rounded-2xl bg-primary px-4 py-3 text-left text-primary-foreground shadow-md transition hover:brightness-105"
+          className="flex items-center gap-3 rounded-2xl bg-gradient-to-br from-primary to-sky-700 px-4 py-3.5 text-left text-primary-foreground shadow-lg shadow-primary/25 transition hover:brightness-110"
         >
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15">
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/20 ring-1 ring-white/25">
             <Plus className="h-5 w-5" />
           </span>
           <span>
-            <span className="block text-sm font-semibold">Yangi qayd</span>
-            <span className="block text-[11px] opacity-80">Mehmon / Xodim / Nomzod</span>
+            <span className="block text-sm font-bold">Yangi qayd</span>
+            <span className="block text-[11px] opacity-85">Tezkor ro‘yxatga olish</span>
           </span>
         </button>
         {[
-          { label: "Kelayotganlar", value: stats?.waiting ?? 0, hint: "Bugun", tone: "amber" },
-          { label: "Ofisda hozir", value: stats?.inProgress ?? 0, hint: "Hozir", tone: "emerald" },
-          { label: "Chiqqanlar", value: stats?.done ?? 0, hint: "Bugun", tone: "slate" },
-          { label: "Barcha tashriflar", value: stats?.today ?? 0, hint: "Bugun", tone: "sky" },
+          {
+            label: "Kelayotganlar",
+            value: stats?.waiting ?? 0,
+            hint: "Bugun",
+            ring: "from-amber-50 to-card border-amber-200/70",
+            num: "text-amber-700",
+          },
+          {
+            label: "Ofisda hozir",
+            value: stats?.inProgress ?? 0,
+            hint: "Hozir",
+            ring: "from-emerald-50 to-card border-emerald-200/70",
+            num: "text-emerald-700",
+          },
+          {
+            label: "Chiqqanlar",
+            value: stats?.done ?? 0,
+            hint: "Bugun",
+            ring: "from-slate-50 to-card border-slate-200/70",
+            num: "text-slate-700",
+          },
+          {
+            label: "Barcha tashriflar",
+            value: stats?.today ?? 0,
+            hint: "Bugun",
+            ring: "from-sky-50 to-card border-sky-200/70",
+            num: "text-sky-700",
+          },
         ].map((s) => (
           <div
             key={s.label}
-            className="rounded-2xl border border-border/70 bg-card px-4 py-3 shadow-sm"
+            className={cn(
+              "rounded-2xl border bg-gradient-to-br px-4 py-3.5 shadow-sm",
+              s.ring,
+            )}
           >
-            <p className="text-[11px] font-medium text-muted-foreground">{s.label}</p>
-            <p className="mt-0.5 text-2xl font-semibold tabular-nums">{s.value}</p>
+            <p className="text-[11px] font-semibold text-muted-foreground">{s.label}</p>
+            <p className={cn("mt-0.5 text-2xl font-bold tabular-nums", s.num)}>{s.value}</p>
             <p className="text-[10px] text-muted-foreground">{s.hint}</p>
           </div>
         ))}
@@ -497,19 +701,30 @@ export default function ResepsionPage() {
 
       {/* Main workspace */}
       <div className="grid gap-4 xl:grid-cols-12">
-        {/* Form */}
+        {/* Form — har bir tur o‘z rangi va maydonlari */}
         <section
           id="resepsion-form"
-          className="rounded-3xl border border-border/70 bg-card p-4 shadow-sm sm:p-5 xl:col-span-5"
+          className={cn(
+            "rounded-3xl border p-4 shadow-lg sm:p-5 xl:col-span-5",
+            typeMeta.panel,
+          )}
         >
-          <div className="mb-4 flex items-center justify-between gap-2">
-            <h2 className="text-base font-semibold">Yangi tashrif qayd etish</h2>
-            <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-semibold text-primary">
+          <div className="mb-1 flex items-start justify-between gap-2">
+            <div>
+              <h2 className="text-base font-bold tracking-tight">{typeMeta.title}</h2>
+              <p className="mt-0.5 text-[12px] text-muted-foreground">{typeMeta.blurb}</p>
+            </div>
+            <span
+              className={cn(
+                "shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                typeMeta.live,
+              )}
+            >
               Live
             </span>
           </div>
 
-          <div className="mb-4 grid grid-cols-5 gap-1.5">
+          <div className="mb-4 mt-3 grid grid-cols-5 gap-1.5">
             {TYPE_TABS.map((tab) => {
               const Icon = tab.icon;
               const active = visitType === tab.value;
@@ -519,21 +734,21 @@ export default function ResepsionPage() {
                   type="button"
                   onClick={() => selectVisitType(tab.value)}
                   className={cn(
-                    "flex flex-col items-center gap-1 rounded-2xl border px-1 py-2.5 text-center transition",
+                    "flex flex-col items-center gap-1 rounded-2xl border px-1 py-2.5 text-center shadow-sm transition",
                     active
-                      ? "border-primary/40 bg-primary/10 text-primary shadow-sm"
-                      : "border-border/60 bg-muted/30 text-muted-foreground hover:bg-muted/50",
+                      ? tab.activeTab
+                      : "border-border/50 bg-white/60 text-muted-foreground hover:bg-white",
                   )}
                 >
                   <span
                     className={cn(
-                      "flex h-8 w-8 items-center justify-center rounded-xl text-white",
-                      active ? tab.color : "bg-slate-300",
+                      "flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-sm",
+                      active ? tab.iconBg : "bg-slate-300",
                     )}
                   >
                     <Icon className="h-4 w-4" />
                   </span>
-                  <span className="text-[10px] font-semibold leading-tight">{tab.label}</span>
+                  <span className="text-[10px] font-bold leading-tight">{tab.label}</span>
                 </button>
               );
             })}
@@ -543,13 +758,13 @@ export default function ResepsionPage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Ism familiya *
+                  {typeMeta.nameLabel} *
                 </label>
                 <Input
                   value={visitorFullName}
                   onChange={(e) => setVisitorFullName(e.target.value)}
-                  placeholder="Aliyev Rustam"
-                  className="h-11 rounded-2xl border-border/80 bg-background shadow-sm"
+                  placeholder={typeMeta.namePh}
+                  className="h-11 rounded-2xl border-border/80 bg-white/90 shadow-sm"
                 />
               </div>
               <div>
@@ -572,14 +787,54 @@ export default function ResepsionPage() {
                     inputMode="tel"
                     autoComplete="tel"
                     placeholder="+998 90 111 22 33"
-                    className="h-11 rounded-2xl border-border/80 bg-background pl-9 font-medium tabular-nums shadow-sm tracking-wide"
+                    className="h-11 rounded-2xl border-border/80 bg-white/90 pl-9 font-medium tabular-nums tracking-wide shadow-sm"
                   />
                 </div>
                 <p className="mt-1 text-[10px] text-muted-foreground">
-                  Prefiks tayyor — faqat qolgan raqamlarni yozing
+                  Prefiks +998 — qolgan raqamlarni yozing
                 </p>
               </div>
             </div>
+
+            {typeMeta.extraLabel ? (
+              <div>
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {typeMeta.extraLabel}
+                </label>
+                <Input
+                  value={visitorRoleHint}
+                  onChange={(e) => setVisitorRoleHint(e.target.value)}
+                  placeholder={typeMeta.extraPh}
+                  className="h-11 rounded-2xl border-border/80 bg-white/90 shadow-sm"
+                />
+              </div>
+            ) : null}
+
+            {typeMeta.topics?.length ? (
+              <div>
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Kategoriya
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {typeMeta.topics.map((t) => {
+                    const on = topic === t.value;
+                    return (
+                      <button
+                        key={t.value}
+                        type="button"
+                        onClick={() => setTopic(t.value)}
+                        className={cn(
+                          "rounded-xl border px-2.5 py-1.5 text-[11px] font-semibold transition",
+                          on ? typeMeta.chipOn : typeMeta.chipOff,
+                        )}
+                      >
+                        {t.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
 
             <div>
               <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -595,9 +850,7 @@ export default function ResepsionPage() {
                       onClick={() => setPurpose(active ? "" : opt)}
                       className={cn(
                         "rounded-xl border px-2.5 py-1.5 text-[11px] font-semibold transition",
-                        active
-                          ? "border-primary/40 bg-primary text-primary-foreground shadow-sm"
-                          : "border-border/70 bg-muted/40 text-foreground hover:border-primary/30 hover:bg-primary/5",
+                        active ? typeMeta.chipOn : typeMeta.chipOff,
                       )}
                     >
                       {opt}
@@ -609,12 +862,23 @@ export default function ResepsionPage() {
                 value={purpose}
                 onChange={(e) => setPurpose(e.target.value)}
                 placeholder="Yoki o‘zingiz yozing: qisqa sabab…"
-                className="h-11 rounded-2xl border-border/80 bg-background shadow-sm"
+                className="h-11 rounded-2xl border-border/80 bg-white/90 shadow-sm"
               />
-              <p className="mt-1 text-[10px] text-muted-foreground">
-                Tezkor tugmadan tanlang yoki qisqa yozing — batafsil izohga
-              </p>
             </div>
+
+            {visitType === "candidate" ? (
+              <div>
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Suhbat oluvchi (qo‘lda)
+                </label>
+                <Input
+                  value={interviewerName}
+                  onChange={(e) => setInterviewerName(e.target.value)}
+                  placeholder="Agar pastdan tanlamasangiz — shu yerga yozing"
+                  className="h-11 rounded-2xl border-border/80 bg-white/90 shadow-sm"
+                />
+              </div>
+            ) : null}
 
             <div>
               <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -623,14 +887,14 @@ export default function ResepsionPage() {
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Batafsil: kim bilan, nima haqida, qancha vaqt, maxsus eslatma…"
-                className="min-h-[88px] rounded-2xl border-border/80 bg-background shadow-sm"
+                placeholder={typeMeta.notesPh}
+                className="min-h-[88px] rounded-2xl border-border/80 bg-white/90 shadow-sm"
               />
             </div>
 
             <div className="relative">
               <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Kimning oldiga keldi?
+                {typeMeta.hostLabel}
               </label>
 
               {selectedHost ? (
@@ -702,7 +966,7 @@ export default function ResepsionPage() {
                     <span className="min-w-0 flex-1">
                       <span className="block font-medium text-foreground">Xodimni tanlang</span>
                       <span className="block text-[11px] text-muted-foreground">
-                        Sukutda faqat ofis xodimlari
+                        {typeMeta.hostHint}
                       </span>
                     </span>
                   </>
@@ -885,7 +1149,10 @@ export default function ResepsionPage() {
 
             <Button
               type="button"
-              className="h-12 w-full rounded-2xl text-sm font-semibold shadow-md shadow-primary/20"
+              className={cn(
+                "h-12 w-full rounded-2xl text-sm font-bold text-white shadow-lg",
+                typeMeta.btn,
+              )}
               disabled={!canWrite || mut.create.isPending}
               onClick={() => void onSubmit()}
             >
@@ -894,7 +1161,7 @@ export default function ResepsionPage() {
               ) : (
                 <Send className="mr-2 h-4 w-4" />
               )}
-              Qayd etish va xabarnoma yuborish
+              {typeMeta.submit}
             </Button>
           </div>
         </section>
@@ -1113,25 +1380,38 @@ export default function ResepsionPage() {
 
         {/* Quick side */}
         <aside className="space-y-3 xl:col-span-3">
-          <div className="rounded-3xl border border-sky-200 bg-sky-50 p-4 text-sky-950 shadow-sm dark:border-sky-900/40 dark:bg-sky-950/30 dark:text-sky-50">
-            <p className="flex items-center gap-2 text-sm font-semibold">
-              <Bell className="h-4 w-4" />
+          <div className="rounded-3xl border border-sky-200/80 bg-gradient-to-br from-sky-50 via-white to-indigo-50 p-4 shadow-md shadow-sky-500/5">
+            <p className="flex items-center gap-2 text-sm font-bold text-sky-900">
+              <Bell className="h-4 w-4 text-sky-600" />
               Xodimga xabar
             </p>
-            <p className="mt-1.5 text-xs leading-relaxed opacity-90">
-              Tashrif qayd etilganda tanlangan xodimga tizim ichida bildirishnoma yuboriladi.
+            <p className="mt-1.5 text-xs leading-relaxed text-sky-900/75">
+              Tanlangan tur ({typeMeta.label}) bo‘yicha qayd — Telegram + tizim bildirishnomasi.
             </p>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {TYPE_TABS.map((t) => (
+                <span
+                  key={t.value}
+                  className={cn(
+                    "rounded-lg px-2 py-0.5 text-[9px] font-bold uppercase",
+                    visitType === t.value ? t.live : "bg-muted text-muted-foreground",
+                  )}
+                >
+                  {t.label}
+                </span>
+              ))}
+            </div>
           </div>
 
-          <div className="rounded-3xl border border-border/70 bg-card p-4 shadow-sm">
-            <p className="text-sm font-semibold">Tashrifnoma</p>
+          <div className="rounded-3xl border border-border/60 bg-gradient-to-br from-card to-muted/30 p-4 shadow-sm">
+            <p className="text-sm font-bold">Tashrifnoma</p>
             <p className="mt-1 text-xs text-muted-foreground">
               Mehmon uchun qisqa yo‘llanma — ism, kimning oldiga, vaqt.
             </p>
             <Button
               type="button"
               variant="secondary"
-              className="mt-3 h-9 w-full rounded-xl gap-1.5"
+              className="mt-3 h-9 w-full gap-1.5 rounded-xl"
               onClick={() => window.print()}
             >
               <QrCode className="h-4 w-4" />

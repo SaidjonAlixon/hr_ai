@@ -32,6 +32,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Calendar as DayPickerCalendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
@@ -390,6 +392,229 @@ const UZ_MONTH = [
   "Noyabr",
   "Dekabr",
 ];
+
+function parseLocalDateTime(value: string): Date | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function formatLocalCard(value: string): { date: string; time: string } | null {
+  const d = parseLocalDateTime(value);
+  if (!d) return null;
+  return {
+    date: d.toLocaleDateString("uz-UZ", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }),
+    time: d.toLocaleTimeString("uz-UZ", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }),
+  };
+}
+
+function VisitDateTimeField({
+  label,
+  icon: Icon,
+  value,
+  onChange,
+  clearable,
+  placeholder = "Sana va vaqt tanlang",
+  accentClass = "border-border/70 from-card to-muted/40",
+}: {
+  label: string;
+  icon: typeof Clock3;
+  value: string;
+  onChange: (v: string) => void;
+  clearable?: boolean;
+  placeholder?: string;
+  accentClass?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = parseLocalDateTime(value);
+  const shown = formatLocalCard(value);
+
+  function applyDate(base: Date) {
+    onChange(toLocalInputValue(base));
+  }
+
+  function setDay(day: Date | undefined) {
+    if (!day) return;
+    const next = selected ? new Date(selected) : new Date();
+    next.setFullYear(day.getFullYear(), day.getMonth(), day.getDate());
+    if (!selected) {
+      const now = new Date();
+      next.setHours(now.getHours(), now.getMinutes(), 0, 0);
+    }
+    applyDate(next);
+  }
+
+  function setHour(h: number) {
+    const next = selected ? new Date(selected) : new Date();
+    next.setHours(h, next.getMinutes(), 0, 0);
+    applyDate(next);
+  }
+
+  function setMinute(m: number) {
+    const next = selected ? new Date(selected) : new Date();
+    next.setMinutes(m, 0, 0);
+    applyDate(next);
+  }
+
+  function presetMinutes(add: number) {
+    const next = new Date();
+    next.setSeconds(0, 0);
+    next.setMinutes(next.getMinutes() + add);
+    applyDate(next);
+    setOpen(false);
+  }
+
+  const hour = selected?.getHours() ?? new Date().getHours();
+  const minute = selected?.getMinutes() ?? 0;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "group flex w-full flex-col gap-1 rounded-2xl border bg-gradient-to-br px-3.5 py-3 text-left shadow-sm transition",
+            "hover:border-primary/35 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25",
+            open && "border-primary/40 ring-2 ring-primary/15",
+            accentClass,
+          )}
+        >
+          <span className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+            </span>
+            <ChevronDown
+              className={cn(
+                "h-4 w-4 text-muted-foreground transition group-hover:text-foreground",
+                open && "rotate-180",
+              )}
+            />
+          </span>
+          {shown ? (
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold text-foreground">{shown.date}</span>
+              <span className="mt-0.5 block text-lg font-bold tabular-nums tracking-tight text-primary">
+                {shown.time}
+              </span>
+            </span>
+          ) : (
+            <span className="py-1 text-sm text-muted-foreground">{placeholder}</span>
+          )}
+          <span className="text-[10px] text-muted-foreground/80">Istalgan joyini bosing — tanlash ochiladi</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="z-50 w-[min(100vw-1.5rem,320px)] rounded-2xl border border-border/70 p-3 shadow-xl"
+      >
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => presetMinutes(0)}
+            className="rounded-xl border border-border/70 bg-muted/40 px-2.5 py-1 text-[11px] font-semibold hover:bg-primary/10"
+          >
+            Hozir
+          </button>
+          <button
+            type="button"
+            onClick={() => presetMinutes(15)}
+            className="rounded-xl border border-border/70 bg-muted/40 px-2.5 py-1 text-[11px] font-semibold hover:bg-primary/10"
+          >
+            +15 daq
+          </button>
+          <button
+            type="button"
+            onClick={() => presetMinutes(30)}
+            className="rounded-xl border border-border/70 bg-muted/40 px-2.5 py-1 text-[11px] font-semibold hover:bg-primary/10"
+          >
+            +30 daq
+          </button>
+          <button
+            type="button"
+            onClick={() => presetMinutes(60)}
+            className="rounded-xl border border-border/70 bg-muted/40 px-2.5 py-1 text-[11px] font-semibold hover:bg-primary/10"
+          >
+            +1 soat
+          </button>
+          <button
+            type="button"
+            onClick={() => presetMinutes(120)}
+            className="rounded-xl border border-border/70 bg-muted/40 px-2.5 py-1 text-[11px] font-semibold hover:bg-primary/10"
+          >
+            +2 soat
+          </button>
+        </div>
+        <DayPickerCalendar
+          mode="single"
+          selected={selected ?? undefined}
+          onSelect={setDay}
+          initialFocus
+        />
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <label className="space-y-1">
+            <span className="text-[10px] font-semibold uppercase text-muted-foreground">Soat</span>
+            <select
+              value={hour}
+              onChange={(e) => setHour(Number(e.target.value))}
+              className="h-10 w-full rounded-xl border border-border/70 bg-background px-2 text-sm font-semibold tabular-nums"
+            >
+              {Array.from({ length: 24 }, (_, i) => (
+                <option key={i} value={i}>
+                  {String(i).padStart(2, "0")}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1">
+            <span className="text-[10px] font-semibold uppercase text-muted-foreground">Daqiqa</span>
+            <select
+              value={minute}
+              onChange={(e) => setMinute(Number(e.target.value))}
+              className="h-10 w-full rounded-xl border border-border/70 bg-background px-2 text-sm font-semibold tabular-nums"
+            >
+              {Array.from({ length: 60 }, (_, i) => (
+                <option key={i} value={i}>
+                  {String(i).padStart(2, "0")}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="mt-3 flex gap-2">
+          {clearable ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 flex-1 rounded-xl"
+              onClick={() => {
+                onChange("");
+                setOpen(false);
+              }}
+            >
+              Tozalash
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            className="h-9 flex-1 rounded-xl"
+            onClick={() => setOpen(false)}
+          >
+            Tayyor
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 function liveClock() {
   const [now, setNow] = useState(() => new Date());
@@ -1198,30 +1423,22 @@ export default function ResepsionPage() {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Clock3 className="h-3.5 w-3.5" />
-                  Kirish vaqti
-                </label>
-                <Input
-                  type="datetime-local"
-                  value={visitAt}
-                  onChange={(e) => setVisitAt(e.target.value)}
-                  className="h-11 rounded-2xl border-border/80 bg-background shadow-sm"
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  <LogOut className="h-3.5 w-3.5" />
-                  Kutilayotgan chiqish
-                </label>
-                <Input
-                  type="datetime-local"
-                  value={leftAt}
-                  onChange={(e) => setLeftAt(e.target.value)}
-                  className="h-11 rounded-2xl border-border/80 bg-background shadow-sm"
-                />
-              </div>
+              <VisitDateTimeField
+                label="Kirish vaqti"
+                icon={Clock3}
+                value={visitAt}
+                onChange={setVisitAt}
+                accentClass="border-sky-200/80 from-sky-50/90 to-card"
+              />
+              <VisitDateTimeField
+                label="Kutilayotgan chiqish"
+                icon={LogOut}
+                value={leftAt}
+                onChange={setLeftAt}
+                clearable
+                placeholder="Ixtiyoriy — bosib belgilang"
+                accentClass="border-violet-200/80 from-violet-50/80 to-card"
+              />
             </div>
 
             <Button

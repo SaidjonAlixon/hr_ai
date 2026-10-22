@@ -201,14 +201,30 @@ export const conferenceApi = {
   messages: (code: string) => request<{ items: ChatMessage[] }>(`${base(code)}/messages`),
   send: (code: string, text: string) =>
     request<{ message: ChatMessage }>(`${base(code)}/messages`, { method: "POST", json: { text } }),
-  people: (params: { q?: string; departmentId?: number; code?: string }) => {
+  people: (params: {
+    q?: string;
+    departmentId?: number;
+    coordinatorId?: number;
+    roles?: Array<"mudir" | "farmasevt" | "stajyor">;
+    code?: string;
+  }) => {
     const sp = new URLSearchParams();
     if (params.q) sp.set("q", params.q);
     if (params.departmentId) sp.set("departmentId", String(params.departmentId));
+    if (params.coordinatorId) sp.set("coordinatorId", String(params.coordinatorId));
+    if (params.roles?.length) sp.set("roles", params.roles.join(","));
     if (params.code) sp.set("code", params.code);
     return request<{ items: Person[] }>(`/api/conferences/people?${sp}`);
   },
   departments: () => request<{ items: Department[] }>("/api/conferences/departments"),
+  coordinators: (code?: string) => {
+    const sp = new URLSearchParams();
+    if (code) sp.set("code", code);
+    const q = sp.toString();
+    return request<{ items: Array<{ id: number; fullName: string; position: string | null; staff: number }> }>(
+      `/api/conferences/coordinators${q ? `?${q}` : ""}`,
+    );
+  },
 };
 
 export function conferencePath(code: string) {

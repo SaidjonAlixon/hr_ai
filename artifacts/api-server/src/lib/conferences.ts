@@ -658,12 +658,13 @@ export async function moderate(
   }
   const target = await loadMember(conf.id, targetId);
   const targetRoles = await userRoles([targetId]);
-  const targetIsMod = isModerator(target, targetRoles.get(targetId)) || targetId === conf.hostId;
-  if (targetIsMod && !owner && action !== "lower-hand") {
-    return { ok: false, status: 403, error: "Yordamchi tashkilotchini faqat asosiy tashkilotchi boshqaradi" };
+  const targetIsHost = targetId === conf.hostId || target?.role === "host";
+  // Asosiy tashkilotchi himoyalangan; konferensiya raxbari (cohost) qolgan ishtirokchilarni to‘liq boshqaradi
+  if (targetIsHost && !hasFullPlatformAccess(actor.role) && action !== "lower-hand") {
+    return { ok: false, status: 403, error: "Asosiy tashkilotchini boshqarib bo‘lmaydi" };
   }
   if ((action === "make-cohost" || action === "remove-cohost") && !owner) {
-    return { ok: false, status: 403, error: "Faqat asosiy tashkilotchi yordamchi tayinlaydi" };
+    return { ok: false, status: 403, error: "Faqat admin / asosiy tashkilotchi konferensiya raxbari tayinlaydi" };
   }
 
   const p = await participantOf(conf, targetId);

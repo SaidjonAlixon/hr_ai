@@ -39,7 +39,7 @@ function Stat({ icon, label, value, hint }: { icon: ReactNode; label: string; va
 }
 
 function roleText(r: AttendanceRow["role"]) {
-  return r === "host" ? "Tashkilotchi" : r === "cohost" ? "Yordamchi" : null;
+  return r === "host" ? "Tashkilotchi" : r === "cohost" ? "Raxbar" : null;
 }
 
 function AttendanceItem({ a, total }: { a: AttendanceRow; total: number }) {

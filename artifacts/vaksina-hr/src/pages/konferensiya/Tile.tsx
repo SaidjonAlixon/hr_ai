@@ -387,12 +387,15 @@ export function ParticipantMenu({ participant: p, source = "camera", dark }: { p
             ) : null}
             {ui.owner ? (
               targetIsMod ? (
-                <Item icon={<Crown className="h-4 w-4" />} onClick={() => void mod("remove-cohost", uid, "Yordamchi huquqi olindi")}>
-                  Yordamchilikdan olish
+                <Item icon={<Crown className="h-4 w-4" />} onClick={() => void mod("remove-cohost", uid, "Raxbar huquqi olindi")}>
+                  Konferensiya raxbaridan olish
                 </Item>
               ) : (
-                <Item icon={<Crown className="h-4 w-4" />} onClick={() => void mod("make-cohost", uid, "Yordamchi tashkilotchi qilindi")}>
-                  Yordamchi tashkilotchi qilish
+                <Item
+                  icon={<Crown className="h-4 w-4" />}
+                  onClick={() => void mod("make-cohost", uid, "Konferensiya raxbari qilindi")}
+                >
+                  Konferensiya raxbari qilish
                 </Item>
               )
             ) : null}

@@ -449,7 +449,7 @@ export function ConferenceRoom({
           toast({ title: "Gapirish ruxsati olindi" });
           break;
         case "cohost-granted":
-          toast({ title: "Siz yordamchi tashkilotchi bo‘ldingiz" });
+          toast({ title: "Siz konferensiya raxbari bo‘ldingiz", description: "Xonada to‘liq boshqaruv ochildi" });
           break;
         case "ended":
           onEndedRef.current();

@@ -54,6 +54,70 @@ function canCreate(role?: string | null): boolean {
   return hasFullPlatformAccess(role);
 }
 
+const PHARMACY_STAFF_ROLES = new Set(["mudir", "farmasevt", "stajyor", "stajor"]);
+
+function normalizePharmacyRole(role?: string | null): "mudir" | "farmasevt" | "stajyor" | null {
+  const r = String(role || "").trim().toLowerCase();
+  if (r === "mudir") return "mudir";
+  if (r === "farmasevt") return "farmasevt";
+  if (r === "stajyor" || r === "stajor") return "stajyor";
+  return null;
+}
+
+/** Koordinator employee id → uning filial/xodim employee id lari (reports_to + assigned_branch). */
+async function employeeIdsUnderCoordinator(coordEmpId: number): Promise<Set<number>> {
+  const { rows } = await pool.query<{
+    id: number;
+    reports_to_id: number | null;
+    assigned_branch_id: number | null;
+    org_role: string | null;
+  }>(
+    `SELECT id, reports_to_id, assigned_branch_id, org_role
+       FROM employees`,
+  );
+  const children = new Map<number, typeof rows>();
+  for (const r of rows) {
+    if (r.reports_to_id == null) continue;
+    const list = children.get(r.reports_to_id) ?? [];
+    list.push(r);
+    children.set(r.reports_to_id, list);
+  }
+  const keep = new Set<number>();
+  const branchIds = new Set<number>();
+  const queue = [coordEmpId];
+  const seen = new Set<number>([coordEmpId]);
+  while (queue.length) {
+    const id = queue.shift()!;
+    for (const child of children.get(id) ?? []) {
+      if (seen.has(child.id)) continue;
+      seen.add(child.id);
+      const org = String(child.org_role || "").toLowerCase();
+      if (org === "manager") branchIds.add(child.id);
+      keep.add(child.id);
+      queue.push(child.id);
+    }
+  }
+  for (const r of rows) {
+    if (r.assigned_branch_id != null && branchIds.has(r.assigned_branch_id) && r.id !== coordEmpId) {
+      keep.add(r.id);
+    }
+  }
+  keep.delete(coordEmpId);
+  return keep;
+}
+
+async function assertCanBrowsePeople(req: AuthRequest, res: Response): Promise<boolean> {
+  if (canCreate(req.userRole)) return true;
+  const code = String(req.query.code || "");
+  const conf = CODE_RE.test(code) ? await loadConference(code) : null;
+  const actor = conf ? await loadMember(conf.id, req.userId!) : null;
+  if (!conf || (!isModerator(actor, req.userRole) && conf.hostId !== req.userId)) {
+    fail(res, 403, "Ruxsat yo‘q");
+    return false;
+  }
+  return true;
+}
+
 function fail(res: Response, status: number, error: string): void {
   res.status(status).json({ error });
 }
@@ -260,26 +324,73 @@ router.get("/conferences", requireAuth, async (req: AuthRequest, res): Promise<v
   }
 });
 
-/** Taklif uchun odam qidirish: ism / bo‘lim / lavozim; departmentId bilan — butun bo‘lim */
+/** Taklif uchun odam qidirish: ism / bo‘lim / lavozim; departmentId yoki coordinatorId+roles */
 router.get("/conferences/people", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canCreate(req.userRole)) {
-    const code = String(req.query.code || "");
-    const conf = CODE_RE.test(code) ? await loadConference(code) : null;
-    const actor = conf ? await loadMember(conf.id, req.userId!) : null;
-    if (!conf || (!isModerator(actor, req.userRole) && conf.hostId !== req.userId)) {
-      fail(res, 403, "Ruxsat yo‘q");
-      return;
-    }
-  }
+  if (!(await assertCanBrowsePeople(req, res))) return;
   try {
     const q = String(req.query.q || "").trim().slice(0, 60);
     const departmentId = Number(req.query.departmentId) || null;
+    const coordinatorId = Number(req.query.coordinatorId) || null;
+    const rolesRaw = String(req.query.roles || "")
+      .split(",")
+      .map((x) => normalizePharmacyRole(x))
+      .filter((x): x is "mudir" | "farmasevt" | "stajyor" => Boolean(x));
+    const roleFilter = new Set(rolesRaw);
+
+    let scopedUserIds: Set<number> | null = null;
+    if (coordinatorId) {
+      const { rows: coordRows } = await pool.query<{ emp_id: number }>(
+        `SELECT e.id AS emp_id
+           FROM employees e
+           JOIN users u ON u.id = e.user_id
+          WHERE u.id = $1
+            AND u.status <> 'terminated'
+            AND (LOWER(COALESCE(u.role,'')) = 'koordinator' OR LOWER(COALESCE(e.org_role,'')) = 'coordinator')
+          ORDER BY CASE WHEN LOWER(COALESCE(e.org_role,'')) = 'coordinator' THEN 0 ELSE 1 END, e.id DESC
+          LIMIT 1`,
+        [coordinatorId],
+      );
+      const coordEmpId = coordRows[0]?.emp_id;
+      if (!coordEmpId) {
+        res.json({ items: [] });
+        return;
+      }
+      const empIds = await employeeIdsUnderCoordinator(coordEmpId);
+      if (!empIds.size) {
+        res.json({ items: [] });
+        return;
+      }
+      const { rows: userRows } = await pool.query<{ user_id: number }>(
+        `SELECT DISTINCT user_id FROM employees WHERE id = ANY($1::int[]) AND user_id IS NOT NULL`,
+        [[...empIds]],
+      );
+      scopedUserIds = new Set(userRows.map((r) => r.user_id).filter((id): id is number => Number.isInteger(id)));
+      if (!scopedUserIds.size) {
+        res.json({ items: [] });
+        return;
+      }
+    }
+
     const params: unknown[] = [];
     let where = `u.status <> 'terminated' AND u.role <> 'oquvchi'`;
     if (departmentId) {
       params.push(departmentId);
       where += ` AND e.department_id = $${params.length}`;
     }
+    if (scopedUserIds) {
+      params.push([...scopedUserIds]);
+      where += ` AND u.id = ANY($${params.length}::int[])`;
+    }
+    if (roleFilter.size) {
+      const roleList = [...roleFilter];
+      if (roleFilter.has("stajyor")) roleList.push("stajor");
+      params.push(roleList);
+      where += ` AND LOWER(COALESCE(u.role,'')) = ANY($${params.length}::text[])`;
+    } else if (coordinatorId) {
+      params.push([...PHARMACY_STAFF_ROLES]);
+      where += ` AND LOWER(COALESCE(u.role,'')) = ANY($${params.length}::text[])`;
+    }
+
     const { rows } = await pool.query(
       `SELECT u.id, u.full_name, u.role, e.position, d.name AS department
          FROM users u
@@ -291,9 +402,10 @@ router.get("/conferences/people", requireAuth, async (req: AuthRequest, res): Pr
         ORDER BY u.full_name`,
       params,
     );
+    const bulk = Boolean(departmentId || coordinatorId);
     const items = rows
-      .filter((r) => !q || scriptIncludes(`${r.full_name ?? ""} ${r.position ?? ""} ${r.department ?? ""}`, q))
-      .slice(0, departmentId ? 500 : 80)
+      .filter((r) => !q || scriptIncludes(`${r.full_name ?? ""} ${r.position ?? ""} ${r.department ?? ""} ${r.role ?? ""}`, q))
+      .slice(0, bulk ? 500 : 80)
       .map((r) => ({
         id: r.id as number,
         fullName: (r.full_name as string) || "—",
@@ -304,6 +416,56 @@ router.get("/conferences/people", requireAuth, async (req: AuthRequest, res): Pr
     res.json({ items });
   } catch (err) {
     serverError(res, "GET /conferences/people", err);
+  }
+});
+
+router.get("/conferences/coordinators", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!(await assertCanBrowsePeople(req, res))) return;
+  try {
+    const { rows } = await pool.query<{
+      id: number;
+      full_name: string;
+      position: string | null;
+      staff: number;
+    }>(
+      `WITH coords AS (
+         SELECT DISTINCT ON (u.id)
+                u.id, u.full_name, e.id AS emp_id, e.position
+           FROM users u
+           JOIN employees e ON e.user_id = u.id
+          WHERE u.status <> 'terminated'
+            AND (LOWER(COALESCE(u.role,'')) = 'koordinator' OR LOWER(COALESCE(e.org_role,'')) = 'coordinator')
+          ORDER BY u.id, CASE WHEN LOWER(COALESCE(e.org_role,'')) = 'coordinator' THEN 0 ELSE 1 END, e.id DESC
+       )
+       SELECT c.id, c.full_name, c.position,
+              (
+                SELECT COUNT(DISTINCT u2.id)::int
+                  FROM employees e2
+                  JOIN users u2 ON u2.id = e2.user_id AND u2.status <> 'terminated'
+                 WHERE LOWER(COALESCE(u2.role,'')) IN ('mudir','farmasevt','stajyor','stajor')
+                   AND (
+                     e2.reports_to_id = c.emp_id
+                     OR e2.reports_to_id IN (SELECT id FROM employees WHERE reports_to_id = c.emp_id)
+                     OR e2.assigned_branch_id IN (
+                          SELECT id FROM employees
+                           WHERE reports_to_id = c.emp_id
+                             AND LOWER(COALESCE(org_role,'')) = 'manager'
+                        )
+                   )
+              ) AS staff
+         FROM coords c
+        ORDER BY c.full_name`,
+    );
+    res.json({
+      items: rows.map((r) => ({
+        id: r.id,
+        fullName: r.full_name || "—",
+        position: r.position,
+        staff: r.staff ?? 0,
+      })),
+    });
+  } catch (err) {
+    serverError(res, "GET /conferences/coordinators", err);
   }
 });
 

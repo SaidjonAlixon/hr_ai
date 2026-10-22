@@ -9,6 +9,7 @@ import {
   Loader2,
   Mic,
   MicOff,
+  Network,
   Search,
   Send,
   Settings2,
@@ -143,10 +144,23 @@ export function ConferenceFormDialog({
   const [selected, setSelected] = useState<Selected[]>([]);
   const [notify, setNotify] = useState(true);
   const [q, setQ] = useState("");
+  const [coordId, setCoordId] = useState("");
+  const [coordRoles, setCoordRoles] = useState<Array<"mudir" | "farmasevt" | "stajyor">>([
+    "mudir",
+    "farmasevt",
+    "stajyor",
+  ]);
+  const [addingCoordStaff, setAddingCoordStaff] = useState(false);
   const [saving, setSaving] = useState(false);
   const [created, setCreated] = useState<{ code: string; invited: number } | null>(null);
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const dq = useDebounced(q.trim());
+
+  const PHARM_ROLE_OPTS = [
+    ["mudir", "Mudir"],
+    ["farmasevt", "Farmasevt"],
+    ["stajyor", "Stajyor"],
+  ] as const;
 
   const details = useQuery({
     queryKey: ["conference", editCode],
@@ -169,6 +183,8 @@ export function ConferenceFormDialog({
         setNotify(true);
         setCreated(null);
         setQ("");
+        setCoordId("");
+        setCoordRoles(["mudir", "farmasevt", "stajyor"]);
         setLoadedFor("new");
       }
       return;
@@ -215,15 +231,27 @@ export function ConferenceFormDialog({
     enabled: open,
     staleTime: 5 * 60_000,
   });
+  const coordinators = useQuery({
+    queryKey: ["conference-coordinators", editCode ?? "new"],
+    queryFn: () => conferenceApi.coordinators(editCode ?? undefined),
+    enabled: open,
+    staleTime: 5 * 60_000,
+  });
 
   const selectedIds = useMemo(() => new Set(selected.map((s) => s.userId)), [selected]);
 
-  const addPeople = (list: Person[]) => {
+  const addPeople = (list: Person[], opts?: { canSpeak?: boolean | null }) => {
     setSelected((prev) => {
       const have = new Set(prev.map((p) => p.userId));
       const add = list
         .filter((p) => !have.has(p.id))
-        .map<Selected>((p) => ({ userId: p.id, fullName: p.fullName, position: p.position, role: "participant", canSpeak: null }));
+        .map<Selected>((p) => ({
+          userId: p.id,
+          fullName: p.fullName,
+          position: p.position,
+          role: "participant",
+          canSpeak: opts?.canSpeak === undefined ? null : opts.canSpeak,
+        }));
       return [...prev, ...add];
     });
   };
@@ -236,6 +264,44 @@ export function ConferenceFormDialog({
     } catch (e) {
       toast({ title: "Xatolik", description: (e as Error).message, variant: "destructive" });
     }
+  };
+
+  const addCoordinatorStaff = async () => {
+    const id = Number(coordId);
+    if (!id) {
+      toast({ title: "Koordinatorni tanlang", variant: "destructive" });
+      return;
+    }
+    if (!coordRoles.length) {
+      toast({ title: "Kamida bitta lavozimni belgilang", variant: "destructive" });
+      return;
+    }
+    setAddingCoordStaff(true);
+    try {
+      const { items } = await conferenceApi.people({
+        coordinatorId: id,
+        roles: coordRoles,
+        code: editCode ?? undefined,
+      });
+      if (!items.length) {
+        toast({ title: "Tanlangan lavozimda xodim topilmadi", variant: "destructive" });
+        return;
+      }
+      addPeople(items, { canSpeak: true });
+      const coordName = coordinators.data?.items.find((c) => c.id === id)?.fullName ?? "Koordinator";
+      toast({
+        title: `${items.length} xodim qo‘shildi`,
+        description: `${coordName} · to‘liq kirish + boshlanish xabari`,
+      });
+    } catch (e) {
+      toast({ title: "Xatolik", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setAddingCoordStaff(false);
+    }
+  };
+
+  const toggleCoordRole = (role: "mudir" | "farmasevt" | "stajyor") => {
+    setCoordRoles((prev) => (prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]));
   };
 
   const patchSel = (userId: number, patch: Partial<Selected>) =>
@@ -448,6 +514,59 @@ export function ConferenceFormDialog({
                       )}
                     </div>
                   ) : null}
+                  <div className="space-y-2.5 rounded-xl border border-sky-500/20 bg-sky-500/[0.04] p-3 dark:bg-sky-500/10">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-sky-800 dark:text-sky-200">
+                      <Network className="h-4 w-4" />
+                      Koordinator xodimlari
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                      Koordinatorni tanlang, keyin mudir / farmasevt / stajyor — tanlanganlarga to‘liq kirish ochiladi va
+                      boshlanish vaqti haqida xabar ketadi.
+                    </p>
+                    <select
+                      value={coordId}
+                      onChange={(e) => setCoordId(e.target.value)}
+                      className="h-10 w-full rounded-xl border bg-background px-3 text-sm"
+                    >
+                      <option value="">Koordinatorni tanlang…</option>
+                      {(coordinators.data?.items ?? []).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.fullName}
+                          {c.staff ? ` · ${c.staff} xodim` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex flex-wrap gap-1.5">
+                      {PHARM_ROLE_OPTS.map(([key, lab]) => {
+                        const on = coordRoles.includes(key);
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => toggleCoordRole(key)}
+                            className={cn(
+                              "rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition",
+                              on
+                                ? "border-sky-500/40 bg-sky-600 text-white shadow-sm"
+                                : "border-border/70 bg-background text-muted-foreground hover:bg-muted",
+                            )}
+                          >
+                            {lab}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!coordId || !coordRoles.length || addingCoordStaff}
+                      onClick={() => void addCoordinatorStaff()}
+                      className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-sky-600 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:opacity-50"
+                    >
+                      {addingCoordStaff ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                      Tanlangan xodimlarni qo‘shish
+                    </button>
+                  </div>
+
                   {(departments.data?.items ?? []).length ? (
                     <div className="flex items-center gap-2">
                       <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -478,13 +597,22 @@ export function ConferenceFormDialog({
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-sm font-medium">{s.fullName}</p>
                               <p className="truncate text-[11px] text-muted-foreground">
-                                {s.role === "cohost" ? "Yordamchi tashkilotchi" : s.position || "Ishtirokchi"}
+                                {s.role === "cohost" ? "Konferensiya raxbari" : s.position || "Ishtirokchi"}
                               </p>
                             </div>
                             <button
                               type="button"
-                              title={s.role === "cohost" ? "Yordamchi tashkilotchi — olib tashlash" : "Yordamchi tashkilotchi qilish"}
-                              onClick={() => patchSel(s.userId, { role: s.role === "cohost" ? "participant" : "cohost" })}
+                              title={
+                                s.role === "cohost"
+                                  ? "Konferensiya raxbari — olib tashlash"
+                                  : "Konferensiya raxbari qilish (to‘liq boshqaruv)"
+                              }
+                              onClick={() =>
+                                patchSel(s.userId, {
+                                  role: s.role === "cohost" ? "participant" : "cohost",
+                                  canSpeak: s.role === "cohost" ? s.canSpeak : true,
+                                })
+                              }
                               className={cn(
                                 "flex h-8 w-8 items-center justify-center rounded-lg transition",
                                 s.role === "cohost" ? "bg-amber-100 text-amber-600 dark:bg-amber-500/15" : "text-muted-foreground hover:bg-muted",
@@ -518,12 +646,14 @@ export function ConferenceFormDialog({
                     </div>
                   ) : (
                     <p className="rounded-xl border border-dashed p-3 text-center text-xs text-muted-foreground">
-                      Hali hech kim tanlanmagan. Taklif qilinmaganlar ham havola orqali kira oladi.
+                      Hali hech kim tanlanmagan. Koordinator xodimlarini qo‘shing yoki qidiruvdan tanlang. Taklif
+                      qilinmaganlar ham havola orqali kira oladi.
                     </p>
                   )}
                   <p className="text-[11px] leading-relaxed text-muted-foreground">
-                    <Crown className="mr-1 inline h-3 w-3 text-amber-500" />— yordamchi tashkilotchi (boshqaruv huquqi).
-                    <Mic className="mx-1 inline h-3 w-3 text-emerald-600" />— gapirish ruxsati (boshlanishdan oldin belgilanadi, ichkarida ham o‘zgartiriladi).
+                    <Crown className="mr-1 inline h-3 w-3 text-amber-500" />— konferensiya raxbari (xonada to‘liq boshqaruv;
+                    admin ichkarida ham tayinlaydi).
+                    <Mic className="mx-1 inline h-3 w-3 text-emerald-600" />— gapirish ruxsati.
                   </p>
                 </Section>
 

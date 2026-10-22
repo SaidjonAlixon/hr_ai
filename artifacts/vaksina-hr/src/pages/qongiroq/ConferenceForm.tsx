@@ -622,73 +622,105 @@ export function ConferenceFormDialog({
                     </div>
                   ) : null}
                   {selected.length ? (
-                    <div className="max-h-72 divide-y overflow-y-auto rounded-xl border bg-background [scrollbar-width:thin]">
-                      {selected.map((s) => {
-                        const speaks = s.role === "cohost" || (s.canSpeak ?? speakDefault);
-                        return (
-                          <div key={s.userId} className="flex items-center gap-2 px-3 py-2">
-                            <CallAvatar id={s.userId} name={s.fullName} className="h-8 w-8 text-xs" />
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium">{s.fullName}</p>
-                              <p className="truncate text-[11px] text-muted-foreground">
-                                {s.role === "cohost" ? "Konferensiya raxbari" : s.position || "Ishtirokchi"}
-                              </p>
+                    <>
+                      <div className="rounded-xl border border-amber-200/80 bg-amber-50/80 px-3 py-2.5 dark:border-amber-500/20 dark:bg-amber-500/10">
+                        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                          <Crown className="mr-1 inline h-3.5 w-3.5" />
+                          Konferensiya raxbari
+                        </p>
+                        <select
+                          value={selected.find((s) => s.role === "cohost")?.userId ?? ""}
+                          onChange={(e) => {
+                            const id = Number(e.target.value);
+                            setSelected((prev) =>
+                              prev.map((x) => ({
+                                ...x,
+                                role: id && x.userId === id ? "cohost" : x.role === "cohost" ? "participant" : x.role,
+                                canSpeak: id && x.userId === id ? true : x.canSpeak,
+                              })),
+                            );
+                          }}
+                          className="h-10 w-full rounded-xl border bg-background px-3 text-sm font-medium"
+                        >
+                          <option value="">Faqat men (tashkilotchi) — qo‘shimcha raxbar yo‘q</option>
+                          {selected.map((s) => (
+                            <option key={s.userId} value={s.userId}>
+                              {s.fullName}
+                              {s.position ? ` — ${s.position}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-1.5 text-[11px] leading-relaxed text-amber-800/80 dark:text-amber-200/70">
+                          Raxbar xonada to‘liq boshqaradi: ovoz/kamera, taklif, yozuv. Bir nechta bo‘lishi kerak bo‘lsa —
+                          pastdagi toj tugmasidan qo‘shing.
+                        </p>
+                      </div>
+                      <div className="max-h-72 divide-y overflow-y-auto rounded-xl border bg-background [scrollbar-width:thin]">
+                        {selected.map((s) => {
+                          const speaks = s.role === "cohost" || (s.canSpeak ?? speakDefault);
+                          return (
+                            <div key={s.userId} className="flex items-center gap-2 px-3 py-2">
+                              <CallAvatar id={s.userId} name={s.fullName} className="h-8 w-8 text-xs" />
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium">{s.fullName}</p>
+                                <p className="truncate text-[11px] text-muted-foreground">
+                                  {s.role === "cohost" ? "Konferensiya raxbari" : s.position || "Ishtirokchi"}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                title={
+                                  s.role === "cohost"
+                                    ? "Raxbarlikni olib tashlash"
+                                    : "Qo‘shimcha raxbar qilish"
+                                }
+                                onClick={() =>
+                                  patchSel(s.userId, {
+                                    role: s.role === "cohost" ? "participant" : "cohost",
+                                    canSpeak: s.role === "cohost" ? s.canSpeak : true,
+                                  })
+                                }
+                                className={cn(
+                                  "inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[11px] font-semibold transition",
+                                  s.role === "cohost"
+                                    ? "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
+                                    : "text-muted-foreground hover:bg-muted",
+                                )}
+                              >
+                                <Crown className="h-3.5 w-3.5" />
+                                {s.role === "cohost" ? "Raxbar" : "Raxbar"}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={s.role === "cohost"}
+                                title={speaks ? "Gapira oladi — bosib taqiqlash" : "Gapira olmaydi — bosib ruxsat berish"}
+                                onClick={() => patchSel(s.userId, { canSpeak: !speaks })}
+                                className={cn(
+                                  "flex h-8 w-8 items-center justify-center rounded-lg transition disabled:opacity-40",
+                                  speaks ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15" : "bg-red-50 text-red-500 dark:bg-red-500/10",
+                                )}
+                              >
+                                {speaks ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+                              </button>
+                              <button
+                                type="button"
+                                title="Olib tashlash"
+                                onClick={() => setSelected((prev) => prev.filter((x) => x.userId !== s.userId))}
+                                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-red-50 hover:text-red-600"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              title={
-                                s.role === "cohost"
-                                  ? "Konferensiya raxbari — olib tashlash"
-                                  : "Konferensiya raxbari qilish (to‘liq boshqaruv)"
-                              }
-                              onClick={() =>
-                                patchSel(s.userId, {
-                                  role: s.role === "cohost" ? "participant" : "cohost",
-                                  canSpeak: s.role === "cohost" ? s.canSpeak : true,
-                                })
-                              }
-                              className={cn(
-                                "flex h-8 w-8 items-center justify-center rounded-lg transition",
-                                s.role === "cohost" ? "bg-amber-100 text-amber-600 dark:bg-amber-500/15" : "text-muted-foreground hover:bg-muted",
-                              )}
-                            >
-                              <Crown className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              disabled={s.role === "cohost"}
-                              title={speaks ? "Gapira oladi — bosib taqiqlash" : "Gapira olmaydi — bosib ruxsat berish"}
-                              onClick={() => patchSel(s.userId, { canSpeak: !speaks })}
-                              className={cn(
-                                "flex h-8 w-8 items-center justify-center rounded-lg transition disabled:opacity-40",
-                                speaks ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15" : "bg-red-50 text-red-500 dark:bg-red-500/10",
-                              )}
-                            >
-                              {speaks ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-                            </button>
-                            <button
-                              type="button"
-                              title="Olib tashlash"
-                              onClick={() => setSelected((prev) => prev.filter((x) => x.userId !== s.userId))}
-                              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-red-50 hover:text-red-600"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
+                          );
+                        })}
+                      </div>
+                    </>
                   ) : (
                     <p className="rounded-xl border border-dashed p-3 text-center text-xs text-muted-foreground">
-                      Hali hech kim tanlanmagan. Koordinator xodimlarini qo‘shing yoki qidiruvdan tanlang. Taklif
-                      qilinmaganlar ham havola orqali kira oladi.
+                      Hali hech kim tanlanmagan. Avval xodimlarni qo‘shing — keyin yuqoridan konferensiya raxbarini
+                      belgilaysiz. Taklif qilinmaganlar ham havola orqali kira oladi.
                     </p>
                   )}
-                  <p className="text-[11px] leading-relaxed text-muted-foreground">
-                    <Crown className="mr-1 inline h-3 w-3 text-amber-500" />— konferensiya raxbari (xonada to‘liq boshqaruv;
-                    admin ichkarida ham tayinlaydi).
-                    <Mic className="mx-1 inline h-3 w-3 text-emerald-600" />— gapirish ruxsati.
-                  </p>
                 </Section>
 
                 <Section icon={<Settings2 className="h-4 w-4" />} title="Boshqaruv sozlamalari">

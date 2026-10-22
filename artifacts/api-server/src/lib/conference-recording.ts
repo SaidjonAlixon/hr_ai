@@ -35,16 +35,19 @@ export async function ensureRecordingSchema(): Promise<void> {
 async function setRecordingStatus(
   confId: number,
   status: string,
-  extra?: { sentAt?: Date | null; fileId?: string | null },
+  extra?: { sentAt?: Date | null; fileId?: string | null; clearFileId?: boolean },
 ): Promise<void> {
   await pool.query(
     `UPDATE conferences
         SET recording_status = $2,
             recording_sent_at = COALESCE($3, recording_sent_at),
-            recording_telegram_file_id = COALESCE($4, recording_telegram_file_id),
+            recording_telegram_file_id = CASE
+              WHEN $5 THEN NULL
+              ELSE COALESCE($4, recording_telegram_file_id)
+            END,
             updated_at = NOW()
       WHERE id = $1`,
-    [confId, status, extra?.sentAt ?? null, extra?.fileId ?? null],
+    [confId, status, extra?.sentAt ?? null, extra?.fileId ?? null, Boolean(extra?.clearFileId)],
   );
 }
 
@@ -186,7 +189,7 @@ export async function deliverConferenceRecordingAndPurge(
         mimeType: isMp4 ? "video/mp4" : "video/webm",
       });
     }
-    await setRecordingStatus(conf.id, "sent", { sentAt: new Date() });
+    await setRecordingStatus(conf.id, "sent", { sentAt: new Date(), fileId: null });
     logger.info({ code: conf.code, chatId, bytes: buf.length, mp4: isMp4 }, "conference recording sent to Telegram");
   } catch (err) {
     logger.error({ err, code: conf.code, chatId }, "conference recording Telegram send failed");
@@ -196,8 +199,29 @@ export async function deliverConferenceRecordingAndPurge(
     return { ok: false, error: err instanceof Error ? err.message : "Telegramga yuborilmadi" };
   }
 
+  // Diskdan to‘liq o‘chirish + DB dagi fayl havolalarini tozalash (faqat status/vaqt qoladi)
   await safeUnlink(sendPath);
   if (sendPath !== filePath) await safeUnlink(filePath);
+  await pool.query(
+    `UPDATE conferences
+        SET recording_telegram_file_id = NULL,
+            recording_status = 'sent_purged',
+            updated_at = NOW()
+      WHERE id = $1`,
+    [conf.id],
+  );
+  // Temp papkadagi shu kodga tegishli qoldiqlar
+  try {
+    const dir = await ensureRecordingDir();
+    const files = await fs.readdir(dir);
+    await Promise.all(
+      files
+        .filter((f) => f.startsWith(`${conf.code}-`))
+        .map((f) => safeUnlink(path.join(dir, f))),
+    );
+  } catch {
+    /* ignore */
+  }
   return { ok: true };
 }
 

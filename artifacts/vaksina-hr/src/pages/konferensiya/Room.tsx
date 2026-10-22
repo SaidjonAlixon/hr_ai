@@ -390,6 +390,16 @@ export function ConferenceRoom({
     },
   });
 
+  /** Chiqish / yakunlash: yozuvni to‘liq yig‘ib yuborish (qisqa 1–2s blob qolmasin) */
+  const flushRecording = useCallback(async (): Promise<Blob | null> => {
+    if (!recorder.isRecording && recorder.state !== "stopping") return null;
+    const blob = await recorder.stop();
+    if (blob && !sentBlobsRef.current.has(blob)) {
+      await sendRecording(blob, "leave");
+    }
+    return blob;
+  }, [recorder, sendRecording]);
+
   const startRec = recorder.start;
   const beginRecording = useCallback(
     (minutes: number | null) => {
@@ -1016,7 +1026,21 @@ export function ConferenceRoom({
           <div className="flex shrink-0 items-center gap-1.5 pr-0.5">
             <button
               type="button"
-              onClick={() => onLeave(false)}
+              disabled={recBusy || recorder.state === "stopping"}
+              onClick={() => {
+                void (async () => {
+                  if (recorder.isRecording) {
+                    const ok = window.confirm(
+                      recorder.remainingSec != null && recorder.remainingSec > 5
+                        ? `Yozuv hali tugamagan (qoldi ~${formatRecClock(recorder.remainingSec)}). Chiqsangiz yozuv to‘xtaydi va hozirgacha yozilgan qism Telegramga yuboriladi. Davom etasizmi?`
+                        : "Yozuv to‘xtatilib Telegramga yuboriladi. Chiqasizmi?",
+                    );
+                    if (!ok) return;
+                    await flushRecording();
+                  }
+                  await Promise.resolve(onLeave(false));
+                })();
+              }}
               title="Faqat o‘zim chiqaman — konferensiya davom etadi"
               className={cn(
                 "flex h-11 items-center gap-2 rounded-full px-3.5 text-sm font-semibold text-white transition active:scale-95 sm:h-12 sm:px-4",
@@ -1074,8 +1098,8 @@ export function ConferenceRoom({
             <DialogHeader>
               <DialogTitle>Yozib olishni boshlash</DialogTitle>
               <DialogDescription>
-                Tayyor vaqtni tanlang yoki o‘zingiz daqiqa kiriting. Vaqt tugasa yoki REC ni bossangiz —
-                yozuv Telegram guruhiga yuboriladi va platformadan o‘chiriladi.
+                Belgilagan daqiqangiz tugaguncha sahifada qoling — aks holda yozuv erta to‘xtaydi. Vaqt tugasa yoki REC
+                ni bossangiz yozuv Telegramga yuboriladi va platformadan to‘liq o‘chiriladi.
               </DialogDescription>
             </DialogHeader>
             <div className="flex flex-wrap gap-1.5">
@@ -1148,16 +1172,8 @@ export function ConferenceRoom({
                   e.preventDefault();
                   setEnding(true);
                   void (async () => {
-                    let blob: Blob | null = null;
-                    if (recorder.isRecording || recorder.state === "stopping") {
-                      blob = await recorder.stop();
-                      // Agar onStopped allaqachon yuborgan bo‘lmasa — leave orqali
-                      if (blob && !sentBlobsRef.current.has(blob)) {
-                        await Promise.resolve(onLeave(true, blob));
-                        return;
-                      }
-                    }
-                    await Promise.resolve(onLeave(true, null));
+                    const blob = await flushRecording();
+                    await Promise.resolve(onLeave(true, blob && !sentBlobsRef.current.has(blob) ? blob : null));
                   })().finally(() => setEnding(false));
                 }}
                 className="bg-red-600 text-white hover:bg-red-700"

@@ -26,6 +26,38 @@ function truncate(ctx: CanvasRenderingContext2D, text: string, maxW: number): st
   return `${s}…`;
 }
 
+/** Matnni maxW bo‘yicha qatorlarga bo‘lish (maxLines dan ortig‘i … bilan kesiladi). */
+function wrapLines(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxW: number,
+  maxLines: number,
+): string[] {
+  const raw = String(text || "").trim() || "—";
+  if (ctx.measureText(raw).width <= maxW) return [raw];
+  const words = raw.split(/\s+/);
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    const next = cur ? `${cur} ${w}` : w;
+    if (ctx.measureText(next).width <= maxW) {
+      cur = next;
+      continue;
+    }
+    if (cur) lines.push(cur);
+    cur = w;
+    if (lines.length >= maxLines) break;
+  }
+  if (cur && lines.length < maxLines) lines.push(cur);
+  if (!lines.length) return [truncate(ctx, raw, maxW)];
+  // Oxirgi qator kesilgan bo‘lsa …
+  const joined = lines.join(" ");
+  if (joined.length < raw.length || words.length > 0 && lines.length >= maxLines) {
+    lines[lines.length - 1] = truncate(ctx, lines[lines.length - 1]!, maxW);
+  }
+  return lines.slice(0, maxLines);
+}
+
 function roundRect(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -137,10 +169,13 @@ export async function downloadConferenceHistoryPdf(h: ConferenceHistory): Promis
       if (b.kind === "header") need = mmToPx(28, 144);
       else if (b.kind === "stats") need = mmToPx(32, 144);
       else if (b.kind === "section") need = mmToPx(12, 144);
-      else if (b.kind === "person") need = mmToPx(16, 144);
+      else if (b.kind === "person") need = mmToPx(17, 144);
       else if (b.kind === "absent") need = mmToPx(9, 144);
-      else if (b.kind === "chat") need = mmToPx(14, 144);
-      else need = mmToPx(16, 144);
+      else if (b.kind === "chat") {
+        ctx.font = `${mmToPx(2.65, 144)}px ${FONT}`;
+        const linesN = wrapLines(ctx, b.text, contentW - mmToPx(6, 144), 2).length;
+        need = mmToPx(8.5, 144) + linesN * mmToPx(3.6, 144) + mmToPx(2, 144);
+      } else need = mmToPx(16, 144);
 
       if (y + need > bottom && b.kind !== "header") break;
 
@@ -209,22 +244,48 @@ export async function downloadConferenceHistoryPdf(h: ConferenceHistory): Promis
       } else if (b.kind === "person") {
         const a = b.a;
         const share = Math.min(100, Math.round((a.seconds / totalSec) * 100));
+        const padX = mmToPx(3, 144);
+        const rowH = mmToPx(15, 144);
         ctx.fillStyle = "#ffffff";
         ctx.strokeStyle = "#e2e8f0";
         ctx.lineWidth = 1;
-        roundRect(ctx, left, y, contentW, mmToPx(14, 144), 5);
+        roundRect(ctx, left, y, contentW, rowH, 5);
         ctx.fill();
         ctx.stroke();
 
+        // O‘ngdagi vaqt — avval o‘lchab joy qoldiramiz
+        ctx.font = `bold ${mmToPx(3.1, 144)}px ${FONT}`;
+        const right = `${formatSpan(a.seconds)} · ${share}%`;
+        const rightW = ctx.measureText(right).width;
+        const rightX = left + contentW - padX - rightW;
+        ctx.fillStyle = "#0f172a";
+        ctx.fillText(right, rightX, y + mmToPx(5.5, 144));
+
+        const role = roleLabel(a.role);
+        ctx.font = `bold ${mmToPx(2.35, 144)}px ${FONT}`;
+        const roleW = ctx.measureText(role).width;
+        const gap = mmToPx(2.5, 144);
+        const nameMax = Math.max(mmToPx(28, 144), rightX - roleW - gap * 2 - (left + padX) - mmToPx(2, 144));
+
         ctx.fillStyle = "#0f172a";
         ctx.font = `bold ${mmToPx(3.2, 144)}px ${FONT}`;
-        ctx.fillText(truncate(ctx, a.fullName, contentW * 0.45), left + mmToPx(3, 144), y + mmToPx(5, 144));
+        const nameText = truncate(ctx, a.fullName, nameMax);
+        const nameW = ctx.measureText(nameText).width;
+        ctx.fillText(nameText, left + padX, y + mmToPx(5.2, 144));
+
+        // Rol — ismdan KEYIN, o‘ngdagi vaqtdan OLDIN (ustma-ust tushmasin)
+        const roleX = left + padX + nameW + gap;
         ctx.fillStyle = "#0369a1";
-        ctx.font = `bold ${mmToPx(2.4, 144)}px ${FONT}`;
-        ctx.fillText(roleLabel(a.role), left + mmToPx(3, 144) + ctx.measureText(truncate(ctx, a.fullName, contentW * 0.45)).width + mmToPx(3, 144), y + mmToPx(5, 144));
+        ctx.font = `bold ${mmToPx(2.35, 144)}px ${FONT}`;
+        if (roleX + roleW < rightX - gap) {
+          ctx.fillText(role, roleX, y + mmToPx(5.2, 144));
+        } else {
+          // Joy yetmasa — ism ostiga
+          ctx.fillText(role, left + padX, y + mmToPx(8.2, 144));
+        }
 
         ctx.fillStyle = "#64748b";
-        ctx.font = `${mmToPx(2.5, 144)}px ${FONT}`;
+        ctx.font = `${mmToPx(2.45, 144)}px ${FONT}`;
         const meta = [
           a.position || "",
           a.firstJoin ? `${hhmmOf(a.firstJoin)}${a.lastLeave ? `–${hhmmOf(a.lastLeave)}` : ""}` : "",
@@ -232,16 +293,11 @@ export async function downloadConferenceHistoryPdf(h: ConferenceHistory): Promis
         ]
           .filter(Boolean)
           .join(" · ");
-        ctx.fillText(truncate(ctx, meta, contentW * 0.7), left + mmToPx(3, 144), y + mmToPx(9, 144));
+        ctx.fillText(truncate(ctx, meta, contentW - padX * 2 - rightW), left + padX, y + mmToPx(9.8, 144));
 
-        ctx.fillStyle = "#0f172a";
-        ctx.font = `bold ${mmToPx(3.1, 144)}px ${FONT}`;
-        const right = `${formatSpan(a.seconds)} · ${share}%`;
-        ctx.fillText(right, left + contentW - mmToPx(3, 144) - ctx.measureText(right).width, y + mmToPx(5.5, 144));
-
-        const barX = left + mmToPx(3, 144);
-        const barY = y + mmToPx(11, 144);
-        const barW = contentW - mmToPx(6, 144);
+        const barX = left + padX;
+        const barY = y + mmToPx(12, 144);
+        const barW = contentW - padX * 2;
         ctx.fillStyle = "#e2e8f0";
         roundRect(ctx, barX, barY, barW, mmToPx(1.6, 144), 2);
         ctx.fill();
@@ -249,41 +305,62 @@ export async function downloadConferenceHistoryPdf(h: ConferenceHistory): Promis
         roundRect(ctx, barX, barY, Math.max(mmToPx(2, 144), (barW * share) / 100), mmToPx(1.6, 144), 2);
         ctx.fill();
 
-        y += mmToPx(16, 144);
+        y += mmToPx(17, 144);
       } else if (b.kind === "absent") {
         ctx.fillStyle = "#9f1239";
         ctx.font = `${mmToPx(2.9, 144)}px ${FONT}`;
-        ctx.fillText(
-          `• ${b.name}${b.position ? ` — ${b.position}` : ""}`,
-          left + mmToPx(2, 144),
-          y + mmToPx(4, 144),
-        );
+        const absentLine = `• ${b.name}${b.position ? ` — ${b.position}` : ""}`;
+        ctx.fillText(truncate(ctx, absentLine, contentW - mmToPx(2, 144)), left + mmToPx(2, 144), y + mmToPx(4, 144));
         y += mmToPx(8, 144);
       } else if (b.kind === "chat") {
+        const padX = mmToPx(3, 144);
+        const msgMaxW = contentW - padX * 2;
+        ctx.font = `${mmToPx(2.65, 144)}px ${FONT}`;
+        const msgLines = wrapLines(ctx, b.text, msgMaxW, 2);
+        const boxH = mmToPx(8.5, 144) + msgLines.length * mmToPx(3.6, 144);
+
         ctx.fillStyle = "#ffffff";
         ctx.strokeStyle = "#e2e8f0";
-        roundRect(ctx, left, y, contentW, mmToPx(12, 144), 5);
+        roundRect(ctx, left, y, contentW, boxH, 5);
         ctx.fill();
         ctx.stroke();
+
+        // Vaqt o‘ngda — avval o‘lchab, ismni chapda kesamiz (ustma-ust bo‘lmasin)
+        ctx.font = `${mmToPx(2.4, 144)}px ${FONT}`;
+        const atW = ctx.measureText(b.at).width;
+        const atX = left + contentW - padX - atW;
+        ctx.fillStyle = "#94a3b8";
+        ctx.fillText(b.at, atX, y + mmToPx(4.8, 144));
+
         ctx.fillStyle = "#0f172a";
         ctx.font = `bold ${mmToPx(2.8, 144)}px ${FONT}`;
-        ctx.fillText(`${b.name}`, left + mmToPx(3, 144), y + mmToPx(4.5, 144));
-        ctx.fillStyle = "#94a3b8";
-        ctx.font = `${mmToPx(2.4, 144)}px ${FONT}`;
-        ctx.fillText(b.at, left + mmToPx(3, 144) + ctx.measureText(b.name).width + mmToPx(3, 144), y + mmToPx(4.5, 144));
+        const nameMax = Math.max(mmToPx(36, 144), atX - (left + padX) - mmToPx(5, 144));
+        ctx.fillText(truncate(ctx, b.name, nameMax), left + padX, y + mmToPx(4.8, 144));
+
         ctx.fillStyle = "#334155";
-        ctx.font = `${mmToPx(2.7, 144)}px ${FONT}`;
-        ctx.fillText(truncate(ctx, b.text, contentW - mmToPx(6, 144)), left + mmToPx(3, 144), y + mmToPx(9, 144));
-        y += mmToPx(14, 144);
+        ctx.font = `${mmToPx(2.65, 144)}px ${FONT}`;
+        msgLines.forEach((ln, idx) => {
+          ctx.fillText(ln, left + padX, y + mmToPx(9.2, 144) + idx * mmToPx(3.6, 144));
+        });
+        y += boxH + mmToPx(2, 144);
       } else if (b.kind === "footer-note") {
         ctx.fillStyle = "#64748b";
-        ctx.font = `${mmToPx(2.5, 144)}px ${FONT}`;
-        ctx.fillText(
-          "Yozuv (agar bo‘lsa) VAKSINA tushuntirish xatlari guruhiga yuboriladi va platformadan o‘chiriladi. Faqat statistika saqlanadi.",
-          left,
-          y + mmToPx(4, 144),
-        );
-        y += mmToPx(12, 144);
+        ctx.font = `${mmToPx(2.4, 144)}px ${FONT}`;
+        const note =
+          "Yozuv (agar bo‘lsa) VAKSINA tushuntirish xatlari guruhiga yuboriladi va platformadan o‘chiriladi. Faqat statistika saqlanadi.";
+        const words = note.split(/\s+/);
+        let line = "";
+        let ny = y + mmToPx(3.5, 144);
+        for (const w of words) {
+          const next = line ? `${line} ${w}` : w;
+          if (ctx.measureText(next).width > contentW) {
+            ctx.fillText(line, left, ny);
+            ny += mmToPx(4, 144);
+            line = w;
+          } else line = next;
+        }
+        if (line) ctx.fillText(line, left, ny);
+        y = ny + mmToPx(8, 144);
       }
 
       i += 1;

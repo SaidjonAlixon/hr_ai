@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   Clock3,
   ConciergeBell,
-  Download,
   FileText,
   Loader2,
   LogOut,
@@ -98,12 +97,15 @@ const TYPE_TABS: TypeMeta[] = [
     icon: UserRound,
     accent: "sky",
     iconBg: "bg-sky-500",
-    activeTab: "border-sky-400/50 bg-sky-50 text-sky-800 shadow-sky-500/10",
-    panel: "border-sky-200/70 bg-gradient-to-br from-sky-50/90 via-card to-card",
+    activeTab:
+      "border-sky-400/60 bg-sky-50 text-sky-900 shadow-sky-500/10 dark:border-sky-400/40 dark:bg-sky-500/15 dark:text-sky-100",
+    panel:
+      "border-sky-200/70 bg-gradient-to-br from-sky-50/90 via-card to-card dark:border-sky-500/25 dark:from-sky-950/50 dark:via-card dark:to-card",
     chipOn: "border-sky-500 bg-sky-600 text-white",
-    chipOff: "border-sky-200 bg-sky-50/80 text-sky-900 hover:border-sky-300",
+    chipOff:
+      "border-sky-200 bg-sky-50/80 text-sky-900 hover:border-sky-300 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100",
     btn: "bg-sky-600 hover:bg-sky-700 shadow-sky-600/25",
-    live: "bg-sky-100 text-sky-800",
+    live: "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200",
     nameLabel: "Mehmon ismi",
     namePh: "Aliyev Rustam",
     extraLabel: "Tashkilot / kompaniya",
@@ -129,12 +131,15 @@ const TYPE_TABS: TypeMeta[] = [
     icon: UserPlus,
     accent: "violet",
     iconBg: "bg-violet-500",
-    activeTab: "border-violet-400/50 bg-violet-50 text-violet-900 shadow-violet-500/10",
-    panel: "border-violet-200/70 bg-gradient-to-br from-violet-50/90 via-card to-card",
+    activeTab:
+      "border-violet-400/60 bg-violet-50 text-violet-950 shadow-violet-500/10 dark:border-violet-400/40 dark:bg-violet-500/15 dark:text-violet-100",
+    panel:
+      "border-violet-200/70 bg-gradient-to-br from-violet-50/90 via-card to-card dark:border-violet-500/25 dark:from-violet-950/50 dark:via-card dark:to-card",
     chipOn: "border-violet-600 bg-violet-600 text-white",
-    chipOff: "border-violet-200 bg-violet-50/80 text-violet-950 hover:border-violet-300",
+    chipOff:
+      "border-violet-200 bg-violet-50/80 text-violet-950 hover:border-violet-300 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-100",
     btn: "bg-violet-600 hover:bg-violet-700 shadow-violet-600/25",
-    live: "bg-violet-100 text-violet-800",
+    live: "bg-violet-100 text-violet-800 dark:bg-violet-500/20 dark:text-violet-200",
     nameLabel: "Nomzod ismi",
     namePh: "Ism Familiya",
     extraLabel: "Lavozim (ariza)",
@@ -153,12 +158,15 @@ const TYPE_TABS: TypeMeta[] = [
     icon: Users,
     accent: "emerald",
     iconBg: "bg-emerald-500",
-    activeTab: "border-emerald-400/50 bg-emerald-50 text-emerald-900 shadow-emerald-500/10",
-    panel: "border-emerald-200/70 bg-gradient-to-br from-emerald-50/90 via-card to-card",
+    activeTab:
+      "border-emerald-400/60 bg-emerald-50 text-emerald-950 shadow-emerald-500/10 dark:border-emerald-400/40 dark:bg-emerald-500/15 dark:text-emerald-100",
+    panel:
+      "border-emerald-200/70 bg-gradient-to-br from-emerald-50/90 via-card to-card dark:border-emerald-500/25 dark:from-emerald-950/45 dark:via-card dark:to-card",
     chipOn: "border-emerald-600 bg-emerald-600 text-white",
-    chipOff: "border-emerald-200 bg-emerald-50/80 text-emerald-950 hover:border-emerald-300",
+    chipOff:
+      "border-emerald-200 bg-emerald-50/80 text-emerald-950 hover:border-emerald-300 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100",
     btn: "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/25",
-    live: "bg-emerald-100 text-emerald-800",
+    live: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200",
     nameLabel: "Xodim ismi",
     namePh: "Ism Familiya",
     extraLabel: "Qaysi filial / bo‘limdan",
@@ -177,12 +185,15 @@ const TYPE_TABS: TypeMeta[] = [
     icon: FileText,
     accent: "amber",
     iconBg: "bg-amber-500",
-    activeTab: "border-amber-400/50 bg-amber-50 text-amber-950 shadow-amber-500/10",
-    panel: "border-amber-200/70 bg-gradient-to-br from-amber-50/90 via-card to-card",
+    activeTab:
+      "border-amber-400/60 bg-amber-50 text-amber-950 shadow-amber-500/10 dark:border-amber-400/40 dark:bg-amber-500/15 dark:text-amber-100",
+    panel:
+      "border-amber-200/70 bg-gradient-to-br from-amber-50/90 via-card to-card dark:border-amber-500/25 dark:from-amber-950/40 dark:via-card dark:to-card",
     chipOn: "border-amber-600 bg-amber-600 text-white",
-    chipOff: "border-amber-200 bg-amber-50/80 text-amber-950 hover:border-amber-300",
+    chipOff:
+      "border-amber-200 bg-amber-50/80 text-amber-950 hover:border-amber-300 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100",
     btn: "bg-amber-600 hover:bg-amber-700 shadow-amber-600/25",
-    live: "bg-amber-100 text-amber-900",
+    live: "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-100",
     nameLabel: "Murojaatchi ismi",
     namePh: "Ism Familiya",
     extraLabel: "Qisqa mavzu",
@@ -207,12 +218,15 @@ const TYPE_TABS: TypeMeta[] = [
     icon: Package,
     accent: "rose",
     iconBg: "bg-rose-500",
-    activeTab: "border-rose-400/50 bg-rose-50 text-rose-900 shadow-rose-500/10",
-    panel: "border-rose-200/70 bg-gradient-to-br from-rose-50/90 via-card to-card",
+    activeTab:
+      "border-rose-400/60 bg-rose-50 text-rose-950 shadow-rose-500/10 dark:border-rose-400/40 dark:bg-rose-500/15 dark:text-rose-100",
+    panel:
+      "border-rose-200/70 bg-gradient-to-br from-rose-50/90 via-card to-card dark:border-rose-500/25 dark:from-rose-950/45 dark:via-card dark:to-card",
     chipOn: "border-rose-600 bg-rose-600 text-white",
-    chipOff: "border-rose-200 bg-rose-50/80 text-rose-950 hover:border-rose-300",
+    chipOff:
+      "border-rose-200 bg-rose-50/80 text-rose-950 hover:border-rose-300 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100",
     btn: "bg-rose-600 hover:bg-rose-700 shadow-rose-600/25",
-    live: "bg-rose-100 text-rose-800",
+    live: "bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-200",
     nameLabel: "Kuryer / yetkazuvchi",
     namePh: "Ism yoki kompaniya",
     extraLabel: "Trek / buyurtma №",
@@ -232,22 +246,22 @@ const TYPE_TABS: TypeMeta[] = [
 ];
 
 const TYPE_BADGE: Record<string, string> = {
-  guest: "bg-sky-100 text-sky-800",
-  staff: "bg-emerald-100 text-emerald-800",
-  candidate: "bg-violet-100 text-violet-800",
-  request: "bg-amber-100 text-amber-900",
-  package: "bg-rose-100 text-rose-800",
-  interview: "bg-violet-100 text-violet-800",
-  office_visit: "bg-sky-100 text-sky-800",
-  other: "bg-amber-100 text-amber-900",
+  guest: "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200",
+  staff: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200",
+  candidate: "bg-violet-100 text-violet-800 dark:bg-violet-500/20 dark:text-violet-200",
+  request: "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-100",
+  package: "bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-200",
+  interview: "bg-violet-100 text-violet-800 dark:bg-violet-500/20 dark:text-violet-200",
+  office_visit: "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200",
+  other: "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-100",
 };
 
 const STATUS_BADGE: Record<string, string> = {
-  waiting: "bg-amber-100 text-amber-900",
-  in_progress: "bg-emerald-100 text-emerald-800",
-  done: "bg-slate-100 text-slate-700",
+  waiting: "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-100",
+  in_progress: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200",
+  done: "bg-slate-100 text-slate-700 dark:bg-slate-500/20 dark:text-slate-200",
   cancelled: "bg-muted text-muted-foreground",
-  no_show: "bg-rose-100 text-rose-800",
+  no_show: "bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-200",
 };
 
 function statusLabel(s: string) {
@@ -729,6 +743,25 @@ export default function ResepsionPage() {
     });
   }, [allItems, statusFilter, typeFilter]);
 
+  const liveInOffice = useMemo(
+    () => allItems.filter((r) => r.status === "in_progress").slice(0, 5),
+    [allItems],
+  );
+  const liveWaiting = useMemo(
+    () => allItems.filter((r) => r.status === "waiting").slice(0, 5),
+    [allItems],
+  );
+  const typeTodayBreakdown = useMemo(() => {
+    return TYPE_TABS.map((t) => ({
+      ...t,
+      count: allItems.filter((r) => normalizeVisitTypeClient(r.visitType) === t.value).length,
+    }));
+  }, [allItems]);
+  const onlineHostsCount = useMemo(
+    () => (hostsQ.data?.items ?? []).filter((h) => h.online).length,
+    [hostsQ.data?.items],
+  );
+
   function openEdit(row: ReceptionLog) {
     setEditRow(row);
     setEditDraft({
@@ -1098,44 +1131,55 @@ export default function ResepsionPage() {
 
   return (
     <div className="w-full space-y-5 pb-28">
-      {/* Header */}
-      <div className="relative overflow-hidden rounded-3xl border border-border/50 bg-gradient-to-br from-slate-900 via-slate-800 to-primary p-5 text-white shadow-xl shadow-primary/15 sm:p-6">
-        <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
-        <div className="pointer-events-none absolute -bottom-16 left-1/3 h-48 w-48 rounded-full bg-sky-400/20 blur-3xl" />
-        <div className="relative flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-3.5">
-              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/25 backdrop-blur">
-                <ConciergeBell className="h-6 w-6" />
-              </span>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/60">
-                  Vaksina HR
-                </p>
-                <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Qabulxoona</h1>
-                <p className="mt-1 max-w-xl text-sm text-white/75">
-                  Mehmon, xodim, nomzod, murojaat va posilka — har biri o‘z interfeysi bilan
-                </p>
+      {/* Header — aniq sana + raqamli soat (glass pill emas) */}
+      <div className="relative overflow-hidden rounded-[1.75rem] border border-border/60 bg-card shadow-xl shadow-primary/5 dark:border-white/10 dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(56,189,248,0.18),transparent_55%)] dark:bg-[radial-gradient(ellipse_at_top_right,rgba(56,189,248,0.22),transparent_50%)]" />
+        <div className="pointer-events-none absolute -bottom-20 left-0 h-40 w-40 rounded-full bg-violet-500/10 blur-3xl" />
+        <div className="relative flex flex-col gap-5 p-5 sm:flex-row sm:items-stretch sm:justify-between sm:p-6">
+          <div className="flex min-w-0 items-start gap-4">
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-indigo-600 text-white shadow-lg shadow-sky-500/30">
+              <ConciergeBell className="h-7 w-7" />
+            </span>
+            <div className="min-w-0 pt-0.5">
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-sky-600 dark:text-sky-400">
+                Vaksina HR · Desk
+              </p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                Qabulxoona
+              </h1>
+              <p className="mt-1.5 max-w-lg text-sm leading-relaxed text-muted-foreground">
+                Mehmon, nomzod, xodim, murojaat va posilka — bitta joyda qayd, xabar va uchrashuv
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  {onlineHostsCount} onlayn xodim
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-[11px] font-semibold text-sky-700 dark:text-sky-300">
+                  Bugun {stats?.today ?? 0} tashrif
+                </span>
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-3 rounded-2xl border border-white/20 bg-white/12 px-3.5 py-3 shadow-lg ring-1 ring-white/10 backdrop-blur-md sm:gap-4 sm:px-4">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20">
-              <CalendarDays className="h-5 w-5" strokeWidth={1.75} />
-            </span>
-            <div className="min-w-0">
-              <p className="text-[12px] font-medium leading-tight text-white/70">{clock.weekday}</p>
-              <p className="mt-0.5 text-sm font-semibold leading-tight sm:text-[15px]">
-                {clock.dateLine}
-              </p>
+
+          <div className="flex w-full shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 text-white shadow-lg sm:w-[240px] dark:border-slate-700">
+            <div className="flex items-center gap-2 border-b border-white/10 bg-slate-900 px-4 py-2.5">
+              <CalendarDays className="h-4 w-4 text-sky-400" />
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  {clock.weekday}
+                </p>
+                <p className="truncate text-sm font-semibold text-white">{clock.dateLine}</p>
+              </div>
             </div>
-            <div className="ml-1 flex items-baseline gap-1 rounded-2xl bg-sky-400/20 px-3 py-1.5 ring-1 ring-sky-300/30 sm:ml-2 sm:px-3.5">
-              <span className="text-2xl font-bold tabular-nums tracking-tight text-sky-100 sm:text-[28px] sm:leading-none">
+            <div className="flex flex-1 flex-col items-center justify-center px-4 py-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                Toshkent vaqti
+              </p>
+              <p className="mt-1 font-mono text-4xl font-bold tabular-nums tracking-tight text-white sm:text-[2.65rem] sm:leading-none">
                 {clock.time}
-              </span>
-              <span className="text-base font-semibold tabular-nums text-sky-200/90 sm:text-lg">
-                :{clock.seconds}
-              </span>
+                <span className="text-2xl text-sky-400 sm:text-3xl">:{clock.seconds}</span>
+              </p>
             </div>
           </div>
         </div>
@@ -1146,7 +1190,7 @@ export default function ResepsionPage() {
         <button
           type="button"
           onClick={scrollToForm}
-          className="flex items-center gap-3 rounded-2xl bg-gradient-to-br from-primary to-sky-700 px-4 py-3.5 text-left text-primary-foreground shadow-lg shadow-primary/25 transition hover:brightness-110"
+          className="flex items-center gap-3 rounded-2xl bg-gradient-to-br from-sky-600 to-indigo-700 px-4 py-3.5 text-left text-white shadow-lg shadow-sky-600/25 transition hover:brightness-110"
         >
           <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/20 ring-1 ring-white/25">
             <Plus className="h-5 w-5" />
@@ -1156,47 +1200,67 @@ export default function ResepsionPage() {
             <span className="block text-[11px] opacity-85">Tezkor ro‘yxatga olish</span>
           </span>
         </button>
-        {[
-          {
-            label: "Kelayotganlar",
-            value: stats?.waiting ?? 0,
-            hint: "Bugun",
-            ring: "from-amber-50 to-card border-amber-200/70",
-            num: "text-amber-700",
-          },
-          {
-            label: "Ofisda hozir",
-            value: stats?.inProgress ?? 0,
-            hint: "Hozir",
-            ring: "from-emerald-50 to-card border-emerald-200/70",
-            num: "text-emerald-700",
-          },
-          {
-            label: "Chiqqanlar",
-            value: stats?.done ?? 0,
-            hint: "Bugun",
-            ring: "from-slate-50 to-card border-slate-200/70",
-            num: "text-slate-700",
-          },
-          {
-            label: "Barcha tashriflar",
-            value: stats?.today ?? 0,
-            hint: "Bugun",
-            ring: "from-sky-50 to-card border-sky-200/70",
-            num: "text-sky-700",
-          },
-        ].map((s) => (
-          <div
+        {(
+          [
+            {
+              label: "Kelayotganlar",
+              value: stats?.waiting ?? 0,
+              hint: "Kutilmoqda",
+              ring: "border-amber-200/80 from-amber-50 to-card dark:border-amber-500/25 dark:from-amber-500/10",
+              num: "text-amber-700 dark:text-amber-300",
+              onClick: () => {
+                setDayScope("today");
+                setStatusFilter("waiting");
+              },
+            },
+            {
+              label: "Ofisda hozir",
+              value: stats?.inProgress ?? 0,
+              hint: "Hozir",
+              ring: "border-emerald-200/80 from-emerald-50 to-card dark:border-emerald-500/25 dark:from-emerald-500/10",
+              num: "text-emerald-700 dark:text-emerald-300",
+              onClick: () => {
+                setDayScope("today");
+                setStatusFilter("in_progress");
+              },
+            },
+            {
+              label: "Chiqqanlar",
+              value: stats?.done ?? 0,
+              hint: "Bugun",
+              ring: "border-slate-200/80 from-slate-50 to-card dark:border-slate-500/30 dark:from-slate-500/10",
+              num: "text-slate-700 dark:text-slate-200",
+              onClick: () => {
+                setDayScope("today");
+                setStatusFilter("done");
+              },
+            },
+            {
+              label: "Barcha tashriflar",
+              value: stats?.today ?? 0,
+              hint: "Bugun",
+              ring: "border-sky-200/80 from-sky-50 to-card dark:border-sky-500/25 dark:from-sky-500/10",
+              num: "text-sky-700 dark:text-sky-300",
+              onClick: () => {
+                setDayScope("today");
+                setStatusFilter("all");
+              },
+            },
+          ] as const
+        ).map((s) => (
+          <button
             key={s.label}
+            type="button"
+            onClick={s.onClick}
             className={cn(
-              "rounded-2xl border bg-gradient-to-br px-4 py-3.5 shadow-sm",
+              "rounded-2xl border bg-gradient-to-br px-4 py-3.5 text-left shadow-sm transition hover:brightness-[1.03]",
               s.ring,
             )}
           >
             <p className="text-[11px] font-semibold text-muted-foreground">{s.label}</p>
             <p className={cn("mt-0.5 text-2xl font-bold tabular-nums", s.num)}>{s.value}</p>
             <p className="text-[10px] text-muted-foreground">{s.hint}</p>
-          </div>
+          </button>
         ))}
       </div>
 
@@ -1238,7 +1302,7 @@ export default function ResepsionPage() {
                     "flex flex-col items-center gap-1 rounded-2xl border px-1 py-2.5 text-center shadow-sm transition",
                     active
                       ? tab.activeTab
-                      : "border-border/50 bg-white/60 text-muted-foreground hover:bg-white",
+                      : "border-border/50 bg-card/80 text-muted-foreground hover:bg-muted/40 dark:border-white/10",
                   )}
                 >
                   <span
@@ -1569,7 +1633,7 @@ export default function ResepsionPage() {
                             <span
                               className={cn(
                                 "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-card",
-                                h.online ? "bg-emerald-500" : "bg-slate-300",
+                                h.online ? "bg-emerald-500" : "bg-slate-400 dark:bg-slate-600",
                               )}
                               title={h.online ? "Onlayn" : "Oflayn"}
                             />
@@ -1583,8 +1647,8 @@ export default function ResepsionPage() {
                                 className={cn(
                                   "shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
                                   pharm
-                                    ? "bg-violet-100 text-violet-800"
-                                    : "bg-sky-100 text-sky-800",
+                                    ? "bg-violet-100 text-violet-800 dark:bg-violet-500/20 dark:text-violet-200"
+                                    : "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200",
                                 )}
                               >
                                 {pharm ? "Dorixona" : "Ofis"}
@@ -1627,7 +1691,8 @@ export default function ResepsionPage() {
                 icon={Clock3}
                 value={visitAt}
                 onChange={setVisitAt}
-                accentClass="border-sky-200/80 from-sky-50/90 to-card"
+                accentClass="border-sky-200/80 from-sky-50/90 to-card dark:border-sky-500/30 dark:from-sky-500/10"
+                iconClass="text-sky-600 dark:text-sky-400"
               />
               <VisitDateTimeField
                 label="Kutilayotgan chiqish"
@@ -1636,7 +1701,8 @@ export default function ResepsionPage() {
                 onChange={setLeftAt}
                 clearable
                 placeholder="Ixtiyoriy — bosib belgilang"
-                accentClass="border-violet-200/80 from-violet-50/80 to-card"
+                accentClass="border-violet-200/80 from-violet-50/80 to-card dark:border-violet-500/30 dark:from-violet-500/10"
+                iconClass="text-violet-600 dark:text-violet-400"
               />
             </div>
 
@@ -1660,7 +1726,7 @@ export default function ResepsionPage() {
         </section>
 
         {/* Host preview */}
-        <section className="rounded-3xl border border-border/70 bg-gradient-to-br from-primary/5 via-card to-card p-4 shadow-sm sm:p-5 xl:col-span-4">
+        <section className="rounded-3xl border border-border/70 bg-gradient-to-br from-primary/5 via-card to-card p-4 shadow-sm sm:p-5 xl:col-span-4 dark:border-white/10 dark:from-primary/10">
           <h2 className="mb-3 text-base font-semibold">Kimning oldiga</h2>
           {selectedHost ? (
             <div className="space-y-4">
@@ -1914,7 +1980,8 @@ export default function ResepsionPage() {
                               </span>
                             </div>
                             <p className="mt-0.5 truncate text-[11px] text-foreground/80">
-                              <span className="font-medium text-indigo-800">Mavzu:</span> {mavzu}
+                              <span className="font-medium text-indigo-700 dark:text-indigo-300">Mavzu:</span>{" "}
+                              {mavzu}
                             </p>
                             <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[10px] text-muted-foreground">
                               <span>{formatVisitDt(row.visitAt)}</span>
@@ -1945,43 +2012,180 @@ export default function ResepsionPage() {
           )}
         </section>
 
-        {/* Quick side */}
+        {/* Quick side — bo‘sh joyni to‘ldiruvchi kartalar */}
         <aside className="space-y-3 xl:col-span-3">
-          <div className="rounded-3xl border border-border/70 bg-card p-4 shadow-sm">
-            <p className="mb-2 text-sm font-semibold">Tezkor amallar</p>
+          <div className="rounded-3xl border border-border/70 bg-card p-4 shadow-sm dark:border-white/10">
+            <p className="mb-2 text-sm font-bold">Tezkor amallar</p>
             <div className="space-y-1.5">
               <button
                 type="button"
-                onClick={() => setDayScope("today")}
-                className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm hover:bg-muted/50"
+                onClick={() => {
+                  setDayScope("today");
+                  setStatusFilter("all");
+                }}
+                className="flex w-full items-center gap-2.5 rounded-xl border border-transparent px-2.5 py-2 text-left text-sm transition hover:border-border/60 hover:bg-muted/50"
               >
-                <Clock3 className="h-4 w-4 text-primary" />
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500/15 text-sky-600 dark:text-sky-400">
+                  <Clock3 className="h-4 w-4" />
+                </span>
                 Bugungi jurnal
               </button>
               <button
                 type="button"
-                onClick={() => setDayScope("all")}
-                className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm hover:bg-muted/50"
+                onClick={() => {
+                  setDayScope("all");
+                  setStatusFilter("all");
+                }}
+                className="flex w-full items-center gap-2.5 rounded-xl border border-transparent px-2.5 py-2 text-left text-sm transition hover:border-border/60 hover:bg-muted/50"
               >
-                <FileText className="h-4 w-4 text-primary" />
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/15 text-violet-600 dark:text-violet-400">
+                  <FileText className="h-4 w-4" />
+                </span>
                 Barcha tashriflar
               </button>
               <button
                 type="button"
                 onClick={scrollToForm}
-                className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm hover:bg-muted/50"
+                className="flex w-full items-center gap-2.5 rounded-xl border border-transparent px-2.5 py-2 text-left text-sm transition hover:border-border/60 hover:bg-muted/50"
               >
-                <Download className="h-4 w-4 text-primary" />
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                  <Plus className="h-4 w-4" />
+                </span>
                 Yangi qayd
               </button>
             </div>
+          </div>
+
+          <div className="rounded-3xl border border-emerald-200/70 bg-gradient-to-br from-emerald-50/80 via-card to-card p-4 shadow-sm dark:border-emerald-500/25 dark:from-emerald-500/10">
+            <div className="mb-2.5 flex items-center justify-between gap-2">
+              <p className="text-sm font-bold text-emerald-900 dark:text-emerald-100">Ofisda hozir</p>
+              <span className="rounded-lg bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
+                {statusCounts.in_progress}
+              </span>
+            </div>
+            {liveInOffice.length ? (
+              <ul className="space-y-1.5">
+                {liveInOffice.map((row) => (
+                  <li key={row.id}>
+                    <button
+                      type="button"
+                      onClick={() => openEdit(row)}
+                      className="flex w-full items-center gap-2 rounded-xl px-1.5 py-1.5 text-left transition hover:bg-emerald-500/10"
+                    >
+                      <AvatarBubble name={row.visitorFullName} size="sm" tone="emerald" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs font-semibold">{row.visitorFullName}</span>
+                        <span className="block truncate text-[10px] text-muted-foreground">
+                          {formatVisitTime(row.visitAt)}
+                          {row.hostName || row.hostUserName
+                            ? ` · ${row.hostName || row.hostUserName}`
+                            : ""}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-muted-foreground">Hozir ofisda hech kim yo‘q</p>
+            )}
+          </div>
+
+          <div className="rounded-3xl border border-amber-200/70 bg-gradient-to-br from-amber-50/80 via-card to-card p-4 shadow-sm dark:border-amber-500/25 dark:from-amber-500/10">
+            <div className="mb-2.5 flex items-center justify-between gap-2">
+              <p className="text-sm font-bold text-amber-950 dark:text-amber-100">Kutilmoqda</p>
+              <span className="rounded-lg bg-amber-500/15 px-2 py-0.5 text-[11px] font-bold tabular-nums text-amber-800 dark:text-amber-200">
+                {statusCounts.waiting}
+              </span>
+            </div>
+            {liveWaiting.length ? (
+              <ul className="space-y-1.5">
+                {liveWaiting.map((row) => (
+                  <li key={row.id}>
+                    <button
+                      type="button"
+                      onClick={() => openEdit(row)}
+                      className="flex w-full items-center gap-2 rounded-xl px-1.5 py-1.5 text-left transition hover:bg-amber-500/10"
+                    >
+                      <AvatarBubble name={row.visitorFullName} size="sm" tone="soft" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs font-semibold">{row.visitorFullName}</span>
+                        <span className="block truncate text-[10px] text-muted-foreground">
+                          {typeLabel(String(row.visitType))} · {formatVisitTime(row.visitAt)}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-muted-foreground">Navbat bo‘sh</p>
+            )}
+          </div>
+
+          <div className="rounded-3xl border border-border/70 bg-card p-4 shadow-sm dark:border-white/10">
+            <p className="mb-3 text-sm font-bold">Bugungi turlar</p>
+            <div className="space-y-2">
+              {typeTodayBreakdown.map((t) => {
+                const Icon = t.icon;
+                const max = Math.max(1, ...typeTodayBreakdown.map((x) => x.count));
+                const pct = Math.round((t.count / max) * 100);
+                return (
+                  <button
+                    key={t.value}
+                    type="button"
+                    onClick={() => {
+                      setDayScope("today");
+                      setTypeFilter(t.value);
+                      setStatusFilter("all");
+                    }}
+                    className="block w-full text-left"
+                  >
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-1.5 text-[11px] font-semibold">
+                        <span
+                          className={cn(
+                            "flex h-5 w-5 items-center justify-center rounded-md text-white",
+                            t.iconBg,
+                          )}
+                        >
+                          <Icon className="h-3 w-3" />
+                        </span>
+                        {t.label}
+                      </span>
+                      <span className="text-[11px] font-bold tabular-nums text-muted-foreground">
+                        {t.count}
+                      </span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className={cn("h-full rounded-full transition-all", t.iconBg)}
+                        style={{ width: `${t.count ? Math.max(12, pct) : 0}%` }}
+                      />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-sky-200/70 bg-gradient-to-br from-sky-50 via-card to-indigo-50/50 p-4 shadow-sm dark:border-sky-500/25 dark:from-sky-500/10 dark:to-indigo-500/5">
+            <p className="flex items-center gap-2 text-sm font-bold text-sky-950 dark:text-sky-100">
+              <Send className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+              Desk eslatma
+            </p>
+            <ul className="mt-2 space-y-1.5 text-[11px] leading-relaxed text-sky-950/75 dark:text-sky-100/70">
+              <li>· Xodimni tanlang — Telegram + tizim xabari ketadi</li>
+              <li>· Qatorni bosing — tahrir, ko‘chirish, bekor</li>
+              <li>· Ofisda / Chiqdi filtrlaridan tez saralang</li>
+            </ul>
           </div>
         </aside>
       </div>
 
       {/* Table */}
-      <section className="overflow-hidden rounded-3xl border border-border/70 bg-card shadow-lg shadow-primary/5">
-        <div className="space-y-3 border-b bg-gradient-to-r from-muted/40 via-card to-card px-4 py-4">
+      <section className="overflow-hidden rounded-3xl border border-border/70 bg-card shadow-lg shadow-primary/5 dark:border-white/10">
+        <div className="space-y-3 border-b border-border/60 bg-gradient-to-r from-muted/40 via-card to-card px-4 py-4 dark:from-muted/20">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-bold tracking-tight">

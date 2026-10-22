@@ -2,12 +2,20 @@
  * Qabulxoona — ofis tashrif / suhbat / murojaat qaydlari.
  */
 import { Router, type IRouter } from "express";
-import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
-import { db, receptionLogsTable, usersTable } from "@workspace/db";
+import { and, desc, eq, gte, inArray, isNotNull, lte, or, sql } from "drizzle-orm";
+import {
+  attendanceRecordsTable,
+  db,
+  employeesTable,
+  faceProfilesTable,
+  receptionLogsTable,
+  usersTable,
+} from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { isHrRole, hasFullPlatformAccess, isDirectorRole } from "../lib/roles";
 import { ensureReceptionSchema } from "../lib/ensure-schema";
 import { notifyUser } from "../lib/notify";
+import { todayTashkentYmd } from "../lib/work-calendar";
 
 const router: IRouter = Router();
 
@@ -65,6 +73,57 @@ function typeLabel(vt: string) {
   if (n === "request") return "Murojaat";
   if (n === "package") return "Posilka";
   return vt;
+}
+
+function formatHmTz(d: Date | null | undefined): string | null {
+  if (!d) return null;
+  return d.toLocaleTimeString("uz-UZ", {
+    timeZone: "Asia/Tashkent",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+type HostPresence = {
+  status: "in_office" | "left" | "absent" | "leave";
+  label: string;
+  checkIn: string | null;
+  checkOut: string | null;
+};
+
+function presenceFromAttendance(rec: {
+  checkInAt: Date | null;
+  checkOutAt: Date | null;
+  status: string | null;
+} | null): HostPresence {
+  if (!rec) {
+    return { status: "absent", label: "Kelmagan", checkIn: null, checkOut: null };
+  }
+  if (rec.status === "leave") {
+    return {
+      status: "leave",
+      label: "Ruxsatda",
+      checkIn: formatHmTz(rec.checkInAt),
+      checkOut: formatHmTz(rec.checkOutAt),
+    };
+  }
+  if (rec.checkInAt && !rec.checkOutAt) {
+    return {
+      status: "in_office",
+      label: "Ofisda",
+      checkIn: formatHmTz(rec.checkInAt),
+      checkOut: null,
+    };
+  }
+  if (rec.checkInAt && rec.checkOutAt) {
+    return {
+      status: "left",
+      label: "Chiqqan",
+      checkIn: formatHmTz(rec.checkInAt),
+      checkOut: formatHmTz(rec.checkOutAt),
+    };
+  }
+  return { status: "absent", label: "Kelmagan", checkIn: null, checkOut: null };
 }
 
 async function enrich(rows: (typeof receptionLogsTable.$inferSelect)[]) {
@@ -161,6 +220,7 @@ router.get("/resepsion/hosts", requireAuth, async (req: AuthRequest, res): Promi
       fullName: usersTable.fullName,
       role: usersTable.role,
       phone: usersTable.phone,
+      telegramId: usersTable.telegramId,
     })
     .from(usersTable)
     .where(eq(usersTable.status, "active"))
@@ -174,13 +234,100 @@ router.get("/resepsion/hosts", requireAuth, async (req: AuthRequest, res): Promi
           String(u.phone || "").includes(q),
       )
     : rows;
+  const slice = filtered.slice(0, 120);
+  const ids = slice.map((u) => u.id);
+
+  const presenceByUser = new Map<number, HostPresence>();
+  const hasPhoto = new Set<number>();
+
+  if (ids.length) {
+    const today = todayTashkentYmd();
+    const empLinks = await db
+      .select({ userId: employeesTable.userId, employeeId: employeesTable.id })
+      .from(employeesTable)
+      .where(and(inArray(employeesTable.userId, ids), isNotNull(employeesTable.userId)));
+    const empToUser = new Map<number, number>();
+    for (const e of empLinks) {
+      if (e.userId) empToUser.set(e.employeeId, e.userId);
+    }
+    const empIds = [...empToUser.keys()];
+
+    const attConds = [eq(attendanceRecordsTable.workDate, today)];
+    const idOr =
+      empIds.length > 0
+        ? or(
+            inArray(attendanceRecordsTable.userId, ids),
+            inArray(attendanceRecordsTable.employeeId, empIds),
+          )
+        : inArray(attendanceRecordsTable.userId, ids);
+    attConds.push(idOr!);
+
+    const attRows = await db
+      .select({
+        userId: attendanceRecordsTable.userId,
+        employeeId: attendanceRecordsTable.employeeId,
+        checkInAt: attendanceRecordsTable.checkInAt,
+        checkOutAt: attendanceRecordsTable.checkOutAt,
+        status: attendanceRecordsTable.status,
+      })
+      .from(attendanceRecordsTable)
+      .where(and(...attConds));
+
+    for (const a of attRows) {
+      const uid = a.userId || empToUser.get(a.employeeId) || null;
+      if (!uid) continue;
+      presenceByUser.set(
+        uid,
+        presenceFromAttendance({
+          checkInAt: a.checkInAt,
+          checkOutAt: a.checkOutAt,
+          status: a.status,
+        }),
+      );
+    }
+
+    const faces = await db
+      .select({
+        userId: faceProfilesTable.userId,
+        photoUrl: faceProfilesTable.photoUrl,
+      })
+      .from(faceProfilesTable)
+      .where(inArray(faceProfilesTable.userId, ids));
+    for (const f of faces) {
+      if (f.photoUrl?.trim()) hasPhoto.add(f.userId);
+    }
+
+    const empPhotos = await db
+      .select({ userId: employeesTable.userId, photoUrl: employeesTable.photoUrl })
+      .from(employeesTable)
+      .where(
+        and(
+          inArray(employeesTable.userId, ids),
+          isNotNull(employeesTable.photoUrl),
+          sql`length(trim(${employeesTable.photoUrl})) > 0`,
+        ),
+      );
+    for (const e of empPhotos) {
+      if (e.userId) hasPhoto.add(e.userId);
+    }
+  }
+
   res.json({
-    items: filtered.slice(0, 120).map((u) => ({
-      id: u.id,
-      fullName: u.fullName,
-      role: u.role,
-      phone: u.phone || null,
-    })),
+    date: todayTashkentYmd(),
+    items: slice.map((u) => {
+      const presence = presenceByUser.get(u.id) || presenceFromAttendance(null);
+      const photo = hasPhoto.has(u.id);
+      return {
+        id: u.id,
+        fullName: u.fullName,
+        role: u.role,
+        phone: u.phone || null,
+        hasTelegram: Boolean(u.telegramId),
+        hasPhoto: photo,
+        photoUrl: photo ? `/api/staff/${u.id}/avatar` : null,
+        presence,
+      };
+    }),
   });
 });
 
@@ -327,9 +474,12 @@ router.post("/resepsion/logs", requireAuth, async (req: AuthRequest, res): Promi
   if (hostUserId) {
     const purpose = trimOrNull(req.body?.purpose, 200) || "—";
     const phone = trimOrNull(req.body?.visitorPhone, 40) || "—";
+    const note = trimOrNull(req.body?.notes, 300);
+    let text = `Qabulxoona: sizning oldingizga keldi — ${visitorFullName} (${phone}). Sabab: ${purpose}. Tur: ${typeLabel(visitType)}.`;
+    if (note) text += ` Izoh: ${note}`;
     await notifyUser({
       userId: hostUserId,
-      text: `Qabulxoona: sizning oldingizga keldi — ${visitorFullName} (${phone}). Sabab: ${purpose}. Tur: ${typeLabel(visitType)}.`,
+      text,
       type: "resepsion_visit",
       linkUrl: "/resepsion",
     }).catch(() => undefined);

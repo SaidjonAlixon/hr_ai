@@ -15,6 +15,7 @@ import {
   QrCode,
   Building2,
   ChevronDown,
+  PhoneCall,
   Search,
   Send,
   Store,
@@ -22,8 +23,10 @@ import {
   UserRound,
   Users,
   UserPlus,
+  Video,
   X,
 } from "lucide-react";
+import { callEngine, useCall } from "@/lib/calls/engine";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -146,12 +149,21 @@ function AvatarBubble({
   name,
   tone = "primary",
   size = "md",
+  photoUrl,
 }: {
   name: string;
   tone?: "primary" | "soft" | "violet" | "emerald";
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "xl";
+  photoUrl?: string | null;
 }) {
-  const sz = size === "lg" ? "h-14 w-14 text-base" : size === "sm" ? "h-8 w-8 text-[10px]" : "h-10 w-10 text-xs";
+  const sz =
+    size === "xl"
+      ? "h-24 w-24 text-2xl"
+      : size === "lg"
+        ? "h-14 w-14 text-base"
+        : size === "sm"
+          ? "h-8 w-8 text-[10px]"
+          : "h-10 w-10 text-xs";
   const bg =
     tone === "violet"
       ? "bg-violet-500/15 text-violet-700"
@@ -160,6 +172,18 @@ function AvatarBubble({
         : tone === "soft"
           ? "bg-slate-100 text-slate-600"
           : "bg-primary/15 text-primary";
+  if (photoUrl) {
+    return (
+      <span
+        className={cn(
+          "inline-flex shrink-0 overflow-hidden rounded-full ring-2 ring-primary/15 ring-offset-2 ring-offset-card",
+          sz,
+        )}
+      >
+        <img src={photoUrl} alt={name} className="h-full w-full object-cover" />
+      </span>
+    );
+  }
   return (
     <span
       className={cn(
@@ -171,6 +195,13 @@ function AvatarBubble({
       {initialsOf(name)}
     </span>
   );
+}
+
+function presenceBadgeClass(status?: string) {
+  if (status === "in_office") return "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200";
+  if (status === "left") return "bg-slate-100 text-slate-700 ring-1 ring-slate-200";
+  if (status === "leave") return "bg-amber-100 text-amber-900 ring-1 ring-amber-200";
+  return "bg-rose-100 text-rose-800 ring-1 ring-rose-200";
 }
 
 function liveClock() {
@@ -197,9 +228,11 @@ function liveClock() {
 export default function ResepsionPage() {
   const { toast } = useToast();
   const clock = liveClock();
+  const callSnap = useCall();
   const metaQ = useReceptionMeta();
   const hostsQ = useReceptionHosts();
   const mut = useReceptionMutations();
+  const callBusy = callSnap.phase !== "idle" && callSnap.phase !== "ended";
 
   const [dayScope, setDayScope] = useState<"today" | "all">("today");
   const [q, setQ] = useState("");
@@ -272,6 +305,17 @@ export default function ResepsionPage() {
     }
     return { ofis, pharmacy };
   }, [hostsQ.data?.items]);
+
+  const telegramPreview = useMemo(() => {
+    const name = visitorFullName.trim() || "Mehmon";
+    const phone = phoneForSubmit(visitorPhone) || "—";
+    const sabab = purpose.trim() || "—";
+    const tur = typeLabel(String(visitType));
+    let text = `Qabulxoona: sizning oldingizga keldi — ${name} (${phone}). Sabab: ${sabab}. Tur: ${tur}.`;
+    const note = notes.trim();
+    if (note) text += ` Izoh: ${note.slice(0, 300)}`;
+    return text;
+  }, [visitorFullName, visitorPhone, purpose, visitType, notes]);
 
   function resetForm() {
     setVisitorFullName("");
@@ -564,7 +608,11 @@ export default function ResepsionPage() {
 
               {selectedHost ? (
                 <div className="mb-2 flex items-center gap-3 rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 via-card to-card p-2.5 shadow-sm">
-                  <AvatarBubble name={selectedHost.fullName} size="md" />
+                  <AvatarBubble
+                    name={selectedHost.fullName}
+                    size="md"
+                    photoUrl={selectedHost.photoUrl}
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-foreground">
                       {selectedHost.fullName}
@@ -572,6 +620,9 @@ export default function ResepsionPage() {
                     <p className="truncate text-[11px] text-muted-foreground">
                       {userRoleLabel(selectedHost.role) || selectedHost.role}
                       {isPharmacyHost(selectedHost.role) ? " · Dorixona" : " · Ofis"}
+                      {selectedHost.presence?.label
+                        ? ` · ${selectedHost.presence.label}`
+                        : ""}
                     </p>
                   </div>
                   <Button
@@ -805,24 +856,48 @@ export default function ResepsionPage() {
           <h2 className="mb-3 text-base font-semibold">Kimning oldiga</h2>
           {selectedHost ? (
             <div className="space-y-4">
-              <div className="flex items-start gap-3">
-                <AvatarBubble name={selectedHost.fullName} size="lg" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="truncate text-lg font-semibold">{selectedHost.fullName}</p>
-                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
-                      Ofisda
+              <div className="flex flex-col items-center text-center sm:flex-row sm:items-start sm:text-left gap-4">
+                <AvatarBubble
+                  name={selectedHost.fullName}
+                  size="xl"
+                  photoUrl={selectedHost.photoUrl}
+                />
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+                    <p className="text-lg font-semibold leading-tight">{selectedHost.fullName}</p>
+                    <span
+                      className={cn(
+                        "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                        presenceBadgeClass(selectedHost.presence?.status),
+                      )}
+                    >
+                      {selectedHost.presence?.label || "Kelmagan"}
                     </span>
                   </div>
                   <p className="text-sm text-muted-foreground">
                     {userRoleLabel(selectedHost.role) || selectedHost.role}
+                    {isPharmacyHost(selectedHost.role) ? " · Dorixona" : " · Ofis"}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Davomat:{" "}
+                    {selectedHost.presence?.checkIn
+                      ? `keldi ${selectedHost.presence.checkIn}`
+                      : "bugun kelmagan"}
+                    {selectedHost.presence?.checkOut
+                      ? ` · ketdi ${selectedHost.presence.checkOut}`
+                      : selectedHost.presence?.status === "in_office"
+                        ? " · hali ofisda"
+                        : ""}
                   </p>
                 </div>
               </div>
+
               <div className="grid gap-2 sm:grid-cols-2">
                 <div className="rounded-2xl border bg-card/80 px-3 py-2.5">
                   <p className="text-[10px] font-semibold uppercase text-muted-foreground">Telefon</p>
-                  <p className="mt-0.5 text-sm font-medium">{selectedHost.phone || "—"}</p>
+                  <p className="mt-0.5 text-sm font-medium tabular-nums">
+                    {selectedHost.phone || "—"}
+                  </p>
                 </div>
                 <div className="rounded-2xl border bg-card/80 px-3 py-2.5">
                   <p className="text-[10px] font-semibold uppercase text-muted-foreground">
@@ -831,32 +906,103 @@ export default function ResepsionPage() {
                   <p className="mt-0.5 text-sm font-medium">{typeLabel(String(visitType))}</p>
                 </div>
               </div>
-              <div className="rounded-2xl border border-primary/20 bg-primary/5 px-3 py-3 text-sm">
-                <p className="flex items-center gap-2 font-semibold text-primary">
-                  <Bell className="h-4 w-4" />
-                  Xabarnoma
-                </p>
-                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  Qayd etilganda {selectedHost.fullName} ga avtomatik bildirishnoma ketadi — kim
-                  kelgani, telefon va sabab bilan.
-                </p>
+
+              <div className="overflow-hidden rounded-2xl border border-[#229ED9]/30 bg-gradient-to-b from-[#E8F6FD] to-card shadow-sm dark:from-[#0B3A4D]/40">
+                <div className="flex items-center gap-2 border-b border-[#229ED9]/20 bg-[#229ED9]/10 px-3 py-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#229ED9] text-white">
+                    <Send className="h-3.5 w-3.5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-[#0B6B94]">Telegram bot</p>
+                    <p className="truncate text-[10px] text-muted-foreground">
+                      {selectedHost.hasTelegram
+                        ? "Bog‘langan — qayd etganda yuboriladi"
+                        : "Telegram ulanmagan — faqat tizim xabari"}
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-2 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Boradigan xabar ko‘rinishi
+                  </p>
+                  <div className="rounded-2xl rounded-tl-sm bg-white px-3 py-2.5 text-left shadow-sm ring-1 ring-black/5 dark:bg-slate-900">
+                    <p className="text-[11px] font-semibold text-[#229ED9]">Vaksina HR</p>
+                    <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-foreground">
+                      {telegramPreview}
+                    </p>
+                  </div>
+                  <p className="text-[10px] leading-snug text-muted-foreground">
+                    «Qayd etish» bosilganda shu matn xodimga Telegram + tizim bildirishnomasiga
+                    ketadi.
+                  </p>
+                </div>
               </div>
-              {selectedHost.phone ? (
-                <a
-                  href={`tel:${selectedHost.phone.replace(/\s/g, "")}`}
-                  className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground"
-                >
-                  <Phone className="h-4 w-4" />
-                  Qo‘ng‘iroq qilish
-                </a>
-              ) : null}
+
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Tizim orqali qo‘ng‘iroq
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    className="h-11 rounded-2xl bg-emerald-600 font-semibold hover:bg-emerald-700"
+                    disabled={callBusy || !(callSnap.me?.canCall ?? true)}
+                    onClick={() =>
+                      void callEngine.call(
+                        {
+                          id: selectedHost.id,
+                          fullName: selectedHost.fullName,
+                          role: selectedHost.role,
+                        },
+                        false,
+                      )
+                    }
+                  >
+                    <PhoneCall className="mr-1.5 h-4 w-4" />
+                    Ovozli
+                  </Button>
+                  <Button
+                    type="button"
+                    className="h-11 rounded-2xl bg-sky-600 font-semibold hover:bg-sky-700"
+                    disabled={callBusy || !(callSnap.me?.canCall ?? true)}
+                    onClick={() =>
+                      void callEngine.call(
+                        {
+                          id: selectedHost.id,
+                          fullName: selectedHost.fullName,
+                          role: selectedHost.role,
+                        },
+                        true,
+                      )
+                    }
+                  >
+                    <Video className="mr-1.5 h-4 w-4" />
+                    Video
+                  </Button>
+                </div>
+                {selectedHost.phone ? (
+                  <a
+                    href={`tel:${selectedHost.phone.replace(/\s/g, "")}`}
+                    className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-2xl border border-border/80 bg-card text-sm font-medium text-foreground hover:bg-muted/40"
+                  >
+                    <Phone className="h-4 w-4 text-muted-foreground" />
+                    Mobil raqamga qo‘ng‘iroq
+                  </a>
+                ) : null}
+                {callBusy ? (
+                  <p className="text-center text-[10px] text-amber-700">
+                    Joriy qo‘ng‘iroq davom etmoqda…
+                  </p>
+                ) : null}
+              </div>
             </div>
           ) : (
-            <div className="flex min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 px-4 text-center">
+            <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 px-4 text-center">
               <BriefcaseBusiness className="mb-2 h-8 w-8 text-muted-foreground/50" />
               <p className="text-sm font-medium text-foreground">Xodim tanlanmagan</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Chapdagi formadan «Kimning oldiga» ni tanlang — profil shu yerda ochiladi.
+                Chapdagi formadan «Kimning oldiga» ni tanlang — rasm, davomat holati, Telegram
+                xabar ko‘rinishi va qo‘ng‘iroq shu yerda ochiladi.
               </p>
             </div>
           )}

@@ -47,11 +47,22 @@ export type ReceptionLogInput = {
   leftAt?: string | null;
 };
 
+export type ReceptionHostPresence = {
+  status: "in_office" | "left" | "absent" | "leave";
+  label: string;
+  checkIn: string | null;
+  checkOut: string | null;
+};
+
 export type ReceptionHost = {
   id: number;
   fullName: string;
   role: string;
   phone?: string | null;
+  hasTelegram?: boolean;
+  hasPhoto?: boolean;
+  photoUrl?: string | null;
+  presence?: ReceptionHostPresence;
 };
 
 export type ReceptionStats = {

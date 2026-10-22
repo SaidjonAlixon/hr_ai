@@ -999,7 +999,7 @@ function CallPromotePanel({
   }, [dq, peerId]);
 
   const toggle = (id: number) => {
-    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : prev.length >= 20 ? prev : [...prev, id]));
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
   return (
@@ -1010,9 +1010,9 @@ function CallPromotePanel({
       >
         <div className="flex items-start justify-between gap-3 border-b border-white/10 px-5 pb-3 pt-4">
           <div>
-            <p className="text-base font-semibold">Konferensiyaga o‘tkazish</p>
+            <p className="text-base font-semibold">Odamlarni taklif qilish</p>
             <p className="mt-0.5 text-xs text-white/60">
-              Suhbat LiveKit xonasiga o‘tadi — qo‘shimcha odam va to‘liq yozuv ochiladi
+              Istalgancha odam tanlang — har biriga bot orqali «suhbatga taklif» xabari ketadi
             </p>
           </div>
           <button type="button" onClick={onClose} className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium hover:bg-white/15">
@@ -1085,7 +1085,7 @@ function CallPromotePanel({
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
             {selected.length
-              ? `${selected.length} kishini taklif qilish`
+              ? `${selected.length} kishini taklif qilish${autoRecord ? " · yozuv bilan" : ""}`
               : autoRecord
                 ? "Yozuv bilan konferensiyaga o‘tish"
                 : "Kamida bitta odam tanlang"}

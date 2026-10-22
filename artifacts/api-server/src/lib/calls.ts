@@ -549,9 +549,10 @@ export async function promoteCallToConference(
 
   await ensureConferenceSchema();
 
+  // LiveKit xona limiti (~150) — host/callee allaqachon ichida
   const inviteeIds = [...new Set((opts.inviteeIds ?? []).map(Number))]
     .filter((uid) => Number.isInteger(uid) && uid > 0 && uid !== call.callerId && uid !== call.calleeId)
-    .slice(0, 40);
+    .slice(0, 140);
 
   let code = newConferenceCode();
   for (let i = 0; i < 5; i++) {
@@ -628,7 +629,7 @@ export async function promoteCallToConference(
   await endCall(id, byUserId, "promoted");
 
   if (notifiedExtra.length) {
-    void notifyConferenceUsers(conf, notifiedExtra, "invite").catch((err) =>
+    void notifyConferenceUsers(conf, notifiedExtra, "call_invite").catch((err) =>
       logger.warn({ err }, "promote invite notify"),
     );
   }

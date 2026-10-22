@@ -1022,7 +1022,7 @@ export function whenUz(d: Date): string {
   });
 }
 
-export type NotifyKind = "invite" | "reminder" | "started" | "updated" | "cancelled" | "link";
+export type NotifyKind = "invite" | "call_invite" | "reminder" | "started" | "updated" | "cancelled" | "link";
 
 function notifyText(conf: Conference, kind: NotifyKind, hostName: string): { title: string; body: string } {
   const when = whenUz(conf.scheduledAt);
@@ -1031,6 +1031,11 @@ function notifyText(conf: Conference, kind: NotifyKind, hostName: string): { tit
       return {
         title: "Konferensiyaga taklif",
         body: `📹 Sizni «${conf.title}» konferensiyasiga taklif qilishdi.\n🗓 ${when} (${conf.durationMin} daqiqa)\n👤 Tashkilotchi: ${hostName}\n\nBelgilangan vaqtda havola orqali kiring.`,
+      };
+    case "call_invite":
+      return {
+        title: "Sizni suhbatga taklif qilishmoqda",
+        body: `📞 ${hostName} sizni jonli suhbatga taklif qilmoqda.\n\n🟢 Suhbat hozir davom etmoqda — pastdagi tugma orqali darhol qo‘shiling.\n👤 Taklif qilgan: ${hostName}`,
       };
     case "reminder":
       return {
@@ -1069,6 +1074,19 @@ export async function notifyConferenceUsers(conf: Conference, userIds: number[],
   const { title, body } = notifyText(conf, kind, hostName);
   const url = conferenceUrl(conf.code);
   const canJoin = kind !== "cancelled";
+  const joinBtn =
+    kind === "call_invite" ? "📞 Suhbatga qo‘shilish" : kind === "started" || kind === "reminder" ? "🟢 Hozir kirish" : "🎥 Konferensiyaga kirish";
+  const tgHtml =
+    kind === "call_invite"
+      ? [
+          `📞 <b>Sizni suhbatga taklif qilishmoqda</b>`,
+          ``,
+          `Hurmatli hamkasb, <b>${escapeHtml(hostName)}</b> sizni <b>jonli suhbatga</b> taklif qilmoqda.`,
+          ``,
+          `🟢 Suhbat <b>hozir</b> davom etmoqda.`,
+          `👇 Pastdagi tugmani bosib darhol qo‘shiling.`,
+        ].join("\n")
+      : `<b>${escapeHtml(title)}</b>\n\n${escapeHtml(body)}${canJoin && !/^https?:\/\//.test(url) ? `\n\n🔗 ${escapeHtml(url)}` : ""}`;
   const tgIds = new Map<number, string>();
   if (isTelegramConfigured()) {
     const { rows } = await pool.query(
@@ -1079,7 +1097,14 @@ export async function notifyConferenceUsers(conf: Conference, userIds: number[],
   }
   for (const userId of ids) {
     try {
-      await notifyUser({ userId, text: body, type: "conference", linkUrl: conferencePath(conf.code), telegram: false, title });
+      await notifyUser({
+        userId,
+        text: body,
+        type: kind === "call_invite" ? "call_invite" : "conference",
+        linkUrl: conferencePath(conf.code),
+        telegram: false,
+        title,
+      });
     } catch (err) {
       logger.warn({ err, userId }, "conference notify");
     }
@@ -1089,14 +1114,14 @@ export async function notifyConferenceUsers(conf: Conference, userIds: number[],
     try {
       await sendMessage(
         chatId,
-        `<b>${escapeHtml(title)}</b>\n\n${escapeHtml(body)}${canJoin && !absolute ? `\n\n🔗 ${escapeHtml(url)}` : ""}`,
-        canJoin && absolute ? { reply_markup: { inline_keyboard: [[{ text: "🎥 Konferensiyaga kirish", url }]] } } : undefined,
+        tgHtml,
+        canJoin && absolute ? { reply_markup: { inline_keyboard: [[{ text: joinBtn, url }]] } } : undefined,
       );
     } catch (err) {
       logger.warn({ err, userId }, "conference telegram");
     }
   }
-  if (kind === "invite" || kind === "updated" || kind === "link") {
+  if (kind === "invite" || kind === "call_invite" || kind === "updated" || kind === "link") {
     await pool.query(
       `UPDATE conference_members SET notified_at = NOW() WHERE conference_id = $1 AND user_id = ANY($2::int[])`,
       [conf.id, ids],

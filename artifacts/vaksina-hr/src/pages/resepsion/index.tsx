@@ -34,6 +34,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Calendar as DayPickerCalendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
@@ -254,8 +261,16 @@ function statusLabel(s: string) {
   return s;
 }
 
+function normalizeVisitTypeClient(t: string) {
+  if (t === "interview") return "candidate";
+  if (t === "office_visit") return "guest";
+  if (t === "other") return "request";
+  return t;
+}
+
 function typeLabel(t: string) {
-  return TYPE_TABS.find((x) => x.value === t)?.label || t;
+  const n = normalizeVisitTypeClient(t);
+  return TYPE_TABS.find((x) => x.value === n)?.label || t;
 }
 
 /** Sukutda +998 — foydalanuvchi qolgan raqamlarni yozadi */
@@ -660,9 +675,25 @@ export default function ResepsionPage() {
   const callBusy = callSnap.phase !== "idle" && callSnap.phase !== "ended";
 
   const [dayScope, setDayScope] = useState<"today" | "all">("today");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "in_progress" | "done" | "waiting" | "cancelled"
+  >("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
   const [q, setQ] = useState("");
   const [hostSearch, setHostSearch] = useState("");
   const [hostPickerOpen, setHostPickerOpen] = useState(false);
+  const [editRow, setEditRow] = useState<ReceptionLog | null>(null);
+  const [editDraft, setEditDraft] = useState({
+    visitorFullName: "",
+    visitorPhone: "",
+    purpose: "",
+    notes: "",
+    visitType: "guest" as ReceptionVisitType,
+    status: "in_progress",
+    visitAt: "",
+    leftAt: "",
+    hostName: "",
+  });
 
   const range = useMemo(() => {
     if (dayScope !== "today") return {};
@@ -680,7 +711,110 @@ export default function ResepsionPage() {
 
   const canWrite = metaQ.data?.canWrite ?? logsQ.data?.canWrite ?? false;
   const stats = logsQ.data?.stats;
-  const items = logsQ.data?.items ?? [];
+  const allItems = logsQ.data?.items ?? [];
+
+  const statusCounts = useMemo(() => {
+    return {
+      all: allItems.length,
+      in_progress: allItems.filter((r) => r.status === "in_progress").length,
+      done: allItems.filter((r) => r.status === "done").length,
+      waiting: allItems.filter((r) => r.status === "waiting").length,
+      cancelled: allItems.filter((r) => r.status === "cancelled").length,
+    };
+  }, [allItems]);
+
+  const items = useMemo(() => {
+    return allItems.filter((r) => {
+      if (statusFilter !== "all" && r.status !== statusFilter) return false;
+      if (typeFilter !== "all" && normalizeVisitTypeClient(r.visitType) !== typeFilter) return false;
+      return true;
+    });
+  }, [allItems, statusFilter, typeFilter]);
+
+  function openEdit(row: ReceptionLog) {
+    setEditRow(row);
+    setEditDraft({
+      visitorFullName: row.visitorFullName || "",
+      visitorPhone: row.visitorPhone || PHONE_DEFAULT,
+      purpose: row.purpose || "",
+      notes: row.notes || "",
+      visitType: row.visitType || "guest",
+      status: String(row.status || "in_progress"),
+      visitAt: toLocalInputValue(row.visitAt),
+      leftAt: row.leftAt ? toLocalInputValue(row.leftAt) : "",
+      hostName: row.hostName || row.hostUserName || "",
+    });
+  }
+
+  async function saveEdit() {
+    if (!editRow) return;
+    if (editDraft.visitorFullName.trim().length < 2) {
+      toast({ title: "Ism familiya yozing", variant: "destructive" });
+      return;
+    }
+    try {
+      await mut.update.mutateAsync({
+        id: editRow.id,
+        body: {
+          visitorFullName: editDraft.visitorFullName.trim(),
+          visitorPhone: phoneForSubmit(editDraft.visitorPhone),
+          purpose: editDraft.purpose.trim() || null,
+          notes: editDraft.notes.trim() || null,
+          visitType: editDraft.visitType,
+          status: editDraft.status,
+          visitAt: fromLocalInputValue(editDraft.visitAt),
+          leftAt: fromLocalInputValue(editDraft.leftAt),
+          hostName: editDraft.hostName.trim() || null,
+        },
+      });
+      toast({ title: "Saqlandi" });
+      setEditRow(null);
+    } catch (e) {
+      toast({
+        title: "Saqlanmadi",
+        description: e instanceof Error ? e.message : "Xato",
+        variant: "destructive",
+      });
+    }
+  }
+
+  async function cancelVisit(row: ReceptionLog) {
+    if (!confirm(`«${row.visitorFullName}» uchrashuvini bekor qilasizmi?`)) return;
+    try {
+      await mut.update.mutateAsync({
+        id: row.id,
+        body: { status: "cancelled" },
+      });
+      toast({ title: "Bekor qilindi" });
+      setEditRow(null);
+    } catch (e) {
+      toast({
+        title: "Bekor qilinmadi",
+        description: e instanceof Error ? e.message : "Xato",
+        variant: "destructive",
+      });
+    }
+  }
+
+  async function rescheduleToNow(row: ReceptionLog) {
+    try {
+      await mut.update.mutateAsync({
+        id: row.id,
+        body: {
+          visitAt: new Date().toISOString(),
+          status: row.status === "cancelled" || row.status === "done" ? "in_progress" : row.status,
+        },
+      });
+      toast({ title: "Vaqt yangilandi — hozir" });
+      setEditRow(null);
+    } catch (e) {
+      toast({
+        title: "Ko‘chirilmadi",
+        description: e instanceof Error ? e.message : "Xato",
+        variant: "destructive",
+      });
+    }
+  }
 
   const [visitType, setVisitType] = useState<ReceptionVisitType>("guest");
   const [visitorFullName, setVisitorFullName] = useState("");
@@ -870,6 +1004,8 @@ export default function ResepsionPage() {
         id: row.id,
         body: { status: "done", leftAt: new Date().toISOString() },
       });
+      toast({ title: "Chiqdi deb belgilandi" });
+      if (editRow?.id === row.id) setEditRow(null);
     } catch (e) {
       toast({
         title: "Yangilanmadi",
@@ -1820,50 +1956,141 @@ export default function ResepsionPage() {
       </div>
 
       {/* Table */}
-      <section className="overflow-hidden rounded-3xl border border-border/70 bg-card shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/30 px-4 py-3">
-          <div>
-            <h2 className="text-base font-semibold">
-              {dayScope === "today" ? "Bugungi tashriflar" : "Barcha tashriflar"}
-            </h2>
-            <p className="text-xs text-muted-foreground">{items.length} ta yozuv</p>
+      <section className="overflow-hidden rounded-3xl border border-border/70 bg-card shadow-lg shadow-primary/5">
+        <div className="space-y-3 border-b bg-gradient-to-r from-muted/40 via-card to-card px-4 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-bold tracking-tight">
+                {dayScope === "today" ? "Bugungi tashriflar" : "Barcha tashriflar"}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                {items.length} ta ko‘rsatilmoqda
+                {statusFilter !== "all" || typeFilter !== "all"
+                  ? ` · jami ${allItems.length}`
+                  : ""}
+                {" · "}
+                qatorni bosing — ochish / tahrirlash
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[180px]">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Qidirish…"
+                  className="h-9 rounded-xl pl-8"
+                />
+              </div>
+              <div className="flex rounded-xl border bg-card p-0.5 text-xs font-semibold shadow-sm">
+                <button
+                  type="button"
+                  className={cn(
+                    "rounded-lg px-3 py-1.5",
+                    dayScope === "today"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground",
+                  )}
+                  onClick={() => setDayScope("today")}
+                >
+                  Bugun
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    "rounded-lg px-3 py-1.5",
+                    dayScope === "all"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground",
+                  )}
+                  onClick={() => setDayScope("all")}
+                >
+                  Barchasi
+                </button>
+              </div>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[180px]">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Qidirish…"
-                className="h-9 rounded-xl pl-8"
-              />
-            </div>
-            <div className="flex rounded-xl border bg-card p-0.5 text-xs font-semibold">
+
+          <div className="flex flex-wrap gap-1.5">
+            {(
+              [
+                { key: "all" as const, label: "Hammasi", n: statusCounts.all, tone: "bg-slate-100 text-slate-800" },
+                {
+                  key: "in_progress" as const,
+                  label: "Ofisda",
+                  n: statusCounts.in_progress,
+                  tone: "bg-emerald-100 text-emerald-800",
+                },
+                {
+                  key: "waiting" as const,
+                  label: "Kutilmoqda",
+                  n: statusCounts.waiting,
+                  tone: "bg-amber-100 text-amber-900",
+                },
+                {
+                  key: "done" as const,
+                  label: "Chiqdi",
+                  n: statusCounts.done,
+                  tone: "bg-sky-100 text-sky-800",
+                },
+                {
+                  key: "cancelled" as const,
+                  label: "Bekor",
+                  n: statusCounts.cancelled,
+                  tone: "bg-rose-100 text-rose-800",
+                },
+              ] as const
+            ).map((f) => (
               <button
+                key={f.key}
                 type="button"
+                onClick={() => setStatusFilter(f.key)}
                 className={cn(
-                  "rounded-lg px-3 py-1.5",
-                  dayScope === "today"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground",
+                  "inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition",
+                  statusFilter === f.key
+                    ? "border-primary/40 bg-primary text-primary-foreground shadow-sm"
+                    : "border-border/70 bg-background hover:bg-muted/50",
                 )}
-                onClick={() => setDayScope("today")}
               >
-                Bugun
+                {f.label}
+                <span
+                  className={cn(
+                    "rounded-md px-1.5 py-0.5 text-[10px] tabular-nums",
+                    statusFilter === f.key ? "bg-white/20" : f.tone,
+                  )}
+                >
+                  {f.n}
+                </span>
               </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => setTypeFilter("all")}
+              className={cn(
+                "rounded-xl border px-2.5 py-1 text-[11px] font-semibold",
+                typeFilter === "all"
+                  ? "border-primary/40 bg-primary/10 text-primary"
+                  : "border-border/60 text-muted-foreground hover:bg-muted/40",
+              )}
+            >
+              Barcha turlar
+            </button>
+            {TYPE_TABS.map((t) => (
               <button
+                key={t.value}
                 type="button"
+                onClick={() => setTypeFilter(String(t.value))}
                 className={cn(
-                  "rounded-lg px-3 py-1.5",
-                  dayScope === "all"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground",
+                  "rounded-xl border px-2.5 py-1 text-[11px] font-semibold",
+                  typeFilter === t.value ? t.activeTab : "border-border/60 text-muted-foreground hover:bg-muted/40",
                 )}
-                onClick={() => setDayScope("all")}
               >
-                Barchasi
+                {t.label}
               </button>
-            </div>
+            ))}
           </div>
         </div>
 
@@ -1874,7 +2101,7 @@ export default function ResepsionPage() {
           </div>
         ) : items.length === 0 ? (
           <div className="px-4 py-16 text-center text-sm text-muted-foreground">
-            Hali tashrif yo‘q. Yuqoridan yangi qayd qo‘shing.
+            Hali tashrif yo‘q yoki filtr bo‘sh. Yuqoridan yangi qayd qo‘shing.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -1889,12 +2116,16 @@ export default function ResepsionPage() {
                   <th className="px-3 py-2.5 font-semibold">Maqsad</th>
                   <th className="px-3 py-2.5 font-semibold">Holat</th>
                   <th className="px-3 py-2.5 font-semibold">Chiqish</th>
-                  <th className="px-3 py-2.5 font-semibold">Amal</th>
+                  <th className="px-3 py-2.5 font-semibold">Tezkor</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((row, idx) => (
-                  <tr key={row.id} className="border-b border-border/50 hover:bg-muted/20">
+                  <tr
+                    key={row.id}
+                    className="cursor-pointer border-b border-border/50 transition hover:bg-primary/5"
+                    onClick={() => openEdit(row)}
+                  >
                     <td className="px-3 py-3 tabular-nums text-muted-foreground">{idx + 1}</td>
                     <td className="px-3 py-3 tabular-nums font-medium">
                       {formatVisitTime(row.visitAt)}
@@ -1950,9 +2181,9 @@ export default function ResepsionPage() {
                     <td className="px-3 py-3 tabular-nums text-xs text-muted-foreground">
                       {row.leftAt ? formatVisitTime(row.leftAt) : "—"}
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex flex-wrap gap-1">
-                        {canWrite && row.status !== "done" ? (
+                        {canWrite && row.status !== "done" && row.status !== "cancelled" ? (
                           <Button
                             type="button"
                             size="sm"
@@ -1963,29 +2194,21 @@ export default function ResepsionPage() {
                             <LogOut className="mr-1 h-3 w-3" />
                             Chiqdi
                           </Button>
-                        ) : (
+                        ) : row.status === "done" ? (
                           <span className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] text-emerald-700">
                             <CheckCircle2 className="h-3.5 w-3.5" />
                             OK
                           </span>
-                        )}
-                        {row.visitorPhone ? (
-                          <a
-                            href={`tel:${row.visitorPhone.replace(/\s/g, "")}`}
-                            className="inline-flex h-7 items-center rounded-lg px-2 text-muted-foreground hover:bg-muted"
-                          >
-                            <Phone className="h-3.5 w-3.5" />
-                          </a>
                         ) : null}
-                        {canWrite ? (
-                          <button
-                            type="button"
-                            className="inline-flex h-7 items-center rounded-lg px-2 text-rose-600 hover:bg-rose-50"
-                            onClick={() => void onDelete(row)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        ) : null}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 rounded-lg px-2 text-[11px]"
+                          onClick={() => openEdit(row)}
+                        >
+                          Ochish
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -1995,6 +2218,197 @@ export default function ResepsionPage() {
           </div>
         )}
       </section>
+
+      <Sheet open={Boolean(editRow)} onOpenChange={(o) => !o && setEditRow(null)}>
+        <SheetContent className="w-full overflow-y-auto sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>Tashrif ma’lumotlari</SheetTitle>
+          </SheetHeader>
+          {editRow ? (
+            <div className="mt-4 space-y-3.5">
+              <div className="flex flex-wrap gap-1.5">
+                {TYPE_TABS.map((t) => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    disabled={!canWrite}
+                    onClick={() => setEditDraft((d) => ({ ...d, visitType: t.value }))}
+                    className={cn(
+                      "rounded-xl border px-2.5 py-1 text-[11px] font-bold",
+                      editDraft.visitType === t.value ? t.activeTab : "border-border/60 text-muted-foreground",
+                    )}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
+                  Ism familiya
+                </label>
+                <Input
+                  value={editDraft.visitorFullName}
+                  disabled={!canWrite}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, visitorFullName: e.target.value }))}
+                  className="h-10 rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
+                  Telefon
+                </label>
+                <Input
+                  value={editDraft.visitorPhone}
+                  disabled={!canWrite}
+                  onChange={(e) =>
+                    setEditDraft((d) => ({ ...d, visitorPhone: formatVisitorPhone(e.target.value) }))
+                  }
+                  className="h-10 rounded-xl font-medium tabular-nums"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
+                  Sabab / maqsad
+                </label>
+                <Input
+                  value={editDraft.purpose}
+                  disabled={!canWrite}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, purpose: e.target.value }))}
+                  className="h-10 rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
+                  Kimning oldiga
+                </label>
+                <Input
+                  value={editDraft.hostName}
+                  disabled={!canWrite}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, hostName: e.target.value }))}
+                  className="h-10 rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase text-muted-foreground">
+                  Izoh
+                </label>
+                <Textarea
+                  value={editDraft.notes}
+                  disabled={!canWrite}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, notes: e.target.value }))}
+                  className="min-h-[72px] rounded-xl"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <VisitDateTimeField
+                  label="Kirish / uchrashuv"
+                  icon={Clock3}
+                  value={editDraft.visitAt}
+                  onChange={(v) => setEditDraft((d) => ({ ...d, visitAt: v }))}
+                  accentClass="border-sky-200/80 from-sky-50/90 to-card"
+                />
+                <VisitDateTimeField
+                  label="Chiqish"
+                  icon={LogOut}
+                  value={editDraft.leftAt}
+                  onChange={(v) => setEditDraft((d) => ({ ...d, leftAt: v }))}
+                  clearable
+                  placeholder="Ixtiyoriy"
+                  accentClass="border-violet-200/80 from-violet-50/80 to-card"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase text-muted-foreground">
+                  Holat
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {(
+                    [
+                      ["waiting", "Kutilmoqda"],
+                      ["in_progress", "Ofisda"],
+                      ["done", "Chiqdi"],
+                      ["cancelled", "Bekor"],
+                    ] as const
+                  ).map(([k, lab]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      disabled={!canWrite}
+                      onClick={() => setEditDraft((d) => ({ ...d, status: k }))}
+                      className={cn(
+                        "rounded-xl border px-2.5 py-1.5 text-[11px] font-bold",
+                        editDraft.status === k
+                          ? "border-primary/40 bg-primary text-primary-foreground"
+                          : "border-border/70 bg-muted/30",
+                      )}
+                    >
+                      {lab}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {canWrite ? (
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="h-10 rounded-xl"
+                    onClick={() => void rescheduleToNow(editRow)}
+                  >
+                    Hozirga ko‘chirish
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="h-10 rounded-xl"
+                    disabled={editDraft.status === "done"}
+                    onClick={() => void markDone(editRow)}
+                  >
+                    Chiqdi deb belgilash
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-10 rounded-xl text-rose-700"
+                    onClick={() => void cancelVisit(editRow)}
+                  >
+                    Bekor qilish
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-10 rounded-xl text-rose-700"
+                    onClick={() => void onDelete(editRow).then(() => setEditRow(null))}
+                  >
+                    <Trash2 className="mr-1 h-3.5 w-3.5" />
+                    O‘chirish
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          <SheetFooter className="mt-6 gap-2 sm:space-x-0">
+            <Button type="button" variant="outline" className="rounded-xl" onClick={() => setEditRow(null)}>
+              Yopish
+            </Button>
+            {canWrite ? (
+              <Button
+                type="button"
+                className="rounded-xl"
+                disabled={mut.update.isPending}
+                onClick={() => void saveEdit()}
+              >
+                {mut.update.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Saqlash
+              </Button>
+            ) : null}
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
 
       {photoPreview ? (
         <div

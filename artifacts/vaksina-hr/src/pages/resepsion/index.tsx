@@ -1596,11 +1596,7 @@ export default function ResepsionPage() {
                   <Button
                     type="button"
                     className="h-11 rounded-2xl bg-emerald-600 font-semibold hover:bg-emerald-700 disabled:opacity-50"
-                    disabled={
-                      callBusy ||
-                      !selectedHost.online ||
-                      !(callSnap.me?.canCall ?? true)
-                    }
+                    disabled={callBusy || !selectedHost.online || callSnap.me?.canCall === false}
                     onClick={() =>
                       void callEngine.call(
                         {
@@ -1618,11 +1614,7 @@ export default function ResepsionPage() {
                   <Button
                     type="button"
                     className="h-11 rounded-2xl bg-sky-600 font-semibold hover:bg-sky-700 disabled:opacity-50"
-                    disabled={
-                      callBusy ||
-                      !selectedHost.online ||
-                      !(callSnap.me?.canCall ?? true)
-                    }
+                    disabled={callBusy || !selectedHost.online || callSnap.me?.canCall === false}
                     onClick={() =>
                       void callEngine.call(
                         {

@@ -9,6 +9,13 @@ import { logger } from "./logger";
 import { countUserPushSubscriptions, sendWebPushToUser } from "./web-push";
 
 export const CALL_ADMIN_ROLES = new Set(["admin"]);
+/** Qabulxoona / rekruter / rahbariyat — onlayn istalgan xodimga qo‘ng‘iroq */
+export const CALL_DESK_ROLES = new Set([
+  "resepsion",
+  "recruiter",
+  "director",
+  "asoschi",
+]);
 const RING_MS = 45_000;
 const RECONNECT_GRACE_MS = 30_000;
 /** Faol qo‘ng‘iroqda media P2P ketadi — signal oqimi uzilsa ham suhbat davom etadi; bu faqat zaxira tozalash */
@@ -17,6 +24,12 @@ const HEARTBEAT_MS = 20_000;
 
 export function isCallAdmin(role?: string | null): boolean {
   return CALL_ADMIN_ROLES.has(String(role || "").trim().toLowerCase());
+}
+
+/** Istalgan onlayn xodimga qo‘ng‘iroq (admin yoki qabulxoona stoli rollari) */
+export function canCallAnyone(role?: string | null): boolean {
+  const r = String(role || "").trim().toLowerCase();
+  return isCallAdmin(r) || CALL_DESK_ROLES.has(r);
 }
 
 // ---------------------------------------------------------------- jadvallar
@@ -356,11 +369,18 @@ export async function startCall(input: {
   const callee = await loadCallUser(calleeId);
   if (!callee || callee.status === "terminated") return { ok: false, status: 404, error: "Xodim topilmadi" };
 
-  const callerAdmin = isCallAdmin(caller.role);
-  if (!callerAdmin) {
-    if (!isCallAdmin(callee.role)) return { ok: false, status: 403, error: "Faqat admin bilan gaplashish mumkin" };
+  const callerAnyone = canCallAnyone(caller.role);
+  if (!callerAnyone) {
+    if (!isCallAdmin(callee.role)) {
+      return { ok: false, status: 403, error: "Faqat admin bilan gaplashish mumkin" };
+    }
     if (!(await hasCallPermission(caller.id))) {
-      return { ok: false, status: 403, error: "Qo‘ng‘iroq qilish uchun admin ruxsati kerak", code: "no_permission" };
+      return {
+        ok: false,
+        status: 403,
+        error: "Qo‘ng‘iroq qilish uchun admin ruxsati kerak",
+        code: "no_permission",
+      };
     }
   }
   if (busy(caller.id)) return { ok: false, status: 409, error: "Sizda faol qo‘ng‘iroq bor", code: "self_busy" };

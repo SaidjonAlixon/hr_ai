@@ -7,6 +7,7 @@ import {
   acceptCall,
   attachClient,
   callFor,
+  canCallAnyone,
   endCall,
   ensureCallSchema,
   hasCallPermission,
@@ -57,8 +58,13 @@ router.get("/calls/stream", requireAuth, async (req: AuthRequest, res): Promise<
 router.get("/calls/config", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
     const admin = isCallAdmin(req.userRole);
+    const desk = canCallAnyone(req.userRole);
     res.json({
-      me: { id: req.userId, isAdmin: admin, canCall: admin || (await hasCallPermission(req.userId!)) },
+      me: {
+        id: req.userId,
+        isAdmin: admin,
+        canCall: desk || (await hasCallPermission(req.userId!)),
+      },
       iceServers: iceServersFor(req.userId!),
     });
   } catch (err) {
@@ -67,16 +73,17 @@ router.get("/calls/config", requireAuth, async (req: AuthRequest, res): Promise<
   }
 });
 
-/** Admin — istalgan xodim; xodim — faqat adminlar */
+/** Admin / qabulxoona / rekruter — istalgan xodim; oddiy xodim — faqat adminlar */
 router.get("/calls/contacts", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
     await ensureCallSchema();
     const admin = isCallAdmin(req.userRole);
+    const desk = canCallAnyone(req.userRole);
     const q = String(req.query.q || "").trim().slice(0, 60);
-    const onlyOnline = admin && String(req.query.online || "") === "1";
+    const onlyOnline = desk && String(req.query.online || "") === "1";
     const params: unknown[] = [req.userId];
     let where = `u.id <> $1 AND u.status <> 'terminated' AND u.role <> 'oquvchi'`;
-    if (!admin) where += ` AND u.role = 'admin'`;
+    if (!desk) where += ` AND u.role = 'admin'`;
     // Qadalganlar «Onlayn» filtrida ham (oflayn bo‘lsa ham) tepada qoladi
     if (onlyOnline) {
       params.push(onlineUserIds());

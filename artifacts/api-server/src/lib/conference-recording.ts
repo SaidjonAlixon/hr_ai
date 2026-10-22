@@ -9,7 +9,8 @@ import { pool } from "@workspace/db";
 import { logger } from "./logger";
 import { REPORT_CHAT_ID } from "./explanation-letter-report";
 import { escapeHtml, isTelegramConfigured, sendDocument, sendMessage, sendVideo } from "./telegram";
-import type { Conference } from "./conferences";
+import { conferenceHistory, type Conference } from "./conferences";
+import { renderConferenceReportPdf } from "./conference-report-pdf";
 
 const RECORD_DIR =
   process.env.CONFERENCE_RECORDING_DIR?.trim() ||
@@ -592,6 +593,35 @@ export async function deliverConferenceRecordingAndPurge(
       /* */
     }
     return { ok: false, error: err instanceof Error ? err.message : "Telegramga yuborilmadi" };
+  }
+
+  // Video muvaffaqiyatidan keyin PDF hisobot
+  try {
+    const history = await conferenceHistory(conf);
+    const pdf = await renderConferenceReportPdf(conf, history, meta.hostName);
+    const pdfName = `konferensiya_hisobot_${conf.code}_${Date.now()}.pdf`;
+    await sendDocument(chatId, pdf, pdfName, {
+      caption: [
+        `<b>📄 Konferensiya hisobot (PDF)</b>`,
+        `<b>${escapeHtml(conf.title)}</b>`,
+        `Kod: <code>${escapeHtml(conf.code)}</code>`,
+        `Qatnashdi: ${history.attendedCount} / ${history.invitedCount}`,
+        `Chat: ${history.messages.length} xabar`,
+      ].join("\n"),
+      parseMode: "HTML",
+      mimeType: "application/pdf",
+    });
+    logger.info({ code: conf.code, chatId, pdfBytes: pdf.length }, "conference report PDF sent to Telegram");
+  } catch (pdfErr) {
+    logger.warn({ err: pdfErr, code: conf.code }, "conference report PDF send failed");
+    try {
+      await sendMessage(
+        chatId,
+        `⚠️ <b>Hisobot PDF yuborilmadi</b>\nKod: <code>${escapeHtml(conf.code)}</code>\n${escapeHtml(pdfErr instanceof Error ? pdfErr.message : "xato")}`,
+      ).catch(() => undefined);
+    } catch {
+      /* */
+    }
   }
 
   await safeUnlink(sendPath);

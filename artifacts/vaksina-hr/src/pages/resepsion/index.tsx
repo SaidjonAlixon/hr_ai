@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  AlarmClock,
   BriefcaseBusiness,
   CheckCircle2,
   Clock3,
@@ -55,6 +56,7 @@ import {
   type ReceptionLog,
   type ReceptionVisitType,
 } from "@/lib/resepsion-api";
+import { useCreateReminder } from "@/lib/eslatmalar-api";
 import { isPharmacyDeviceStaff, userRoleLabel } from "@/lib/roles";
 
 function isPharmacyHost(role?: string | null) {
@@ -774,6 +776,7 @@ export default function ResepsionPage() {
   const metaQ = useReceptionMeta();
   const hostsQ = useReceptionHosts();
   const mut = useReceptionMutations();
+  const createReminder = useCreateReminder();
   const callBusy = callSnap.phase !== "idle" && callSnap.phase !== "ended";
 
   const [period, setPeriod] = useState<PeriodPreset>("today");
@@ -786,6 +789,13 @@ export default function ResepsionPage() {
   const [q, setQ] = useState("");
   const [hostSearch, setHostSearch] = useState("");
   const [hostPickerOpen, setHostPickerOpen] = useState(false);
+  const [reminderOpen, setReminderOpen] = useState(false);
+  const [reminderHostId, setReminderHostId] = useState("");
+  const [reminderHostSearch, setReminderHostSearch] = useState("");
+  const [reminderTitle, setReminderTitle] = useState("Uchrashuv");
+  const [reminderDesc, setReminderDesc] = useState("");
+  const [reminderDueAt, setReminderDueAt] = useState(() => toLocalInputValue(new Date()));
+  const [reminderTelegram, setReminderTelegram] = useState(true);
   const [editRow, setEditRow] = useState<ReceptionLog | null>(null);
   const [editDraft, setEditDraft] = useState({
     visitorFullName: "",
@@ -1108,6 +1118,27 @@ export default function ResepsionPage() {
     return { ofis, pharmacy };
   }, [hostsQ.data?.items]);
 
+  const reminderOfficeHosts = useMemo(() => {
+    const list = (hostsQ.data?.items || []).filter((h) => !isPharmacyHost(h.role));
+    const s = reminderHostSearch.trim().toLowerCase();
+    if (!s) return list;
+    return list.filter(
+      (h) =>
+        h.fullName.toLowerCase().includes(s) ||
+        String(h.role || "").toLowerCase().includes(s) ||
+        userRoleLabel(h.role).toLowerCase().includes(s) ||
+        String(h.phone || "").includes(s),
+    );
+  }, [hostsQ.data?.items, reminderHostSearch]);
+
+  const reminderSelectedHost = useMemo(
+    () =>
+      reminderHostId
+        ? (hostsQ.data?.items || []).find((h) => String(h.id) === reminderHostId) || null
+        : null,
+    [hostsQ.data?.items, reminderHostId],
+  );
+
   const telegramPreview = useMemo(() => {
     const name = visitorFullName.trim() || "Mehmon";
     const phone = phoneForSubmit(visitorPhone) || "—";
@@ -1252,6 +1283,61 @@ export default function ResepsionPage() {
     document.getElementById("resepsion-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  function openReminderSheet() {
+    setReminderTitle("Uchrashuv");
+    setReminderDesc("");
+    setReminderDueAt(toLocalInputValue(new Date(Date.now() + 60 * 60_000)));
+    setReminderTelegram(true);
+    setReminderHostId(selectedHost && !isPharmacyHost(selectedHost.role) ? String(selectedHost.id) : "");
+    setReminderHostSearch("");
+    setReminderOpen(true);
+  }
+
+  async function submitReminder() {
+    if (!reminderHostId) {
+      toast({ title: "Ofis xodimini tanlang", variant: "destructive" });
+      return;
+    }
+    if (!reminderTitle.trim()) {
+      toast({ title: "Sarlavha yozing", variant: "destructive" });
+      return;
+    }
+    const dueIso = fromLocalInputValue(reminderDueAt);
+    if (!dueIso) {
+      toast({ title: "Uchrashuv vaqtini tanlang", variant: "destructive" });
+      return;
+    }
+    try {
+      const hostName = reminderSelectedHost?.fullName || "xodim";
+      await createReminder.mutateAsync({
+        title: reminderTitle.trim(),
+        description:
+          reminderDesc.trim() ||
+          `Qabulxonadan belgilangan uchrashuv — ${hostName}`,
+        dueAt: dueIso,
+        notifyAt: dueIso,
+        category: "meeting",
+        priority: "high",
+        notifySystem: true,
+        notifyTelegram: reminderTelegram,
+        targetUserId: Number(reminderHostId),
+      });
+      toast({
+        title: "Eslatma qo‘yildi",
+        description: reminderTelegram
+          ? `${hostName} ga tizim + Telegram xabari yuborildi`
+          : `${hostName} ga tizim xabari yuborildi`,
+      });
+      setReminderOpen(false);
+    } catch (e) {
+      toast({
+        title: "Eslatma saqlanmadi",
+        description: e instanceof Error ? e.message : "Xato",
+        variant: "destructive",
+      });
+    }
+  }
+
   return (
     <div className="w-full space-y-5 pb-28">
       {/* Header — aniq sana + raqamli soat (glass pill emas) */}
@@ -1273,7 +1359,7 @@ export default function ResepsionPage() {
               <p className="mt-1.5 max-w-lg text-sm leading-relaxed text-muted-foreground">
                 Mehmon, nomzod, xodim, murojaat va posilka — bitta joyda qayd, xabar va uchrashuv
               </p>
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="mt-3 flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                   {onlineHostsCount} onlayn xodim
@@ -1281,6 +1367,14 @@ export default function ResepsionPage() {
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-[11px] font-semibold text-sky-700 dark:text-sky-300">
                   Bugun {stats?.today ?? 0} tashrif
                 </span>
+                <button
+                  type="button"
+                  onClick={openReminderSheet}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500 px-3 py-1.5 text-[11px] font-bold text-white shadow-md shadow-amber-500/25 transition hover:bg-amber-600"
+                >
+                  <AlarmClock className="h-3.5 w-3.5" />
+                  Eslatma
+                </button>
               </div>
             </div>
           </div>
@@ -2667,6 +2761,144 @@ export default function ResepsionPage() {
           </div>
         )}
       </section>
+
+      <Sheet open={reminderOpen} onOpenChange={setReminderOpen}>
+        <SheetContent className="w-full overflow-y-auto border-l border-border/60 bg-card p-0 sm:max-w-md dark:border-white/10 dark:bg-slate-950">
+          <div className="border-b border-border/60 bg-gradient-to-r from-amber-500/10 via-card to-card px-4 pb-3 pt-4 dark:border-white/10">
+            <SheetHeader className="space-y-0.5 text-left">
+              <SheetTitle className="flex items-center gap-2 text-base">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm">
+                  <AlarmClock className="h-4 w-4" />
+                </span>
+                Eslatma / uchrashuv
+              </SheetTitle>
+              <p className="pl-10 text-[11px] text-muted-foreground">
+                Ofis xodimiga belgilang — tizim + bot xabar beradi
+              </p>
+            </SheetHeader>
+          </div>
+          <div className="space-y-3 px-4 py-3">
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Kimga (ofis xodimi)
+              </label>
+              {reminderSelectedHost ? (
+                <div className="mb-2 flex items-center gap-2 rounded-xl border border-amber-400/30 bg-amber-500/10 p-2">
+                  <AvatarBubble name={reminderSelectedHost.fullName} size="sm" tone="primary" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{reminderSelectedHost.fullName}</p>
+                    <p className="truncate text-[10px] text-muted-foreground">
+                      {userRoleLabel(reminderSelectedHost.role) || reminderSelectedHost.role}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-[11px] font-semibold text-amber-800 dark:text-amber-200"
+                    onClick={() => setReminderHostId("")}
+                  >
+                    Almashtirish
+                  </button>
+                </div>
+              ) : null}
+              {!reminderSelectedHost ? (
+                <>
+                  <div className="relative mb-2">
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={reminderHostSearch}
+                      onChange={(e) => setReminderHostSearch(e.target.value)}
+                      placeholder="Xodim qidirish…"
+                      className="h-9 rounded-lg pl-8 dark:border-white/10 dark:bg-slate-950/60"
+                    />
+                  </div>
+                  <ul className="max-h-44 overflow-y-auto rounded-xl border border-border/60 dark:border-white/10">
+                    {reminderOfficeHosts.slice(0, 40).map((h) => (
+                      <li key={h.id}>
+                        <button
+                          type="button"
+                          onClick={() => setReminderHostId(String(h.id))}
+                          className="flex w-full items-center gap-2 px-2.5 py-2 text-left hover:bg-muted/50"
+                        >
+                          <AvatarBubble name={h.fullName} size="sm" tone="primary" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-xs font-semibold">{h.fullName}</span>
+                            <span className="block truncate text-[10px] text-muted-foreground">
+                              {h.online ? "Onlayn" : "Oflayn"} ·{" "}
+                              {userRoleLabel(h.role) || h.role}
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                    {!reminderOfficeHosts.length ? (
+                      <li className="px-3 py-6 text-center text-xs text-muted-foreground">
+                        Ofis xodimi topilmadi
+                      </li>
+                    ) : null}
+                  </ul>
+                </>
+              ) : null}
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Sarlavha
+              </label>
+              <Input
+                value={reminderTitle}
+                onChange={(e) => setReminderTitle(e.target.value)}
+                placeholder="Uchrashuv / eslatma"
+                className="h-9 rounded-lg dark:border-white/10 dark:bg-slate-950/60"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Izoh
+              </label>
+              <Textarea
+                value={reminderDesc}
+                onChange={(e) => setReminderDesc(e.target.value)}
+                placeholder="Uchrashuv mavzusi, joy, qo‘shimcha…"
+                className="min-h-[80px] rounded-lg dark:border-white/10 dark:bg-slate-950/60"
+              />
+            </div>
+
+            <VisitDateTimeField
+              label="Uchrashuv vaqti"
+              icon={Clock3}
+              value={reminderDueAt}
+              onChange={setReminderDueAt}
+              accentClass="border-amber-200/80 from-amber-50/90 to-card dark:border-amber-500/30 dark:from-amber-500/10"
+              iconClass="text-amber-600 dark:text-amber-400"
+            />
+
+            <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-border/60 px-3 py-2.5 dark:border-white/10">
+              <Checkbox
+                checked={reminderTelegram}
+                onCheckedChange={(v) => setReminderTelegram(v === true)}
+              />
+              <span className="text-xs font-medium">
+                Telegram bot orqali xabar berish
+              </span>
+            </label>
+          </div>
+          <SheetFooter className="sticky bottom-0 gap-2 border-t border-border/60 bg-card/95 px-4 py-2.5 backdrop-blur dark:border-white/10 dark:bg-slate-950/95 sm:space-x-0">
+            <Button type="button" variant="outline" className="h-9 rounded-lg" onClick={() => setReminderOpen(false)}>
+              Yopish
+            </Button>
+            <Button
+              type="button"
+              className="h-9 rounded-lg bg-amber-600 hover:bg-amber-700"
+              disabled={createReminder.isPending}
+              onClick={() => void submitReminder()}
+            >
+              {createReminder.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+              Belgilash
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
 
       <Sheet open={Boolean(editRow)} onOpenChange={(o) => !o && setEditRow(null)}>
         <SheetContent className="w-full overflow-y-auto border-l border-border/60 bg-card p-0 sm:max-w-md dark:border-white/10 dark:bg-slate-950">

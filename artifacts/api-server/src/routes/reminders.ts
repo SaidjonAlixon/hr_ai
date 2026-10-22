@@ -359,9 +359,31 @@ router.post("/reminders", requireAuth, async (req: AuthRequest, res): Promise<vo
     });
 
     if (ownerId !== userId) {
+      const dueLabel = due.toLocaleString("uz-UZ", {
+        timeZone: "Asia/Tashkent",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const isMeeting = baseValues.category === "meeting";
+      const text = isMeeting
+        ? [
+            "🏢 Qabulxona — uchrashuv",
+            "",
+            `📌 ${created.title}`,
+            created.description ? `📝 ${created.description}` : null,
+            `🕐 Vaqt: ${dueLabel}`,
+            "",
+            "Eslatmalarim bo‘limida ko‘ring.",
+          ]
+            .filter(Boolean)
+            .join("\n")
+        : `Sizga yangi eslatma: ${created.title}\n🕐 ${dueLabel}`;
       await notifyUser({
         userId: ownerId,
-        text: `Sizga yangi eslatma: ${created.title}`,
+        text,
         type: "reminder_assigned",
         linkUrl: "/eslatmalar",
         telegram: Boolean(created.notifyTelegram),

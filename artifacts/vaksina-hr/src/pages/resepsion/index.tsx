@@ -97,18 +97,14 @@ function typeLabel(t: string) {
   return TYPE_TABS.find((x) => x.value === t)?.label || t;
 }
 
-/** Sukutda +998 9… — foydalanuvchi qolgan raqamlarni yozadi */
+/** Sukutda +998 — foydalanuvchi qolgan raqamlarni yozadi */
 function formatVisitorPhone(raw: string): string {
   let digits = raw.replace(/\D/g, "");
   if (!digits.startsWith("998")) {
-    if (digits.startsWith("9")) digits = `998${digits}`;
-    else digits = `9989${digits}`;
-  }
-  if (!digits.startsWith("9989")) {
-    digits = `9989${digits.slice(3)}`;
+    digits = `998${digits}`;
   }
   digits = digits.slice(0, 12); // 998 + 9 ta raqam
-  const rest = digits.slice(3); // 9XXXXXXXX
+  const rest = digits.slice(3);
   const a = rest.slice(0, 2);
   const b = rest.slice(2, 5);
   const c = rest.slice(5, 7);
@@ -118,15 +114,15 @@ function formatVisitorPhone(raw: string): string {
   if (b) out += ` ${b}`;
   if (c) out += ` ${c}`;
   if (d) out += ` ${d}`;
-  return out.length > 4 ? out : "+998 9";
+  return out;
 }
 
-const PHONE_DEFAULT = "+998 9";
+const PHONE_DEFAULT = "+998";
 
 function phoneForSubmit(formatted: string): string | null {
   const digits = formatted.replace(/\D/g, "");
-  if (digits.length <= 4) return null; // faqat +998 / +9989
-  if (digits.length < 12) return `+${digits}`; // to‘liq emas, lekin yozilgan
+  if (digits.length <= 3) return null; // faqat +998
+  if (digits.length < 12) return `+${digits}`;
   return `+${digits.slice(0, 12)}`;
 }
 
@@ -538,7 +534,7 @@ export default function ResepsionPage() {
                       if (!e.target.value.trim()) setVisitorPhone(PHONE_DEFAULT);
                     }}
                     onBlur={() => {
-                      if (visitorPhone.replace(/\D/g, "").length <= 4) {
+                      if (visitorPhone.replace(/\D/g, "").length <= 3) {
                         setVisitorPhone(PHONE_DEFAULT);
                       }
                     }}

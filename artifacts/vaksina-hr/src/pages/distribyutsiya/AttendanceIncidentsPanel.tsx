@@ -191,7 +191,7 @@ export function AttendanceIncidentsPanel() {
 
 function IncidentCard({ item, canComment, showDate }: { item: AttendanceIncident; canComment: boolean; showDate: boolean }) {
   const [writing, setWriting] = useState(false);
-  const m = TYPE_META[item.type];
+  const m = TYPE_META[item.type] ?? TYPE_META.incomplete;
   const Icon = m.icon;
   const detail =
     item.type === "late"

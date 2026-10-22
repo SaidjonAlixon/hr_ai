@@ -42,7 +42,7 @@ import {
   type CoordinatorVisitSession,
   type VisitPhase,
 } from "@/lib/branch-audits-api";
-import { PHASE_META, PhaseBadge, fmtDateLong, fmtHm, minutesLabel, phaseOf } from "./visit-phase";
+import { PhaseBadge, fmtDateLong, fmtHm, minutesLabel, phaseMeta, phaseOf } from "./visit-phase";
 
 type QuickFilter = "all" | "open" | "action" | "no_checklist" | "closed" | "office";
 type Preset = "today" | "yesterday" | "week" | "month" | "custom";
@@ -202,7 +202,7 @@ export function VisitMonitorPanel({ enabled }: { enabled: boolean }) {
     await qc.invalidateQueries({ queryKey: ["branch-audits", "my-visit"] });
   };
 
-  const needAction = useMemo(() => items.filter((v) => PHASE_META[phaseOf(v)].urgent), [items]);
+  const needAction = useMemo(() => items.filter((v) => phaseMeta(phaseOf(v)).urgent), [items]);
 
   const approveUnlock = async (v: CoordinatorVisitSession) => {
     setApprovingId(v.id);
@@ -940,7 +940,7 @@ function VisitRow({
   onForceCheckout?: () => void;
 }) {
   const phase = phaseOf(v);
-  const meta = PHASE_META[phase];
+  const meta = phaseMeta(phase);
   const office = phase === "office_open" || phase === "office_closed";
   const canApprove = phase === "unlock_requested" || phase === "blocked";
 

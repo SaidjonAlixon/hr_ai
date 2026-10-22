@@ -99,8 +99,23 @@ export const PHASE_META: Record<VisitPhase, PhaseMeta> = {
   },
 };
 
+const FALLBACK_PHASE_META: PhaseMeta = {
+  label: "Noma’lum",
+  hint: "Holat aniqlanmadi",
+  icon: AlertTriangle,
+  badge: "bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-300",
+  dot: "bg-slate-400",
+};
+
+export function phaseMeta(phase: string | null | undefined): PhaseMeta {
+  if (phase && Object.prototype.hasOwnProperty.call(PHASE_META, phase)) {
+    return PHASE_META[phase as VisitPhase];
+  }
+  return FALLBACK_PHASE_META;
+}
+
 export function phaseOf(v: CoordinatorVisitSession): VisitPhase {
-  if (v.phase) return v.phase;
+  if (v.phase && Object.prototype.hasOwnProperty.call(PHASE_META, v.phase)) return v.phase;
   if (v.isOffice) return v.stillOpen ? "office_open" : "office_closed";
   if (v.stillOpen) {
     if (v.presenceBlocked) return v.unlockPending ? "unlock_requested" : "blocked";
@@ -110,8 +125,8 @@ export function phaseOf(v: CoordinatorVisitSession): VisitPhase {
   return v.checklistAt ? "closed_ok" : "closed_no_checklist";
 }
 
-export function PhaseBadge({ phase, className }: { phase: VisitPhase; className?: string }) {
-  const meta = PHASE_META[phase];
+export function PhaseBadge({ phase, className }: { phase: VisitPhase | string; className?: string }) {
+  const meta = phaseMeta(phase);
   const Icon = meta.icon;
   return (
     <span

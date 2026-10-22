@@ -484,7 +484,14 @@ export default function KonferensiyaPage({ params }: { params: { code?: string }
   }
 
   if (phase !== "prejoin" && phase !== "connecting") {
-    const s = endState[phase as keyof typeof endState];
+    const s =
+      endState[phase as keyof typeof endState] ??
+      ({
+        icon: <WifiOff className="h-9 w-9 text-amber-300" />,
+        title: "Aloqa uzildi",
+        text: "Holat aniqlanmadi. Qayta ulanishga urinib ko‘ring.",
+        rejoin: "Qayta qo‘shilish",
+      } as const);
     return (
       <Screen>
         <TopBar />

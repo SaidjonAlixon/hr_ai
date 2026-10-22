@@ -11,7 +11,7 @@ import {
   useVisitMonitor,
   type CoordinatorVisitSession,
 } from "@/lib/branch-audits-api";
-import { PHASE_META, PhaseBadge, fmtHm, phaseOf } from "./visit-phase";
+import { PhaseBadge, fmtHm, phaseMeta, phaseOf } from "./visit-phase";
 
 function minutesSince(iso: string | null | undefined) {
   if (!iso) return null;
@@ -45,13 +45,13 @@ export function PresenceUnlockPanel({ enabled }: { enabled: boolean }) {
   const urgent = useMemo(
     () =>
       items
-        .filter((v) => PHASE_META[phaseOf(v)].urgent)
+        .filter((v) => phaseMeta(phaseOf(v)).urgent)
         .sort((a, b) => Number(phaseOf(b) === "unlock_requested") - Number(phaseOf(a) === "unlock_requested")),
     [items],
   );
   const requested = urgent.filter((v) => phaseOf(v) === "unlock_requested").length;
   const openNow = useMemo(
-    () => items.filter((v) => v.stillOpen && !v.checkOutAt && !PHASE_META[phaseOf(v)].urgent),
+    () => items.filter((v) => v.stillOpen && !v.checkOutAt && !phaseMeta(phaseOf(v)).urgent),
     [items],
   );
   const approvedToday = useMemo(

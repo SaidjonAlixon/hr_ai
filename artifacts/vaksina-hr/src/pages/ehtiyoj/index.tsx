@@ -716,10 +716,10 @@ function StatCard({
       onClick={onClick}
       className={cn(
         'flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 text-left shadow-sm transition hover:border-slate-300 hover:shadow',
-        active && cn('ring-2', TONES[tone].ring),
+        active && cn('ring-2', (TONES[tone] ?? TONES.sky).ring),
       )}
     >
-      <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-xl', TONES[tone].icon)}>
+      <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-xl', (TONES[tone] ?? TONES.sky).icon)}>
         <Icon className="h-[18px] w-[18px]" />
       </span>
       <span className="min-w-0">

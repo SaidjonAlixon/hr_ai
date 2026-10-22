@@ -7,6 +7,7 @@ import {
   FileText,
   Loader2,
   LogOut,
+  MessageSquareText,
   Package,
   Phone,
   Plus,
@@ -2562,9 +2563,16 @@ export default function ResepsionPage() {
                           size="sm"
                           tone="emerald"
                         />
-                        <span className="truncate text-xs">
-                          {row.hostName || row.hostUserName || "—"}
-                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-medium">
+                            {row.hostName || row.hostUserName || "—"}
+                          </p>
+                          {row.hostUserRole ? (
+                            <p className="truncate text-[10px] text-muted-foreground">
+                              {userRoleLabel(row.hostUserRole) || row.hostUserRole}
+                            </p>
+                          ) : null}
+                        </div>
                       </div>
                     </td>
                     <td className="max-w-[160px] truncate px-3 py-3 text-xs text-muted-foreground">
@@ -2584,7 +2592,43 @@ export default function ResepsionPage() {
                       {row.leftAt ? formatVisitTime(row.leftAt) : "—"}
                     </td>
                     <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap items-center gap-1">
+                        {row.notes?.trim() ? (
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <button
+                                type="button"
+                                title="Izohni o‘qish"
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-violet-300/50 bg-violet-500/10 text-violet-700 transition hover:bg-violet-500/20 dark:border-violet-400/30 dark:text-violet-300"
+                              >
+                                <MessageSquareText className="h-3.5 w-3.5" />
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              align="end"
+                              className="z-50 w-[min(100vw-2rem,280px)] rounded-xl p-3 shadow-xl"
+                            >
+                              <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                Uchrashuv izohi
+                              </p>
+                              {row.purpose ? (
+                                <p className="mb-1.5 text-[11px] font-semibold text-foreground">
+                                  Maqsad: {row.purpose}
+                                </p>
+                              ) : null}
+                              <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground/90">
+                                {row.notes.trim()}
+                              </p>
+                            </PopoverContent>
+                          </Popover>
+                        ) : (
+                          <span
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground/35"
+                            title="Izoh yo‘q"
+                          >
+                            <MessageSquareText className="h-3.5 w-3.5" />
+                          </span>
+                        )}
                         {canWrite && row.status !== "done" && row.status !== "cancelled" ? (
                           <Button
                             type="button"
@@ -2597,7 +2641,7 @@ export default function ResepsionPage() {
                             Chiqdi
                           </Button>
                         ) : row.status === "done" ? (
-                          <span className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] text-emerald-700">
+                          <span className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] text-emerald-700 dark:text-emerald-400">
                             <CheckCircle2 className="h-3.5 w-3.5" />
                             OK
                           </span>

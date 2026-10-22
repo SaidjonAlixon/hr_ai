@@ -384,6 +384,7 @@ export function ConferenceRoom({
     canRecord: moderator,
     autoStart: Boolean(settings.autoRecord),
     defaultLimitMinutes: settings.recordMinutes > 0 ? settings.recordMinutes : null,
+    hostUserId: details.conference.host.id,
     onStopped: (blob, reason) => {
       if (reason === "unmount") return;
       void sendRecording(blob, reason);

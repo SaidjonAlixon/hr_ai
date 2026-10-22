@@ -9,7 +9,7 @@ import { pool } from "@workspace/db";
 import { logger } from "./logger";
 import { REPORT_CHAT_ID } from "./explanation-letter-report";
 import { escapeHtml, isTelegramConfigured, sendDocument, sendMessage, sendVideo } from "./telegram";
-import { conferenceHistory, type Conference } from "./conferences";
+import { conferenceHistory, loadConference, type Conference } from "./conferences";
 import { renderConferenceReportPdf } from "./conference-report-pdf";
 
 const RECORD_DIR =
@@ -18,6 +18,11 @@ const RECORD_DIR =
 
 /** Taxminiy Telegram yuklash tezligi (byte/s) — ETA uchun */
 const EST_UPLOAD_BPS = 700_000;
+const FFMPEG_TIMEOUT_MS = 120_000;
+const STALE_RESUME_AFTER_MS = 45_000;
+const inFlightDeliver = new Set<number>();
+let lastStaleSweepAt = 0;
+
 /** Convert uchun taxminiy sekund (hajmga bog‘liq) */
 function estConvertSec(bytes: number): number {
   return Math.max(8, Math.min(90, Math.round(bytes / (2.5 * 1024 * 1024))));
@@ -160,16 +165,17 @@ function computeProgress(lp: LiveProgress): { progress: number; etaSec: number }
   if (lp.phase === "uploaded") return { progress: 5, etaSec: estConvertSec(lp.bytes) + estUploadSec(lp.bytes) };
   if (lp.phase === "converting") {
     const total = estConvertSec(lp.bytes);
-    const frac = Math.min(0.95, elapsed / total);
-    const progress = Math.round(5 + frac * 30); // 5→35
-    const remConvert = Math.max(0, Math.ceil(total - elapsed));
+    // Asimptotik: 8→55 (oldingi 33%da qotib qolmasin)
+    const frac = 1 - Math.exp(-elapsed / Math.max(4, total * 0.65));
+    const progress = Math.min(54, Math.round(8 + frac * 46));
+    const remConvert = Math.max(1, Math.ceil(Math.max(0, total - elapsed) + 3));
     return { progress, etaSec: remConvert + estUploadSec(lp.bytes) };
   }
   if (lp.phase === "sending") {
     const total = estUploadSec(lp.bytes);
-    const frac = Math.min(0.97, elapsed / total);
-    const progress = Math.round(35 + frac * 60); // 35→95
-    return { progress, etaSec: Math.max(1, Math.ceil(total - elapsed)) };
+    const frac = 1 - Math.exp(-elapsed / Math.max(3, total * 0.7));
+    const progress = Math.min(96, Math.round(55 + frac * 41));
+    return { progress, etaSec: Math.max(1, Math.ceil(Math.max(0, total - elapsed) + 2)) };
   }
   if (lp.phase === "sent" || lp.phase === "sent_purged") return { progress: 100, etaSec: 0 };
   return { progress: lp.progress, etaSec: lp.etaSec };
@@ -252,6 +258,7 @@ function enrichFromLive(row: AdminRecordingItem): AdminRecordingItem {
 
 export async function listAdminRecordings(limit = 100): Promise<AdminRecordingItem[]> {
   await ensureRecordingSchema();
+  void sweepStaleRecordings().catch((err) => logger.warn({ err }, "stale recording sweep failed"));
   const { rows } = await pool.query(
     `SELECT id, conference_id, conference_code, conference_title, host_name,
             status, progress, bytes, mime_type, temp_path, error, eta_sec,
@@ -371,26 +378,70 @@ export async function saveConferenceRecordingUpload(
   return { path: dest, bytes: input.buffer.length, recordingId };
 }
 
-function runFfmpeg(args: string[]): Promise<void> {
+function runFfmpeg(args: string[], timeoutMs = FFMPEG_TIMEOUT_MS): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
     let err = "";
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        /* */
+      }
+      reject(new Error(`ffmpeg timeout ${timeoutMs}ms`));
+    }, timeoutMs);
     child.stderr?.on("data", (d) => {
       err += String(d);
       if (err.length > 4000) err = err.slice(-4000);
     });
-    child.on("error", (e) => reject(e));
+    child.on("error", (e) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(e);
+    });
     child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       if (code === 0) resolve();
       else reject(new Error(`ffmpeg exit ${code}: ${err.slice(-500)}`));
     });
   });
 }
 
+async function usableMp4Beside(inputPath: string): Promise<string | null> {
+  const outPath = inputPath.replace(/\.[^.]+$/i, "") + ".mp4";
+  if (outPath === inputPath) {
+    try {
+      const st = await fs.stat(inputPath);
+      return st.size > 10_000 ? inputPath : null;
+    } catch {
+      return null;
+    }
+  }
+  try {
+    const st = await fs.stat(outPath);
+    if (st.size > 10_000) return outPath;
+  } catch {
+    /* */
+  }
+  return null;
+}
+
 /** WebM/boshqa → aniq MP4 (H.264 + AAC), Telegram uchun mos */
 export async function convertRecordingToMp4(inputPath: string): Promise<string> {
   const ext = path.extname(inputPath).toLowerCase();
   if (ext === ".mp4") return inputPath;
+
+  const existing = await usableMp4Beside(inputPath);
+  if (existing) {
+    await safeUnlink(inputPath);
+    return existing;
+  }
 
   const outPath = inputPath.replace(/\.[^.]+$/i, "") + ".mp4";
   try {
@@ -405,15 +456,15 @@ export async function convertRecordingToMp4(inputPath: string): Promise<string> 
       "-c:v",
       "libx264",
       "-preset",
-      "fast",
+      "veryfast",
       "-crf",
-      "23",
+      "24",
       "-pix_fmt",
       "yuv420p",
       "-c:a",
       "aac",
       "-b:a",
-      "128k",
+      "96k",
       "-movflags",
       "+faststart",
       "-vf",
@@ -451,6 +502,31 @@ export async function deliverConferenceRecordingAndPurge(
   },
 ): Promise<{ ok: boolean; error?: string }> {
   await ensureRecordingSchema();
+  const recordingId = meta.recordingId;
+  if (recordingId) {
+    if (inFlightDeliver.has(recordingId)) {
+      return { ok: false, error: "Yuborish allaqachon ketmoqda" };
+    }
+    inFlightDeliver.add(recordingId);
+  }
+  try {
+    return await deliverConferenceRecordingAndPurgeInner(conf, filePath, meta);
+  } finally {
+    if (recordingId) inFlightDeliver.delete(recordingId);
+  }
+}
+
+async function deliverConferenceRecordingAndPurgeInner(
+  conf: Conference,
+  filePath: string,
+  meta: {
+    attendedCount: number;
+    invitedCount: number;
+    actualSeconds: number;
+    hostName: string;
+    recordingId?: number;
+  },
+): Promise<{ ok: boolean; error?: string }> {
   const recordingId = meta.recordingId;
   const chatId = conferenceReportChatId();
 
@@ -644,6 +720,93 @@ export async function deliverConferenceRecordingAndPurge(
     });
   }
   return { ok: true };
+}
+
+async function resolveRecordingFile(tempPath: string | null, code: string): Promise<string | null> {
+  const candidates: string[] = [];
+  if (tempPath) {
+    candidates.push(tempPath);
+    const alt = tempPath.toLowerCase().endsWith(".mp4")
+      ? tempPath.replace(/\.mp4$/i, ".webm")
+      : tempPath.replace(/\.[^.]+$/i, ".mp4");
+    if (alt !== tempPath) candidates.unshift(alt); // MP4 ni afzalroq
+  }
+  try {
+    const dir = await ensureRecordingDir();
+    const names = await fs.readdir(dir);
+    for (const n of names) {
+      if (n.startsWith(`${code}-`) && (n.endsWith(".mp4") || n.endsWith(".webm"))) {
+        candidates.push(path.join(dir, n));
+      }
+    }
+  } catch {
+    /* */
+  }
+  let best: { p: string; size: number; mp4: boolean } | null = null;
+  for (const p of candidates) {
+    try {
+      const st = await fs.stat(p);
+      if (!st.isFile() || st.size < 1000) continue;
+      const mp4 = p.toLowerCase().endsWith(".mp4");
+      if (!best || (mp4 && !best.mp4) || (mp4 === best.mp4 && st.size > best.size)) {
+        best = { p, size: st.size, mp4 };
+      }
+    } catch {
+      /* */
+    }
+  }
+  return best?.p ?? null;
+}
+
+/** Qotib qolgan converting/sending/uploaded — qayta yuborish */
+export async function sweepStaleRecordings(): Promise<void> {
+  const now = Date.now();
+  if (now - lastStaleSweepAt < 8_000) return;
+  lastStaleSweepAt = now;
+  await ensureRecordingSchema();
+  const { rows } = await pool.query(
+    `SELECT id, conference_id, conference_code, host_name, status, temp_path, bytes, updated_at
+       FROM conference_recordings
+      WHERE status IN ('uploaded', 'converting', 'sending')
+        AND updated_at < NOW() - INTERVAL '45 seconds'
+      ORDER BY id ASC
+      LIMIT 5`,
+  );
+  for (const r of rows) {
+    const id = r.id as number;
+    if (inFlightDeliver.has(id)) continue;
+    const code = r.conference_code as string;
+    const filePath = await resolveRecordingFile((r.temp_path as string) || null, code);
+    if (!filePath) {
+      stopLive(id);
+      await patchRecordingRow(id, {
+        status: "failed",
+        progress: 0,
+        etaSec: 0,
+        error: "Fayl topilmadi — qayta yuborib bo‘lmadi",
+      });
+      continue;
+    }
+    const conf = await loadConference(code);
+    if (!conf) {
+      await patchRecordingRow(id, {
+        status: "failed",
+        progress: 0,
+        etaSec: 0,
+        error: "Konferensiya topilmadi",
+      });
+      continue;
+    }
+    logger.info({ id, code, filePath, status: r.status }, "resuming stale conference recording");
+    const history = await conferenceHistory(conf);
+    void deliverConferenceRecordingAndPurge(conf, filePath, {
+      attendedCount: history.attendedCount,
+      invitedCount: history.invitedCount,
+      actualSeconds: history.actualSeconds,
+      hostName: (r.host_name as string) || "Admin",
+      recordingId: id,
+    }).catch((err) => logger.warn({ err, id, code }, "stale recording resume failed"));
+  }
 }
 
 export async function sendConferenceStatsToGroup(

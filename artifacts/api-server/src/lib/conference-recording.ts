@@ -1,7 +1,8 @@
 /**
- * Konferensiya yozuvi: vaqtinchalik fayl → Telegram (VAKSINA tushuntirish xatlari) → diskdan o‘chirish.
+ * Konferensiya yozuvi: vaqtinchalik fayl → MP4 (ffmpeg) → Telegram → diskdan o‘chirish.
  * Platformada video saqlanmaydi — faqat statistika (DB) qoladi.
  */
+import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { pool } from "@workspace/db";
@@ -61,6 +62,59 @@ export async function saveConferenceRecordingUpload(
   return { path: dest, bytes: input.buffer.length };
 }
 
+function runFfmpeg(args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
+    let err = "";
+    child.stderr?.on("data", (d) => {
+      err += String(d);
+      if (err.length > 4000) err = err.slice(-4000);
+    });
+    child.on("error", (e) => reject(e));
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`ffmpeg exit ${code}: ${err.slice(-500)}`));
+    });
+  });
+}
+
+/** WebM/boshqa → aniq MP4 (H.264 + AAC), Telegram uchun mos */
+export async function convertRecordingToMp4(inputPath: string): Promise<string> {
+  const ext = path.extname(inputPath).toLowerCase();
+  if (ext === ".mp4") return inputPath;
+
+  const outPath = inputPath.replace(/\.[^.]+$/i, "") + ".mp4";
+  try {
+    await runFfmpeg([
+      "-y",
+      "-i",
+      inputPath,
+      "-c:v",
+      "libx264",
+      "-preset",
+      "fast",
+      "-crf",
+      "20",
+      "-pix_fmt",
+      "yuv420p",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "160k",
+      "-movflags",
+      "+faststart",
+      "-vf",
+      "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+      outPath,
+    ]);
+    await safeUnlink(inputPath);
+    return outPath;
+  } catch (err) {
+    logger.warn({ err, inputPath }, "ffmpeg MP4 convert failed — original file used");
+    return inputPath;
+  }
+}
+
 export async function deliverConferenceRecordingAndPurge(
   conf: Conference,
   filePath: string,
@@ -79,28 +133,40 @@ export async function deliverConferenceRecordingAndPurge(
     return { ok: false, error: "Telegram bot sozlanmagan" };
   }
 
+  let sendPath = filePath;
+  try {
+    await setRecordingStatus(conf.id, "converting");
+    sendPath = await convertRecordingToMp4(filePath);
+  } catch (err) {
+    logger.warn({ err, code: conf.code }, "recording convert step failed");
+    sendPath = filePath;
+  }
+
   let buf: Buffer;
   try {
-    buf = await fs.readFile(filePath);
+    buf = await fs.readFile(sendPath);
   } catch (err) {
     logger.error({ err, code: conf.code }, "conference recording read failed");
     await setRecordingStatus(conf.id, "failed");
+    await safeUnlink(sendPath);
+    if (sendPath !== filePath) await safeUnlink(filePath);
     return { ok: false, error: "Yozuv fayli o‘qilmadi" };
   }
 
   const mins = Math.max(1, Math.round((meta.actualSeconds || 0) / 60));
   const caption = [
-    `<b>🎥 Konferensiya yozuvi</b>`,
+    `<b>🎥 Konferensiya yozuvi (MP4)</b>`,
     `<b>${escapeHtml(conf.title)}</b>`,
     `Tashkilotchi: ${escapeHtml(meta.hostName)}`,
     `Kod: <code>${escapeHtml(conf.code)}</code>`,
     `Davomiyligi: ~${mins} daqiqa`,
     `Qatnashdi: ${meta.attendedCount} / ${meta.invitedCount} taklif`,
     ``,
-    `Yozuv guruhga yuborildi. Platformada video saqlanmaydi — faqat statistika qoladi.`,
+    `Full HD yozuv. Platformada video saqlanmaydi — faqat statistika qoladi.`,
   ].join("\n");
 
-  const filename = `konferensiya_${conf.code}_${Date.now()}.webm`;
+  const isMp4 = sendPath.toLowerCase().endsWith(".mp4");
+  const filename = `konferensiya_${conf.code}_${Date.now()}.${isMp4 ? "mp4" : "webm"}`;
   try {
     await setRecordingStatus(conf.id, "sending");
     try {
@@ -108,7 +174,7 @@ export async function deliverConferenceRecordingAndPurge(
         await sendVideo(chatId, buf, filename, {
           caption,
           parseMode: "HTML",
-          mimeType: filename.endsWith(".mp4") ? "video/mp4" : "video/webm",
+          mimeType: isMp4 ? "video/mp4" : "video/webm",
         });
       } else {
         throw new Error("too-large-for-sendVideo");
@@ -117,20 +183,21 @@ export async function deliverConferenceRecordingAndPurge(
       await sendDocument(chatId, buf, filename, {
         caption,
         parseMode: "HTML",
-        mimeType: "video/webm",
+        mimeType: isMp4 ? "video/mp4" : "video/webm",
       });
     }
     await setRecordingStatus(conf.id, "sent", { sentAt: new Date() });
-    logger.info({ code: conf.code, chatId, bytes: buf.length }, "conference recording sent to Telegram");
+    logger.info({ code: conf.code, chatId, bytes: buf.length, mp4: isMp4 }, "conference recording sent to Telegram");
   } catch (err) {
     logger.error({ err, code: conf.code, chatId }, "conference recording Telegram send failed");
     await setRecordingStatus(conf.id, "failed");
-    // Xato bo‘lsa ham platformada saqlamaymiz
-    await safeUnlink(filePath);
+    await safeUnlink(sendPath);
+    if (sendPath !== filePath) await safeUnlink(filePath);
     return { ok: false, error: err instanceof Error ? err.message : "Telegramga yuborilmadi" };
   }
 
-  await safeUnlink(filePath);
+  await safeUnlink(sendPath);
+  if (sendPath !== filePath) await safeUnlink(filePath);
   return { ok: true };
 }
 

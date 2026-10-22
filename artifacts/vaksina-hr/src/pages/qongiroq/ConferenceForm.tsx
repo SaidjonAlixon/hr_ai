@@ -769,6 +769,31 @@ export function ConferenceFormDialog({
                         </button>
                       ))}
                     </div>
+                    <div className="flex items-center gap-2 pt-1">
+                      <span className="shrink-0 text-[11px] font-semibold text-muted-foreground">Qo‘lda:</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={240}
+                        value={settings.recordMinutes || ""}
+                        placeholder="daq"
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          if (raw === "") {
+                            setSettings((s) => ({ ...s, recordMinutes: 0 }));
+                            return;
+                          }
+                          const n = Math.round(Number(raw));
+                          if (!Number.isFinite(n)) return;
+                          setSettings((s) => ({
+                            ...s,
+                            recordMinutes: Math.max(0, Math.min(240, n)),
+                          }));
+                        }}
+                        className="h-9 w-24 rounded-xl text-sm font-semibold tabular-nums"
+                      />
+                      <span className="text-[11px] text-muted-foreground">daq (1–240, 0 = cheksiz)</span>
+                    </div>
                     <p className="text-[11px] leading-relaxed text-muted-foreground">
                       Xona ichida ham REC tugmasi bilan boshlash/to‘xtatish mumkin. To‘xtagach yozuv VAKSINA
                       tushuntirish xatlari guruhiga ketadi va platformadan o‘chiriladi.

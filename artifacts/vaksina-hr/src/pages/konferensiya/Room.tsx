@@ -347,6 +347,7 @@ export function ConferenceRoom({
   const owner = details.me.owner;
   const meUid = details.me.userId;
   const [recPickOpen, setRecPickOpen] = useState(false);
+  const [recCustomMin, setRecCustomMin] = useState("20");
   const [recBusy, setRecBusy] = useState(false);
   const sentBlobsRef = useRef(new WeakSet<Blob>());
 
@@ -388,6 +389,32 @@ export function ConferenceRoom({
       void sendRecording(blob, reason);
     },
   });
+
+  const startRec = recorder.start;
+  const beginRecording = useCallback(
+    (minutes: number | null) => {
+      setRecPickOpen(false);
+      void startRec(minutes).then((ok) => {
+        if (!ok) {
+          toast({
+            title: "Yozuv boshlanmadi",
+            description: "Brauzer MediaRecorder qo‘llab-quvvatlamaydi yoki ruxsat yo‘q",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Yozuv boshlandi",
+            description:
+              minutes && minutes > 0
+                ? `${minutes} daqiqadan keyin avtomatik to‘xtaydi`
+                : "REC tugmasi bilan istalgan vaqtda to‘xtating",
+          });
+        }
+      });
+    },
+    [startRec, toast],
+  );
+
   const [panel, setPanel] = useState<null | "chat" | "people">(null);
   const [layout, setLayout] = useState<"auto" | "grid">("auto");
   const [localPin, setLocalPin] = useState<string | null>(null);
@@ -1042,8 +1069,8 @@ export function ConferenceRoom({
             <DialogHeader>
               <DialogTitle>Yozib olishni boshlash</DialogTitle>
               <DialogDescription>
-                Qancha vaqt yozilishini tanlang. Vaqt tugasa yoki REC ni bossangiz — yozuv Telegram
-                guruhiga yuboriladi va platformadan o‘chiriladi.
+                Tayyor vaqtni tanlang yoki o‘zingiz daqiqa kiriting. Vaqt tugasa yoki REC ni bossangiz —
+                yozuv Telegram guruhiga yuboriladi va platformadan o‘chiriladi.
               </DialogDescription>
             </DialogHeader>
             <div className="flex flex-wrap gap-1.5">
@@ -1051,23 +1078,7 @@ export function ConferenceRoom({
                 <button
                   key={m}
                   type="button"
-                  onClick={() => {
-                    setRecPickOpen(false);
-                    void recorder.start(m > 0 ? m : null).then((ok) => {
-                      if (!ok) {
-                        toast({
-                          title: "Yozuv boshlanmadi",
-                          description: "Brauzer MediaRecorder qo‘llab-quvvatlamaydi yoki ruxsat yo‘q",
-                          variant: "destructive",
-                        });
-                      } else {
-                        toast({
-                          title: "Yozuv boshlandi",
-                          description: m > 0 ? `${m} daqiqadan keyin avtomatik to‘xtaydi` : "REC tugmasi bilan to‘xtating",
-                        });
-                      }
-                    });
-                  }}
+                  onClick={() => beginRecording(m > 0 ? m : null)}
                   className={cn(
                     "rounded-xl border px-3 py-2 text-xs font-semibold transition hover:bg-muted",
                     settings.recordMinutes === m && "border-primary bg-primary/10 text-primary",
@@ -1076,6 +1087,41 @@ export function ConferenceRoom({
                   {lab}
                 </button>
               ))}
+            </div>
+            <div className="mt-3 rounded-2xl border border-border/70 bg-muted/30 p-3">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Qo‘lda — necha daqiqa
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={240}
+                  value={recCustomMin}
+                  onChange={(e) => setRecCustomMin(e.target.value)}
+                  placeholder="masalan: 20"
+                  className="h-10 w-full rounded-xl border bg-background px-3 text-sm font-semibold tabular-nums"
+                />
+                <span className="shrink-0 text-xs font-medium text-muted-foreground">daq</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const n = Math.round(Number(recCustomMin));
+                    if (!Number.isFinite(n) || n < 1 || n > 240) {
+                      toast({
+                        title: "Noto‘g‘ri daqiqa",
+                        description: "1 dan 240 gacha kiriting",
+                        variant: "destructive",
+                      });
+                      return;
+                    }
+                    beginRecording(n);
+                  }}
+                  className="h-10 shrink-0 rounded-xl bg-red-600 px-4 text-xs font-bold text-white transition hover:bg-red-700"
+                >
+                  Boshlash
+                </button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>

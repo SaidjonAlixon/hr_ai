@@ -207,15 +207,17 @@ export const conferenceApi = {
   join: (code: string) => request<JoinTicket>(`${base(code)}/join`, { method: "POST", json: {} }),
   end: (code: string) => request<{ ok: true }>(`${base(code)}/end`, { method: "POST", json: {} }),
   /** Yozuvni yuklash — server Telegramga yuboradi va platformadan o‘chiradi */
-  uploadRecording: async (code: string, blob: Blob, filename = `konferensiya-${code}.webm`) => {
+  uploadRecording: async (code: string, blob: Blob, filename?: string) => {
+    const isMp4 = (blob.type || "").includes("mp4");
+    const name = filename || `konferensiya-${code}.${isMp4 ? "mp4" : "webm"}`;
     let res: Response;
     try {
       res = await fetch(`${base(code)}/recording`, {
         method: "POST",
         credentials: "include",
         headers: {
-          "Content-Type": blob.type || "video/webm",
-          "X-File-Name": encodeURIComponent(filename),
+          "Content-Type": blob.type || (isMp4 ? "video/mp4" : "video/webm"),
+          "X-File-Name": encodeURIComponent(name),
         },
         body: blob,
       });

@@ -12,6 +12,19 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 
+# Konferensiya yozuvini MP4 ga o‘girish uchun (yo‘q bo‘lsa o‘rnatishga urinadi)
+if ! command -v ffmpeg >/dev/null 2>&1; then
+  echo "==> ffmpeg o‘rnatilmoqda (konferensiya MP4)"
+  if command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg || true
+  fi
+fi
+if command -v ffmpeg >/dev/null 2>&1; then
+  echo "    ffmpeg: $(ffmpeg -version 2>/dev/null | head -n1)"
+else
+  echo "OGOHLANTIRISH: ffmpeg yo‘q — yozuv WebM bo‘lishi mumkin"
+fi
+
 echo "==> Git: $BRANCH"
 # GitHub’ga ulanish ba’zan uziladi — 3 marta urinamiz
 for i in 1 2 3; do

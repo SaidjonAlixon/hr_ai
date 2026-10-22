@@ -62,6 +62,8 @@ export type ReceptionHost = {
   hasTelegram?: boolean;
   hasPhoto?: boolean;
   photoUrl?: string | null;
+  /** Qo‘ng‘iroq SSE ulangan — tizimda onlayn */
+  online?: boolean;
   presence?: ReceptionHostPresence;
 };
 
@@ -153,6 +155,7 @@ export function useReceptionHosts(q?: string) {
   return useQuery({
     queryKey: ["resepsion", "hosts", q || ""],
     queryFn: () => fetchReceptionHosts(q),
+    refetchInterval: 15_000,
   });
 }
 

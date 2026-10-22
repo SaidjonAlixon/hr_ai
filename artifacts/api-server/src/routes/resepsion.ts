@@ -16,6 +16,7 @@ import { isHrRole, hasFullPlatformAccess, isDirectorRole } from "../lib/roles";
 import { ensureReceptionSchema } from "../lib/ensure-schema";
 import { notifyUser } from "../lib/notify";
 import { todayTashkentYmd } from "../lib/work-calendar";
+import { isOnline } from "../lib/calls";
 
 const router: IRouter = Router();
 
@@ -325,6 +326,7 @@ router.get("/resepsion/hosts", requireAuth, async (req: AuthRequest, res): Promi
         hasTelegram: Boolean(u.telegramId),
         hasPhoto: photo,
         photoUrl: photo ? `/api/staff/${u.id}/avatar` : null,
+        online: isOnline(u.id),
         presence,
       };
     }),

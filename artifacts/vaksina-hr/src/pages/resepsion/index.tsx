@@ -778,11 +778,21 @@ export default function ResepsionPage() {
                               : "hover:bg-muted/70",
                           )}
                         >
-                          <AvatarBubble
-                            name={h.fullName}
-                            size="sm"
-                            tone={pharm ? "violet" : "primary"}
-                          />
+                          <span className="relative shrink-0">
+                            <AvatarBubble
+                              name={h.fullName}
+                              size="sm"
+                              tone={pharm ? "violet" : "primary"}
+                              photoUrl={h.photoUrl}
+                            />
+                            <span
+                              className={cn(
+                                "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-card",
+                                h.online ? "bg-emerald-500" : "bg-slate-300",
+                              )}
+                              title={h.online ? "Onlayn" : "Oflayn"}
+                            />
+                          </span>
                           <span className="min-w-0 flex-1">
                             <span className="flex items-center gap-1.5">
                               <span className="truncate text-sm font-semibold text-foreground">
@@ -800,6 +810,8 @@ export default function ResepsionPage() {
                               </span>
                             </span>
                             <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                              {h.online ? "Onlayn" : "Oflayn"}
+                              {" · "}
                               {userRoleLabel(h.role) || h.role}
                               {h.phone ? ` · ${h.phone}` : ""}
                             </span>
@@ -896,6 +908,22 @@ export default function ResepsionPage() {
                     <p className="text-lg font-semibold leading-tight">{selectedHost.fullName}</p>
                     <span
                       className={cn(
+                        "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                        selectedHost.online
+                          ? "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200"
+                          : "bg-slate-100 text-slate-600 ring-1 ring-slate-200",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "h-1.5 w-1.5 rounded-full",
+                          selectedHost.online ? "bg-emerald-500" : "bg-slate-400",
+                        )}
+                      />
+                      {selectedHost.online ? "Onlayn" : "Oflayn"}
+                    </span>
+                    <span
+                      className={cn(
                         "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide",
                         presenceBadgeClass(selectedHost.presence?.status),
                       )}
@@ -968,14 +996,34 @@ export default function ResepsionPage() {
               </div>
 
               <div className="space-y-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Tizim orqali qo‘ng‘iroq
-                </p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Tizim orqali qo‘ng‘iroq
+                  </p>
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1.5 text-[11px] font-semibold",
+                      selectedHost.online ? "text-emerald-700" : "text-muted-foreground",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "h-2 w-2 rounded-full",
+                        selectedHost.online ? "bg-emerald-500" : "bg-slate-400",
+                      )}
+                    />
+                    {selectedHost.online ? "Tizimda onlayn" : "Tizimda yo‘q (oflayn)"}
+                  </span>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <Button
                     type="button"
-                    className="h-11 rounded-2xl bg-emerald-600 font-semibold hover:bg-emerald-700"
-                    disabled={callBusy || !(callSnap.me?.canCall ?? true)}
+                    className="h-11 rounded-2xl bg-emerald-600 font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                    disabled={
+                      callBusy ||
+                      !selectedHost.online ||
+                      !(callSnap.me?.canCall ?? true)
+                    }
                     onClick={() =>
                       void callEngine.call(
                         {
@@ -992,8 +1040,12 @@ export default function ResepsionPage() {
                   </Button>
                   <Button
                     type="button"
-                    className="h-11 rounded-2xl bg-sky-600 font-semibold hover:bg-sky-700"
-                    disabled={callBusy || !(callSnap.me?.canCall ?? true)}
+                    className="h-11 rounded-2xl bg-sky-600 font-semibold hover:bg-sky-700 disabled:opacity-50"
+                    disabled={
+                      callBusy ||
+                      !selectedHost.online ||
+                      !(callSnap.me?.canCall ?? true)
+                    }
                     onClick={() =>
                       void callEngine.call(
                         {
@@ -1009,6 +1061,12 @@ export default function ResepsionPage() {
                     Video
                   </Button>
                 </div>
+                {!selectedHost.online ? (
+                  <p className="text-center text-[10px] text-muted-foreground">
+                    Xodim platformada emas — tizim qo‘ng‘irog‘i ishlamaydi. Mobil raqamdan
+                    qo‘ng‘iroq qiling.
+                  </p>
+                ) : null}
                 {selectedHost.phone ? (
                   <a
                     href={`tel:${selectedHost.phone.replace(/\s/g, "")}`}

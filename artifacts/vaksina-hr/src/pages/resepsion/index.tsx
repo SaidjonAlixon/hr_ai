@@ -1179,7 +1179,7 @@ export default function ResepsionPage() {
                   <span
                     className={cn(
                       "flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-sm",
-                      active ? tab.iconBg : "bg-slate-300",
+                      tab.iconBg,
                     )}
                   >
                     <Icon className="h-4 w-4" />

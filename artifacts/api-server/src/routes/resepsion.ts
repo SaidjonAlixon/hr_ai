@@ -76,6 +76,43 @@ function typeLabel(vt: string) {
   return vt;
 }
 
+/** Telegram / tizim xabari — chiroyli, qatorma-qator */
+function buildReceptionNotifyText(opts: {
+  visitType: string;
+  visitorFullName: string;
+  phone: string;
+  purpose: string;
+  note?: string | null;
+}) {
+  const n = normalizeVisitType(opts.visitType);
+  const tur = typeLabel(opts.visitType);
+  const headline =
+    n === "staff"
+      ? "👥 Sizga xodim keldi!"
+      : n === "candidate"
+        ? "🎯 Sizga nomzod (suhbat) keldi!"
+        : n === "request"
+          ? "📋 Sizga murojaatchi keldi!"
+          : n === "package"
+            ? "📦 Sizga posilka / kuryer keldi!"
+            : "👋 Sizga mehmon keldi!";
+  const lines = [
+    "🏢 Qabulxoona",
+    "",
+    headline,
+    "",
+    `👤 Kim: ${opts.visitorFullName}`,
+    `📞 Telefon: ${opts.phone}`,
+    `🏷️ Tur: ${tur}`,
+    `🎯 Sabab: ${opts.purpose}`,
+  ];
+  if (opts.note) {
+    lines.push(`📝 Izoh: ${opts.note}`);
+  }
+  lines.push("", "🔔 Iltimos, qabulxonaga chiqing yoki bog‘laning.");
+  return lines.join("\n");
+}
+
 function formatHmTz(d: Date | null | undefined): string | null {
   if (!d) return null;
   return d.toLocaleTimeString("uz-UZ", {
@@ -478,16 +515,19 @@ router.post("/resepsion/logs", requireAuth, async (req: AuthRequest, res): Promi
     .returning();
 
   if (hostUserId) {
-    const purpose = trimOrNull(req.body?.purpose, 200) || "—";
-    const phone = trimOrNull(req.body?.visitorPhone, 40) || "—";
-    const note = trimOrNull(req.body?.notes, 300);
-    let text = `Qabulxoona: sizning oldingizga keldi — ${visitorFullName} (${phone}). Sabab: ${purpose}. Tur: ${typeLabel(visitType)}.`;
-    if (note) text += ` Izoh: ${note}`;
+    const text = buildReceptionNotifyText({
+      visitType,
+      visitorFullName,
+      phone: trimOrNull(req.body?.visitorPhone, 40) || "—",
+      purpose: trimOrNull(req.body?.purpose, 200) || "—",
+      note: trimOrNull(req.body?.notes, 300),
+    });
     await notifyUser({
       userId: hostUserId,
       text,
       type: "resepsion_visit",
       linkUrl: "/resepsion",
+      title: "🏢 Qabulxoona",
     }).catch(() => undefined);
   }
 

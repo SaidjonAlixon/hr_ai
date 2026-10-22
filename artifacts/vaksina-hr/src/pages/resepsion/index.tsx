@@ -503,10 +503,31 @@ export default function ResepsionPage() {
     const phone = phoneForSubmit(visitorPhone) || "—";
     const sabab = purpose.trim() || "—";
     const tur = typeLabel(String(visitType));
-    let text = `Qabulxoona: sizning oldingizga keldi — ${name} (${phone}). Sabab: ${sabab}. Tur: ${tur}.`;
+    const n = String(visitType);
+    const headline =
+      n === "staff"
+        ? "👥 Sizga xodim keldi!"
+        : n === "candidate"
+          ? "🎯 Sizga nomzod (suhbat) keldi!"
+          : n === "request"
+            ? "📋 Sizga murojaatchi keldi!"
+            : n === "package"
+              ? "📦 Sizga posilka / kuryer keldi!"
+              : "👋 Sizga mehmon keldi!";
+    const lines = [
+      "🏢 Qabulxoona",
+      "",
+      headline,
+      "",
+      `👤 Kim: ${name}`,
+      `📞 Telefon: ${phone}`,
+      `🏷️ Tur: ${tur}`,
+      `🎯 Sabab: ${sabab}`,
+    ];
     const note = notes.trim();
-    if (note) text += ` Izoh: ${note.slice(0, 300)}`;
-    return text;
+    if (note) lines.push(`📝 Izoh: ${note.slice(0, 300)}`);
+    lines.push("", "🔔 Iltimos, qabulxonaga chiqing yoki bog‘laning.");
+    return lines.join("\n");
   }, [visitorFullName, visitorPhone, purpose, visitType, notes]);
 
   function resetForm() {
@@ -1287,8 +1308,8 @@ export default function ResepsionPage() {
                     Boradigan xabar ko‘rinishi
                   </p>
                   <div className="rounded-2xl rounded-tl-sm bg-white px-3 py-2.5 text-left shadow-sm ring-1 ring-black/5 dark:bg-slate-900">
-                    <p className="text-[11px] font-semibold text-[#229ED9]">Vaksina HR</p>
-                    <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-foreground">
+                    <p className="text-[11px] font-semibold text-[#229ED9]">Vaksina HR · bot</p>
+                    <p className="mt-1.5 whitespace-pre-wrap text-[12px] leading-[1.55] text-foreground">
                       {telegramPreview}
                     </p>
                   </div>
@@ -1365,21 +1386,6 @@ export default function ResepsionPage() {
                     Video
                   </Button>
                 </div>
-                {!selectedHost.online ? (
-                  <p className="text-center text-[10px] text-muted-foreground">
-                    Xodim platformada emas — tizim qo‘ng‘irog‘i ishlamaydi. Mobil raqamdan
-                    qo‘ng‘iroq qiling.
-                  </p>
-                ) : null}
-                {selectedHost.phone ? (
-                  <a
-                    href={`tel:${selectedHost.phone.replace(/\s/g, "")}`}
-                    className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-2xl border border-border/80 bg-card text-sm font-medium text-foreground hover:bg-muted/40"
-                  >
-                    <Phone className="h-4 w-4 text-muted-foreground" />
-                    Mobil raqamga qo‘ng‘iroq
-                  </a>
-                ) : null}
                 {callBusy ? (
                   <p className="text-center text-[10px] text-amber-700">
                     Joriy qo‘ng‘iroq davom etmoqda…

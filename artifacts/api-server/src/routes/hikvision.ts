@@ -9,6 +9,8 @@ import {
 } from "../lib/hikvision-attendance";
 import { parseHikvisionHttpBody } from "../lib/hikvision-payload";
 import { ensureHikvisionSchema } from "../lib/ensure-schema";
+import { syncHikvisionDayFromDevice } from "../lib/hikvision-device-sync";
+import { hikvisionDeviceConfigured } from "../lib/hikvision-device-client";
 import { logger } from "../lib/logger";
 import { canManageUsers, hasFullPlatformAccess } from "../lib/roles";
 
@@ -113,10 +115,35 @@ router.get("/hikvision/health", async (_req, res): Promise<void> => {
     ok: true,
     configured,
     faceCompare: true,
+    devicePull: hikvisionDeviceConfigured(),
     hint: configured
       ? "Webhook: qurilma yuzi HR Pro Face ID bilan solishtiriladi → Keldim/Ketdim"
       : "HIKVISION_WEBHOOK_SECRET .env da yo‘q",
   });
+});
+
+/**
+ * Qurilmadan tanlangan kun Keldim/Ketdim → ofis xodimlari (kirill/lotin ism) → HR Pro baza.
+ * Davomat sahifasidagi «Face ID yangilash» tugmasi.
+ */
+router.post("/hikvision/sync-day", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireHikAdmin(req, res)) return;
+  try {
+    const workDate = String(req.body?.date || req.body?.workDate || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {
+      res.status(400).json({ error: "date (YYYY-MM-DD) majburiy" });
+      return;
+    }
+    const result = await syncHikvisionDayFromDevice(workDate);
+    if (!result.ok) {
+      res.status(503).json(result);
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    logger.error({ err }, "POST /hikvision/sync-day");
+    res.status(503).json({ error: "Face ID sync amalga oshmadi" });
+  }
 });
 
 router.get("/hikvision/maps", requireAuth, async (req: AuthRequest, res): Promise<void> => {

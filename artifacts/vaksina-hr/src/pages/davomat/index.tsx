@@ -51,6 +51,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   RefreshCw,
+  ScanFace,
   Send,
   X,
 } from "lucide-react";
@@ -113,6 +114,7 @@ import {
   fetchEmployeeSchedule,
   saveEmployeeSchedule,
   clearEmployeeSchedule,
+  syncHikvisionFaceIdDay,
   type ScheduleShiftOption,
   type DavomatDayMetrics,
   type DavomatEmployee,
@@ -752,9 +754,11 @@ export default function DavomatPage() {
   const [selectedEmpId, setSelectedEmpId] = useState<number | "all">("all");
   const [report, setReport] = useState<DavomatReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [faceSyncing, setFaceSyncing] = useState(false);
   const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
   const [sendOpen, setSendOpen] = useState(false);
   const canSendReports = isHrManager(user?.role);
+  const canSyncFaceId = canEdit || canSendReports;
   const [edit, setEdit] = useState<EditState | null>(null);
   const [noteView, setNoteView] = useState<{
     fullName: string;
@@ -845,6 +849,31 @@ export default function DavomatPage() {
       if (seq === loadSeq.current) setLoading(false);
     }
   }, [allowed, from, to, searchDebounced, deptFilter, pharmacyScope, viewFilter, toast]);
+
+  const syncFaceIdFromDevice = useCallback(async () => {
+    if (!canSyncFaceId || faceSyncing) return;
+    setFaceSyncing(true);
+    try {
+      const result = await syncHikvisionFaceIdDay(selectedDay);
+      const sample = (result.updated || [])
+        .slice(0, 3)
+        .map((u) => `${u.fullName}: ${u.checkIn || "—"}–${u.checkOut || "—"}`)
+        .join(" · ");
+      toast({
+        title: "Face ID yangilandi",
+        description: `${result.written} ofis xodimi · qurilmada ${result.deviceEvents} event${sample ? ` · ${sample}` : ""}`,
+      });
+      await load();
+    } catch (err) {
+      toast({
+        title: "Face ID sync xato",
+        description: (err as Error)?.message || "Qurilmadan o‘qib bo‘lmadi",
+        variant: "destructive",
+      });
+    } finally {
+      setFaceSyncing(false);
+    }
+  }, [canSyncFaceId, faceSyncing, selectedDay, toast, load]);
 
   useEffect(() => {
     void load();
@@ -2416,6 +2445,24 @@ export default function DavomatPage() {
                 <div className="mt-1 truncate text-[13px] font-bold text-[#0f2744] dark:text-slate-100">{formatLongDate(selectedDay, locale)}</div>
               </div>
             </div>
+            {canSyncFaceId ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                title={locale === "ru" ? "Face ID с терминала" : "Face ID qurilmadan yangilash"}
+                aria-label={locale === "ru" ? "Face ID с терминала" : "Face ID qurilmadan yangilash"}
+                className="h-11 w-11 rounded-xl border-sky-200 bg-sky-50/90 text-sky-700 shadow-[0_1px_2px_rgba(15,39,68,0.05)] hover:border-sky-400 hover:bg-sky-100 hover:text-sky-800 dark:border-sky-400/30 dark:bg-sky-400/10 dark:text-sky-200"
+                onClick={() => void syncFaceIdFromDevice()}
+                disabled={faceSyncing || loading}
+              >
+                {faceSyncing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ScanFace className={cn("h-4 w-4", faceSyncing && "animate-pulse")} />
+                )}
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="outline"

@@ -208,6 +208,31 @@ async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+/** Ofis Face ID qurilmasidan kunlik Keldim/Ketdim → HR Pro baza */
+export type HikvisionSyncDayResult = {
+  ok: boolean;
+  workDate: string;
+  deviceEvents: number;
+  matchedPeople: number;
+  written: number;
+  unmatched?: Array<{ name?: string; employeeNo?: string; time: string; label?: string }>;
+  updated?: Array<{
+    fullName: string;
+    userId: number;
+    checkIn: string | null;
+    checkOut: string | null;
+    matchBy: string;
+  }>;
+  error?: string;
+};
+
+export function syncHikvisionFaceIdDay(date: string): Promise<HikvisionSyncDayResult> {
+  return apiJson<HikvisionSyncDayResult>("/hikvision/sync-day", {
+    method: "POST",
+    body: JSON.stringify({ date }),
+  });
+}
+
 export function fetchDavomat(params: {
   from: string;
   to: string;

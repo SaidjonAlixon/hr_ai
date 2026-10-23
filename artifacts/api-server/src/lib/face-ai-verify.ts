@@ -766,7 +766,7 @@ const TERMINAL_GALLERY_BATCH = Math.max(4, Math.min(8, envNum("FACE_TERMINAL_GAL
 
 export async function identifyFromTerminalSnapshot(
   liveSnapshot: string,
-  opts?: { preferUserId?: number },
+  opts?: { preferUserId?: number; /** faqat 1:1 — gallery yo‘q (tez) */ preferOnly?: boolean },
 ): Promise<
   | { ok: true; userId: number; faceId: number; confidence: number; mode: string }
   | { ok: false; error: string; code: string }
@@ -805,7 +805,12 @@ export async function identifyFromTerminalSnapshot(
     if (pref && prefUrl) {
       try {
         const ai = await callOpenAiFaceCompare(prefUrl, live);
-        if (ai.samePerson && ai.confidence >= FACE_AI_MIN_CONFIDENCE && ai.similarity >= FACE_AI_MIN_SIMILARITY) {
+        /** Terminal: biroz yumshoqroq (qurilma o‘zi yuzni tasdiqlagan) */
+        const okSoft =
+          ai.samePerson &&
+          ai.confidence >= Math.min(FACE_AI_MIN_CONFIDENCE, 0.82) &&
+          ai.similarity >= Math.min(FACE_AI_MIN_SIMILARITY, 0.8);
+        if (okSoft) {
           logger.info(
             {
               event: "face_terminal_match",
@@ -823,12 +828,42 @@ export async function identifyFromTerminalSnapshot(
             mode: "prefer_user",
           };
         }
+        if (opts.preferOnly && ai.samePerson === false && ai.confidence >= 0.85) {
+          return {
+            ok: false,
+            error: "Yuz HR Pro dagi shu xodim rasmi bilan mos kelmadi",
+            code: "face_not_owner",
+          };
+        }
       } catch (err) {
         logger.warn(
           { event: "face_terminal_prefer", err: err instanceof Error ? err.message : "error" },
           "terminal prefer-user compare failed",
         );
+        if (opts.preferOnly) {
+          return {
+            ok: false,
+            error: "Yuzni solishtirishda xato",
+            code: "face_ai_unavailable",
+          };
+        }
       }
+    } else if (opts.preferOnly && pref) {
+      /** Profil bor, rasm yo‘q — qurilma tasdig‘iga ishonamiz */
+      return {
+        ok: true,
+        userId: pref.userId,
+        faceId: pref.id,
+        confidence: 0.7,
+        mode: "prefer_no_photo",
+      };
+    }
+    if (opts.preferOnly) {
+      return {
+        ok: false,
+        error: "Yuz HR Pro Face ID bilan tasdiqlanmadi",
+        code: "face_not_registered",
+      };
     }
   }
 

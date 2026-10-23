@@ -313,68 +313,100 @@ export async function processHikvisionEvent(
       ? `${deviceSerial}:${ev.serialNo}`
       : `${deviceSerial}:${employeeNo || "face"}:${ev.time || ""}:${ev.attendanceStatus || ""}:${ev.label || ""}`;
 
-  try {
-    await db.insert(hikvisionEventLogTable).values({
-      deviceSerial,
-      eventSerial: ev.serialNo ?? null,
-      eventKey,
-      employeeNo: employeeNo || null,
-      action: null,
-      attendanceStatus: ev.attendanceStatus || null,
-      result: "received",
-      payload: {
-        ...(ev.raw || (ev as unknown as Record<string, unknown>)),
-        hasPicture: Boolean(ev.pictureDataUrl),
-      },
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (/unique|duplicate/i.test(msg)) {
-      return { ok: true, skipped: true, reason: "duplicate_event" };
+  const [existingLog] = await db
+    .select({ id: hikvisionEventLogTable.id, result: hikvisionEventLogTable.result })
+    .from(hikvisionEventLogTable)
+    .where(eq(hikvisionEventLogTable.eventKey, eventKey))
+    .limit(1);
+  if (existingLog && existingLog.result !== "received") {
+    return { ok: true, skipped: true, reason: "duplicate_event" };
+  }
+  if (!existingLog) {
+    try {
+      await db.insert(hikvisionEventLogTable).values({
+        deviceSerial,
+        eventSerial: ev.serialNo ?? null,
+        eventKey,
+        employeeNo: employeeNo || null,
+        action: null,
+        attendanceStatus: ev.attendanceStatus || null,
+        result: "received",
+        payload: {
+          hasPicture: Boolean(ev.pictureDataUrl),
+          employeeNo,
+          name: ev.name,
+          serialNo: ev.serialNo,
+          attendanceStatus: ev.attendanceStatus,
+          label: ev.label,
+        },
+      });
+    } catch (err) {
+      const msg = `${err instanceof Error ? err.message : String(err)} ${
+        err && typeof err === "object" && "cause" in err ? String((err as { cause?: unknown }).cause) : ""
+      }`;
+      if (/unique|duplicate/i.test(msg)) {
+        return { ok: true, skipped: true, reason: "duplicate_event" };
+      }
+      throw err;
     }
-    throw err;
   }
 
-  /** 1) HR Pro Face ID bazasi bilan yuz solishtirish (asosiy) */
+  /**
+   * Identifikatsiya:
+   * - employeeNo map bo‘lsa → 1:1 Face ID (tez). AI ishlamasa ham qurilma yuzni tasdiqlagan — map ishlatiladi.
+   * - map yo‘q → gallery Face ID.
+   */
   let userId: number | null = null;
   let matchMode = "";
   const hintMap = employeeNo ? await resolveUserForEmployeeNo(employeeNo, ev.name) : null;
 
-  if (ev.pictureDataUrl) {
+  if (hintMap && ev.pictureDataUrl) {
     const { identifyFromTerminalSnapshot } = await import("./face-ai-verify");
     const face = await identifyFromTerminalSnapshot(ev.pictureDataUrl, {
-      preferUserId: hintMap?.userId,
+      preferUserId: hintMap.userId,
+      preferOnly: true,
     });
     if (face.ok) {
       userId = face.userId;
       matchMode = `face:${face.mode}`;
-      // employeeNo → user bog‘lashni yangilaymiz (keyingi safar tezroq)
-      if (employeeNo) {
-        await upsertHikvisionMapping({
-          employeeNo,
-          userId: face.userId,
-          deviceName: ev.name,
-        }).catch(() => undefined);
-      }
-    } else {
-      logger.warn(
-        { employeeNo, name: ev.name, code: face.code },
-        "Hikvision face not matched to HR Face ID",
-      );
+    } else if (face.code === "face_not_owner") {
       await db
         .update(hikvisionEventLogTable)
         .set({ result: "face_mismatch", error: `${face.code}: ${face.error}` })
         .where(eq(hikvisionEventLogTable.eventKey, eventKey));
-      return {
-        ok: false,
-        reason: face.code,
-        payload: { error: face.error, code: face.code },
-      };
+      return { ok: false, reason: face.code, payload: { error: face.error, code: face.code } };
+    } else {
+      /** Qurilma yuzni o‘z bazasida №employeeNo sifatida tasdiqlagan + map bor */
+      userId = hintMap.userId;
+      matchMode = `map_device:${hintMap.matchedBy}`;
+      logger.info(
+        { employeeNo, userId, faceCode: face.code },
+        "terminal: map+device trust (AI soft-fail)",
+      );
     }
   } else if (hintMap) {
-    /** Rasm yo‘q — eski employeeNo map (fallback) */
     userId = hintMap.userId;
     matchMode = `map:${hintMap.matchedBy}`;
+  } else if (ev.pictureDataUrl) {
+    const { identifyFromTerminalSnapshot } = await import("./face-ai-verify");
+    const face = await identifyFromTerminalSnapshot(ev.pictureDataUrl);
+    if (!face.ok) {
+      logger.warn({ employeeNo, name: ev.name, code: face.code }, "Hikvision face not matched to HR Face ID");
+      await db
+        .update(hikvisionEventLogTable)
+        .set({ result: "face_mismatch", error: `${face.code}: ${face.error}` })
+        .where(eq(hikvisionEventLogTable.eventKey, eventKey));
+      return { ok: false, reason: face.code, payload: { error: face.error, code: face.code } };
+    }
+    userId = face.userId;
+    matchMode = `face:${face.mode}`;
+    if (employeeNo) {
+      await upsertHikvisionMapping({
+        employeeNo,
+        userId: face.userId,
+        deviceName: ev.name,
+      }).catch(() => undefined);
+    }
   } else {
     await db
       .update(hikvisionEventLogTable)

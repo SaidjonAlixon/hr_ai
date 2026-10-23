@@ -148,6 +148,7 @@ type PersonAgg = {
   employeeNo?: string;
   matchBy: string;
   firstIn: Date | null;
+  lastIn: Date | null;
   lastOut: Date | null;
   events: number;
 };
@@ -275,6 +276,7 @@ export async function syncHikvisionDayFromDevice(workDate: string): Promise<Hikv
         employeeNo: ev.employeeNo,
         matchBy: resolved.matchBy,
         firstIn: null,
+        lastIn: null,
         lastOut: null,
         events: 0,
       };
@@ -284,18 +286,23 @@ export async function syncHikvisionDayFromDevice(workDate: string): Promise<Hikv
     if (ev.employeeNo) agg.employeeNo = ev.employeeNo;
     if (action === "in") {
       if (!agg.firstIn || at < agg.firstIn) agg.firstIn = at;
+      if (!agg.lastIn || at > agg.lastIn) agg.lastIn = at;
     } else if (action === "out") {
       if (!agg.lastOut || at > agg.lastOut) agg.lastOut = at;
     } else if (!agg.firstIn) {
       agg.firstIn = at;
+      agg.lastIn = at;
     } else if (!agg.lastOut || at > agg.lastOut) {
       agg.lastOut = at;
     }
   }
 
-  // Agar faqat checkIn bo‘lsa lastOut ni firstIn dan oldin qo‘ymaymiz
+  // Oxirgi event Keldim bo‘lsa — hali ofisda (Ketdim yo‘q). Aks holda birinchi Keldim + oxirgi Ketdim.
   for (const agg of aggs.values()) {
     if (agg.firstIn && agg.lastOut && agg.lastOut <= agg.firstIn) {
+      agg.lastOut = null;
+    }
+    if (agg.lastIn && agg.lastOut && agg.lastIn > agg.lastOut) {
       agg.lastOut = null;
     }
   }

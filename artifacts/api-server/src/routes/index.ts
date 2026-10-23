@@ -72,6 +72,7 @@ import explanationLettersRouter from "./explanation-letters";
 import scannerDocsRouter from "./scanner-docs";
 import abetRouter from "./abet";
 import aiAssistantRouter from "./ai-assistant";
+import hikvisionRouter from "./hikvision";
 
 const router: IRouter = Router();
 
@@ -128,6 +129,7 @@ router.use(hireAiRouter);
 router.use(notifTestRouter);
 router.use(testOfficeCoordinatorRouter);
 router.use(pushRouter);
+router.use(hikvisionRouter);
 router.use(departmentsRouter);
 router.use(usersRouter);
 router.use(staffingRouter);

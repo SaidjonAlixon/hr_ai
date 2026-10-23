@@ -76,6 +76,11 @@ app.use(
 );
 app.use(cors({ origin: true, credentials: true }));
 app.use(cookieParser());
+/** Hikvision terminal HTTP notification — JSON yoki XML */
+app.use(
+  "/api/hikvision/event",
+  express.text({ type: ["application/json", "application/xml", "text/xml", "text/plain", "*/*"], limit: "2mb" }),
+);
 app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 

@@ -3914,6 +3914,8 @@ async function applyFacePunch(opts: {
   daySlots?: ResolvedDaySlot[];
   /** Erta ketish sababi (majburiy, smena tugashidan oldin) */
   notes?: string | null;
+  /** Ofis Face ID terminali — zona blokini o‘tkazib yuborish */
+  skipZoneBlock?: boolean;
 }): Promise<
   | { ok: true; payload: Record<string, unknown> }
   | PunchFail
@@ -3933,6 +3935,7 @@ async function applyFacePunch(opts: {
     activeShiftKey = null,
     daySlots = [],
     notes: notesRaw = null,
+    skipZoneBlock = false,
   } = opts;
   let action: "in" | "out" = actionRequested;
   const defs = await getEffectiveShiftDefs();
@@ -4004,9 +4007,11 @@ async function applyFacePunch(opts: {
 
   const source = punchSourceOf(verificationMethod);
   await sweepZonePresenceSoon().catch(() => undefined);
-  const zoneBlock = await zonePunchBlock(emp.userId);
-  if (zoneBlock) {
-    return { ok: false, status: 403, body: zoneBlock };
+  if (!skipZoneBlock) {
+    const zoneBlock = await zonePunchBlock(emp.userId);
+    if (zoneBlock) {
+      return { ok: false, status: 403, body: zoneBlock };
+    }
   }
   if (action === "in") {
     const letterBlock = await explanationPunchBlock(emp.userId);
@@ -9450,5 +9455,60 @@ router.post("/davomat/xatoliklar/fix-branch", requireAuth, async (req: AuthReque
     res.status(503).json({ error: "Tiklash amalga oshmadi" });
   }
 });
+
+/**
+ * Ofis Hikvision Face ID terminalidan kelgan event → davomat Keldim/Ketdim.
+ * GPS geofence o‘rniga ofis koordinatasi yoziladi (qurilma ofisda).
+ */
+export async function punchFromHikvisionTerminal(opts: {
+  userId: number;
+  action: "in" | "out";
+  note?: string;
+}): Promise<
+  | { ok: true; payload: Record<string, unknown> }
+  | { ok: false; status: number; body: Record<string, unknown> }
+> {
+  const [user] = await db
+    .select({
+      id: usersTable.id,
+      fullName: usersTable.fullName,
+      role: usersTable.role,
+      departmentId: usersTable.departmentId,
+      status: usersTable.status,
+    })
+    .from(usersTable)
+    .where(eq(usersTable.id, opts.userId))
+    .limit(1);
+  if (!user || user.status !== "active") {
+    return {
+      ok: false,
+      status: 404,
+      body: { error: "Foydalanuvchi topilmadi yoki faol emas", code: "user_not_found" },
+    };
+  }
+  let emp: WorkplaceEmp;
+  try {
+    emp = await ensureEmployeeForUser(user);
+  } catch (err) {
+    if (err instanceof DismissedEmployeeError) {
+      return { ok: false, status: 403, body: { error: err.message, code: err.code } };
+    }
+    throw err;
+  }
+  return applyFacePunch({
+    emp,
+    userRole: user.role,
+    latitude: DAVOMAT_SITE_LAT,
+    longitude: DAVOMAT_SITE_LNG,
+    distanceMeters: 0,
+    allowedMeters: DAVOMAT_OFFICE_GEOFENCE_METERS,
+    action: opts.action,
+    verificationMethod: "FACE_ID",
+    resolvedBranchId: null,
+    resolvedBranchLabel: `Asosiy ofis · Face ID terminal`,
+    notes: opts.note || "Ofis Face ID terminali",
+    skipZoneBlock: true,
+  });
+}
 
 export default router;

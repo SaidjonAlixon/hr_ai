@@ -1773,6 +1773,11 @@ CREATE INDEX IF NOT EXISTS mobile_att_audit_action_idx ON mobile_attendance_audi
   } catch (err) {
     logger.warn({ err }, "Reception schema ensure skipped");
   }
+  try {
+    await ensureHikvisionSchema();
+  } catch (err) {
+    logger.warn({ err }, "Hikvision schema ensure skipped");
+  }
 
   try {
     const { syncAllRoleDepartmentAssignments } = await import("./role-departments");
@@ -2391,6 +2396,51 @@ export async function ensureReceptionSchema(): Promise<void> {
     logger.info("Reception logs schema ensured");
   } catch (err) {
     logger.warn({ err }, "Reception logs schema ensure failed");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+const HIKVISION_SQL = `
+CREATE TABLE IF NOT EXISTS hikvision_person_map (
+  id SERIAL PRIMARY KEY,
+  employee_no TEXT NOT NULL,
+  user_id INTEGER NOT NULL,
+  employee_id INTEGER,
+  device_name TEXT,
+  matched_by TEXT NOT NULL DEFAULT 'manual',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS hikvision_person_map_emp_no_uidx ON hikvision_person_map (employee_no);
+CREATE INDEX IF NOT EXISTS hikvision_person_map_user_idx ON hikvision_person_map (user_id);
+
+CREATE TABLE IF NOT EXISTS hikvision_event_log (
+  id SERIAL PRIMARY KEY,
+  device_serial TEXT NOT NULL DEFAULT 'default',
+  event_serial INTEGER,
+  event_key TEXT NOT NULL,
+  employee_no TEXT,
+  action TEXT,
+  attendance_status TEXT,
+  result TEXT NOT NULL,
+  error TEXT,
+  user_id INTEGER,
+  payload JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS hikvision_event_log_key_uidx ON hikvision_event_log (event_key);
+CREATE INDEX IF NOT EXISTS hikvision_event_log_created_idx ON hikvision_event_log (created_at);
+`;
+
+export async function ensureHikvisionSchema(): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query(HIKVISION_SQL);
+    logger.info("Hikvision schema ensured");
+  } catch (err) {
+    logger.warn({ err }, "Hikvision schema ensure failed");
     throw err;
   } finally {
     client.release();

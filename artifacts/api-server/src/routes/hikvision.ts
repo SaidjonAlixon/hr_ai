@@ -124,10 +124,14 @@ router.get("/hikvision/health", async (_req, res): Promise<void> => {
 
 /**
  * Qurilmadan tanlangan kun Keldim/Ketdim → ofis xodimlari (kirill/lotin ism) → HR Pro baza.
- * Davomat sahifasidagi «Face ID yangilash» tugmasi.
+ * Davomat sahifasidagi «Face ID yangilash» tugmasi — faqat admin.
  */
 router.post("/hikvision/sync-day", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireHikAdmin(req, res)) return;
+  const role = String(req.userRole || "").trim().toLowerCase();
+  if (role !== "admin") {
+    res.status(403).json({ error: "Faqat admin Face ID yangilashi mumkin" });
+    return;
+  }
   try {
     const workDate = String(req.body?.date || req.body?.workDate || "").trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {

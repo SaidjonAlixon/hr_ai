@@ -134,6 +134,7 @@ import {
   canViewChecklistStatus,
   canViewDavomat,
   canViewDavomatNotes,
+  canManageUsers,
   normalizeUserRole,
   userRoleLabel,
   isHrManager,
@@ -758,7 +759,8 @@ export default function DavomatPage() {
   const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
   const [sendOpen, setSendOpen] = useState(false);
   const canSendReports = isHrManager(user?.role);
-  const canSyncFaceId = canEdit || canSendReports;
+  /** Face ID qurilma sync — faqat admin */
+  const canSyncFaceId = canManageUsers(user?.role);
   const [edit, setEdit] = useState<EditState | null>(null);
   const [noteView, setNoteView] = useState<{
     fullName: string;
@@ -2449,18 +2451,18 @@ export default function DavomatPage() {
               <Button
                 type="button"
                 variant="outline"
-                size="icon"
-                title={locale === "ru" ? "Face ID с терминала" : "Face ID qurilmadan yangilash"}
-                aria-label={locale === "ru" ? "Face ID с терминала" : "Face ID qurilmadan yangilash"}
-                className="h-11 w-11 rounded-xl border-sky-200 bg-sky-50/90 text-sky-700 shadow-[0_1px_2px_rgba(15,39,68,0.05)] hover:border-sky-400 hover:bg-sky-100 hover:text-sky-800 dark:border-sky-400/30 dark:bg-sky-400/10 dark:text-sky-200"
+                title={locale === "ru" ? "Обновить Face ID с терминала" : "Qurilmadan Face ID yangilash"}
+                aria-label={locale === "ru" ? "Face ID обновить" : "Face ID yangilash"}
+                className="h-11 gap-2 rounded-xl border-sky-200 bg-sky-50/90 px-3.5 text-sm font-semibold text-sky-700 shadow-[0_1px_2px_rgba(15,39,68,0.05)] hover:border-sky-400 hover:bg-sky-100 hover:text-sky-800 dark:border-sky-400/30 dark:bg-sky-400/10 dark:text-sky-200"
                 onClick={() => void syncFaceIdFromDevice()}
                 disabled={faceSyncing || loading}
               >
                 {faceSyncing ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <ScanFace className={cn("h-4 w-4", faceSyncing && "animate-pulse")} />
+                  <ScanFace className="h-4 w-4" />
                 )}
+                {locale === "ru" ? "Face ID обновить" : "Face ID yangilash"}
               </Button>
             ) : null}
             <Button

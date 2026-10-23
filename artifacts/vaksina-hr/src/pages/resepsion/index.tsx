@@ -742,27 +742,31 @@ function periodTitle(period: PeriodPreset, customFrom: string, customTo: string)
   const yesterday = addTashkentDaysYmd(today, -1);
   if (period === "today") {
     const d = customFrom || today;
-    return `${formatYmdFull(d)} · tashriflar`;
+    return `Bugungi tashriflar · ${formatYmdFull(d)}`;
   }
   if (period === "yesterday") {
     const d = customFrom || yesterday;
-    return `${formatYmdFull(d)} · tashriflar`;
+    return `Kechagi tashriflar · ${formatYmdFull(d)}`;
   }
   if (period === "week") {
-    if (customFrom && customTo) return `${formatYmdFull(customFrom)} — ${formatYmdFull(customTo)}`;
+    if (customFrom && customTo) {
+      return `Haftalik tashriflar · ${formatYmdFull(customFrom)} — ${formatYmdFull(customTo)}`;
+    }
     return "Haftalik tashriflar";
   }
   if (period === "month") {
-    if (customFrom && customTo) return `${formatYmdFull(customFrom)} — ${formatYmdFull(customTo)}`;
+    if (customFrom && customTo) {
+      return `Oylik tashriflar · ${formatYmdFull(customFrom)} — ${formatYmdFull(customTo)}`;
+    }
     return "Oylik tashriflar";
   }
   if (period === "all") return "Barcha tashriflar";
   if (customFrom && customTo) {
-    if (customFrom === customTo) return `${formatYmdFull(customFrom)} · tashriflar`;
-    return `${formatYmdFull(customFrom)} — ${formatYmdFull(customTo)}`;
+    if (customFrom === customTo) return `Tashriflar · ${formatYmdFull(customFrom)}`;
+    return `Tashriflar · ${formatYmdFull(customFrom)} — ${formatYmdFull(customTo)}`;
   }
-  if (customFrom) return `${formatYmdFull(customFrom)} dan`;
-  if (customTo) return `${formatYmdFull(customTo)} gacha`;
+  if (customFrom) return `Tashriflar · ${formatYmdFull(customFrom)} dan`;
+  if (customTo) return `Tashriflar · ${formatYmdFull(customTo)} gacha`;
   return "Sana oralig‘i";
 }
 

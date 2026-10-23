@@ -677,7 +677,12 @@ function toYmdLocal(d: Date) {
 function formatYmdShort(ymd: string) {
   const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return ymd;
-  return `${Number(m[3])} ${UZ_MONTH[Number(m[2]) - 1] || ""}`;
+  return `${Number(m[3])} ${UZ_MONTH[Number(m[2]) - 1] || ""} ${m[1]}`;
+}
+
+/** Kun · oy · yil (masalan: 22 oktyabr 2026) */
+function formatYmdFull(ymd: string) {
+  return formatYmdShort(ymd);
 }
 
 function periodRange(period: PeriodPreset, customFrom: string, customTo: string) {
@@ -733,16 +738,31 @@ function periodRange(period: PeriodPreset, customFrom: string, customTo: string)
 }
 
 function periodTitle(period: PeriodPreset, customFrom: string, customTo: string) {
-  if (period === "today") return "Bugungi tashriflar";
-  if (period === "yesterday") return "Kechagi tashriflar";
-  if (period === "week") return "Haftalik tashriflar";
-  if (period === "month") return "Oylik tashriflar";
+  const today = tashkentYmd();
+  const yesterday = addTashkentDaysYmd(today, -1);
+  if (period === "today") {
+    const d = customFrom || today;
+    return `${formatYmdFull(d)} · tashriflar`;
+  }
+  if (period === "yesterday") {
+    const d = customFrom || yesterday;
+    return `${formatYmdFull(d)} · tashriflar`;
+  }
+  if (period === "week") {
+    if (customFrom && customTo) return `${formatYmdFull(customFrom)} — ${formatYmdFull(customTo)}`;
+    return "Haftalik tashriflar";
+  }
+  if (period === "month") {
+    if (customFrom && customTo) return `${formatYmdFull(customFrom)} — ${formatYmdFull(customTo)}`;
+    return "Oylik tashriflar";
+  }
   if (period === "all") return "Barcha tashriflar";
   if (customFrom && customTo) {
-    return `${formatYmdShort(customFrom)} — ${formatYmdShort(customTo)}`;
+    if (customFrom === customTo) return `${formatYmdFull(customFrom)} · tashriflar`;
+    return `${formatYmdFull(customFrom)} — ${formatYmdFull(customTo)}`;
   }
-  if (customFrom) return `${formatYmdShort(customFrom)} dan`;
-  if (customTo) return `${formatYmdShort(customTo)} gacha`;
+  if (customFrom) return `${formatYmdFull(customFrom)} dan`;
+  if (customTo) return `${formatYmdFull(customTo)} gacha`;
   return "Sana oralig‘i";
 }
 
@@ -2465,13 +2485,17 @@ export default function ResepsionPage() {
                     <CalendarDays className="h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-400" />
                     <span className="min-w-0 truncate">
                       {period === "today"
-                        ? "Bugun"
+                        ? formatYmdFull(customFrom || tashkentYmd())
                         : period === "yesterday"
-                          ? "Kecha"
+                          ? formatYmdFull(customFrom || addTashkentDaysYmd(tashkentYmd(), -1))
                           : period === "week"
-                            ? "Hafta"
+                            ? customFrom && customTo
+                              ? `${formatYmdFull(customFrom)} — ${formatYmdFull(customTo)}`
+                              : "Hafta"
                             : period === "month"
-                              ? "Oy"
+                              ? customFrom && customTo
+                                ? `${formatYmdFull(customFrom)} — ${formatYmdFull(customTo)}`
+                                : "Oy"
                               : period === "all"
                                 ? "Barchasi"
                                 : periodTitle(period, customFrom, customTo)}

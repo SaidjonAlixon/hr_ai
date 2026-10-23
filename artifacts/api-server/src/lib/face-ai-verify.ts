@@ -760,3 +760,151 @@ export async function confirmOwnerFaceWithAi(opts: {
     };
   }
 }
+
+/** Terminal / webhook: jonli rasmni barcha enrolled Face ID rasmlari bilan solishtirish. */
+const TERMINAL_GALLERY_BATCH = Math.max(4, Math.min(8, envNum("FACE_TERMINAL_GALLERY_BATCH", 6)));
+
+export async function identifyFromTerminalSnapshot(
+  liveSnapshot: string,
+  opts?: { preferUserId?: number },
+): Promise<
+  | { ok: true; userId: number; faceId: number; confidence: number; mode: string }
+  | { ok: false; error: string; code: string }
+> {
+  if (!isFaceAiEnabled()) {
+    return {
+      ok: false,
+      error: "Face AI o‘chirilgan — terminal Face ID ishlamaydi",
+      code: "face_ai_disabled",
+    };
+  }
+  const live = toAiLiveDataUrl(liveSnapshot);
+  if (!live) {
+    return {
+      ok: false,
+      error: "Qurilmadan yuz rasmi olinmadi",
+      code: "face_ai_no_photo",
+    };
+  }
+
+  const { db, faceProfilesTable } = await import("@workspace/db");
+  const { isNotNull, and, ne, eq } = await import("drizzle-orm");
+
+  /** Avval shubha qilingan user (employeeNo map) — 1:1 tez tekshiruv */
+  if (opts?.preferUserId && opts.preferUserId > 0) {
+    const [pref] = await db
+      .select({
+        id: faceProfilesTable.id,
+        userId: faceProfilesTable.userId,
+        photoUrl: faceProfilesTable.photoUrl,
+      })
+      .from(faceProfilesTable)
+      .where(eq(faceProfilesTable.userId, opts.preferUserId))
+      .limit(1);
+    const prefUrl = toDataUrl(pref?.photoUrl);
+    if (pref && prefUrl) {
+      try {
+        const ai = await callOpenAiFaceCompare(prefUrl, live);
+        if (ai.samePerson && ai.confidence >= FACE_AI_MIN_CONFIDENCE && ai.similarity >= FACE_AI_MIN_SIMILARITY) {
+          logger.info(
+            {
+              event: "face_terminal_match",
+              mode: "prefer_user",
+              userId: pref.userId,
+              confidence: ai.confidence,
+            },
+            "terminal face matched preferred user",
+          );
+          return {
+            ok: true,
+            userId: pref.userId,
+            faceId: pref.id,
+            confidence: ai.confidence,
+            mode: "prefer_user",
+          };
+        }
+      } catch (err) {
+        logger.warn(
+          { event: "face_terminal_prefer", err: err instanceof Error ? err.message : "error" },
+          "terminal prefer-user compare failed",
+        );
+      }
+    }
+  }
+
+  const rows = await db
+    .select({
+      id: faceProfilesTable.id,
+      userId: faceProfilesTable.userId,
+      photoUrl: faceProfilesTable.photoUrl,
+    })
+    .from(faceProfilesTable)
+    .where(and(isNotNull(faceProfilesTable.photoUrl), ne(faceProfilesTable.photoUrl, "")));
+
+  const gallery: Array<{ id: number; userId: number; dataUrl: string }> = [];
+  for (const row of rows) {
+    const dataUrl = toDataUrl(row.photoUrl);
+    if (dataUrl) gallery.push({ id: row.id, userId: row.userId, dataUrl });
+  }
+  if (!gallery.length) {
+    return {
+      ok: false,
+      error: "HR Pro da Face ID rasmlari yo‘q",
+      code: "face_db_empty",
+    };
+  }
+
+  try {
+    for (let i = 0; i < gallery.length; i += TERMINAL_GALLERY_BATCH) {
+      const batch = gallery.slice(i, i + TERMINAL_GALLERY_BATCH);
+      const matchId = await callOpenAiFaceIdentify(
+        live,
+        batch.map((g) => ({ id: g.id, dataUrl: g.dataUrl })),
+      );
+      if (matchId == null) continue;
+      const hit = batch.find((g) => g.id === matchId);
+      if (!hit) continue;
+      /** Gallery tanlovini 1:1 tasdiqlash */
+      const confirm = await callOpenAiFaceCompare(hit.dataUrl, live);
+      if (
+        confirm.samePerson &&
+        confirm.confidence >= FACE_AI_MIN_CONFIDENCE &&
+        confirm.similarity >= Math.min(FACE_AI_MIN_SIMILARITY, 0.85)
+      ) {
+        logger.info(
+          {
+            event: "face_terminal_match",
+            mode: "gallery",
+            userId: hit.userId,
+            faceId: hit.id,
+            confidence: confirm.confidence,
+            batchFrom: i,
+          },
+          "terminal face matched HR Face ID",
+        );
+        return {
+          ok: true,
+          userId: hit.userId,
+          faceId: hit.id,
+          confidence: confirm.confidence,
+          mode: "gallery",
+        };
+      }
+    }
+    return {
+      ok: false,
+      error: "Yuz HR Pro Face ID bazasida topilmadi",
+      code: "face_not_registered",
+    };
+  } catch (err) {
+    logger.warn(
+      { event: "face_terminal_identify", err: err instanceof Error ? err.message : "error" },
+      "terminal face identify failed",
+    );
+    return {
+      ok: false,
+      error: "Yuzni solishtirishda xato",
+      code: "face_ai_unavailable",
+    };
+  }
+}

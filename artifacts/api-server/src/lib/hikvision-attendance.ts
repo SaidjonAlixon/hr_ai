@@ -33,6 +33,9 @@ export type HikvisionAccessEvent = {
   subEventType?: number;
   currentVerifyMode?: string;
   deviceSerial?: string;
+  /** Qurilmadan kelgan yuz rasmi (data URL) — HR Face ID bilan solishtiriladi */
+  pictureDataUrl?: string;
+  pictureURL?: string;
   raw?: Record<string, unknown>;
 };
 
@@ -95,6 +98,7 @@ export function actionFromAttendanceStatus(
 
 /** Face authentication success event (minor 75 = attendance / face pass on this firmware) */
 export function isAttendanceWorthyEvent(ev: HikvisionAccessEvent): boolean {
+  if (ev.pictureDataUrl) return true;
   const hasPerson = Boolean(ev.employeeNo || ev.name);
   if (!hasPerson) return false;
   // Explicit attendance status
@@ -162,6 +166,7 @@ export function parseHikvisionPayload(body: unknown): HikvisionAccessEvent | nul
   const subEventType = Number(ac.subEventType ?? ac.minor ?? obj.subEventType ?? 0) || undefined;
   const currentVerifyMode = String(ac.currentVerifyMode ?? obj.currentVerifyMode ?? "").trim();
   const deviceSerial = String(obj.macAddress ?? ac.macAddress ?? obj.ipAddress ?? "default").trim();
+  const pictureURL = String(ac.pictureURL ?? obj.pictureURL ?? "").trim() || undefined;
 
   return {
     employeeNo: employeeNo || undefined,
@@ -174,6 +179,7 @@ export function parseHikvisionPayload(body: unknown): HikvisionAccessEvent | nul
     subEventType,
     currentVerifyMode: currentVerifyMode || undefined,
     deviceSerial,
+    pictureURL,
     raw: obj,
   };
 }
@@ -291,6 +297,7 @@ export async function processHikvisionEvent(
   action?: string;
   userId?: number;
   fullName?: string;
+  matchMode?: string;
   payload?: Record<string, unknown>;
 }> {
   await ensureReady();
@@ -300,26 +307,25 @@ export async function processHikvisionEvent(
   }
 
   const employeeNo = String(ev.employeeNo || "").trim();
-  if (!employeeNo) {
-    return { ok: false, reason: "missing_employee_no" };
-  }
-
   const deviceSerial = String(ev.deviceSerial || "default").slice(0, 64);
   const eventKey =
     ev.serialNo != null
       ? `${deviceSerial}:${ev.serialNo}`
-      : `${deviceSerial}:${employeeNo}:${ev.time || ""}:${ev.attendanceStatus || ""}:${ev.label || ""}`;
+      : `${deviceSerial}:${employeeNo || "face"}:${ev.time || ""}:${ev.attendanceStatus || ""}:${ev.label || ""}`;
 
   try {
     await db.insert(hikvisionEventLogTable).values({
       deviceSerial,
       eventSerial: ev.serialNo ?? null,
       eventKey,
-      employeeNo,
+      employeeNo: employeeNo || null,
       action: null,
       attendanceStatus: ev.attendanceStatus || null,
       result: "received",
-      payload: (ev.raw || ev) as Record<string, unknown>,
+      payload: {
+        ...(ev.raw || (ev as unknown as Record<string, unknown>)),
+        hasPicture: Boolean(ev.pictureDataUrl),
+      },
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -329,23 +335,65 @@ export async function processHikvisionEvent(
     throw err;
   }
 
-  const resolved = await resolveUserForEmployeeNo(employeeNo, ev.name);
-  if (!resolved) {
+  /** 1) HR Pro Face ID bazasi bilan yuz solishtirish (asosiy) */
+  let userId: number | null = null;
+  let matchMode = "";
+  const hintMap = employeeNo ? await resolveUserForEmployeeNo(employeeNo, ev.name) : null;
+
+  if (ev.pictureDataUrl) {
+    const { identifyFromTerminalSnapshot } = await import("./face-ai-verify");
+    const face = await identifyFromTerminalSnapshot(ev.pictureDataUrl, {
+      preferUserId: hintMap?.userId,
+    });
+    if (face.ok) {
+      userId = face.userId;
+      matchMode = `face:${face.mode}`;
+      // employeeNo → user bog‘lashni yangilaymiz (keyingi safar tezroq)
+      if (employeeNo) {
+        await upsertHikvisionMapping({
+          employeeNo,
+          userId: face.userId,
+          deviceName: ev.name,
+        }).catch(() => undefined);
+      }
+    } else {
+      logger.warn(
+        { employeeNo, name: ev.name, code: face.code },
+        "Hikvision face not matched to HR Face ID",
+      );
+      await db
+        .update(hikvisionEventLogTable)
+        .set({ result: "face_mismatch", error: `${face.code}: ${face.error}` })
+        .where(eq(hikvisionEventLogTable.eventKey, eventKey));
+      return {
+        ok: false,
+        reason: face.code,
+        payload: { error: face.error, code: face.code },
+      };
+    }
+  } else if (hintMap) {
+    /** Rasm yo‘q — eski employeeNo map (fallback) */
+    userId = hintMap.userId;
+    matchMode = `map:${hintMap.matchedBy}`;
+  } else {
     await db
       .update(hikvisionEventLogTable)
-      .set({ result: "unmapped", error: `Xodim bog‘lanmagan: ${ev.name || employeeNo}` })
+      .set({
+        result: "no_face_photo",
+        error: "Qurilmadan yuz rasmi kelmadi va xodim bog‘lanmagan",
+      })
       .where(eq(hikvisionEventLogTable.eventKey, eventKey));
-    logger.warn({ employeeNo, name: ev.name }, "Hikvision person unmapped");
-    return { ok: false, reason: "unmapped", skipped: false };
+    return { ok: false, reason: "no_face_photo" };
   }
 
   let action = actionFromAttendanceStatus(ev.attendanceStatus, ev.label);
   if (action === "auto") {
-    action = await resolveAutoAction(resolved.userId);
+    action = await resolveAutoAction(userId);
   }
 
   const note = [
     "Ofis Face ID terminali",
+    matchMode.startsWith("face:") ? "· HR Face ID mos" : "· map",
     ev.label ? `· ${ev.label}` : "",
     employeeNo ? `· №${employeeNo}` : "",
   ]
@@ -355,7 +403,7 @@ export async function processHikvisionEvent(
 
   const { punchFromHikvisionTerminal } = await import("../routes/davomat");
   const punched = await punchFromHikvisionTerminal({
-    userId: resolved.userId,
+    userId,
     action,
     note,
   });
@@ -365,7 +413,7 @@ export async function processHikvisionEvent(
       .update(hikvisionEventLogTable)
       .set({
         action,
-        userId: resolved.userId,
+        userId,
         result: "denied",
         error: String(punched.body.error || punched.body.code || "denied"),
       })
@@ -374,7 +422,8 @@ export async function processHikvisionEvent(
       ok: false,
       reason: String(punched.body.code || "punch_denied"),
       action,
-      userId: resolved.userId,
+      userId,
+      matchMode,
       payload: punched.body,
     };
   }
@@ -383,7 +432,7 @@ export async function processHikvisionEvent(
     .update(hikvisionEventLogTable)
     .set({
       action,
-      userId: resolved.userId,
+      userId,
       result: "ok",
       error: null,
     })
@@ -392,7 +441,8 @@ export async function processHikvisionEvent(
   return {
     ok: true,
     action,
-    userId: resolved.userId,
+    userId,
+    matchMode,
     fullName: String(punched.payload.fullName || ev.name || ""),
     payload: punched.payload,
   };

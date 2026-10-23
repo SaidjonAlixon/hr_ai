@@ -7,6 +7,7 @@ import {
   processHikvisionEvent,
   upsertHikvisionMapping,
 } from "../lib/hikvision-attendance";
+import { parseHikvisionHttpBody } from "../lib/hikvision-payload";
 import { ensureHikvisionSchema } from "../lib/ensure-schema";
 import { logger } from "../lib/logger";
 import { canManageUsers, hasFullPlatformAccess } from "../lib/roles";
@@ -38,7 +39,30 @@ function webhookSecretOk(req: Request): boolean {
   return q === expected || h === expected || auth === expected;
 }
 
-/** Qurilma HTTP notification — auth token query/header orqali */
+function eventFromRequest(req: Request) {
+  const ct = String(req.get("content-type") || "");
+  const parsedBody = parseHikvisionHttpBody(req.body, ct);
+  const fromJson = parsedBody.eventJson ? parseHikvisionPayload(parsedBody.eventJson) : null;
+  const fromXml = parsedBody.xmlText ? parseHikvisionPayload(parsedBody.xmlText) : null;
+  const fromRaw =
+    !fromJson && !fromXml
+      ? parseHikvisionPayload(
+          typeof req.body === "string" || Buffer.isBuffer(req.body)
+            ? Buffer.isBuffer(req.body)
+              ? req.body.toString("utf8")
+              : req.body
+            : req.body,
+        )
+      : null;
+  const ev = fromJson || fromXml || fromRaw;
+  if (!ev) return null;
+  if (parsedBody.pictureDataUrl) {
+    ev.pictureDataUrl = parsedBody.pictureDataUrl;
+  }
+  return ev;
+}
+
+/** Qurilma HTTP notification — yuz rasmi + event */
 router.post("/hikvision/event", async (req: Request, res: Response): Promise<void> => {
   try {
     if (!webhookSecretOk(req)) {
@@ -47,12 +71,7 @@ router.post("/hikvision/event", async (req: Request, res: Response): Promise<voi
     }
     await ensureHikvisionSchema().catch(() => undefined);
 
-    const rawBody = typeof req.body === "string" && req.body.trim() ? req.body : req.body;
-    const parsed =
-      parseHikvisionPayload(rawBody) ||
-      parseHikvisionPayload(req.body) ||
-      (typeof rawBody === "object" && rawBody ? parseHikvisionPayload(rawBody) : null);
-
+    const parsed = eventFromRequest(req);
     if (!parsed) {
       res.status(200).json({ ok: true, skipped: true, reason: "empty" });
       return;
@@ -63,7 +82,9 @@ router.post("/hikvision/event", async (req: Request, res: Response): Promise<voi
       {
         employeeNo: parsed.employeeNo,
         name: parsed.name,
+        hasPicture: Boolean(parsed.pictureDataUrl),
         action: result.action,
+        matchMode: result.matchMode,
         ok: result.ok,
         skipped: result.skipped,
         reason: result.reason,
@@ -82,8 +103,9 @@ router.get("/hikvision/health", async (_req, res): Promise<void> => {
   res.json({
     ok: true,
     configured,
+    faceCompare: true,
     hint: configured
-      ? "Webhook tayyor. Qurilmada HTTP Host → /api/hikvision/event?token=…"
+      ? "Webhook: qurilma yuzi HR Pro Face ID bilan solishtiriladi → Keldim/Ketdim"
       : "HIKVISION_WEBHOOK_SECRET .env da yo‘q",
   });
 });
@@ -148,7 +170,7 @@ router.get("/hikvision/events", requireAuth, async (req: AuthRequest, res): Prom
   }
 });
 
-/** Qo‘lda sinov — admin */
+/** Qo‘lda sinov — rasm (data URL) + ixtiyoriy employeeNo */
 router.post("/hikvision/test-punch", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireHikAdmin(req, res)) return;
   try {
@@ -156,15 +178,17 @@ router.post("/hikvision/test-punch", requireAuth, async (req: AuthRequest, res):
     const name = String(req.body?.name || "").trim();
     const attendanceStatus = String(req.body?.attendanceStatus || "checkIn").trim();
     const label = String(req.body?.label || "KELDIM").trim();
-    if (!employeeNo) {
-      res.status(400).json({ error: "employeeNo majburiy" });
+    const pictureDataUrl = String(req.body?.pictureDataUrl || req.body?.snapshot || "").trim();
+    if (!pictureDataUrl && !employeeNo) {
+      res.status(400).json({ error: "pictureDataUrl (Face ID rasm) yoki employeeNo kerak" });
       return;
     }
     const result = await processHikvisionEvent({
-      employeeNo,
+      employeeNo: employeeNo || undefined,
       name: name || undefined,
       attendanceStatus,
       label,
+      pictureDataUrl: pictureDataUrl.startsWith("data:image/") ? pictureDataUrl : undefined,
       serialNo: Date.now() % 1_000_000_000,
       time: new Date().toISOString(),
       majorEventType: 5,

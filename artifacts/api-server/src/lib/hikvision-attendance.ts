@@ -360,33 +360,42 @@ export async function processHikvisionEvent(
   let matchMode = "";
   const hintMap = employeeNo ? await resolveUserForEmployeeNo(employeeNo, ev.name) : null;
 
-  if (hintMap && ev.pictureDataUrl) {
-    const { identifyFromTerminalSnapshot } = await import("./face-ai-verify");
-    const face = await identifyFromTerminalSnapshot(ev.pictureDataUrl, {
-      preferUserId: hintMap.userId,
-      preferOnly: true,
-    });
-    if (face.ok) {
-      userId = face.userId;
-      matchMode = `face:${face.mode}`;
-    } else if (face.code === "face_not_owner") {
-      await db
-        .update(hikvisionEventLogTable)
-        .set({ result: "face_mismatch", error: `${face.code}: ${face.error}` })
-        .where(eq(hikvisionEventLogTable.eventKey, eventKey));
-      return { ok: false, reason: face.code, payload: { error: face.error, code: face.code } };
-    } else {
-      /** Qurilma yuzni o‘z bazasida №employeeNo sifatida tasdiqlagan + map bor */
-      userId = hintMap.userId;
-      matchMode = `map_device:${hintMap.matchedBy}`;
-      logger.info(
-        { employeeNo, userId, faceCode: face.code },
-        "terminal: map+device trust (AI soft-fail)",
-      );
-    }
-  } else if (hintMap) {
+  /**
+   * Bog‘langan employeeNo → darhol punch (qurilma yuzni o‘zi tasdiqlagan).
+   * AI gallery sekin — qurilma timeout qilib eventni yo‘qotardi.
+   * Rasm bo‘lsa fonida 1:1 solishtirish loglanadi (bloklamaydi).
+   */
+  if (hintMap) {
     userId = hintMap.userId;
-    matchMode = `map:${hintMap.matchedBy}`;
+    matchMode = `map_device:${hintMap.matchedBy}`;
+    if (ev.pictureDataUrl) {
+      void import("./face-ai-verify")
+        .then(({ identifyFromTerminalSnapshot }) =>
+          identifyFromTerminalSnapshot(ev.pictureDataUrl!, {
+            preferUserId: hintMap.userId,
+            preferOnly: true,
+          }),
+        )
+        .then((face) => {
+          if (face.ok) {
+            logger.info(
+              { employeeNo, userId: face.userId, mode: face.mode, confidence: face.confidence },
+              "terminal background Face ID confirm ok",
+            );
+          } else {
+            logger.warn(
+              { employeeNo, userId: hintMap.userId, code: face.code },
+              "terminal background Face ID confirm fail",
+            );
+          }
+        })
+        .catch((err) =>
+          logger.warn(
+            { employeeNo, err: err instanceof Error ? err.message : "error" },
+            "terminal background Face ID error",
+          ),
+        );
+    }
   } else if (ev.pictureDataUrl) {
     const { identifyFromTerminalSnapshot } = await import("./face-ai-verify");
     const face = await identifyFromTerminalSnapshot(ev.pictureDataUrl);

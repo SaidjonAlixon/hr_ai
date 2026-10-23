@@ -69,7 +69,6 @@ router.post("/hikvision/event", async (req: Request, res: Response): Promise<voi
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
-    await ensureHikvisionSchema().catch(() => undefined);
 
     const parsed = eventFromRequest(req);
     if (!parsed) {
@@ -77,24 +76,34 @@ router.post("/hikvision/event", async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    const result = await processHikvisionEvent(parsed);
-    logger.info(
-      {
-        employeeNo: parsed.employeeNo,
-        name: parsed.name,
-        hasPicture: Boolean(parsed.pictureDataUrl),
-        action: result.action,
-        matchMode: result.matchMode,
-        ok: result.ok,
-        skipped: result.skipped,
-        reason: result.reason,
-      },
-      "Hikvision event",
-    );
-    res.status(200).json(result);
+    /**
+     * Qurilma HTTP timeout (~3–5s). AI/DB sekin bo‘lsa event navbati yo‘qolardi.
+     * Darhol 200 — punch fonida.
+     */
+    res.status(200).json({ ok: true, accepted: true, employeeNo: parsed.employeeNo });
+
+    void (async () => {
+      await ensureHikvisionSchema().catch(() => undefined);
+      const result = await processHikvisionEvent(parsed);
+      logger.info(
+        {
+          employeeNo: parsed.employeeNo,
+          name: parsed.name,
+          hasPicture: Boolean(parsed.pictureDataUrl),
+          action: result.action,
+          matchMode: result.matchMode,
+          ok: result.ok,
+          skipped: result.skipped,
+          reason: result.reason,
+        },
+        "Hikvision event",
+      );
+    })().catch((err) => logger.error({ err }, "POST /hikvision/event async"));
   } catch (err) {
     logger.error({ err }, "POST /hikvision/event");
-    res.status(200).json({ ok: false, error: "server_error" });
+    if (!res.headersSent) {
+      res.status(200).json({ ok: false, error: "server_error" });
+    }
   }
 });
 

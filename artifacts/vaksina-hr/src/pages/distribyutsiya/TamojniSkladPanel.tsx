@@ -27,7 +27,7 @@ import { VerifiedName } from "@/components/VerifiedBadge";
 import { gpsInputError, parseGpsText } from "@/lib/pharmacy-staff-api";
 import { useTamojniDesk, useTamojniMutations, type TamojniStaffRow } from "@/lib/distribyutsiya-api";
 import { DavomatSitePicker } from "./DavomatSitePicker";
-import { EditTamojniStaffButton, RemoveTamojniStaffButton } from "./StaffActions";
+import { EditTamojniStaffButton, RemoveTamojniStaffButton, TamojniStatusSelect } from "./StaffActions";
 
 const TAMOJNI_RADIUS_M = 150;
 
@@ -499,6 +499,7 @@ function StaffShiftRow({
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-sky-700">{row.shiftTitle}</span>
+            <TamojniStatusSelect row={row} canEdit={canManage} />
             <span className="text-[11px] text-muted-foreground">Davomat joyi:</span>
             <DavomatSitePicker
               userId={row.userId}

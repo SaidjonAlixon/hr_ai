@@ -423,6 +423,73 @@ export function RemoveStaffButton({ row }: { row: DistribStaffRow }) {
   );
 }
 
+export function tamojniCurrentStatus(row: TamojniStaffRow): DistribEmploymentStatus {
+  if (row.employmentStatus === "on_leave" || row.status === "on_leave") return "on_leave";
+  if (row.employmentStatus === "dismissed" || row.status === "dismissed") return "dismissed";
+  return "working";
+}
+
+/** Tamojni holat: Ishlayapti / Ta’tilda / Bo‘shatildi */
+export function TamojniStatusSelect({ row, canEdit }: { row: TamojniStaffRow; canEdit: boolean }) {
+  const { toast } = useToast();
+  const mut = useTamojniMutations();
+  const [pending, setPending] = useState<DistribEmploymentStatus | null>(null);
+  const value = tamojniCurrentStatus(row);
+
+  if (!canEdit) {
+    return (
+      <span className={cn("rounded-full border px-2 py-0.5 text-[11px] font-semibold", STATUS_TONE[value])}>
+        {DISTRIB_STATUS_LABEL[value]}
+      </span>
+    );
+  }
+
+  return (
+    <>
+      <select
+        value={value}
+        disabled={mut.setStatus.isPending}
+        onChange={(e) => setPending(e.target.value as DistribEmploymentStatus)}
+        className={cn("h-8 rounded-lg border px-2 text-xs font-semibold", STATUS_TONE[value])}
+        aria-label="Holat"
+      >
+        {(Object.keys(DISTRIB_STATUS_LABEL) as DistribEmploymentStatus[]).map((s) => (
+          <option key={s} value={s}>
+            {DISTRIB_STATUS_LABEL[s]}
+          </option>
+        ))}
+      </select>
+      {pending && pending !== value ? (
+        <ReasonDialog
+          title={pending === "dismissed" ? `${row.fullName} — ishdan bo‘shatish` : `Holat: ${DISTRIB_STATUS_LABEL[pending]}`}
+          description={
+            pending === "dismissed"
+              ? "Login va parol bekor bo‘ladi, xodim ro‘yxatdan chiqib «Bo‘shatilganlar» arxiviga o‘tadi."
+              : "Xodimga bildirishnoma boradi."
+          }
+          required={pending === "dismissed"}
+          confirmLabel={pending === "dismissed" ? "Bo‘shatish" : "Saqlash"}
+          destructive={pending === "dismissed"}
+          busy={mut.setStatus.isPending}
+          onClose={() => setPending(null)}
+          onConfirm={(reason) =>
+            mut.setStatus.mutate(
+              { userId: row.userId, status: pending, reason },
+              {
+                onSuccess: (d) => {
+                  toast({ title: d.message });
+                  setPending(null);
+                },
+                onError: (e: Error) => toast({ title: "Saqlanmadi", description: e.message, variant: "destructive" }),
+              },
+            )
+          }
+        />
+      ) : null}
+    </>
+  );
+}
+
 /** Tamojni sklad xodimini o‘chirish — Distribyutsiya HR ham */
 export function RemoveTamojniStaffButton({ row }: { row: TamojniStaffRow }) {
   const { toast } = useToast();

@@ -314,6 +314,7 @@ export type TamojniStaffRow = {
   login: string;
   phone: string | null;
   status: string | null;
+  employmentStatus?: string | null;
   employeeId: number | null;
   position: string | null;
   shiftKey: string;
@@ -396,7 +397,18 @@ export function useTamojniMutations() {
       ),
     onSuccess: invalidate,
   });
-  return { saveSite, createStaff, saveShift, updateStaff, removeStaff };
+  const setStatus = useMutation({
+    mutationFn: (body: { userId: number; status: DistribEmploymentStatus; reason?: string }) =>
+      apiFetch<{ ok: boolean; removed: boolean; message: string }>(
+        `/distribyutsiya/tamojni/staff/${body.userId}/status`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ status: body.status, reason: body.reason }),
+        },
+      ),
+    onSuccess: invalidate,
+  });
+  return { saveSite, createStaff, saveShift, updateStaff, removeStaff, setStatus };
 }
 
 export async function downloadDistribStaffExcel() {

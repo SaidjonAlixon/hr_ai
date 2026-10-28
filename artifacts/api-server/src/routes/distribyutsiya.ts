@@ -1144,6 +1144,7 @@ router.get("/distribyutsiya/tamojni", requireAuth, async (req: AuthRequest, res)
         status: usersTable.status,
         employeeId: employeesTable.id,
         position: employeesTable.position,
+        employmentStatus: employeesTable.employmentStatus,
         shiftType: employeesTable.shiftType,
         shiftLabel: employeesTable.shiftLabel,
         davomatSiteRaw: employeesTable.davomatSite,
@@ -1455,6 +1456,114 @@ router.patch("/distribyutsiya/tamojni/staff/:userId", requireAuth, async (req: A
   } catch (err) {
     console.error("PATCH /distribyutsiya/tamojni/staff/:userId error:", err);
     res.status(500).json({ error: "Saqlanmadi" });
+  }
+});
+
+/** Tamojni holat: ishlayapti / ta’tilda / bo‘shatildi — Distribyutsiya HR ham */
+router.patch("/distribyutsiya/tamojni/staff/:userId/status", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageTamojni(req.userRole)) {
+    res.status(403).json({ error: "Holatni o‘zgartirishga ruxsat yo‘q" });
+    return;
+  }
+  const status = String(req.body?.status || "").trim();
+  if (!DISTRIB_STATUS_LABEL[status]) {
+    res.status(400).json({ error: "Holatni tanlang: ishlayapti, ta’tilda yoki bo‘shatildi" });
+    return;
+  }
+  const reason = String(req.body?.reason || "").trim().slice(0, 500);
+  if (status === "dismissed" && reason.length < 3) {
+    res.status(400).json({ error: "Bo‘shatish sababini yozing" });
+    return;
+  }
+  const userId = Number(req.params.userId);
+  if (!Number.isFinite(userId) || userId <= 0) {
+    res.status(400).json({ error: "userId noto‘g‘ri" });
+    return;
+  }
+  if (userId === req.userId) {
+    res.status(403).json({ error: "O‘zingizning holatingizni shu yerdan o‘zgartira olmaysiz" });
+    return;
+  }
+  try {
+    const departmentId = await ensureTamojniSkladDepartmentId();
+    const [row] = await db
+      .select({
+        userId: usersTable.id,
+        fullName: usersTable.fullName,
+        role: usersTable.role,
+        departmentId: usersTable.departmentId,
+        employeeId: employeesTable.id,
+      })
+      .from(usersTable)
+      .leftJoin(employeesTable, eq(employeesTable.userId, usersTable.id))
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    if (!row || row.departmentId !== departmentId) {
+      res.status(404).json({ error: "Tamojni sklad xodimi topilmadi" });
+      return;
+    }
+    if (row.role !== TAMOJNI_STAFF_ROLE && row.role !== TAMOJNI_HEAD_ROLE) {
+      res.status(400).json({ error: "Bu xodim Tamojni skladga tegishli emas" });
+      return;
+    }
+    if (String(req.userRole || "") === "distrib_hr" && row.role === TAMOJNI_HEAD_ROLE) {
+      res.status(403).json({ error: "Tamojni rahbar holatini faqat Admin yoki Distribyutsiya rahbari o‘zgartiradi" });
+      return;
+    }
+
+    if (status === "dismissed") {
+      const ok = await archiveAndDeleteUser(row.userId, { actorId: req.userId ?? null, reason });
+      if (!ok) {
+        res.status(404).json({ error: "Topilmadi" });
+        return;
+      }
+      res.json({
+        ok: true,
+        removed: true,
+        message: `${row.fullName} bo‘shatildi va Bo‘shatilganlar arxiviga o‘tkazildi`,
+      });
+      return;
+    }
+
+    if (!row.employeeId) {
+      await ensureEmployeeForNewUser({
+        id: row.userId,
+        fullName: row.fullName,
+        role: row.role,
+        departmentId,
+      });
+    }
+    await db
+      .update(employeesTable)
+      .set({ employmentStatus: status, updatedAt: new Date() })
+      .where(eq(employeesTable.userId, row.userId));
+    await db
+      .update(usersTable)
+      .set({ status: status === "on_leave" ? "on_leave" : "active" })
+      .where(eq(usersTable.id, row.userId));
+
+    const author = await actorName(req.userId);
+    await db.insert(staffCommentsTable).values({
+      userId: row.userId,
+      employeeId: row.employeeId ?? null,
+      departmentId,
+      kind: "note",
+      relatedDate: ymdInTashkent(new Date()),
+      text: `Holat o‘zgardi: ${DISTRIB_STATUS_LABEL[status]}${reason ? `. ${reason}` : ""}`,
+      authorId: req.userId ?? null,
+      authorName: author,
+    });
+    await notifyUser({
+      userId: row.userId,
+      text: `Holatingiz o‘zgartirildi: ${DISTRIB_STATUS_LABEL[status]}${reason ? ` (${reason})` : ""}`,
+      type: "staff_status",
+      linkUrl: "/dashboard",
+    }).catch(() => undefined);
+
+    res.json({ ok: true, removed: false, status, message: `Holat: ${DISTRIB_STATUS_LABEL[status]}` });
+  } catch (err) {
+    console.error("PATCH /distribyutsiya/tamojni/staff/:userId/status error:", err);
+    res.status(500).json({ error: "Holat saqlanmadi" });
   }
 });
 

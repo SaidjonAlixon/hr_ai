@@ -114,6 +114,8 @@ import {
   fetchEmployeeSchedule,
   saveEmployeeSchedule,
   clearEmployeeSchedule,
+  FREE_SCHEDULE_NOTE,
+  isFreeScheduleNote,
   syncHikvisionFaceIdDay,
   type ScheduleShiftOption,
   type DavomatDayMetrics,
@@ -788,6 +790,8 @@ export default function DavomatPage() {
     shiftKey: string;
     startHm: string;
     endHm: string;
+    note: string;
+    freeSchedule: boolean;
     shifts: ScheduleShiftOption[];
     currentId: number | null;
     loading: boolean;
@@ -1487,6 +1491,8 @@ export default function DavomatPage() {
       shiftKey: day?.planShift || "office",
       startHm: day?.planStart || emp.workStart || "09:00",
       endHm: day?.planEnd || emp.workEnd || "18:00",
+      note: "",
+      freeSchedule: false,
       shifts: [],
       currentId: null,
       loading: true,
@@ -1494,6 +1500,7 @@ export default function DavomatPage() {
     void fetchEmployeeSchedule(emp.id, workDate)
       .then((data) => {
         const current = data.current;
+        const free = isFreeScheduleNote(current?.note);
         const selected = data.shifts.find((s) => s.key === (current?.shiftKey || day?.planShift || "office")) || data.shifts[0];
         setSchedule((prev) =>
           prev && prev.employeeId === emp.id
@@ -1506,8 +1513,10 @@ export default function DavomatPage() {
                 validFrom: current?.validFrom || workDate,
                 validTo: current?.validTo || workDate,
                 shiftKey: current?.shiftKey || selected?.key || "office",
-                startHm: current?.startHm || selected?.start || prev.startHm,
-                endHm: current?.endHm || selected?.end || prev.endHm,
+                startHm: free ? "00:00" : current?.startHm || selected?.start || prev.startHm,
+                endHm: free ? "23:55" : current?.endHm || selected?.end || prev.endHm,
+                note: current?.note || "",
+                freeSchedule: free,
               }
             : prev,
         );
@@ -1527,12 +1536,13 @@ export default function DavomatPage() {
         mode: schedule.mode,
         validFrom: schedule.validFrom,
         validTo: schedule.mode === "period" ? schedule.validTo : null,
-        shiftKey: schedule.shiftKey,
-        startHm: schedule.startHm,
-        endHm: schedule.endHm,
+        shiftKey: schedule.freeSchedule ? "office" : schedule.shiftKey,
+        startHm: schedule.freeSchedule ? "00:00" : schedule.startHm,
+        endHm: schedule.freeSchedule ? "23:55" : schedule.endHm,
+        note: schedule.freeSchedule ? FREE_SCHEDULE_NOTE : null,
       });
       toast({
-        title: "Smena vaqti saqlandi",
+        title: schedule.freeSchedule ? "Erkin grafik saqlandi" : "Smena vaqti saqlandi",
         description: `${schedule.fullName} · faqat shu xodim`,
       });
       setSchedule(null);
@@ -3460,7 +3470,7 @@ export default function DavomatPage() {
                 {schedule.workDate}
               </p>
               <p className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs leading-relaxed text-sky-950 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-100">
-                Faqat shu xodimga ta’sir qiladi. Smena tanlansa standart vaqt chiqadi. Kelish va ketishni shu xodim uchun o‘zgartirish mumkin. Davomat, jarima va Keldim/Ketdim shu vaqtga qarab hisoblanadi.
+                Faqat shu xodimga ta’sir qiladi. Smena tanlansa standart vaqt chiqadi. «Erkin grafik» — kechikish va jarima yo‘q, istalgan vaqtda Keldim/Ketdim.
               </p>
               {schedule.loading ? (
                 <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
@@ -3486,6 +3496,31 @@ export default function DavomatPage() {
                       Muddatli
                     </Button>
                   </div>
+                  <Button
+                    type="button"
+                    variant={schedule.freeSchedule ? "default" : "outline"}
+                    className={cn(
+                      "w-full rounded-xl",
+                      schedule.freeSchedule && "bg-emerald-600 hover:bg-emerald-700",
+                    )}
+                    onClick={() =>
+                      setSchedule({
+                        ...schedule,
+                        freeSchedule: !schedule.freeSchedule,
+                        note: !schedule.freeSchedule ? FREE_SCHEDULE_NOTE : "",
+                        shiftKey: "office",
+                        startHm: !schedule.freeSchedule ? "00:00" : "09:00",
+                        endHm: !schedule.freeSchedule ? "23:55" : "18:00",
+                      })
+                    }
+                  >
+                    {schedule.freeSchedule ? "Erkin grafik · yoqilgan" : "Erkin grafik (vaqt erkin)"}
+                  </Button>
+                  {schedule.freeSchedule ? (
+                    <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100">
+                      Kechikish hisoblanmaydi. Xodim istalgan vaqtda davomat qilishi mumkin.
+                    </p>
+                  ) : null}
                   <div className={schedule.mode === "period" ? "grid grid-cols-2 gap-3" : ""}>
                     <div>
                       <Label>{schedule.mode === "period" ? "Boshlanish" : "Shu sanadan"}</Label>
@@ -3506,58 +3541,62 @@ export default function DavomatPage() {
                       </div>
                     ) : null}
                   </div>
-                  <div>
-                    <Label>Smena</Label>
-                    <Select
-                      value={schedule.shiftKey}
-                      onValueChange={(key) => {
-                        const picked = schedule.shifts.find((item) => item.key === key);
-                        setSchedule({
-                          ...schedule,
-                          shiftKey: key,
-                          startHm: picked?.start || schedule.startHm,
-                          endHm: picked?.end || schedule.endHm,
-                        });
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(schedule.shifts.length
-                          ? schedule.shifts
-                          : [
-                              { key: "office", label: "Ofis", start: "09:00", end: "18:00" },
-                              { key: "one", label: "1-smena", start: "08:00", end: "17:00" },
-                              { key: "two", label: "2-smena", start: "17:00", end: "23:59" },
-                              { key: "three", label: "3-smena", start: "23:00", end: "07:00" },
-                            ]
-                        ).map((item) => (
-                          <SelectItem key={item.key} value={item.key}>
-                            {item.label} · {item.start}–{item.end}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label>Kelish</Label>
-                      <Input
-                        value={schedule.startHm}
-                        placeholder="09:00"
-                        onChange={(e) => setSchedule({ ...schedule, startHm: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <Label>Ketish</Label>
-                      <Input
-                        value={schedule.endHm}
-                        placeholder="18:00"
-                        onChange={(e) => setSchedule({ ...schedule, endHm: e.target.value })}
-                      />
-                    </div>
-                  </div>
+                  {!schedule.freeSchedule ? (
+                    <>
+                      <div>
+                        <Label>Smena</Label>
+                        <Select
+                          value={schedule.shiftKey}
+                          onValueChange={(key) => {
+                            const picked = schedule.shifts.find((item) => item.key === key);
+                            setSchedule({
+                              ...schedule,
+                              shiftKey: key,
+                              startHm: picked?.start || schedule.startHm,
+                              endHm: picked?.end || schedule.endHm,
+                            });
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(schedule.shifts.length
+                              ? schedule.shifts
+                              : [
+                                  { key: "office", label: "Ofis", start: "09:00", end: "18:00" },
+                                  { key: "one", label: "1-smena", start: "08:00", end: "17:00" },
+                                  { key: "two", label: "2-smena", start: "17:00", end: "23:59" },
+                                  { key: "three", label: "3-smena", start: "23:00", end: "07:00" },
+                                ]
+                            ).map((item) => (
+                              <SelectItem key={item.key} value={item.key}>
+                                {item.label} · {item.start}–{item.end}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label>Kelish</Label>
+                          <Input
+                            value={schedule.startHm}
+                            placeholder="09:00"
+                            onChange={(e) => setSchedule({ ...schedule, startHm: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label>Ketish</Label>
+                          <Input
+                            value={schedule.endHm}
+                            placeholder="18:00"
+                            onChange={(e) => setSchedule({ ...schedule, endHm: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
                 </>
               )}
             </div>

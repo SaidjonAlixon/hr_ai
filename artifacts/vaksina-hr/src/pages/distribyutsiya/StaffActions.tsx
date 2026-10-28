@@ -331,13 +331,14 @@ export function EditTamojniStaffButton({ row }: { row: TamojniStaffRow }) {
     <>
       <Button
         type="button"
-        size="icon"
-        variant="ghost"
-        className="h-8 w-8 text-sky-700 hover:bg-sky-50 hover:text-sky-800"
-        title="Tahrirlash"
+        size="sm"
+        variant="outline"
+        className="h-8 gap-1.5 border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100 hover:text-sky-900"
+        title="Ism va lavozimni tahrirlash"
         onClick={openDialog}
       >
-        <Pencil className="h-4 w-4" />
+        <Pencil className="h-3.5 w-3.5" />
+        Lavozim
       </Button>
       {open ? (
         <Dialog open onOpenChange={(o) => !o && setOpen(false)}>

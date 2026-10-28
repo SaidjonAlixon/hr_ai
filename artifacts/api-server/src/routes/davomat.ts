@@ -5093,7 +5093,9 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
           type: scheduleOverride?.shiftKey || deadlineShiftType || wFull.key,
           keys: scheduleOverride ? [scheduleOverride.shiftKey] : dayShiftKeys?.length ? dayShiftKeys : wFull.keys || [wFull.key],
           label: scheduleOverride && !wFull.warehouseFlexible
-            ? `${overrideShiftLabel(scheduleOverride)} · ${wFull.start}–${wFull.end}`
+            ? wFull.noPenalty
+              ? overrideShiftLabel(scheduleOverride)
+              : `${overrideShiftLabel(scheduleOverride)} · ${wFull.start}–${wFull.end}`
             : daySlots.length
               ? daySlots.map((s) => `${formatShiftKeyUz(s.shiftKey)}→${s.branchLabel || s.branchId}`).join(" · ")
               : wFull.label,

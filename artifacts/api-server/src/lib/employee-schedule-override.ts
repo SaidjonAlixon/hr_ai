@@ -7,6 +7,11 @@ import { warnHmBefore } from "./shift-schedule";
 export const SCHEDULE_SHIFT_KEYS = ["office", "one", "two", "three"] as const;
 export type ScheduleShiftKey = (typeof SCHEDULE_SHIFT_KEYS)[number];
 
+/** Shaxsiy erkin grafik — kechikish/jarima yo‘q (note shu prefiks bilan) */
+export const FREE_SCHEDULE_NOTE = "Erkin grafik";
+export const FREE_SCHEDULE_START_HM = "00:00";
+export const FREE_SCHEDULE_END_HM = "23:55";
+
 export type ScheduleOverride = {
   id: number;
   employeeId: number;
@@ -26,6 +31,14 @@ const SHIFT_LABEL: Record<ScheduleShiftKey, string> = {
   three: "3-smena",
 };
 
+export function isFreeScheduleNote(note?: string | null): boolean {
+  const n = String(note || "")
+    .trim()
+    .toLocaleLowerCase("uz")
+    .replace(/[ʻʼ‘’'`´]/g, "'");
+  return n.startsWith("erkin grafik") || n.startsWith("erkin vaqt") || n === "erkin";
+}
+
 export function isScheduleShiftKey(value: string): value is ScheduleShiftKey {
   return (SCHEDULE_SHIFT_KEYS as readonly string[]).includes(value);
 }
@@ -36,6 +49,7 @@ export function scheduleShiftLabel(key: ScheduleShiftKey): string {
 
 /** O‘rta smena xodimiga qo‘yilgan shaxsiy vaqt engine uchun "one", izohi «O‘rta smena» bilan boshlanadi */
 export function overrideShiftLabel(rule: Pick<ScheduleOverride, "shiftKey" | "note">): string {
+  if (isFreeScheduleNote(rule.note)) return FREE_SCHEDULE_NOTE;
   if (rule.note && rule.note.startsWith(ORTA_SHIFT_LABEL)) return ORTA_SHIFT_LABEL;
   return scheduleShiftLabel(rule.shiftKey);
 }
@@ -71,19 +85,23 @@ export function pickScheduleOverride(
 }
 
 export function staffHoursFromOverride(rule: ScheduleOverride, graceMinutes = 15): StaffHours {
+  const free = isFreeScheduleNote(rule.note);
   return {
     start: rule.startHm,
     end: rule.endHm,
-    graceMinutes,
+    graceMinutes: free ? 24 * 60 : graceMinutes,
     overnight: scheduleOvernight(rule.startHm, rule.endHm),
     shiftKey: rule.shiftKey,
     shiftKeys: [rule.shiftKey],
+    noPenalty: free || undefined,
   };
 }
 
 export function workScheduleFromOverride(rule: ScheduleOverride, graceMinutes = 15): WorkSchedule {
+  const free = isFreeScheduleNote(rule.note);
   const overnight = scheduleOvernight(rule.startHm, rule.endHm);
-  const label = scheduleShiftLabel(rule.shiftKey);
+  const label = free ? FREE_SCHEDULE_NOTE : scheduleShiftLabel(rule.shiftKey);
+  const grace = free ? 24 * 60 : graceMinutes;
   const range = overnight ? `${rule.startHm}–${rule.endHm} (keyingi kun)` : `${rule.startHm}–${rule.endHm}`;
   return {
     key: rule.shiftKey as ShiftKey,
@@ -91,10 +109,13 @@ export function workScheduleFromOverride(rule: ScheduleOverride, graceMinutes = 
     label,
     start: rule.startHm,
     end: rule.endHm,
-    graceMinutes,
+    graceMinutes: grace,
     overnight,
-    warnHm: warnHmBefore(rule.startHm, graceMinutes),
-    warnText: `${label}: kelish ${rule.startHm}, ketish ${rule.endHm}. ${graceMinutes} daqiqadan so‘ng kechikish. ${range}.`,
+    noPenalty: free || undefined,
+    warnHm: rule.startHm,
+    warnText: free
+      ? `${FREE_SCHEDULE_NOTE}: istalgan vaqtda Keldim/Ketdim. Kechikish va jarima yo‘q.`
+      : `${label}: kelish ${rule.startHm}, ketish ${rule.endHm}. ${grace} daqiqadan so‘ng kechikish. ${range}.`,
   };
 }
 

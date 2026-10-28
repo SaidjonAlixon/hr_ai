@@ -26,7 +26,12 @@ import {
 import { archiveAndDeleteUser } from "../lib/dismiss-user";
 import { formatPersonName } from "../lib/person-name";
 import { getActorDepartmentId, isDeptHeadRole, resolveDeptHeadContext } from "../lib/dept-staff";
-import { ensureTamojniSkladDepartmentId, isTamojniDepartmentMember } from "../lib/tamojni-sklad";
+import {
+  ensureTamojniSkladDepartmentId,
+  isTamojniDepartmentMember,
+  isTamojniRole,
+  TAMOJNI_SKLAD_DEPARTMENT_NAME,
+} from "../lib/tamojni-sklad";
 import { displayBranchName } from "../lib/geo-location";
 import { scriptIncludes } from "../lib/script-search";
 
@@ -227,6 +232,50 @@ const EMP_CORE_SELECT = {
   createdAt: employeesTable.createdAt,
   updatedAt: employeesTable.updatedAt,
 };
+
+/** Bo‘lim boshlig‘i scope. Distribyutsiya HR/rahbar — Tamojni skladni ham ko‘radi. */
+async function scopeDeptHeadStaff(
+  enriched: EmpEnriched[],
+  userId: number,
+  role: string,
+): Promise<EmpEnriched[]> {
+  const ctx = await resolveDeptHeadContext(userId, role);
+  const actorDeptId = ctx?.departmentId ?? (await getActorDepartmentId(userId));
+  const deptNameNorm = (ctx?.departmentName || "")
+    .trim()
+    .toLocaleLowerCase("uz")
+    .replace(/[\u2018\u2019\u02BB\u02BC'\u0060\u00B4']/g, "'");
+  const allowedRoles = new Set(ctx?.creatableRoles ?? []);
+  allowedRoles.add(role);
+
+  const isDistribHead =
+    role === "distrib_hr" ||
+    role === "distrib_rahbar" ||
+    deptNameNorm === "distribyutsiya";
+
+  let tamojniDeptId: number | null = null;
+  if (isDistribHead) {
+    tamojniDeptId = await ensureTamojniSkladDepartmentId();
+    allowedRoles.add("tamojni");
+    allowedRoles.add("tamojni_rahbar");
+  }
+
+  const tamojniNameNorm = TAMOJNI_SKLAD_DEPARTMENT_NAME.toLocaleLowerCase("uz");
+
+  return enriched.filter((e) => {
+    if (actorDeptId && e.departmentId === actorDeptId) return true;
+    if (tamojniDeptId != null && e.departmentId === tamojniDeptId) return true;
+    const eName = (e.departmentName || "")
+      .trim()
+      .toLocaleLowerCase("uz")
+      .replace(/[\u2018\u2019\u02BB\u02BC'\u0060\u00B4']/g, "'");
+    if (deptNameNorm && eName && eName === deptNameNorm) return true;
+    if (isDistribHead && eName && eName === tamojniNameNorm) return true;
+    if (isDistribHead && isTamojniRole(e.userRole)) return true;
+    if (e.userRole && allowedRoles.has(e.userRole)) return true;
+    return false;
+  });
+}
 
 async function enrichMany(rows: EmpRow[]): Promise<EmpEnriched[]> {
   if (!rows.length) return [];
@@ -564,28 +613,10 @@ router.get("/employees", requireAuth, async (req: AuthRequest, res): Promise<voi
       filtered = filtered.filter((e) => (e.employmentStatus || "working") === status);
     }
     // Bo‘lim boshliqlari — faqat o‘z bo‘limi (id yoki nom bo‘yicha) + o‘zi yaratgan rollar
+    // Distribyutsiya HR/rahbar — Tamojni sklad xodimlarini ham ko‘radi
     if (deptHeadScoped) {
-      const ctx = await resolveDeptHeadContext(userId, role);
-      const actorDeptId = ctx?.departmentId ?? (await getActorDepartmentId(userId));
-      const deptNameNorm = (ctx?.departmentName || "")
-        .trim()
-        .toLocaleLowerCase("uz")
-      .replace(/[\u2018\u2019\u02BB\u02BC'\u0060\u00B4']/g, "'");
-      const allowedRoles = new Set(ctx?.creatableRoles ?? []);
-      allowedRoles.add(role);
-
       const enriched = await enrichMany(filtered);
-      const scoped = enriched.filter((e) => {
-        if (actorDeptId && e.departmentId === actorDeptId) return true;
-        const eName = (e.departmentName || "")
-          .trim()
-          .toLocaleLowerCase("uz")
-      .replace(/[\u2018\u2019\u02BB\u02BC'\u0060\u00B4']/g, "'");
-        if (deptNameNorm && eName && eName === deptNameNorm) return true;
-        if (e.userRole && allowedRoles.has(e.userRole)) return true;
-        return false;
-      });
-      res.json(scoped);
+      res.json(await scopeDeptHeadStaff(enriched, userId!, role));
       return;
     }
     const enriched = await enrichMany(filtered);
@@ -643,25 +674,8 @@ router.get("/employees/export", requireAuth, async (req: AuthRequest, res): Prom
   }
 
   let enriched = await enrichMany(filtered);
-  if (deptHeadScoped) {
-    const ctx = await resolveDeptHeadContext(userId, role);
-    const actorDeptId = ctx?.departmentId ?? (await getActorDepartmentId(userId));
-    const deptNameNorm = (ctx?.departmentName || "")
-      .trim()
-      .toLocaleLowerCase("uz")
-      .replace(/[\u2018\u2019\u02BB\u02BC'\u0060\u00B4']/g, "'");
-    const allowedRoles = new Set(ctx?.creatableRoles ?? []);
-    allowedRoles.add(role);
-    enriched = enriched.filter((e) => {
-      if (actorDeptId && e.departmentId === actorDeptId) return true;
-      const eName = (e.departmentName || "")
-        .trim()
-        .toLocaleLowerCase("uz")
-      .replace(/[\u2018\u2019\u02BB\u02BC'\u0060\u00B4']/g, "'");
-      if (deptNameNorm && eName && eName === deptNameNorm) return true;
-      if (e.userRole && allowedRoles.has(e.userRole)) return true;
-      return false;
-    });
+  if (deptHeadScoped && userId) {
+    enriched = await scopeDeptHeadStaff(enriched, userId, role);
   }
   if (role === "tamojni") {
     const tamojniDeptId = await ensureTamojniSkladDepartmentId();

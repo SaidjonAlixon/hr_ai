@@ -306,11 +306,22 @@ export async function saveEmployeeSchedule(payload: {
   shiftKey: string;
   startHm: string;
   endHm: string;
+  note?: string | null;
 }): Promise<void> {
   await apiJson("/davomat/schedule-override", {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+/** Shaxsiy erkin grafik — kechikish/jarima yo‘q */
+export const FREE_SCHEDULE_NOTE = "Erkin grafik";
+export function isFreeScheduleNote(note?: string | null): boolean {
+  const n = String(note || "")
+    .trim()
+    .toLocaleLowerCase("uz")
+    .replace(/[ʻʼ‘’'`´]/g, "'");
+  return n.startsWith("erkin grafik") || n.startsWith("erkin vaqt") || n === "erkin";
 }
 
 export async function clearEmployeeSchedule(employeeId: number, id?: number | null): Promise<void> {

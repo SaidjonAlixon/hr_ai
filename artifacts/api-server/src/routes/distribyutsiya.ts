@@ -654,6 +654,94 @@ const DISTRIB_STATUS_LABEL: Record<string, string> = {
   dismissed: "Bo‘shatildi",
 };
 
+/**
+ * Xodim ma’lumotini tahrirlash (ism, telefon, lavozim).
+ * Distribyutsiya HR ham qila oladi — smena/davomat vaqti bu yerda emas.
+ */
+router.patch("/distribyutsiya/staff/:userId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageDistrib(req.userRole)) {
+    res.status(403).json({ error: "Tahrirlashga ruxsat yo‘q" });
+    return;
+  }
+  const userId = Number(req.params.userId);
+  const member = await findDistribMember(userId);
+  if (!member) {
+    res.status(404).json({ error: "Distribyutsiya xodimi topilmadi" });
+    return;
+  }
+  const denied = staffActionDenied(req, member);
+  if (denied) {
+    res.status(403).json({ error: denied });
+    return;
+  }
+
+  const fullNameRaw = String(req.body?.fullName || "").trim();
+  const phoneRaw = req.body?.phone != null ? String(req.body.phone).trim() : undefined;
+  const jobTitleId =
+    req.body?.jobTitleId != null && req.body.jobTitleId !== ""
+      ? Number(req.body.jobTitleId)
+      : null;
+  const positionRaw = req.body?.position != null ? String(req.body.position).trim() : undefined;
+
+  if (!fullNameRaw || fullNameRaw.length < 3) {
+    res.status(400).json({ error: "Ism-familiyani to‘liq yozing" });
+    return;
+  }
+
+  try {
+    const fullName = formatPersonName(fullNameRaw);
+    let position: string | null = null;
+
+    if (jobTitleId && Number.isFinite(jobTitleId) && jobTitleId > 0) {
+      const [jt] = await db
+        .select()
+        .from(departmentJobTitlesTable)
+        .where(
+          and(
+            eq(departmentJobTitlesTable.id, jobTitleId),
+            eq(departmentJobTitlesTable.departmentId, member.distribDepartmentId),
+            eq(departmentJobTitlesTable.active, true),
+          ),
+        )
+        .limit(1);
+      if (!jt) {
+        res.status(400).json({ error: "Lavozim topilmadi" });
+        return;
+      }
+      position = jt.title;
+    } else if (positionRaw && positionRaw.length >= 2) {
+      position = positionRaw.slice(0, 120);
+    }
+
+    const userPatch: { fullName: string; phone?: string | null } = { fullName };
+    if (phoneRaw !== undefined) {
+      userPatch.phone = phoneRaw || null;
+    }
+    await db.update(usersTable).set(userPatch).where(eq(usersTable.id, userId));
+
+    if (member.employeeId) {
+      const empPatch: { fullName: string; position?: string; updatedAt: Date } = {
+        fullName,
+        updatedAt: new Date(),
+      };
+      if (position) empPatch.position = position;
+      await db.update(employeesTable).set(empPatch).where(eq(employeesTable.id, member.employeeId));
+    }
+
+    res.json({
+      ok: true,
+      userId,
+      fullName,
+      phone: phoneRaw !== undefined ? phoneRaw || null : undefined,
+      position: position || undefined,
+      message: "Ma’lumot yangilandi",
+    });
+  } catch (err) {
+    console.error("PATCH /distribyutsiya/staff/:userId error:", err);
+    res.status(500).json({ error: "Saqlanmadi" });
+  }
+});
+
 /** Holat: ishlayapti / ta’tilda / bo‘shatildi (bo‘shatilsa — Bo‘shatilganlar arxiviga, login bekor) */
 router.patch("/distribyutsiya/staff/:userId/status", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!canManageDistrib(req.userRole)) {
@@ -1101,6 +1189,8 @@ router.get("/distribyutsiya/tamojni", requireAuth, async (req: AuthRequest, res)
       departmentId,
       departmentName: TAMOJNI_SKLAD_DEPARTMENT_NAME,
       canManage: canManageTamojni(req.userRole),
+      /** Smena Kelish/Ketish — Distribyutsiya HR uchun yopiq */
+      canEditShiftTimes: canManageTamojni(req.userRole) && req.userRole !== "distrib_hr",
       canChangeSite: canChangeDavomatSite(req.userRole),
       creatableRoles: tamojniCreatableRoles(req.userRole),
       site,
@@ -1299,9 +1389,83 @@ router.post("/distribyutsiya/tamojni/staff", requireAuth, async (req: AuthReques
   }
 });
 
+/** Tamojni xodim ism/telefon/lavozim — Distribyutsiya HR ham tahrirlaydi */
+router.patch("/distribyutsiya/tamojni/staff/:userId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageTamojni(req.userRole)) {
+    res.status(403).json({ error: "Tahrirlashga ruxsat yo‘q" });
+    return;
+  }
+  const userId = Number(req.params.userId);
+  if (!Number.isFinite(userId) || userId <= 0) {
+    res.status(400).json({ error: "userId noto‘g‘ri" });
+    return;
+  }
+  if (userId === req.userId) {
+    res.status(403).json({ error: "O‘zingizni shu yerdan tahrirlay olmaysiz" });
+    return;
+  }
+  const fullNameRaw = String(req.body?.fullName || "").trim();
+  const phoneRaw = req.body?.phone != null ? String(req.body.phone).trim() : undefined;
+  const positionRaw = req.body?.position != null ? String(req.body.position).trim() : undefined;
+  if (!fullNameRaw || fullNameRaw.length < 3) {
+    res.status(400).json({ error: "Ism-familiyani to‘liq yozing" });
+    return;
+  }
+  try {
+    const departmentId = await ensureTamojniSkladDepartmentId();
+    const [row] = await db
+      .select({
+        userId: usersTable.id,
+        role: usersTable.role,
+        departmentId: usersTable.departmentId,
+        employeeId: employeesTable.id,
+      })
+      .from(usersTable)
+      .leftJoin(employeesTable, eq(employeesTable.userId, usersTable.id))
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    if (!row || row.departmentId !== departmentId) {
+      res.status(404).json({ error: "Tamojni sklad xodimi topilmadi" });
+      return;
+    }
+    if (row.role !== TAMOJNI_STAFF_ROLE && row.role !== TAMOJNI_HEAD_ROLE) {
+      res.status(400).json({ error: "Bu xodim Tamojni skladga tegishli emas" });
+      return;
+    }
+    const fullName = formatPersonName(fullNameRaw);
+    const userPatch: { fullName: string; phone?: string | null } = { fullName };
+    if (phoneRaw !== undefined) userPatch.phone = phoneRaw || null;
+    await db.update(usersTable).set(userPatch).where(eq(usersTable.id, userId));
+    if (row.employeeId) {
+      const empPatch: { fullName: string; position?: string; updatedAt: Date } = {
+        fullName,
+        updatedAt: new Date(),
+      };
+      if (positionRaw && positionRaw.length >= 2) empPatch.position = positionRaw.slice(0, 120);
+      await db.update(employeesTable).set(empPatch).where(eq(employeesTable.id, row.employeeId));
+    }
+    res.json({
+      ok: true,
+      userId,
+      fullName,
+      phone: phoneRaw !== undefined ? phoneRaw || null : undefined,
+      position: positionRaw || undefined,
+      message: "Ma’lumot yangilandi",
+    });
+  } catch (err) {
+    console.error("PATCH /distribyutsiya/tamojni/staff/:userId error:", err);
+    res.status(500).json({ error: "Saqlanmadi" });
+  }
+});
+
 router.post("/distribyutsiya/tamojni/shift", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!canManageTamojni(req.userRole)) {
     res.status(403).json({ error: "Smenani HR yoki bo‘lim boshlig‘i o‘zgartiradi" });
+    return;
+  }
+  /** Distribyutsiya HR ism/ma’lumot tahrirlaydi — smena/davomat vaqtini emas */
+  if (String(req.userRole || "") === "distrib_hr") {
+    res.status(403).json({ error: "Distribyutsiya HR smena vaqtini o‘zgartira olmaydi" });
     return;
   }
   const employeeId = Number(req.body?.employeeId);

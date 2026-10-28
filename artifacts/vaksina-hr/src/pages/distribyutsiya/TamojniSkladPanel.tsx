@@ -27,6 +27,7 @@ import { VerifiedName } from "@/components/VerifiedBadge";
 import { gpsInputError, parseGpsText } from "@/lib/pharmacy-staff-api";
 import { useTamojniDesk, useTamojniMutations, type TamojniStaffRow } from "@/lib/distribyutsiya-api";
 import { DavomatSitePicker } from "./DavomatSitePicker";
+import { EditTamojniStaffButton } from "./StaffActions";
 
 const TAMOJNI_RADIUS_M = 150;
 
@@ -65,6 +66,10 @@ export function TamojniSkladPanel() {
       user?.role === "tamojni_rahbar" ||
       isHrRole(user?.role) ||
       canManageTamojni(user?.role),
+  );
+  /** Kelish/Ketish smena — Distribyutsiya HR uchun yopiq */
+  const canEditShiftTimes = Boolean(
+    desk.data?.canEditShiftTimes ?? (canManage && user?.role !== "distrib_hr"),
   );
 
   const [name, setName] = useState("");
@@ -357,6 +362,7 @@ export function TamojniSkladPanel() {
                     key={row.userId}
                     row={row}
                     canManage={canManage}
+                    canEditShiftTimes={canEditShiftTimes}
                     canChangeSite={Boolean(desk.data?.canChangeSite)}
                   />
                 ))}
@@ -440,10 +446,12 @@ export function TamojniSkladPanel() {
 function StaffShiftRow({
   row,
   canManage,
+  canEditShiftTimes,
   canChangeSite,
 }: {
   row: TamojniStaffRow;
   canManage: boolean;
+  canEditShiftTimes: boolean;
   canChangeSite: boolean;
 }) {
   const { toast } = useToast();
@@ -484,7 +492,7 @@ function StaffShiftRow({
   return (
     <div className="rounded-xl border border-border p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
+        <div className="min-w-0 flex-1">
           <VerifiedName name={row.fullName} role={row.role} userId={row.userId} className="flex font-medium" />
           <p className="text-xs text-muted-foreground">
             {row.position || "—"} · {userRoleLabel(row.role)} · {row.login}
@@ -501,8 +509,9 @@ function StaffShiftRow({
           </div>
           <p className="mt-1 text-xs text-muted-foreground">{ketdimRule(shiftKey)}</p>
         </div>
+        {canManage ? <EditTamojniStaffButton row={row} /> : null}
       </div>
-      {canManage && row.employeeId ? (
+      {canEditShiftTimes && row.employeeId ? (
         <div className="mt-3 grid gap-2 sm:grid-cols-[1.2fr_0.7fr_0.7fr_auto] sm:items-end">
           <div className="space-y-1">
             <Label className="text-xs">Smena</Label>

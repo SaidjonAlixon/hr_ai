@@ -276,7 +276,27 @@ export function useDistribMutations() {
     onSuccess: invalidate,
   });
 
-  return { createTitle, updateTitle, deactivateTitle, deleteTitle, createStaff };
+  const updateStaff = useMutation({
+    mutationFn: (payload: {
+      userId: number;
+      fullName: string;
+      phone?: string | null;
+      jobTitleId?: number | null;
+      position?: string | null;
+    }) =>
+      apiFetch<{ ok: boolean; fullName: string; message: string }>(`/distribyutsiya/staff/${payload.userId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          fullName: payload.fullName,
+          phone: payload.phone,
+          jobTitleId: payload.jobTitleId,
+          position: payload.position,
+        }),
+      }),
+    onSuccess: invalidate,
+  });
+
+  return { createTitle, updateTitle, deactivateTitle, deleteTitle, createStaff, updateStaff };
 }
 
 export type TamojniSite = {
@@ -356,7 +376,19 @@ export function useTamojniMutations() {
       }),
     onSuccess: invalidate,
   });
-  return { saveSite, createStaff, saveShift };
+  const updateStaff = useMutation({
+    mutationFn: (body: { userId: number; fullName: string; phone?: string | null; position?: string | null }) =>
+      apiFetch<{ ok: boolean; fullName: string; message: string }>(`/distribyutsiya/tamojni/staff/${body.userId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          fullName: body.fullName,
+          phone: body.phone,
+          position: body.position,
+        }),
+      }),
+    onSuccess: invalidate,
+  });
+  return { saveSite, createStaff, saveShift, updateStaff };
 }
 
 export async function downloadDistribStaffExcel() {

@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Loader2, MessageSquareText, Send, Trash2, UserX } from "lucide-react";
+import { Loader2, MessageSquareText, Pencil, Send, Trash2, UserX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { PhoneInput } from "@/components/ui/phone-input";
 import {
   Dialog,
   DialogContent,
@@ -12,17 +13,29 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { isOptionalUzPhoneValid, normalizeUzPhone, UZ_PHONE_HINT } from "@/lib/phone";
 import {
   DISTRIB_STATUS_LABEL,
   STAFF_COMMENT_KIND_LABEL,
+  useDistribMutations,
   useDistribStaffActions,
   useStaffComments,
+  useTamojniMutations,
   type DistribEmploymentStatus,
+  type DistribJobTitle,
   type DistribStaffRow,
   type StaffCommentKind,
+  type TamojniStaffRow,
 } from "@/lib/distribyutsiya-api";
 
 const STATUS_TONE: Record<string, string> = {
@@ -121,6 +134,246 @@ export function StatusSelect({ row, canEdit }: { row: DistribStaffRow; canEdit: 
             )
           }
         />
+      ) : null}
+    </>
+  );
+}
+
+/** Ism / telefon / lavozim — qalamcha (davomat vaqti bu yerda emas) */
+export function EditDistribStaffButton({
+  row,
+  titles,
+}: {
+  row: DistribStaffRow;
+  titles: DistribJobTitle[];
+}) {
+  const { toast } = useToast();
+  const mut = useDistribMutations();
+  const [open, setOpen] = useState(false);
+  const [fullName, setFullName] = useState(row.fullName);
+  const [phone, setPhone] = useState(row.phone || "");
+  const matchedTitle = titles.find((t) => t.active && t.title === row.position);
+  const [jobTitleId, setJobTitleId] = useState(matchedTitle ? String(matchedTitle.id) : "");
+  const [positionText, setPositionText] = useState(row.position || "");
+
+  const openDialog = () => {
+    setFullName(row.fullName);
+    setPhone(row.phone || "");
+    const match = titles.find((t) => t.active && t.title === row.position);
+    setJobTitleId(match ? String(match.id) : "");
+    setPositionText(row.position || "");
+    setOpen(true);
+  };
+
+  const save = () => {
+    if (fullName.trim().length < 3) {
+      toast({ title: "Ism-familiyani to‘liq yozing", variant: "destructive" });
+      return;
+    }
+    if (!isOptionalUzPhoneValid(phone)) {
+      toast({ title: UZ_PHONE_HINT, variant: "destructive" });
+      return;
+    }
+    mut.updateStaff.mutate(
+      {
+        userId: row.userId,
+        fullName: fullName.trim(),
+        phone: normalizeUzPhone(phone) || null,
+        jobTitleId: jobTitleId ? Number(jobTitleId) : null,
+        position: jobTitleId ? null : positionText.trim() || null,
+      },
+      {
+        onSuccess: (d) => {
+          toast({ title: d.message || "Saqlandi" });
+          setOpen(false);
+        },
+        onError: (e: Error) => toast({ title: "Saqlanmadi", description: e.message, variant: "destructive" }),
+      },
+    );
+  };
+
+  const activeTitles = titles.filter((t) => t.active);
+
+  return (
+    <>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="h-8 w-8 text-sky-700 hover:bg-sky-50 hover:text-sky-800"
+        title="Tahrirlash"
+        onClick={openDialog}
+      >
+        <Pencil className="h-4 w-4" />
+      </Button>
+      {open ? (
+        <Dialog open onOpenChange={(o) => !o && setOpen(false)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Xodimni tahrirlash</DialogTitle>
+              <DialogDescription>
+                Ism, telefon va lavozim. Davomat kelish/ketish vaqti bu yerdan o‘zgarmaydi.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <Label className="text-xs">F.I.Sh. *</Label>
+                <Input
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="mt-1"
+                  placeholder="Familiya Ism"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Telefon</Label>
+                <PhoneInput value={phone} onChange={setPhone} className="mt-1" />
+              </div>
+              {activeTitles.length ? (
+                <div>
+                  <Label className="text-xs">Lavozim</Label>
+                  <Select
+                    value={jobTitleId || "__custom__"}
+                    onValueChange={(v) => setJobTitleId(v === "__custom__" ? "" : v)}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Lavozim" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeTitles.map((t) => (
+                        <SelectItem key={t.id} value={String(t.id)}>
+                          {t.title}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="__custom__">Boshqa / qo‘lda</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {!jobTitleId ? (
+                    <Input
+                      value={positionText}
+                      onChange={(e) => setPositionText(e.target.value)}
+                      className="mt-2"
+                      placeholder="Lavozim nomi"
+                    />
+                  ) : null}
+                </div>
+              ) : (
+                <div>
+                  <Label className="text-xs">Lavozim</Label>
+                  <Input
+                    value={positionText}
+                    onChange={(e) => setPositionText(e.target.value)}
+                    className="mt-1"
+                    placeholder="Lavozim"
+                  />
+                </div>
+              )}
+              <p className="text-[11px] text-muted-foreground">Login: {row.login}</p>
+            </div>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button variant="outline" onClick={() => setOpen(false)}>
+                Bekor
+              </Button>
+              <Button onClick={save} disabled={mut.updateStaff.isPending}>
+                {mut.updateStaff.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+                Saqlash
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
+    </>
+  );
+}
+
+export function EditTamojniStaffButton({ row }: { row: TamojniStaffRow }) {
+  const { toast } = useToast();
+  const mut = useTamojniMutations();
+  const [open, setOpen] = useState(false);
+  const [fullName, setFullName] = useState(row.fullName);
+  const [phone, setPhone] = useState(row.phone || "");
+  const [position, setPosition] = useState(row.position || "");
+
+  const openDialog = () => {
+    setFullName(row.fullName);
+    setPhone(row.phone || "");
+    setPosition(row.position || "");
+    setOpen(true);
+  };
+
+  const save = () => {
+    if (fullName.trim().length < 3) {
+      toast({ title: "Ism-familiyani to‘liq yozing", variant: "destructive" });
+      return;
+    }
+    if (!isOptionalUzPhoneValid(phone)) {
+      toast({ title: UZ_PHONE_HINT, variant: "destructive" });
+      return;
+    }
+    mut.updateStaff.mutate(
+      {
+        userId: row.userId,
+        fullName: fullName.trim(),
+        phone: normalizeUzPhone(phone) || null,
+        position: position.trim() || null,
+      },
+      {
+        onSuccess: (d) => {
+          toast({ title: d.message || "Saqlandi" });
+          setOpen(false);
+        },
+        onError: (e: Error) => toast({ title: "Saqlanmadi", description: e.message, variant: "destructive" }),
+      },
+    );
+  };
+
+  return (
+    <>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="h-8 w-8 text-sky-700 hover:bg-sky-50 hover:text-sky-800"
+        title="Tahrirlash"
+        onClick={openDialog}
+      >
+        <Pencil className="h-4 w-4" />
+      </Button>
+      {open ? (
+        <Dialog open onOpenChange={(o) => !o && setOpen(false)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Xodimni tahrirlash</DialogTitle>
+              <DialogDescription>
+                Ism, telefon va lavozim. Smena kelish/ketish vaqti o‘zgarmaydi.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <Label className="text-xs">F.I.Sh. *</Label>
+                <Input value={fullName} onChange={(e) => setFullName(e.target.value)} className="mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs">Telefon</Label>
+                <PhoneInput value={phone} onChange={setPhone} className="mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs">Lavozim</Label>
+                <Input value={position} onChange={(e) => setPosition(e.target.value)} className="mt-1" />
+              </div>
+              <p className="text-[11px] text-muted-foreground">Login: {row.login}</p>
+            </div>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button variant="outline" onClick={() => setOpen(false)}>
+                Bekor
+              </Button>
+              <Button onClick={save} disabled={mut.updateStaff.isPending}>
+                {mut.updateStaff.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+                Saqlash
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       ) : null}
     </>
   );

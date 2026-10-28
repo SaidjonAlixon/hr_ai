@@ -52,7 +52,7 @@ import {
 import { TamojniSkladPanel } from "./TamojniSkladPanel";
 import { DavomatSitePicker } from "./DavomatSitePicker";
 import { AttendanceIncidentsPanel } from "./AttendanceIncidentsPanel";
-import { CommentsButton, RemoveStaffButton, StatusSelect } from "./StaffActions";
+import { CommentsButton, EditDistribStaffButton, RemoveStaffButton, StatusSelect } from "./StaffActions";
 
 type Tab = "hr" | "davomat" | "lavozimlar" | "tamojni";
 
@@ -68,7 +68,9 @@ export default function DistribyutsiyaPage() {
 
   const meta = useDistribMeta(canView);
   const staffQ = useDistribStaff(canView && !tamojniOnly && activeTab === "hr");
-  const titlesQ = useDistribJobTitles(canView && !tamojniOnly && (activeTab === "lavozimlar" || canManage));
+  const titlesQ = useDistribJobTitles(
+    canView && !tamojniOnly && (activeTab === "lavozimlar" || activeTab === "hr" || canManage),
+  );
   const mut = useDistribMutations();
 
   const [addOpen, setAddOpen] = useState(false);
@@ -348,7 +350,17 @@ export default function DistribyutsiyaPage() {
                         <CommentsButton row={row} canWrite={staffManage} />
                       </td>
                       {staffManage ? (
-                        <td className="px-2 py-2.5 text-right">{canActOn(row) ? <RemoveStaffButton row={row} /> : null}</td>
+                        <td className="px-2 py-2.5 text-right">
+                          {canActOn(row) ? (
+                            <div className="inline-flex items-center justify-end gap-0.5">
+                              <EditDistribStaffButton
+                                row={row}
+                                titles={titlesQ.data?.titles || meta.data?.titles || []}
+                              />
+                              <RemoveStaffButton row={row} />
+                            </div>
+                          ) : null}
+                        </td>
                       ) : null}
                     </tr>
                   ))}

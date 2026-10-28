@@ -423,6 +423,50 @@ export function RemoveStaffButton({ row }: { row: DistribStaffRow }) {
   );
 }
 
+/** Tamojni sklad xodimini o‘chirish — Distribyutsiya HR ham */
+export function RemoveTamojniStaffButton({ row }: { row: TamojniStaffRow }) {
+  const { toast } = useToast();
+  const mut = useTamojniMutations();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="h-8 w-8 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+        title="O‘chirish"
+        onClick={() => setOpen(true)}
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
+      {open ? (
+        <ReasonDialog
+          title={`${row.fullName} — o‘chirish`}
+          description="Sklad xodimi to‘liq o‘chiriladi: login, parol, sessiyalar o‘chadi. Faqat «Bo‘shatilganlar» arxivida sabab bilan yozuv qoladi."
+          required
+          confirmLabel="To‘liq o‘chirish"
+          destructive
+          busy={mut.removeStaff.isPending}
+          onClose={() => setOpen(false)}
+          onConfirm={(reason) =>
+            mut.removeStaff.mutate(
+              { userId: row.userId, reason },
+              {
+                onSuccess: (d) => {
+                  toast({ title: d.message });
+                  setOpen(false);
+                },
+                onError: (e: Error) => toast({ title: "O‘chirilmadi", description: e.message, variant: "destructive" }),
+              },
+            )
+          }
+        />
+      ) : null}
+    </>
+  );
+}
+
 function ReasonDialog({
   title,
   description,

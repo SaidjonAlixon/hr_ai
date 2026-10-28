@@ -27,7 +27,7 @@ import { VerifiedName } from "@/components/VerifiedBadge";
 import { gpsInputError, parseGpsText } from "@/lib/pharmacy-staff-api";
 import { useTamojniDesk, useTamojniMutations, type TamojniStaffRow } from "@/lib/distribyutsiya-api";
 import { DavomatSitePicker } from "./DavomatSitePicker";
-import { EditTamojniStaffButton } from "./StaffActions";
+import { EditTamojniStaffButton, RemoveTamojniStaffButton } from "./StaffActions";
 
 const TAMOJNI_RADIUS_M = 150;
 
@@ -509,7 +509,12 @@ function StaffShiftRow({
           </div>
           <p className="mt-1 text-xs text-muted-foreground">{ketdimRule(shiftKey)}</p>
         </div>
-        {canManage ? <EditTamojniStaffButton row={row} /> : null}
+        {canManage ? (
+          <div className="flex shrink-0 items-center gap-1">
+            <EditTamojniStaffButton row={row} />
+            <RemoveTamojniStaffButton row={row} />
+          </div>
+        ) : null}
       </div>
       {canEditShiftTimes && row.employeeId ? (
         <div className="mt-3 grid gap-2 sm:grid-cols-[1.2fr_0.7fr_0.7fr_auto] sm:items-end">

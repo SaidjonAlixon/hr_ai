@@ -388,7 +388,15 @@ export function useTamojniMutations() {
       }),
     onSuccess: invalidate,
   });
-  return { saveSite, createStaff, saveShift, updateStaff };
+  const removeStaff = useMutation({
+    mutationFn: (body: { userId: number; reason: string }) =>
+      apiFetch<{ ok: boolean; message: string }>(
+        `/distribyutsiya/tamojni/staff/${body.userId}?reason=${encodeURIComponent(body.reason)}`,
+        { method: "DELETE" },
+      ),
+    onSuccess: invalidate,
+  });
+  return { saveSite, createStaff, saveShift, updateStaff, removeStaff };
 }
 
 export async function downloadDistribStaffExcel() {

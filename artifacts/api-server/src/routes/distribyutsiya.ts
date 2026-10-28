@@ -1458,6 +1458,63 @@ router.patch("/distribyutsiya/tamojni/staff/:userId", requireAuth, async (req: A
   }
 });
 
+/** Tamojni sklad xodimini o‘chirish — Distribyutsiya HR ham qila oladi */
+router.delete("/distribyutsiya/tamojni/staff/:userId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageTamojni(req.userRole)) {
+    res.status(403).json({ error: "O‘chirishga ruxsat yo‘q" });
+    return;
+  }
+  const reason = String((req.query as { reason?: string }).reason || req.body?.reason || "").trim().slice(0, 500);
+  if (reason.length < 3) {
+    res.status(400).json({ error: "O‘chirish sababini yozing" });
+    return;
+  }
+  const userId = Number(req.params.userId);
+  if (!Number.isFinite(userId) || userId <= 0) {
+    res.status(400).json({ error: "userId noto‘g‘ri" });
+    return;
+  }
+  if (userId === req.userId) {
+    res.status(403).json({ error: "O‘zingizni o‘chira olmaysiz" });
+    return;
+  }
+  try {
+    const departmentId = await ensureTamojniSkladDepartmentId();
+    const [row] = await db
+      .select({
+        userId: usersTable.id,
+        fullName: usersTable.fullName,
+        role: usersTable.role,
+        departmentId: usersTable.departmentId,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    if (!row || row.departmentId !== departmentId) {
+      res.status(404).json({ error: "Tamojni sklad xodimi topilmadi" });
+      return;
+    }
+    if (row.role !== TAMOJNI_STAFF_ROLE && row.role !== TAMOJNI_HEAD_ROLE) {
+      res.status(400).json({ error: "Bu xodim Tamojni skladga tegishli emas" });
+      return;
+    }
+    /** Distribyutsiya HR faqat oddiy sklad xodimini o‘chiradi, rahbarni emas */
+    if (String(req.userRole || "") === "distrib_hr" && row.role === TAMOJNI_HEAD_ROLE) {
+      res.status(403).json({ error: "Tamojni rahbarni faqat Admin yoki Distribyutsiya rahbari o‘chiradi" });
+      return;
+    }
+    const ok = await archiveAndDeleteUser(row.userId, { actorId: req.userId ?? null, reason });
+    if (!ok) {
+      res.status(404).json({ error: "Topilmadi" });
+      return;
+    }
+    res.json({ ok: true, message: `${row.fullName} o‘chirildi` });
+  } catch (err) {
+    console.error("DELETE /distribyutsiya/tamojni/staff/:userId error:", err);
+    res.status(500).json({ error: "O‘chirilmadi" });
+  }
+});
+
 router.post("/distribyutsiya/tamojni/shift", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!canManageTamojni(req.userRole)) {
     res.status(403).json({ error: "Smenani HR yoki bo‘lim boshlig‘i o‘zgartiradi" });

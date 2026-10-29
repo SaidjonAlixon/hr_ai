@@ -27,8 +27,12 @@ function statusText(row: AttestMonitor["rows"][number]) {
 export async function exportAttestExcel(data: AttestMonitor) {
   const s = data.stats;
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
-  const headers = ["№", "Xodim", "Filial", "Holat", "Ball", "To‘g‘ri", "Jami", "Urinish", "Joy", "Masofa, m", "Fokus yo‘qolgan", "Boshlangan", "Topshirilgan"];
-  const rows = data.rows
+  const headers = [
+    "№", "Xodim", "Filial", "Holat", "Ball %", "To‘g‘ri", "Xato", "Jami", "Vaqt (min / sek)",
+    "Urinish", "Joy", "Masofa, m", "Fokus yo‘qolgan", "Boshlangan", "Topshirilgan",
+  ];
+  const sorted = sortMonitorRows(data.rows);
+  const rows = sorted
     .map(
       (r, i) =>
         `<Row>${[
@@ -38,7 +42,9 @@ export async function exportAttestExcel(data: AttestMonitor) {
           cell(statusText(r)),
           cell(r.score ?? ""),
           cell(r.correct ?? ""),
+          cell(r.correct == null ? "" : Math.max(0, r.total - r.correct)),
           cell(r.total),
+          cell(durationOf(r.durationSec, r.startedAt, r.submittedAt)),
           cell(r.attemptsCount),
           cell(r.locationLabel || "—"),
           cell(r.distanceM ?? ""),
@@ -101,22 +107,81 @@ function truncate(ctx: CanvasRenderingContext2D, text: string, maxW: number) {
   return `${s}…`;
 }
 
+function mins(sec: number | null) {
+  if (sec == null || !Number.isFinite(sec)) return "—";
+  const t = Math.max(0, Math.round(sec));
+  const m = Math.floor(t / 60);
+  const s = t % 60;
+  if (m <= 0) return `${s} sek`;
+  if (s <= 0) return `${m} min`;
+  return `${m} min / ${s} sek`;
+}
+
+function durationOf(sec: number | null, startedAt?: string | null, submittedAt?: string | null) {
+  if (sec != null && Number.isFinite(sec)) return mins(sec);
+  if (startedAt && submittedAt) {
+    const ms = new Date(submittedAt).getTime() - new Date(startedAt).getTime();
+    if (Number.isFinite(ms) && ms >= 0) return mins(Math.round(ms / 1000));
+  }
+  return "—";
+}
+
+function correctPair(correct: number | null, total: number) {
+  if (correct == null) return "—";
+  return `${correct}/${total}`;
+}
+
+function wrongOf(correct: number | null, total: number) {
+  if (correct == null) return "—";
+  return String(Math.max(0, total - correct));
+}
+
+function monitorSortRank(r: AttestMonitor["rows"][number]) {
+  if ((r.status === "submitted" || r.status === "expired") && r.passed === true) return 0;
+  if ((r.status === "submitted" || r.status === "expired") && r.passed === false) return 1;
+  if (r.status === "not_started") return 2;
+  if (r.status === "in_progress") return 3;
+  return 4;
+}
+
+function sortMonitorRows(rows: AttestMonitor["rows"]) {
+  return [...rows].sort((a, b) => {
+    const d = monitorSortRank(a) - monitorSortRank(b);
+    if (d) return d;
+    // Yuqori ball → pastga: 100%, 97% … 0%
+    const sa = a.score ?? -1;
+    const sb = b.score ?? -1;
+    if (sa !== sb) return sb - sa;
+    const ta = a.durationSec ?? Number.POSITIVE_INFINITY;
+    const tb = b.durationSec ?? Number.POSITIVE_INFINITY;
+    if (ta !== tb) return ta - tb;
+    return a.fullName.localeCompare(b.fullName, "uz");
+  });
+}
+
+function monitorHolat(r: AttestMonitor["rows"][number]) {
+  if (r.status === "submitted" || r.status === "expired") return r.passed ? "O‘tdi" : "O‘tmadi";
+  return ATTEST_STATUS_LABEL[r.status];
+}
+
 export async function exportAttestPdf(data: AttestMonitor) {
   const pageWmm = 297;
   const pageHmm = 210;
   const scale = 2;
-  const margin = 8;
+  const margin = 7;
   const contentW = Math.round(((pageWmm - margin * 2) / 25.4) * 160);
   const pages: HTMLCanvasElement[] = [];
-  const cols = [28, 170, 130, 110, 50, 70, 90, 110];
+  // № Xodim Filial Holat Ball To‘g‘ri Xato Vaqt Boshlangan Topshirildi
+  const cols = [22, 118, 92, 54, 38, 52, 38, 78, 88, 88];
   const sum = cols.reduce((a, b) => a + b, 0);
   const ws = cols.map((w) => Math.floor((w / sum) * contentW));
   ws[ws.length - 1]! += contentW - ws.reduce((a, b) => a + b, 0);
-  const headers = ["№", "Xodim", "Filial", "Holat", "Ball", "Joy", "Boshlangan", "Topshirilgan"];
+  const headers = ["№", "Xodim", "Filial", "Holat", "Ball", "To‘g‘ri", "Xato", "min / sek", "Boshlangan", "Topshirildi"];
+  const sorted = sortMonitorRows(data.rows);
   let i = 0;
   let pageNo = 0;
-  const rowH = 28;
-  while (i < data.rows.length || pages.length === 0) {
+  const rowH = 26;
+  while (i < sorted.length || pages.length === 0) {
     pageNo += 1;
     const canvas = document.createElement("canvas");
     canvas.width = Math.round((pageWmm / 25.4) * 160) * scale;
@@ -160,8 +225,8 @@ export async function exportAttestPdf(data: AttestMonitor) {
       y += 24;
     };
     drawHead();
-    while (i < data.rows.length && y + rowH < H - 24) {
-      const r = data.rows[i]!;
+    while (i < sorted.length && y + rowH < H - 24) {
+      const r = sorted[i]!;
       if (i % 2 === 0) {
         ctx.fillStyle = "#fff";
         ctx.fillRect(x0, y, contentW, rowH);
@@ -172,23 +237,34 @@ export async function exportAttestPdf(data: AttestMonitor) {
         String(i + 1),
         r.fullName,
         r.branchLabel || "—",
-        statusText(r),
+        monitorHolat(r),
         r.score != null ? `${r.score}%` : "—",
-        r.locationLabel || "—",
+        correctPair(r.correct, r.total),
+        wrongOf(r.correct, r.total),
+        durationOf(r.durationSec, r.startedAt, r.submittedAt),
         formatAttestDt(r.startedAt),
         formatAttestDt(r.submittedAt),
       ];
       let x = x0;
       vals.forEach((v, n) => {
-        ctx.fillStyle = n === 3 && r.passed ? "#065f46" : n === 3 && r.passed === false ? "#9f1239" : "#0f172a";
-        ctx.fillText(truncate(ctx, v, ws[n]! - 8), x + 4, y + 18);
+        ctx.fillStyle =
+          n === 3 && r.passed
+            ? "#065f46"
+            : n === 3 && r.passed === false
+              ? "#9f1239"
+              : n === 6 && wrongOf(r.correct, r.total) !== "—" && wrongOf(r.correct, r.total) !== "0"
+                ? "#9f1239"
+                : n === 5 && r.correct != null
+                  ? "#065f46"
+                  : "#0f172a";
+        ctx.fillText(truncate(ctx, v, ws[n]! - 8), x + 4, y + 17);
         x += ws[n]!;
       });
       y += rowH;
       i += 1;
     }
     pages.push(canvas);
-    if (!data.rows.length) break;
+    if (!sorted.length) break;
   }
   const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   pages.forEach((c, n) => {
@@ -201,88 +277,130 @@ export async function exportAttestPdf(data: AttestMonitor) {
 
 function resultStatus(r: AttestResultRow) {
   if (r.status === "submitted" || r.status === "expired") return r.passed ? "O‘tdi" : "O‘tmadi";
+  if (r.missed || r.status === "not_started") return "Kirmagan";
+  if (r.status === "in_progress") return "Ishlayapti";
   return ATTEST_STATUS_LABEL[r.status];
 }
 
-function mins(sec: number | null) {
-  if (sec == null) return "—";
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${m}:${String(s).padStart(2, "0")}`;
+/** PDF/Excel: 1) o‘tganlar → 2) o‘tmaganlar → 3) kirmaganlar → 4) ishlayapti → 5) boshqa */
+function resultSortRank(r: AttestResultRow) {
+  const fin = r.status === "submitted" || r.status === "expired";
+  if (fin && r.passed === true) return 0;
+  if (fin && r.passed === false) return 1;
+  if (r.missed || r.status === "not_started") return 2;
+  if (r.status === "in_progress") return 3;
+  return 4;
+}
+
+function sortResultRows(rows: AttestResultRow[]) {
+  return [...rows].sort((a, b) => {
+    const d = resultSortRank(a) - resultSortRank(b);
+    if (d) return d;
+    // Yuqori ball → pastga
+    const sa = a.score ?? -1;
+    const sb = b.score ?? -1;
+    if (sa !== sb) return sb - sa;
+    const ta = a.durationSec ?? Number.POSITIVE_INFINITY;
+    const tb = b.durationSec ?? Number.POSITIVE_INFINITY;
+    if (ta !== tb) return ta - tb;
+    return a.fullName.localeCompare(b.fullName, "uz");
+  });
+}
+
+function sheetRows(
+  list: AttestResultRow[],
+  headers: string[],
+  mapRow: (r: AttestResultRow, i: number) => Array<string | number>,
+) {
+  return list
+    .map((r, i) => `<Row>${mapRow(r, i).map((v) => cell(v)).join("")}</Row>`)
+    .join("");
 }
 
 export async function exportAttestResultsExcel(data: AttestResults) {
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
   const headers = [
-    "№", "Xodim", "Telefon", "Filial", "Atestatsiya", "Holat", "Ball %", "To‘g‘ri", "Savollar",
-    "O‘tish bali", "Urinish", "Joy turi", "Aniqlangan joy", "Masofa, m", "GPS aniqligi, m",
-    "Fokus yo‘qolgan", "Davomiylik", "Boshlangan", "Topshirilgan", "Oyna boshi", "Oyna oxiri", "Bekor sababi", "Qayta ruxsat",
+    "№", "Xodim", "Telefon", "Filial", "Atestatsiya", "Holat", "Ball %",
+    "To‘g‘ri", "Xato", "Savollar", "Vaqt (min / sek)",
+    "O‘tish bali", "Urinish", "Joy turi", "Aniqlangan joy",
+    "Boshlangan", "Topshirilgan", "Oyna boshi", "Oyna oxiri",
   ];
-  const rows = data.rows
-    .map((r, i) => {
-      const vals: Array<string | number> = [
-        i + 1,
-        r.fullName,
-        r.phone || "—",
-        r.branchLabel || "—",
-        r.examTitle,
-        resultStatus(r),
-        r.score ?? "",
-        r.correct ?? "",
-        r.total,
-        r.passScore,
-        r.attemptsCount,
-        r.locationMode === "anywhere" ? "Istalgan joy" : r.locationMode === "office" ? "Ofis" : "Filial",
-        r.locationLabel || "—",
-        r.distanceM ?? "",
-        r.accuracyM ?? "",
-        r.focusLost,
-        mins(r.durationSec),
-        formatAttestDt(r.startedAt),
-        formatAttestDt(r.submittedAt),
-        formatAttestDt(r.windowStart),
-        formatAttestDt(r.windowEnd),
-        r.annulReason || "—",
-        r.retakeAllowed ? "Ha" : "Yo‘q",
-      ];
-      return `<Row>${vals.map((v) => cell(v)).join("")}</Row>`;
-    })
-    .join("");
+  const mapRow = (r: AttestResultRow, i: number): Array<string | number> => [
+    i + 1,
+    r.fullName,
+    r.phone || "—",
+    r.branchLabel || "—",
+    r.examTitle,
+    resultStatus(r),
+    r.score ?? "",
+    r.correct ?? "",
+    r.correct == null ? "" : Math.max(0, r.total - r.correct),
+    r.total,
+    durationOf(r.durationSec, r.startedAt, r.submittedAt),
+    r.passScore,
+    r.attemptsCount,
+    r.locationMode === "anywhere" ? "Istalgan joy" : r.locationMode === "office" ? "Ofis" : "Filial",
+    r.locationLabel || "—",
+    formatAttestDt(r.startedAt),
+    formatAttestDt(r.submittedAt),
+    formatAttestDt(r.windowStart),
+    formatAttestDt(r.windowEnd),
+  ];
+  const isFin = (r: AttestResultRow) => r.status === "submitted" || r.status === "expired";
+  const passed = data.rows.filter((r) => isFin(r) && r.passed === true);
+  const failed = data.rows.filter((r) => isFin(r) && r.passed === false);
+  const missed = data.rows.filter((r) => r.missed || r.status === "not_started");
+  const progress = data.rows.filter((r) => r.status === "in_progress");
   const s = data.stats;
+  const head = headers.map((h) => `<Cell ss:StyleID="sHead"><Data ss:Type="String">${esc(h)}</Data></Cell>`).join("");
+  const block = (title: string, list: AttestResultRow[]) =>
+    `<Row><Cell ss:StyleID="sSec"><Data ss:Type="String">${esc(`${title} (${list.length})`)}</Data></Cell></Row>
+     <Row>${head}</Row>
+     ${sheetRows(list, headers, mapRow)}
+     <Row/>`;
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <?mso-application progid="Excel.Sheet"?>
 <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
 <Styles>
  <Style ss:ID="sHead"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#0B3A5C" ss:Pattern="Solid"/></Style>
  <Style ss:ID="sTitle"><Font ss:Size="14" ss:Bold="1" ss:Color="#0B3A5C"/></Style>
+ <Style ss:ID="sSec"><Font ss:Bold="1" ss:Color="#0B3A5C"/><Interior ss:Color="#E2E8F0" ss:Pattern="Solid"/></Style>
 </Styles>
-<Worksheet ss:Name="Natijalar"><Table>
- <Row><Cell ss:StyleID="sTitle"><Data ss:Type="String">${esc(`Atestatsiya natijalari — ${data.trackLabel}`)}</Data></Cell></Row>
- <Row><Cell><Data ss:Type="String">${esc(`Xodim ${s.people} · Test ${s.exams} · Tugatgan ${s.finished} · O‘tgan ${s.passed} · O‘tmagan ${s.failed} · O‘tish ${s.passRate ?? "—"}% · O‘rtacha ${s.avgScore ?? "—"}`)}</Data></Cell></Row>
+<Worksheet ss:Name="Hisobot"><Table>
+ <Row><Cell ss:StyleID="sTitle"><Data ss:Type="String">${esc(`Atestatsiya hisobot — ${data.trackLabel}`)}</Data></Cell></Row>
+ <Row><Cell><Data ss:Type="String">${esc(`O‘tgan ${passed.length} · O‘tmagan ${failed.length} · Kirmagan ${missed.length} · Ishlayapti ${progress.length} · O‘tish ${s.passRate ?? "—"}%`)}</Data></Cell></Row>
  <Row/>
- <Row>${headers.map((h) => `<Cell ss:StyleID="sHead"><Data ss:Type="String">${esc(h)}</Data></Cell>`).join("")}</Row>
- ${rows}
+ ${block("O‘tganlar", passed)}
+ ${block("O‘tmaganlar", failed)}
+ ${block("Kirmaganlar", missed)}
+ ${progress.length ? block("Ishlayapti", progress) : ""}
+</Table></Worksheet>
+<Worksheet ss:Name="Hammasi"><Table>
+ <Row><Cell ss:StyleID="sTitle"><Data ss:Type="String">${esc(`Barcha qatorlar — ${data.trackLabel}`)}</Data></Cell></Row>
+ <Row>${head}</Row>
+ ${sheetRows(sortResultRows(data.rows), headers, mapRow)}
 </Table></Worksheet>
 </Workbook>`;
-  await deliverFile(new Blob(["\uFEFF" + xml], { type: "application/vnd.ms-excel;charset=utf-8" }), `atestatsiya-natijalar-${stamp}.xls`);
+  await deliverFile(new Blob(["\uFEFF" + xml], { type: "application/vnd.ms-excel;charset=utf-8" }), `atestatsiya-hisobot-${stamp}.xls`);
 }
 
 export async function exportAttestResultsPdf(data: AttestResults) {
   const pageWmm = 297;
   const pageHmm = 210;
   const scale = 2;
-  const margin = 8;
+  const margin = 7;
   const contentW = Math.round(((pageWmm - margin * 2) / 25.4) * 160);
-  const headers = ["№", "Xodim", "Filial", "Atestatsiya", "Holat", "Ball", "To‘g‘ri", "Joy", "Boshlangan", "Topshirilgan"];
-  const cols = [26, 130, 110, 140, 70, 42, 52, 90, 100, 100];
+  const headers = ["№", "Xodim", "Filial", "Atestatsiya", "Holat", "Ball", "To‘g‘ri", "Xato", "min / sek", "Boshlangan", "Topshirildi"];
+  const cols = [20, 100, 82, 100, 54, 36, 48, 36, 72, 82, 82];
   const sum = cols.reduce((a, b) => a + b, 0);
   const ws = cols.map((w) => Math.floor((w / sum) * contentW));
   ws[ws.length - 1]! += contentW - ws.reduce((a, b) => a + b, 0);
+  const sorted = sortResultRows(data.rows);
   const pages: HTMLCanvasElement[] = [];
   let i = 0;
   let pageNo = 0;
   const rowH = 26;
-  while (i < data.rows.length || pages.length === 0) {
+  while (i < sorted.length || pages.length === 0) {
     pageNo += 1;
     const canvas = document.createElement("canvas");
     canvas.width = Math.round((pageWmm / 25.4) * 160) * scale;
@@ -304,7 +422,7 @@ export async function exportAttestResultsPdf(data: AttestResults) {
     if (pageNo === 1) {
       const s = data.stats;
       ctx.fillText(
-        `Xodim ${s.people} · Tugatgan ${s.finished} · O‘tgan ${s.passed} · O‘tmagan ${s.failed} · O‘tish ${s.passRate ?? "—"}% · O‘rtacha ${s.avgScore ?? "—"} · ${pageNo}-sahifa`,
+        `O‘tgan ${s.passed} · O‘tmagan ${s.failed} · Kirmagan ${s.missed ?? s.notStarted} · Ishlayapti ${s.inProgress} · O‘tish ${s.passRate ?? "—"}% · ${pageNo}-sahifa`,
         x0 + 12,
         y + 42,
       );
@@ -323,8 +441,8 @@ export async function exportAttestResultsPdf(data: AttestResults) {
       x += ws[n]!;
     });
     y += 22;
-    while (i < data.rows.length && y + rowH < H - 18) {
-      const r = data.rows[i]!;
+    while (i < sorted.length && y + rowH < H - 18) {
+      const r = sorted[i]!;
       if (i % 2 === 0) {
         ctx.fillStyle = "#fff";
         ctx.fillRect(x0, y, contentW, rowH);
@@ -336,16 +454,25 @@ export async function exportAttestResultsPdf(data: AttestResults) {
         r.examTitle,
         resultStatus(r),
         r.score != null ? `${r.score}%` : "—",
-        r.correct != null ? `${r.correct}/${r.total}` : "—",
-        r.locationLabel ||
-          (r.locationMode === "anywhere" ? "Istalgan joy" : r.locationMode === "office" ? "Ofis" : "Filial"),
+        correctPair(r.correct, r.total),
+        wrongOf(r.correct, r.total),
+        durationOf(r.durationSec, r.startedAt, r.submittedAt),
         formatAttestDt(r.startedAt),
         formatAttestDt(r.submittedAt),
       ];
       x = x0;
       ctx.font = `11px ${FONT}`;
       vals.forEach((v, n) => {
-        ctx.fillStyle = n === 4 && r.passed ? "#065f46" : n === 4 && r.passed === false ? "#9f1239" : "#0f172a";
+        ctx.fillStyle =
+          n === 4 && r.passed
+            ? "#065f46"
+            : n === 4 && r.passed === false
+              ? "#9f1239"
+              : n === 7 && wrongOf(r.correct, r.total) !== "—" && wrongOf(r.correct, r.total) !== "0"
+                ? "#9f1239"
+                : n === 6 && r.correct != null
+                  ? "#065f46"
+                  : "#0f172a";
         ctx.fillText(truncate(ctx, v, ws[n]! - 8), x + 4, y + 17);
         x += ws[n]!;
       });
@@ -353,7 +480,7 @@ export async function exportAttestResultsPdf(data: AttestResults) {
       i += 1;
     }
     pages.push(canvas);
-    if (!data.rows.length) break;
+    if (!sorted.length) break;
   }
   const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   pages.forEach((c, n) => {

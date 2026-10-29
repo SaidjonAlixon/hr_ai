@@ -417,6 +417,17 @@ export const STUDENT_ROLE = "oquvchi";
 /** Xodimlar, davomat va umumiy ro‘yxatlarga kirmaydigan rollar */
 export const NON_STAFF_ROLES = ["admin", STUDENT_ROLE] as const;
 
+/**
+ * Davomat doskasi / hisobot / analitika / e’lonlarda ko‘rinmaydi.
+ * Tizimda (login, menyu, vazifa…) to‘liq ishlayveradi.
+ */
+export const DAVOMAT_HIDDEN_ROLES = ["asoschi"] as const;
+
+export function isHiddenFromDavomat(role?: string | null): boolean {
+  const r = (role ?? "").trim().toLowerCase();
+  return (DAVOMAT_HIDDEN_ROLES as readonly string[]).includes(r);
+}
+
 export function isStudentRole(role?: string | null): boolean {
   return (role ?? "").trim().toLowerCase() === STUDENT_ROLE;
 }

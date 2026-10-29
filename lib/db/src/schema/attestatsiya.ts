@@ -22,6 +22,27 @@ export type AttestatsiyaLocationMode = "branch" | "office" | "anywhere";
 
 export type AttestatsiyaAttemptStatus = "in_progress" | "submitted" | "expired" | "annulled";
 
+/**
+ * Lavozim bo‘yicha savol bazasi (Stajyor / Farmasevt / Mudir).
+ * Atestatsiya shu bazadan e’lon qilinadi — savollar exam ichida emas.
+ */
+export const attestatsiyaBanksTable = pgTable(
+  "attestatsiya_banks",
+  {
+    id: serial("id").primaryKey(),
+    track: text("track").notNull().unique(),
+    title: text("title").notNull().default(""),
+    questionsJson: jsonb("questions_json").$type<AttestatsiyaQuestionRow[]>().notNull().default([]),
+    updatedById: integer("updated_by_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [index("attestatsiya_banks_track_idx").on(t.track)],
+);
+
 export const attestatsiyaExamsTable = pgTable(
   "attestatsiya_exams",
   {

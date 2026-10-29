@@ -31,6 +31,7 @@ import {
   FileImage,
   CheckCircle2,
   UserRound,
+  UserPlus,
   RotateCcw,
   Reply,
   AlertTriangle,
@@ -69,6 +70,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
+import { scriptIncludes } from "@/lib/script-search";
 import { useI18n } from "@/i18n/I18nProvider";
 import { isSbRole, userRoleLabel } from "@/lib/roles";
 import { VerifiedBadge, VerifiedName } from "@/components/VerifiedBadge";
@@ -96,7 +98,13 @@ import {
   attachmentDownloadUrl,
   attachmentViewUrl,
 } from "@/components/vazifalar/TaskAttachmentViewer";
-import { isTaskOverdue, isAcceptOverdue, acceptDeadlineAt, acceptDeadlineHours } from "@/lib/vazifalar-permissions";
+import {
+  isTaskOverdue,
+  isAcceptOverdue,
+  acceptDeadlineAt,
+  acceptDeadlineHours,
+  canAssignTaskSupervisor,
+} from "@/lib/vazifalar-permissions";
 import { isOfisWorkplace, isWeekendYmd } from "@/lib/ofis-weekend";
 import { canSetPrivateTaskVisibility } from "@/lib/roles";
 import {
@@ -216,11 +224,49 @@ type Props = {
   /** Bir batchdagi boshqa vazifalar (yaratuvchi uchun holat) */
   batchSiblings?: Vazifa[];
   onOpenBatchTask?: (task: Vazifa) => void;
+  /** Mavjud topshiriqqa yangi oluvchilar (xabar bilan) */
+  onAddAssignees?: (
+    assignees: Array<{ assigneeKind: "user" | "employee"; assigneeId: number }>,
+  ) => Promise<void>;
+  addingAssignees?: boolean;
+  /** Yaratish: shu vazifa asosida (seed) */
+  basedOnSource?: Vazifa | null;
+  /** Asosiy / davom topshiriqni ochish */
+  onOpenLinkedTask?: (taskId: number) => void;
+  /** Shu vazifa asosida yaratilganlar */
+  derivedTasks?: Vazifa[];
+  /** «Shu asosida yangi» tugmasi */
+  onCreateFromTask?: () => void;
+  canCreateFromTask?: boolean;
 };
 
 const TITLE_MAX = 200;
 const DESC_MAX = 2000;
 const NOTES_MAX = 500;
+
+/** Oxirgi tanlangan nazoratchi — keyingi yangi topshiriqlarda avtomatik */
+const LAST_SUPERVISOR_LS = "vazifalar.lastSupervisorKey";
+
+function readLastSupervisorKey(): string {
+  try {
+    const v = localStorage.getItem(LAST_SUPERVISOR_LS) || "";
+    return /^user:\d+$/.test(v) ? v : "";
+  } catch {
+    return "";
+  }
+}
+
+function writeLastSupervisorKey(key: string) {
+  try {
+    if (key && /^user:\d+$/.test(key)) {
+      localStorage.setItem(LAST_SUPERVISOR_LS, key);
+    } else {
+      localStorage.removeItem(LAST_SUPERVISOR_LS);
+    }
+  } catch {
+    /* ignore */
+  }
+}
 
 const PRIORITIES = [
   {
@@ -384,6 +430,121 @@ function SectionCard({
 
 function isImageAtt(a?: TaskAttachment | null) {
   return isImageAttShared(a);
+}
+
+function BasedOnBanner({
+  meta,
+  onOpen,
+  t,
+}: {
+  meta: TaskMeta;
+  onOpen?: (taskId: number) => void;
+  t: (k: string) => string;
+}) {
+  const id = Number(meta.basedOnTaskId);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  const title = meta.basedOnTitle || `TK-${id}`;
+  return (
+    <div className="overflow-hidden rounded-2xl border border-sky-200/90 bg-gradient-to-br from-sky-50 via-white to-indigo-50/50 shadow-sm dark:border-sky-800/50 dark:from-sky-950/40 dark:via-slate-900 dark:to-indigo-950/20">
+      <div className="flex items-center gap-2 border-b border-sky-100 bg-sky-600/95 px-3.5 py-2 text-white dark:border-sky-900 dark:bg-sky-700">
+        <Link2 className="h-3.5 w-3.5 shrink-0" />
+        <p className="text-[11px] font-bold uppercase tracking-[0.1em]">
+          {t("tasks.form.basedOn")}
+        </p>
+      </div>
+      <div className="space-y-2 p-3.5">
+        <p className="text-[11px] leading-snug text-slate-600 dark:text-slate-300">
+          {t("tasks.form.basedOnBanner")}
+        </p>
+        <button
+          type="button"
+          disabled={!onOpen}
+          onClick={() => onOpen?.(id)}
+          className="flex w-full items-start gap-2.5 rounded-xl border border-sky-200 bg-white px-3 py-2.5 text-left transition hover:border-sky-400 hover:bg-sky-50/80 disabled:cursor-default dark:border-sky-800 dark:bg-slate-950 dark:hover:bg-sky-950/40"
+        >
+          <span className="mt-0.5 rounded-md bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-sky-800 dark:bg-sky-900 dark:text-sky-200">
+            TK-{id}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold text-[#0a2540] dark:text-slate-50">
+              {title}
+            </span>
+            <span className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+              {meta.basedOnAssigneeName ? (
+                <span>{meta.basedOnAssigneeName}</span>
+              ) : null}
+              {meta.basedOnStatus ? (
+                <span>
+                  {t(`tasks.status.${meta.basedOnStatus}` as any) || meta.basedOnStatus}
+                </span>
+              ) : null}
+            </span>
+          </span>
+          {onOpen ? (
+            <span className="shrink-0 text-[10px] font-semibold text-sky-700 dark:text-sky-300">
+              {t("tasks.form.basedOnOpen")}
+            </span>
+          ) : null}
+        </button>
+        {meta.basedOnResultNote?.trim() ? (
+          <div>
+            <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+              {t("tasks.form.basedOnResult")}
+            </p>
+            <p className="line-clamp-4 whitespace-pre-wrap rounded-xl border border-sky-100 bg-white/90 px-3 py-2 text-[12px] leading-relaxed text-slate-700 dark:border-sky-900 dark:bg-slate-950/50 dark:text-slate-200">
+              {meta.basedOnResultNote}
+            </p>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function DerivedTasksPanel({
+  items,
+  onOpen,
+  t,
+}: {
+  items: Vazifa[];
+  onOpen?: (taskId: number) => void;
+  t: (k: string) => string;
+}) {
+  if (!items.length) return null;
+  return (
+    <div className="space-y-2 rounded-2xl border border-violet-200/80 bg-violet-50/50 p-3.5 dark:border-violet-800/50 dark:bg-violet-950/20">
+      <div>
+        <p className="text-sm font-semibold text-[#0a2540] dark:text-slate-100">
+          {t("tasks.form.derivedTitle")}
+        </p>
+        <p className="text-[11px] text-muted-foreground">{t("tasks.form.derivedHint")}</p>
+      </div>
+      <ul className="space-y-1.5">
+        {items.map((d) => (
+          <li key={d.id}>
+            <button
+              type="button"
+              onClick={() => onOpen?.(d.id)}
+              className="flex w-full items-center gap-2 rounded-xl border border-violet-200 bg-white px-3 py-2 text-left transition hover:border-violet-400 dark:border-violet-800 dark:bg-slate-950"
+            >
+              <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-violet-800 dark:bg-violet-900 dark:text-violet-200">
+                TK-{d.id}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                {d.title}
+              </span>
+              <span className="shrink-0 text-[10px] text-muted-foreground">
+                {d.assigneeName || ""}
+              </span>
+              <span className="shrink-0 text-[10px] font-semibold text-violet-700">
+                {t("tasks.form.derivedOpen")}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 /** Beruvchi / bajaruvchi uchun yuborilgan natijani aniq ko‘rsatish */
@@ -1006,6 +1167,13 @@ export function TaskFormDialog({
   onVerify,
   batchSiblings = [],
   onOpenBatchTask,
+  onAddAssignees,
+  addingAssignees,
+  basedOnSource = null,
+  onOpenLinkedTask,
+  derivedTasks = [],
+  onCreateFromTask,
+  canCreateFromTask,
 }: Props) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -1017,6 +1185,7 @@ export function TaskFormDialog({
   const auditorChat =
     isView && !!editing && String(currentUserRole ?? "").trim().toLowerCase() === "hr_auditor";
   const canPrivateVisibility = canSetPrivateTaskVisibility(currentUserRole);
+  const canPickSupervisor = canAssignTaskSupervisor(currentUserRole);
   const descEditorRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const workFileRef = useRef<HTMLInputElement>(null);
@@ -1033,6 +1202,9 @@ export function TaskFormDialog({
   const [assigneeOpen, setAssigneeOpen] = useState(false);
   const [multiAssigneeKeys, setMultiAssigneeKeys] = useState<string[]>([]);
   const [multiAssigneeOpen, setMultiAssigneeOpen] = useState(false);
+  const [addAssigneeKeys, setAddAssigneeKeys] = useState<string[]>([]);
+  const [addAssigneeOpen, setAddAssigneeOpen] = useState(false);
+  const [addAssigneesBusy, setAddAssigneesBusy] = useState(false);
   const [batchDetailId, setBatchDetailId] = useState<number | null>(null);
   const [filterOfis, setFilterOfis] = useState(true);
   const [filterDorixona, setFilterDorixona] = useState(true);
@@ -1052,7 +1224,9 @@ export function TaskFormDialog({
     "weekly",
   );
   const [visibility, setVisibility] = useState<"all" | "private">("all");
-  const [extraOpen, setExtraOpen] = useState(false);
+  const [supervisorKey, setSupervisorKey] = useState("");
+  const [supervisorOpen, setSupervisorOpen] = useState(false);
+  const [basedOnMeta, setBasedOnMeta] = useState<Partial<TaskMeta>>({});
   const [templateOpen, setTemplateOpen] = useState(false);
   const [sideTab, setSideTab] = useState<"chat" | "files" | "history">("chat");
   const [mobilePanel, setMobilePanel] = useState<"main" | "settings" | "side">("main");
@@ -1111,6 +1285,8 @@ export function TaskFormDialog({
       const selfKey = currentUserId != null ? `user:${currentUserId}` : "";
       setAssigneeKey(selfKey && loadedKey === selfKey ? "" : loadedKey);
       setMultiAssigneeKeys([]);
+      setAddAssigneeKeys([]);
+      setAddAssigneeOpen(false);
       setBatchDetailId(null);
       setBranchOrDept(meta.branchOrDept || "");
       setTaskType(meta.taskType || "hisobot");
@@ -1131,6 +1307,21 @@ export function TaskFormDialog({
       setVisibility(
         canPrivateVisibility && meta.visibility === "private" ? "private" : "all",
       );
+      {
+        const sid = Number(meta.supervisorUserId);
+        setSupervisorKey(
+          Number.isFinite(sid) && sid > 0 ? `user:${Math.floor(sid)}` : "",
+        );
+      }
+      setBasedOnMeta({
+        basedOnTaskId: meta.basedOnTaskId ?? null,
+        basedOnTitle: meta.basedOnTitle ?? null,
+        basedOnAssigneeName: meta.basedOnAssigneeName ?? null,
+        basedOnStatus: meta.basedOnStatus ?? null,
+        basedOnCompletedAt: meta.basedOnCompletedAt ?? null,
+        basedOnResultNote: meta.basedOnResultNote ?? null,
+        basedOnSourceAssigneeUserId: meta.basedOnSourceAssigneeUserId ?? null,
+      });
       setMessages(Array.isArray(meta.messages) ? meta.messages : []);
       setHistory(
         Array.isArray(meta.history) && meta.history.length
@@ -1159,6 +1350,9 @@ export function TaskFormDialog({
     setPriority("normal");
     setAssigneeKey("");
     setMultiAssigneeKeys([]);
+    setAddAssigneeKeys([]);
+    setSupervisorKey(canPickSupervisor ? readLastSupervisorKey() : "");
+    setSupervisorOpen(false);
     setBatchDetailId(null);
     setBranchOrDept("");
     setTaskType("hisobot");
@@ -1172,6 +1366,7 @@ export function TaskFormDialog({
     setRecurrence("none");
     setRecurrencePeriod("weekly");
     setVisibility("all");
+    setBasedOnMeta({});
     setMessages([]);
     setHistory([
       {
@@ -1189,6 +1384,52 @@ export function TaskFormDialog({
     setViewerFile(null);
     setWorkNote("");
     setWorkFiles([]);
+    if (basedOnSource) {
+      const src = basedOnSource;
+      const suffix = t("tasks.form.createFromTitleSuffix");
+      const baseTitle = String(src.title || "").trim();
+      setTitle(
+        `${baseTitle}${baseTitle.includes(suffix) ? "" : ` ${suffix}`}`.slice(
+          0,
+          TITLE_MAX,
+        ),
+      );
+      setDescription(src.description || "");
+      setPriority(src.priority || "normal");
+      setTaskType(src.meta?.taskType || "hisobot");
+      setTags(src.meta?.tags || []);
+      setBranchOrDept(src.meta?.branchOrDept || "");
+      setAttachments(
+        (src.attachments || []).map((a, i) => ({
+          ...a,
+          id: a.id || `copy-${Date.now()}-${i}`,
+        })),
+      );
+      setChecklist(
+        (src.meta?.checklist || []).map((c, i) => ({
+          id: `c-new-${i}`,
+          text: c.text,
+          done: false,
+        })),
+      );
+      setBasedOnMeta({
+        basedOnTaskId: src.id,
+        basedOnTitle: src.title,
+        basedOnAssigneeName: src.assigneeName,
+        basedOnStatus: src.status,
+        basedOnCompletedAt: src.completedAt,
+        basedOnResultNote: src.completionNote
+          ? String(src.completionNote).slice(0, 400)
+          : null,
+      });
+      setHistory([
+        {
+          id: "h-draft-based",
+          text: `Asos: TK-${src.id} — «${src.title}»`,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+    }
     const due = splitDue(toDatetimeLocalValue(defaultDueAt || null));
     if (due.date) {
       setDueDate(due.date);
@@ -1200,8 +1441,8 @@ export function TaskFormDialog({
       setDueDate(d.date);
       setDueTime(d.time || "18:00");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: hydrate by id only
-  }, [open, editing?.id, defaultDueAt]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: hydrate by id / basedOn
+  }, [open, editing?.id, defaultDueAt, basedOnSource?.id]);
 
   // Rich-text editor HTML — ochilganda / vazifa almashtirilganda (mount dan keyin)
   useEffect(() => {
@@ -1250,6 +1491,34 @@ export function TaskFormDialog({
     () => assigneeOptions.find((o) => o.key === assigneeKey),
     [assigneeOptions, assigneeKey],
   );
+  const selectedSupervisor = useMemo(() => {
+    if (!supervisorKey) return null;
+    const fromOpts = assigneeOptions.find(
+      (o) => o.key === supervisorKey || (o.kind === "user" && o.key === supervisorKey),
+    );
+    if (fromOpts) return fromOpts;
+    const sid = Number(supervisorKey.split(":")[1]);
+    const name =
+      (editing?.meta as TaskMeta | null | undefined)?.supervisorName ||
+      `#${sid}`;
+    return {
+      key: supervisorKey,
+      name,
+      label: name,
+      kind: "user" as const,
+      id: sid,
+      meta: "",
+    } satisfies AssigneeOption;
+  }, [assigneeOptions, supervisorKey, editing?.meta]);
+  const supervisorPickerOptions = useMemo(() => {
+    const blocked = new Set<string>();
+    if (assigneeKey) blocked.add(assigneeKey);
+    for (const k of multiAssigneeKeys) blocked.add(k);
+    if (currentUserId != null) blocked.add(`user:${currentUserId}`);
+    return assigneeOptions.filter(
+      (o) => o.kind === "user" && !blocked.has(o.key) && !blocked.has(`user:${o.id}`),
+    );
+  }, [assigneeOptions, assigneeKey, multiAssigneeKeys, currentUserId]);
   const selectedMultiAssignees = useMemo(
     () =>
       multiAssigneeKeys
@@ -1267,6 +1536,22 @@ export function TaskFormDialog({
       String(a.assigneeName || "").localeCompare(String(b.assigneeName || ""), "uz"),
     );
   }, [editing, batchSiblings]);
+  const occupiedAssigneeKeys = useMemo(() => {
+    const keys = new Set<string>();
+    if (editing) keys.add(`${editing.assigneeKind}:${editing.assigneeId}`);
+    for (const m of batchMembers) {
+      keys.add(`${m.assigneeKind}:${m.assigneeId}`);
+    }
+    if (currentUserId != null) keys.add(`user:${currentUserId}`);
+    return keys;
+  }, [editing, batchMembers, currentUserId]);
+  const selectedAddAssignees = useMemo(
+    () =>
+      addAssigneeKeys
+        .map((k) => assigneeOptions.find((o) => o.key === k))
+        .filter(Boolean) as AssigneeOption[],
+    [assigneeOptions, addAssigneeKeys],
+  );
   const batchDetail = useMemo(
     () => batchMembers.find((t) => t.id === batchDetailId) || null,
     [batchMembers, batchDetailId],
@@ -1277,6 +1562,61 @@ export function TaskFormDialog({
     setMultiAssigneeKeys((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
     );
+  }
+
+  function toggleAddAssignee(key: string) {
+    setAddAssigneeKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
+  }
+
+  async function handleAddAssignees() {
+    if (!editing || !onAddAssignees) return;
+    if (addAssigneeKeys.length === 0) {
+      toast({
+        title: t("tasks.form.addAssigneesNeed"),
+        variant: "destructive",
+      });
+      return;
+    }
+    const specs = addAssigneeKeys
+      .map((k) => {
+        const [kind, idStr] = k.split(":");
+        const id = parseInt(idStr, 10);
+        if (!Number.isFinite(id) || id <= 0) return null;
+        return {
+          assigneeKind: (kind === "employee" ? "employee" : "user") as
+            | "user"
+            | "employee",
+          assigneeId: id,
+        };
+      })
+      .filter(Boolean) as Array<{
+      assigneeKind: "user" | "employee";
+      assigneeId: number;
+    }>;
+    if (specs.length === 0) return;
+    setAddAssigneesBusy(true);
+    try {
+      await onAddAssignees(specs);
+      const names = selectedAddAssignees.map((o) => o.name).join(", ");
+      toast({
+        title: t("tasks.form.addAssigneesOk"),
+        description: t("tasks.form.addAssigneesOkDesc")
+          .replace("{n}", String(specs.length))
+          .replace("{names}", names),
+      });
+      setAddAssigneeKeys([]);
+      setAddAssigneeOpen(false);
+    } catch (e) {
+      toast({
+        title: t("tasks.form.addAssigneesFail"),
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    } finally {
+      setAddAssigneesBusy(false);
+    }
   }
 
   function pickSingleAssignee(key: string) {
@@ -1317,6 +1657,11 @@ export function TaskFormDialog({
       return false;
     });
   }, [assigneeOptions, filterOfis, filterDorixona]);
+
+  const addAssigneeOptions = useMemo(
+    () => filteredAssigneeOptions.filter((o) => !occupiedAssigneeKeys.has(o.key)),
+    [filteredAssigneeOptions, occupiedAssigneeKeys],
+  );
 
   const statusTimeline = useMemo(() => buildStatusTimeline(editing), [editing]);
 
@@ -1620,6 +1965,21 @@ export function TaskFormDialog({
           String(multiSpecs[0].assigneeId),
         ]
       : assigneeKey.split(":");
+    const prevMeta = (editing?.meta || {}) as TaskMeta;
+    let supervisorUserId: number | null | undefined = prevMeta.supervisorUserId ?? null;
+    let supervisorName: string | null | undefined = prevMeta.supervisorName ?? null;
+    if (canPickSupervisor) {
+      if (supervisorKey.startsWith("user:")) {
+        const sid = parseInt(supervisorKey.split(":")[1], 10);
+        supervisorUserId = Number.isFinite(sid) && sid > 0 ? sid : null;
+        supervisorName = selectedSupervisor?.name || null;
+        writeLastSupervisorKey(supervisorKey);
+      } else {
+        supervisorUserId = null;
+        supervisorName = null;
+        writeLastSupervisorKey("");
+      }
+    }
     const meta: TaskMeta = {
       checklist: checklist.filter((c) => c.text.trim()),
       tags,
@@ -1631,7 +1991,7 @@ export function TaskFormDialog({
       recurrence: recurrence === "none" ? "none" : recurrence,
       visibility: canPrivateVisibility && visibility === "private" ? "private" : "all",
       notes: notes.trim() || undefined,
-      verifiedAt: (editing?.meta as TaskMeta | null | undefined)?.verifiedAt,
+      verifiedAt: prevMeta.verifiedAt,
       messages,
       history: [
         ...history,
@@ -1645,8 +2005,24 @@ export function TaskFormDialog({
               },
             ]),
       ].slice(-80),
-      batchId: (editing?.meta as TaskMeta | null | undefined)?.batchId,
-      batchSize: (editing?.meta as TaskMeta | null | undefined)?.batchSize,
+      batchId: prevMeta.batchId,
+      batchSize: prevMeta.batchSize,
+      supervisorUserId: supervisorUserId ?? null,
+      supervisorName: supervisorName ?? null,
+      basedOnTaskId:
+        basedOnMeta.basedOnTaskId ?? prevMeta.basedOnTaskId ?? null,
+      basedOnTitle: basedOnMeta.basedOnTitle ?? prevMeta.basedOnTitle ?? null,
+      basedOnAssigneeName:
+        basedOnMeta.basedOnAssigneeName ?? prevMeta.basedOnAssigneeName ?? null,
+      basedOnStatus: basedOnMeta.basedOnStatus ?? prevMeta.basedOnStatus ?? null,
+      basedOnCompletedAt:
+        basedOnMeta.basedOnCompletedAt ?? prevMeta.basedOnCompletedAt ?? null,
+      basedOnResultNote:
+        basedOnMeta.basedOnResultNote ?? prevMeta.basedOnResultNote ?? null,
+      basedOnSourceAssigneeUserId:
+        basedOnMeta.basedOnSourceAssigneeUserId ??
+        prevMeta.basedOnSourceAssigneeUserId ??
+        null,
     };
     await onSave({
       title: title.trim().slice(0, TITLE_MAX),
@@ -1670,6 +2046,7 @@ export function TaskFormDialog({
     nextMessages: TaskChatMessage[],
     nextHistory: TaskHistoryEvent[],
   ): TaskMeta {
+    const prevMeta = (editing?.meta || {}) as TaskMeta;
     return {
       checklist: checklist.filter((c) => c.text.trim()),
       tags,
@@ -1681,9 +2058,26 @@ export function TaskFormDialog({
       recurrence,
       visibility: canPrivateVisibility && visibility === "private" ? "private" : "all",
       notes: notes.trim() || undefined,
-      verifiedAt: (editing?.meta as TaskMeta | null | undefined)?.verifiedAt,
+      verifiedAt: prevMeta.verifiedAt,
       messages: nextMessages,
       history: nextHistory,
+      batchId: prevMeta.batchId,
+      batchSize: prevMeta.batchSize,
+      supervisorUserId: prevMeta.supervisorUserId ?? null,
+      supervisorName: prevMeta.supervisorName ?? null,
+      basedOnTaskId: prevMeta.basedOnTaskId ?? basedOnMeta.basedOnTaskId ?? null,
+      basedOnTitle: prevMeta.basedOnTitle ?? basedOnMeta.basedOnTitle ?? null,
+      basedOnAssigneeName:
+        prevMeta.basedOnAssigneeName ?? basedOnMeta.basedOnAssigneeName ?? null,
+      basedOnStatus: prevMeta.basedOnStatus ?? basedOnMeta.basedOnStatus ?? null,
+      basedOnCompletedAt:
+        prevMeta.basedOnCompletedAt ?? basedOnMeta.basedOnCompletedAt ?? null,
+      basedOnResultNote:
+        prevMeta.basedOnResultNote ?? basedOnMeta.basedOnResultNote ?? null,
+      basedOnSourceAssigneeUserId:
+        prevMeta.basedOnSourceAssigneeUserId ??
+        basedOnMeta.basedOnSourceAssigneeUserId ??
+        null,
     };
   }
 
@@ -2357,6 +2751,52 @@ export function TaskFormDialog({
               </div>
             )}
 
+            {(basedOnMeta.basedOnTaskId ||
+              (editing?.meta as TaskMeta | null)?.basedOnTaskId) && (
+              <BasedOnBanner
+                meta={
+                  {
+                    ...((editing?.meta as TaskMeta) || {}),
+                    ...basedOnMeta,
+                  } as TaskMeta
+                }
+                onOpen={onOpenLinkedTask}
+                t={t}
+              />
+            )}
+
+            {editing && derivedTasks.length > 0 ? (
+              <DerivedTasksPanel
+                items={derivedTasks}
+                onOpen={onOpenLinkedTask}
+                t={t}
+              />
+            ) : null}
+
+            {editing && canCreateFromTask && onCreateFromTask ? (
+              <div className="rounded-2xl border border-dashed border-[#0b5fff]/35 bg-[#0b5fff]/[0.04] p-3 dark:border-blue-700/50 dark:bg-blue-950/20">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-[#0a2540] dark:text-slate-100">
+                      {t("tasks.form.createFrom")}
+                    </p>
+                    <p className="text-[11px] leading-snug text-muted-foreground">
+                      {t("tasks.form.createFromHint")}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-10 shrink-0 gap-1.5 rounded-xl border-[#0b5fff]/40 font-semibold text-[#0b5fff] hover:bg-[#0b5fff]/10"
+                    onClick={() => onCreateFromTask()}
+                  >
+                    <Plus className="h-4 w-4" />
+                    {t("tasks.form.createFrom")}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
             <SectionCard title={t("tasks.form.section.main")} tint="blue">
             {(isWork || isView) ? (
               <div className="space-y-3">
@@ -2822,9 +3262,8 @@ export function TaskFormDialog({
                   <PopoverContent className="z-[100] w-[var(--radix-popover-trigger-width)] p-0" align="start">
                     <Command
                       filter={(value, searchQ) => {
-                        const q = searchQ.trim().toLowerCase();
-                        if (!q) return 1;
-                        return value.toLowerCase().includes(q) ? 1 : 0;
+                        if (!searchQ.trim()) return 1;
+                        return scriptIncludes(value, searchQ) ? 1 : 0;
                       }}
                     >
                       <CommandInput placeholder={t("tasks.searchEmployee")} />
@@ -2897,6 +3336,141 @@ export function TaskFormDialog({
               </div>
             </SectionCard>
 
+            {editing && onAddAssignees && editing.status !== "cancelled" ? (
+              <SectionCard title={t("tasks.form.section.addAssignees")} tint="teal">
+                <div className="space-y-2">
+                  <div className="flex items-start gap-2 rounded-xl border border-teal-200/80 bg-teal-50/70 px-3 py-2.5 dark:border-teal-800 dark:bg-teal-950/30">
+                    <UserPlus className="mt-0.5 h-4 w-4 shrink-0 text-teal-700 dark:text-teal-300" />
+                    <p className="text-[11px] leading-snug text-teal-950/90 dark:text-teal-100/90">
+                      {t("tasks.form.addAssigneesHint")}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <Label className={LABEL}>{t("tasks.form.section.addAssignees")}</Label>
+                    <span className="rounded-full bg-teal-600/90 px-2 py-0.5 text-[10px] font-bold text-white">
+                      {addAssigneeKeys.length} {t("tasks.form.selectedCount")}
+                    </span>
+                  </div>
+                  <Popover
+                    modal
+                    open={addAssigneeOpen}
+                    onOpenChange={setAddAssigneeOpen}
+                  >
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        role="combobox"
+                        disabled={addAssigneesBusy || !!addingAssignees}
+                        className={cn(FIELD, "h-12 w-full justify-between px-3.5 font-normal")}
+                      >
+                        <span
+                          className={cn(
+                            "truncate text-left text-sm",
+                            selectedAddAssignees.length === 0 && "text-muted-foreground",
+                          )}
+                        >
+                          {selectedAddAssignees.length === 0
+                            ? t("tasks.form.addAssigneesPick")
+                            : selectedAddAssignees
+                                .slice(0, 3)
+                                .map((o) => o.name)
+                                .join(", ") +
+                              (selectedAddAssignees.length > 3
+                                ? ` +${selectedAddAssignees.length - 3}`
+                                : "")}
+                        </span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      className="z-[100] w-[var(--radix-popover-trigger-width)] p-0"
+                      align="start"
+                    >
+                      <Command
+                        filter={(value, searchQ) => {
+                          if (!searchQ.trim()) return 1;
+                          return scriptIncludes(value, searchQ) ? 1 : 0;
+                        }}
+                      >
+                        <CommandInput placeholder={t("tasks.searchEmployee")} />
+                        <CommandList className="max-h-64">
+                          <CommandEmpty>{t("tasks.noEmployee")}</CommandEmpty>
+                          <CommandGroup>
+                            {addAssigneeOptions.map((o) => {
+                              const on = addAssigneeKeys.includes(o.key);
+                              return (
+                                <CommandItem
+                                  key={o.key}
+                                  value={o.label}
+                                  onSelect={() => toggleAddAssignee(o.key)}
+                                >
+                                  <span
+                                    className={cn(
+                                      "mr-2 flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                                      on
+                                        ? "border-teal-600 bg-teal-600 text-white"
+                                        : "border-slate-300",
+                                    )}
+                                  >
+                                    {on ? <Check className="h-3 w-3" /> : null}
+                                  </span>
+                                  <span className="min-w-0 flex-1 truncate">
+                                    <VerifiedName
+                                      name={o.name}
+                                      role={o.role}
+                                      userId={o.userId}
+                                      className="flex font-medium"
+                                    />
+                                    {o.meta ? (
+                                      <span className="block truncate text-[11px] text-muted-foreground">
+                                        {o.meta}
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                </CommandItem>
+                              );
+                            })}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  {selectedAddAssignees.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedAddAssignees.map((o) => (
+                        <button
+                          key={o.key}
+                          type="button"
+                          onClick={() => toggleAddAssignee(o.key)}
+                          className="inline-flex max-w-full items-center gap-1 rounded-full border border-teal-300 bg-teal-50 px-2 py-1 text-[11px] font-semibold text-teal-900 dark:border-teal-700 dark:bg-teal-950/40 dark:text-teal-100"
+                        >
+                          <span className="truncate">{o.name}</span>
+                          <VerifiedBadge role={o.role} userId={o.userId} size="xs" interactive={false} />
+                          <X className="h-3 w-3 shrink-0 opacity-70" />
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  <Button
+                    type="button"
+                    className="h-10 w-full rounded-xl bg-teal-600 font-semibold text-white hover:bg-teal-700"
+                    disabled={
+                      addAssigneeKeys.length === 0 ||
+                      addAssigneesBusy ||
+                      !!addingAssignees
+                    }
+                    onClick={() => void handleAddAssignees()}
+                  >
+                    <UserPlus className="mr-2 h-4 w-4" />
+                    {addAssigneesBusy || addingAssignees
+                      ? t("tasks.form.addAssigneesBusy")
+                      : t("tasks.form.addAssigneesAction")}
+                  </Button>
+                </div>
+              </SectionCard>
+            ) : null}
+
             {!editing ? (
               <SectionCard title={t("tasks.form.section.assignees")} tint="teal">
                 <div
@@ -2958,9 +3532,8 @@ export function TaskFormDialog({
                     >
                       <Command
                         filter={(value, searchQ) => {
-                          const q = searchQ.trim().toLowerCase();
-                          if (!q) return 1;
-                          return value.toLowerCase().includes(q) ? 1 : 0;
+                          if (!searchQ.trim()) return 1;
+                          return scriptIncludes(value, searchQ) ? 1 : 0;
                         }}
                       >
                         <CommandInput placeholder={t("tasks.searchEmployee")} />
@@ -3743,20 +4316,132 @@ export function TaskFormDialog({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setExtraOpen((v) => !v)}
-              className="mb-4 flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-            >
-              <Settings2 className="h-4 w-4" />
-              {t("tasks.form.extraSettings")}
-              <ChevronsUpDown className="h-3.5 w-3.5" />
-            </button>
-            {extraOpen && (
-              <div className="mb-4 rounded-2xl border border-dashed border-slate-300 bg-white p-3 text-[11px] text-slate-500 dark:border-slate-700 dark:bg-slate-900">
-                {t("tasks.form.extraSettingsHint")}
+            {canPickSupervisor ? (
+              <div className={cn(CARD, "mb-4 space-y-2.5 !p-3.5")}>
+                <div className="flex items-start gap-2">
+                  <UserRound className="mt-0.5 h-4 w-4 shrink-0 text-[#0b5fff]" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-[#0a2540] dark:text-slate-100">
+                      {t("tasks.form.supervisor")}
+                    </p>
+                    <p className="mt-0.5 text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+                      {t("tasks.form.supervisorHint")}
+                    </p>
+                  </div>
+                </div>
+                <Popover modal open={supervisorOpen} onOpenChange={setSupervisorOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      className={cn(FIELD, "h-11 w-full justify-between px-3 font-normal")}
+                    >
+                      <span
+                        className={cn(
+                          "flex min-w-0 flex-1 items-center gap-2 text-left text-sm",
+                          !selectedSupervisor && "text-muted-foreground",
+                        )}
+                      >
+                        {selectedSupervisor ? (
+                          <>
+                            <span
+                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+                              style={{
+                                backgroundColor: chatColorFor(selectedSupervisor.name),
+                              }}
+                            >
+                              {selectedSupervisor.name.slice(0, 1).toUpperCase()}
+                            </span>
+                            <span className="truncate font-semibold">
+                              {selectedSupervisor.name}
+                            </span>
+                          </>
+                        ) : (
+                          t("tasks.form.supervisorPick")
+                        )}
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    className="z-[100] w-[var(--radix-popover-trigger-width)] p-0"
+                    align="start"
+                  >
+                    <Command
+                      filter={(value, searchQ) => {
+                        if (!searchQ.trim()) return 1;
+                        return scriptIncludes(value, searchQ) ? 1 : 0;
+                      }}
+                    >
+                      <CommandInput placeholder={t("tasks.searchEmployee")} />
+                      <CommandList className="max-h-64">
+                        <CommandEmpty>{t("tasks.noEmployee")}</CommandEmpty>
+                        <CommandGroup>
+                          {supervisorPickerOptions.map((o) => (
+                            <CommandItem
+                              key={o.key}
+                              value={o.label}
+                              onSelect={() => {
+                                const key = o.key.startsWith("user:")
+                                  ? o.key
+                                  : `user:${o.id}`;
+                                setSupervisorKey(key);
+                                writeLastSupervisorKey(key);
+                                setSupervisorOpen(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4 shrink-0",
+                                  supervisorKey === o.key || supervisorKey === `user:${o.id}`
+                                    ? "opacity-100"
+                                    : "opacity-0",
+                                )}
+                              />
+                              <span className="min-w-0 flex-1 truncate">
+                                <VerifiedName
+                                  name={o.name}
+                                  role={o.role}
+                                  userId={o.userId}
+                                  className="flex font-medium"
+                                />
+                                {o.meta ? (
+                                  <span className="block truncate text-[11px] text-muted-foreground">
+                                    {o.meta}
+                                  </span>
+                                ) : null}
+                              </span>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                {supervisorKey ? (
+                  <button
+                    type="button"
+                    className="text-[11px] font-semibold text-rose-600 hover:underline dark:text-rose-400"
+                    onClick={() => {
+                      setSupervisorKey("");
+                      writeLastSupervisorKey("");
+                    }}
+                  >
+                    {t("tasks.form.supervisorClear")}
+                  </button>
+                ) : null}
               </div>
-            )}
+            ) : selectedSupervisor ? (
+              <div className={cn(CARD, "mb-4 space-y-1.5 !p-3.5")}>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                  {t("tasks.form.supervisorBadge")}
+                </p>
+                <p className="text-sm font-semibold text-[#0a2540] dark:text-slate-100">
+                  {selectedSupervisor.name}
+                </p>
+              </div>
+            ) : null}
               </>
             )}
 

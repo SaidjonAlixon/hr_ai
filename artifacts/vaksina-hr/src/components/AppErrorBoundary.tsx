@@ -9,7 +9,17 @@ const RECOVER_KEY = "hr_ui_recover_ts";
 
 function isTransientRenderError(error: Error): boolean {
   const msg = String(error?.message || "");
+  const name = String((error as { name?: string })?.name || "");
+  // Brauzer tarjimasi / extension DOM’ni o‘zgartirganda React insertBefore|removeChild tashlaydi
+  const isDomMutationCrash =
+    name === "NotFoundError" ||
+    /insertBefore/i.test(msg) ||
+    /removeChild/i.test(msg) ||
+    /The node before which the new node is to be inserted is not a child/i.test(msg) ||
+    /The node to be removed is not a child of this node/i.test(msg) ||
+    /не является дочерним узлом/i.test(msg);
   return (
+    isDomMutationCrash ||
     /Cannot read properties of undefined \(reading 'icon'\)/i.test(msg) ||
     /Cannot read property 'icon' of undefined/i.test(msg) ||
     /is not a function/i.test(msg) ||

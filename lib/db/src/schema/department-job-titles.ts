@@ -1,9 +1,9 @@
 import { pgTable, text, serial, timestamp, integer, boolean } from "drizzle-orm/pg-core";
 
-/** Bo‘lim lavozimlari (Distribyutsiya va boshqalar) — tahrirlanadigan katalog */
+/** Bo‘lim lavozimlari; department_id NULL = hech qaysi bo‘limga bog‘lanmagan umumiy lavozim/rol */
 export const departmentJobTitlesTable = pgTable("department_job_titles", {
   id: serial("id").primaryKey(),
-  departmentId: integer("department_id").notNull(),
+  departmentId: integer("department_id"),
   title: text("title").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
   active: boolean("active").notNull().default(true),

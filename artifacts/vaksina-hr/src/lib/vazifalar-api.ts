@@ -86,6 +86,18 @@ export type TaskMeta = {
   /** Bir nechta xodimga bir vaqtda berilgan vazifalar guruhi */
   batchId?: string;
   batchSize?: number;
+  /** Nazoratchi (users.id) — beruvchi bilan bir xil huquq, o‘chirishdan tashqari */
+  supervisorUserId?: number | null;
+  supervisorName?: string | null;
+  /** Qaysi topshiriq asosida yaratilgan (nusxa / davomi) */
+  basedOnTaskId?: number | null;
+  basedOnTitle?: string | null;
+  basedOnAssigneeName?: string | null;
+  basedOnStatus?: string | null;
+  basedOnCompletedAt?: string | null;
+  basedOnResultNote?: string | null;
+  /** Asosiy topshiriq oluvchisi (users.id) — davomi unga ham ko‘rinsin */
+  basedOnSourceAssigneeUserId?: number | null;
 };
 
 export type TaskSubmissionHistoryItem = {
@@ -251,6 +263,35 @@ export function useUpdateTask() {
       apiFetch<Vazifa>(`/tasks/${id}`, {
         method: "PATCH",
         body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+}
+
+/** Mavjud topshiriqqa boshqa oluvchilar qo‘shish (batch + xabar) */
+export function useAddTaskAssignees() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      assignees,
+    }: {
+      id: number;
+      assignees: Array<{ assigneeKind: "user" | "employee"; assigneeId: number }>;
+    }) =>
+      apiFetch<{
+        ok: boolean;
+        added: number;
+        batchId: string;
+        batchSize: number;
+        names: string[];
+        items: Vazifa[];
+        task: Vazifa | null;
+      }>(`/tasks/${id}/add-assignees`, {
+        method: "POST",
+        body: JSON.stringify({ assignees }),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tasks"] });

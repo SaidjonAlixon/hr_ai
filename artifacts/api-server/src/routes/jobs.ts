@@ -4,6 +4,7 @@ import { sendVacancyReminders } from "../jobs/vacancy-reminders";
 import { sendTaskDueReminders } from "../jobs/task-reminders";
 import { sendCoordinatorPresenceReminders } from "../jobs/coordinator-presence";
 import { sweepZonePresence } from "../lib/zone-presence";
+import { sendTaskDigest } from "../lib/task-digest";
 
 const router: IRouter = Router();
 
@@ -49,6 +50,29 @@ router.get("/jobs/task-reminders", async (req, res): Promise<void> => {
   } catch (err) {
     req.log?.error({ err }, "Task reminder cron failed");
     res.status(500).json({ error: "Task reminder job failed" });
+  }
+});
+
+/** Hozirgi holat: xodimlarga eslatma, bot yo‘q → guruh, adminga yetkazish PDF */
+router.get("/jobs/task-digest", async (req, res): Promise<void> => {
+  if (!authorizeCron(req, res)) return;
+  try {
+    const result = await sendTaskDigest();
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    req.log?.error({ err }, "Task digest cron failed");
+    res.status(500).json({ error: "Task digest job failed" });
+  }
+});
+
+router.post("/jobs/task-digest", async (req, res): Promise<void> => {
+  if (!authorizeCron(req, res)) return;
+  try {
+    const result = await sendTaskDigest();
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    req.log?.error({ err }, "Task digest cron failed");
+    res.status(500).json({ error: "Task digest job failed" });
   }
 });
 

@@ -10,6 +10,7 @@ import { and, asc, desc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import {
   db,
   attestatsiyaAttemptsTable,
+  attestatsiyaBanksTable,
   attestatsiyaExamsTable,
   usersTable,
   type AttestatsiyaQuestionRow,
@@ -96,45 +97,116 @@ function examVisibleTo(exam: Pick<Exam, "track" | "targetTracks">, role: Track):
   return normalizeTargetTracks(exam).includes(role);
 }
 
-function bankCountsFromExams(all: Exam[]): Record<Track, number> {
+type Bank = typeof attestatsiyaBanksTable.$inferSelect;
+
+const BANK_TITLE: Record<Track, string> = {
+  stajyor: "Stajyor savol bazasi",
+  farmasevt: "Farmasevt savol bazasi",
+  mudir: "Mudir savol bazasi",
+};
+
+/** Eski testlardagi savollarni bankka ko‘chirish (bank bo‘sh bo‘lsa) */
+async function ensureBanksSeeded(): Promise<void> {
+  for (const track of TRACKS) {
+    const [existing] = await db
+      .select()
+      .from(attestatsiyaBanksTable)
+      .where(eq(attestatsiyaBanksTable.track, track))
+      .limit(1);
+    if (existing && (existing.questionsJson || []).some((q) => q.text?.trim())) continue;
+
+    const exams = await db
+      .select({ id: attestatsiyaExamsTable.id, questionsJson: attestatsiyaExamsTable.questionsJson })
+      .from(attestatsiyaExamsTable)
+      .where(eq(attestatsiyaExamsTable.track, track))
+      .orderBy(asc(attestatsiyaExamsTable.id));
+    const out: AttestatsiyaQuestionRow[] = [];
+    const seen = new Set<string>();
+    for (const e of exams) {
+      for (const q of e.questionsJson || []) {
+        const text = String(q.text || "").trim();
+        if (!text) continue;
+        const key = text.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({
+          id: String(q.id || "").trim() || `q-${track}-${out.length + 1}`,
+          text: q.text,
+          options: [...(q.options || [])],
+          correctIndex: q.correctIndex,
+        });
+      }
+    }
+    if (existing) {
+      if (out.length) {
+        await db
+          .update(attestatsiyaBanksTable)
+          .set({ questionsJson: out, title: existing.title || BANK_TITLE[track], updatedAt: new Date() })
+          .where(eq(attestatsiyaBanksTable.id, existing.id));
+      }
+    } else {
+      await db.insert(attestatsiyaBanksTable).values({
+        track,
+        title: BANK_TITLE[track],
+        questionsJson: out,
+      });
+    }
+  }
+}
+
+async function loadBankCounts(): Promise<Record<Track, number>> {
+  await ensureBanksSeeded();
+  const rows = await db.select().from(attestatsiyaBanksTable);
   const counts: Record<Track, number> = { stajyor: 0, farmasevt: 0, mudir: 0 };
-  for (const e of all) {
-    const t = parseTrack(e.track);
+  for (const b of rows) {
+    const t = parseTrack(b.track);
     if (!t) continue;
-    counts[t] += (e.questionsJson || []).filter((q) => q.text?.trim()).length;
+    counts[t] = (b.questionsJson || []).filter((q) => q.text?.trim()).length;
   }
   return counts;
 }
 
-/** Belgilangan bazalardan birlashtirilgan savol pooli (matn bo‘yicha dedupe) */
+/** Belgilangan lavozim bazalaridan birlashtirilgan savol pooli (matn bo‘yicha dedupe) */
 async function resolveQuestionPool(exam: Exam): Promise<AttestatsiyaQuestionRow[]> {
+  await ensureBanksSeeded();
   const tracks = normalizePoolTracks(exam);
-  const sources = await db
+  const banks = await db
     .select()
-    .from(attestatsiyaExamsTable)
-    .where(inArray(attestatsiyaExamsTable.track, tracks));
-  const byId = new Map(sources.map((e) => [e.id, e]));
-  if (!byId.has(exam.id)) byId.set(exam.id, exam);
+    .from(attestatsiyaBanksTable)
+    .where(inArray(attestatsiyaBanksTable.track, tracks));
 
   const out: AttestatsiyaQuestionRow[] = [];
   const seenText = new Set<string>();
-  for (const src of byId.values()) {
-    const t = parseTrack(src.track);
+  for (const bank of banks) {
+    const t = parseTrack(bank.track);
     if (!t || !tracks.includes(t)) continue;
-    for (const q of src.questionsJson || []) {
+    for (const q of bank.questionsJson || []) {
       const text = String(q.text || "").trim();
       if (!text) continue;
       const key = text.toLowerCase();
       if (seenText.has(key)) continue;
       seenText.add(key);
-      const id = src.id === exam.id ? q.id : `e${src.id}__${q.id}`;
       out.push({
-        id,
+        id: `b${bank.id}__${q.id}`,
         text: q.text,
         options: [...(q.options || [])],
         correctIndex: q.correctIndex,
       });
     }
+  }
+  // Legacy: exam ichidagi savollar (eski yozuvlar) — bankda yo‘q bo‘lsa qo‘shiladi
+  for (const q of exam.questionsJson || []) {
+    const text = String(q.text || "").trim();
+    if (!text) continue;
+    const key = text.toLowerCase();
+    if (seenText.has(key)) continue;
+    seenText.add(key);
+    out.push({
+      id: q.id,
+      text: q.text,
+      options: [...(q.options || [])],
+      correctIndex: q.correctIndex,
+    });
   }
   return out;
 }
@@ -271,6 +343,24 @@ function learnerAttempt(a: Attempt, exam: Exam, withQuestions: boolean, poolFall
   const questions = attemptQuestions(a, exam, poolFallback);
   const byId = new Map(questions.map((q) => [q.id, q]));
   const order = (a.questionOrder?.length ? a.questionOrder : questions.map((q) => q.id)).filter((id) => byId.has(id));
+  const review = reveal
+    ? order.map((id, i) => {
+        const q = byId.get(id)!;
+        const chosen = (a.answersJson || {})[id];
+        const ok = chosen === q.correctIndex;
+        return {
+          number: i + 1,
+          questionId: q.id,
+          question: q.text,
+          options: [...(q.options || [])],
+          chosenIndex: chosen ?? null,
+          chosenText: chosen != null && q.options[chosen] != null ? q.options[chosen]! : "Javob bermagan",
+          correctIndex: q.correctIndex,
+          correctText: q.options[q.correctIndex] ?? "—",
+          ok,
+        };
+      })
+    : undefined;
   return {
     id: a.id,
     attemptNo: a.attemptNo,
@@ -287,6 +377,8 @@ function learnerAttempt(a: Attempt, exam: Exam, withQuestions: boolean, poolFall
     locationLabel: a.locationLabel,
     retakeAllowed: a.retakeAllowed,
     annulReason: a.status === "annulled" ? a.annulReason : null,
+    examTitle: exam.title,
+    review,
     questions: withQuestions
       ? order.map((id) => {
           const q = byId.get(id)!;
@@ -821,8 +913,8 @@ function parseExamBody(body: Record<string, unknown> | undefined, examTrack: Tra
     : [examTrack];
   if (!targetTracks.length) targetTracks = [examTrack];
 
-  const rawQs = body?.questions;
-  if (!Array.isArray(rawQs)) return { error: "Savollar ro‘yxati noto‘g‘ri" };
+  // Yangi atestatsiyalar savolni bankdan oladi — exam.questions bo‘sh bo‘lishi mumkin
+  const rawQs = Array.isArray(body?.questions) ? body!.questions : [];
   const questionsJson: AttestatsiyaQuestionRow[] = [];
   for (let i = 0; i < rawQs.length; i++) {
     const q = rawQs[i] as Record<string, unknown>;
@@ -838,8 +930,8 @@ function parseExamBody(body: Record<string, unknown> | undefined, examTrack: Tra
     const id = String(q?.id ?? "").trim() || `q-${i + 1}-${Date.now()}`;
     questionsJson.push({ id, text, options, correctIndex });
   }
-  if (!questionsJson.length && !poolTracks.some((t) => t !== examTrack)) {
-    return { error: "Kamida 1 ta savol qo‘shing yoki boshqa bazani belgilang" };
+  if (!poolTracks.length) {
+    return { error: "Kamida bitta savol bazasini tanlang" };
   }
 
   const passScore = Math.round(Number(body?.passScore ?? 50));
@@ -893,22 +985,16 @@ function parseExamBody(body: Record<string, unknown> | undefined, examTrack: Tra
   };
 }
 
-function estimatePoolCount(e: Exam, all: Exam[], banks: Record<Track, number>): number {
+function estimatePoolCount(e: Exam, banks: Record<Track, number>): number {
   const tracks = normalizePoolTracks(e);
-  let n = 0;
-  for (const t of tracks) {
-    if (t === e.track) {
-      n += all.filter((x) => x.track === t).reduce((s, x) => s + (x.questionsJson || []).filter((q) => q.text?.trim()).length, 0);
-    } else {
-      n += banks[t] || 0;
-    }
-  }
+  let n = tracks.reduce((s, t) => s + (banks[t] || 0), 0);
+  // Legacy exam-local savollar (bankda yo‘q deb hisoblab qo‘shamiz emas — faqat bank)
+  if (!n) n = (e.questionsJson || []).filter((q) => q.text?.trim()).length;
   return n;
 }
 
-function manageExam(e: Exam, all?: Exam[], banks?: Record<Track, number>) {
-  const local = (e.questionsJson || []).length;
-  const pool = all && banks ? estimatePoolCount(e, all, banks) : local;
+function manageExam(e: Exam, banks?: Record<Track, number>) {
+  const pool = banks ? estimatePoolCount(e, banks) : (e.questionsJson || []).length;
   const ask = Math.round(Number(e.questionsPerAttempt) || 0);
   const poolTracks = normalizePoolTracks(e);
   return {
@@ -1045,9 +1131,127 @@ async function activeLearners(track: Track) {
     .orderBy(asc(usersTable.fullName));
 }
 
-/** Tanlangan bazalardagi savollar preview (admin formasi uchun) */
+function parseBankQuestions(raw: unknown): AttestatsiyaQuestionRow[] | { error: string } {
+  if (!Array.isArray(raw)) return { error: "Savollar ro‘yxati noto‘g‘ri" };
+  const questionsJson: AttestatsiyaQuestionRow[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const q = raw[i] as Record<string, unknown>;
+    const text = String(q?.text ?? "").trim();
+    const options = Array.isArray(q?.options) ? q.options.map((o) => String(o ?? "").trim()).filter(Boolean) : [];
+    const correctIndex = Number(q?.correctIndex);
+    if (!text && !options.length) continue;
+    if (!text) return { error: `${i + 1}-savol matnini yozing` };
+    if (options.length < 2) return { error: `${i + 1}-savolda kamida 2 ta variant bo‘lsin` };
+    if (!Number.isInteger(correctIndex) || correctIndex < 0 || correctIndex >= options.length) {
+      return { error: `${i + 1}-savolda to‘g‘ri javobni belgilang` };
+    }
+    const id = String(q?.id ?? "").trim() || `q-${i + 1}-${Date.now()}`;
+    questionsJson.push({ id, text, options, correctIndex });
+  }
+  return questionsJson;
+}
+
+/** Barcha lavozim bazalari (admin) */
+router.get("/atestatsiya/manage/banks", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireManager(req, res)) return;
+  await ensureBanksSeeded();
+  const rows = await db.select().from(attestatsiyaBanksTable);
+  const byTrack = new Map(rows.map((b) => [b.track, b]));
+  res.json({
+    banks: TRACKS.map((t) => {
+      const b = byTrack.get(t);
+      const questions = (b?.questionsJson || []).filter((q) => q.text?.trim());
+      return {
+        track: t,
+        label: TRACK_LABEL[t],
+        title: b?.title || BANK_TITLE[t],
+        count: questions.length,
+        questions,
+        updatedAt: b?.updatedAt?.toISOString() ?? null,
+      };
+    }),
+  });
+});
+
+router.get("/atestatsiya/manage/banks/:track", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireManager(req, res)) return;
+  const track = parseTrack(req.params.track);
+  if (!track) {
+    res.status(400).json({ error: "Yo‘nalish noto‘g‘ri" });
+    return;
+  }
+  await ensureBanksSeeded();
+  const [b] = await db.select().from(attestatsiyaBanksTable).where(eq(attestatsiyaBanksTable.track, track)).limit(1);
+  const questions = (b?.questionsJson || []).filter((q) => q.text?.trim());
+  res.json({
+    bank: {
+      track,
+      label: TRACK_LABEL[track],
+      title: b?.title || BANK_TITLE[track],
+      count: questions.length,
+      questions,
+      updatedAt: b?.updatedAt?.toISOString() ?? null,
+    },
+  });
+});
+
+router.put("/atestatsiya/manage/banks/:track", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireManager(req, res)) return;
+  const track = parseTrack(req.params.track);
+  if (!track) {
+    res.status(400).json({ error: "Yo‘nalish noto‘g‘ri" });
+    return;
+  }
+  const parsed = parseBankQuestions(req.body?.questions);
+  if ("error" in parsed) {
+    res.status(400).json(parsed);
+    return;
+  }
+  const title = String(req.body?.title ?? BANK_TITLE[track]).trim().slice(0, 200) || BANK_TITLE[track];
+  await ensureBanksSeeded();
+  const [existing] = await db.select().from(attestatsiyaBanksTable).where(eq(attestatsiyaBanksTable.track, track)).limit(1);
+  let bank: Bank;
+  if (existing) {
+    const [upd] = await db
+      .update(attestatsiyaBanksTable)
+      .set({
+        title,
+        questionsJson: parsed,
+        updatedById: req.userId!,
+        updatedAt: new Date(),
+      })
+      .where(eq(attestatsiyaBanksTable.id, existing.id))
+      .returning();
+    bank = upd!;
+  } else {
+    const [ins] = await db
+      .insert(attestatsiyaBanksTable)
+      .values({
+        track,
+        title,
+        questionsJson: parsed,
+        updatedById: req.userId!,
+      })
+      .returning();
+    bank = ins!;
+  }
+  const questions = (bank.questionsJson || []).filter((q) => q.text?.trim());
+  res.json({
+    bank: {
+      track,
+      label: TRACK_LABEL[track],
+      title: bank.title || BANK_TITLE[track],
+      count: questions.length,
+      questions,
+      updatedAt: bank.updatedAt.toISOString(),
+    },
+  });
+});
+
+/** Tanlangan bazalardagi savollar preview (atestatsiya formasi uchun) */
 router.get("/atestatsiya/manage/bank-questions", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireManager(req, res)) return;
+  await ensureBanksSeeded();
   const raw = String(req.query.tracks ?? "")
     .split(",")
     .map((s) => parseTrack(s.trim()))
@@ -1057,43 +1261,30 @@ router.get("/atestatsiya/manage/bank-questions", requireAuth, async (req: AuthRe
     res.json({ tracks: [], total: 0 });
     return;
   }
-  const exams = await db
+  const banks = await db
     .select()
-    .from(attestatsiyaExamsTable)
-    .where(inArray(attestatsiyaExamsTable.track, tracks))
-    .orderBy(desc(attestatsiyaExamsTable.startsAt));
-  const byTrack = new Map<Track, Array<{ id: string; text: string; options: string[]; correctIndex: number; sourceTitle: string }>>();
-  const seen = new Map<Track, Set<string>>();
-  for (const t of tracks) {
-    byTrack.set(t, []);
-    seen.set(t, new Set());
-  }
-  for (const e of exams) {
-    const t = parseTrack(e.track);
-    if (!t || !byTrack.has(t)) continue;
-    const list = byTrack.get(t)!;
-    const keys = seen.get(t)!;
-    for (const q of e.questionsJson || []) {
-      const text = String(q.text || "").trim();
-      if (!text) continue;
-      const key = text.toLowerCase();
-      if (keys.has(key)) continue;
-      keys.add(key);
-      list.push({
-        id: `e${e.id}__${q.id}`,
+    .from(attestatsiyaBanksTable)
+    .where(inArray(attestatsiyaBanksTable.track, tracks));
+  const byTrack = new Map(banks.map((b) => [parseTrack(b.track), b]));
+  const groups = tracks.map((t) => {
+    const b = byTrack.get(t);
+    const questions = (b?.questionsJson || [])
+      .filter((q) => q.text?.trim())
+      .slice(0, 200)
+      .map((q) => ({
+        id: q.id,
         text: q.text,
         options: [...(q.options || [])],
         correctIndex: q.correctIndex,
-        sourceTitle: e.title,
-      });
-    }
-  }
-  const groups = tracks.map((t) => ({
-    key: t,
-    label: TRACK_LABEL[t],
-    count: byTrack.get(t)?.length ?? 0,
-    questions: (byTrack.get(t) || []).slice(0, 120),
-  }));
+        sourceTitle: b?.title || BANK_TITLE[t],
+      }));
+    return {
+      key: t,
+      label: TRACK_LABEL[t],
+      count: (b?.questionsJson || []).filter((q) => q.text?.trim()).length,
+      questions,
+    };
+  });
   res.json({
     tracks: groups,
     total: groups.reduce((s, g) => s + g.count, 0),
@@ -1118,7 +1309,7 @@ router.get("/atestatsiya/manage", requireAuth, async (req: AuthRequest, res): Pr
       )
     : [];
   const targets = (await activeLearners(track)).length;
-  const banks = bankCountsFromExams(all);
+  const banks = await loadBankCounts();
 
   res.json({
     track,
@@ -1138,7 +1329,7 @@ router.get("/atestatsiya/manage", requireAuth, async (req: AuthRequest, res): Pr
       const latest = [...latestByUser.values()];
       const finished = latest.filter(isFinished);
       return {
-        ...manageExam(e, all, banks),
+        ...manageExam(e, banks),
         stats: {
           started: latest.length,
           inProgress: latest.filter((a) => a.status === "in_progress").length,
@@ -1152,14 +1343,15 @@ router.get("/atestatsiya/manage", requireAuth, async (req: AuthRequest, res): Pr
   });
 });
 
+/**
+ * Natijalar — lavozim (auditoriya) bo‘yicha:
+ * shu roldagi xodimlar + ularga e’lon qilingan testlar.
+ */
 router.get("/atestatsiya/manage/results", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireManager(req, res)) return;
   const track = parseTrack(req.query.track) || "stajyor";
-  const exams = await db
-    .select()
-    .from(attestatsiyaExamsTable)
-    .where(eq(attestatsiyaExamsTable.track, track))
-    .orderBy(desc(attestatsiyaExamsTable.startsAt));
+  const allExams = await db.select().from(attestatsiyaExamsTable).orderBy(desc(attestatsiyaExamsTable.startsAt));
+  const exams = allExams.filter((e) => examVisibleTo(e, track));
   const examById = new Map(exams.map((e) => [e.id, e]));
   const attempts = exams.length
     ? await finalizeExpired(
@@ -1177,11 +1369,14 @@ router.get("/atestatsiya/manage/results", requireAuth, async (req: AuthRequest, 
   const extraIds = [...new Set(attempts.map((a) => a.userId))].filter((id) => !known.has(id));
   const extra = extraIds.length
     ? await db
-        .select({ id: usersTable.id, fullName: usersTable.fullName, phone: usersTable.phone })
+        .select({ id: usersTable.id, fullName: usersTable.fullName, phone: usersTable.phone, role: usersTable.role })
         .from(usersTable)
         .where(inArray(usersTable.id, extraIds))
     : [];
-  const people = [...learners, ...extra];
+  const people = [
+    ...learners.map((p) => ({ ...p, role: track })),
+    ...extra.filter((p) => parseTrack(p.role) === track || !parseTrack(p.role)),
+  ];
   const branches = await resolveUserBranches(people.map((p) => p.id));
   const byExamUser = new Map<string, Attempt[]>();
   for (const a of attempts) {
@@ -1191,11 +1386,16 @@ router.get("/atestatsiya/manage/results", requireAuth, async (req: AuthRequest, 
     byExamUser.set(key, list);
   }
 
+  const now = Date.now();
   const rows = exams.flatMap((exam) =>
     people.map((p) => {
       const list = byExamUser.get(`${exam.id}:${p.id}`) || [];
       const a = latestOf(list);
       const br = branches.get(p.id);
+      const status = a ? a.status : "not_started";
+      const windowClosed = now >= exam.endsAt.getTime();
+      // Kirmagan = umuman boshlamagan (muddat ochiq/yopiq farqi yo‘q)
+      const missed = status === "not_started";
       return {
         examId: exam.id,
         examTitle: exam.title,
@@ -1204,15 +1404,19 @@ router.get("/atestatsiya/manage/results", requireAuth, async (req: AuthRequest, 
         durationMinutes: exam.durationMinutes,
         windowStart: exam.startsAt.toISOString(),
         windowEnd: exam.endsAt.toISOString(),
+        windowClosed,
+        published: exam.published,
         userId: p.id,
         fullName: p.fullName,
         phone: p.phone || null,
+        role: track,
         branchLabel: br?.label || null,
-        status: a ? a.status : "not_started",
+        status,
+        missed,
         score: a?.score ?? null,
         correct: a?.correct ?? null,
         answered: a ? answeredCount(a) : 0,
-        total: a?.total || (exam.questionsJson || []).length,
+        total: a?.total || exam.questionsPerAttempt || (exam.questionsJson || []).length || 0,
         passed: a?.passed ?? null,
         attemptNo: a?.attemptNo ?? 0,
         attemptsCount: list.length,
@@ -1235,19 +1439,29 @@ router.get("/atestatsiya/manage/results", requireAuth, async (req: AuthRequest, 
   const finished = rows.filter((r) => r.status === "submitted" || r.status === "expired");
   const scores = finished.map((r) => r.score ?? 0);
   const passed = finished.filter((r) => r.passed).length;
+  const failed = finished.filter((r) => r.passed === false).length;
+  const missed = rows.filter((r) => r.missed || r.status === "not_started").length;
   res.json({
     track,
     trackLabel: TRACK_LABEL[track],
-    exams: exams.map((e) => ({ id: e.id, title: e.title })),
+    exams: exams.map((e) => ({
+      id: e.id,
+      title: e.title,
+      published: e.published,
+      window: windowState(e),
+      startsAt: e.startsAt.toISOString(),
+      endsAt: e.endsAt.toISOString(),
+    })),
     stats: {
       people: people.length,
       exams: exams.length,
       rows: rows.length,
-      notStarted: rows.filter((r) => r.status === "not_started").length,
+      notStarted: missed,
+      missed,
       inProgress: rows.filter((r) => r.status === "in_progress").length,
       finished: finished.length,
       passed,
-      failed: finished.length - passed,
+      failed,
       annulled: rows.filter((r) => r.status === "annulled").length,
       passRate: finished.length ? Math.round((passed / finished.length) * 100) : null,
       avgScore: scores.length ? Math.round(scores.reduce((s, v) => s + v, 0) / scores.length) : null,
@@ -1266,7 +1480,9 @@ async function clampAskAgainstPool(input: ExamInput, track: Track, examId?: numb
   } as Exam;
   const pool = await resolveQuestionPool(draft);
   if (!pool.length) {
-    return { error: "Belgilangan bazalarda savol yo‘q. Boshqa bazani belgilang yoki savol qo‘shing." } as const;
+    return {
+      error: "Tanlangan savol bazasi bo‘sh. Avval «Test bazasi» bo‘limida savol kiriting.",
+    } as const;
   }
   let questionsPerAttempt = input.questionsPerAttempt;
   if (questionsPerAttempt != null) {
@@ -1296,13 +1512,15 @@ router.post("/atestatsiya/manage", requireAuth, async (req: AuthRequest, res): P
     return;
   }
   const { poolSize: _poolSize, ...values } = input;
+  // Yangi atestatsiya: savollar faqat bankdan — exam.questions bo‘sh
+  values.questionsJson = [];
   const [created] = await db
     .insert(attestatsiyaExamsTable)
     .values({ ...values, track, createdById: req.userId!, updatedById: req.userId! })
     .returning();
   if (created!.published) void notifyPublished(created!);
-  const all = await db.select().from(attestatsiyaExamsTable);
-  res.json({ exam: manageExam(created!, all, bankCountsFromExams(all)) });
+  const banks = await loadBankCounts();
+  res.json({ exam: manageExam(created!, banks) });
 });
 
 router.put("/atestatsiya/manage/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -1329,13 +1547,22 @@ router.put("/atestatsiya/manage/:id", requireAuth, async (req: AuthRequest, res)
     .from(attestatsiyaAttemptsTable)
     .where(eq(attestatsiyaAttemptsTable.examId, id))
     .limit(1);
-  if (hasAttempt && JSON.stringify(existing.questionsJson) !== JSON.stringify(input.questionsJson)) {
+  // Savollar endi bankda — exam.questions o‘zgarsa faqat eski yozuvlarda tekshiramiz
+  if (
+    hasAttempt &&
+    (existing.questionsJson || []).length > 0 &&
+    JSON.stringify(existing.questionsJson) !== JSON.stringify(input.questionsJson)
+  ) {
     res.status(409).json({
-      error: "Xodimlar testni boshlagan — savollarni o‘zgartirib bo‘lmaydi. Vaqt, joy va sozlamalarni o‘zgartirish mumkin.",
+      error: "Xodimlar testni boshlagan — eski lokal savollarni o‘zgartirib bo‘lmaydi. Vaqt, joy va sozlamalarni o‘zgartirish mumkin.",
     });
     return;
   }
   const { poolSize: _poolSize, ...values } = input;
+  // Yangi oqim: savollar bankda — exam ichida bo‘sh saqlaymiz (eski lokal savollarni saqlab qolamiz agar bor bo‘lsa)
+  if (!values.questionsJson.length && (existing.questionsJson || []).length) {
+    values.questionsJson = existing.questionsJson || [];
+  }
   const windowChanged = examWindowChanged(existing, input);
   const [updated] = await db
     .update(attestatsiyaExamsTable)
@@ -1346,9 +1573,9 @@ router.put("/atestatsiya/manage/:id", requireAuth, async (req: AuthRequest, res)
     await applyWindowChangeEffects(updated!, req.userId!);
   }
   if (!existing.published && updated!.published) void notifyPublished(updated!);
-  const all = await db.select().from(attestatsiyaExamsTable);
+  const banks = await loadBankCounts();
   res.json({
-    exam: manageExam(updated!, all, bankCountsFromExams(all)),
+    exam: manageExam(updated!, banks),
     windowChanged,
   });
 });
@@ -1550,8 +1777,9 @@ router.get("/atestatsiya/manage/:id/monitor", requireAuth, async (req: AuthReque
     branchMap.set(key, b);
   }
 
+  const banks = await loadBankCounts();
   res.json({
-    exam: manageExam(exam),
+    exam: manageExam(exam, banks),
     trackLabel: TRACK_LABEL[track],
     serverNow: new Date(now).toISOString(),
     stats: {

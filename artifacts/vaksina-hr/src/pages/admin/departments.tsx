@@ -56,9 +56,11 @@ import { useI18n } from "../../i18n/I18nProvider";
 import { cn } from "../../lib/utils";
 import {
   DEFAULT_DEPARTMENT_TITLES,
+  GLOBAL_TITLE_SUGGESTIONS,
   TITLE_SUGGESTIONS,
   invalidateDepartmentTitles,
   useAddDepartmentTitle,
+  useAddGlobalJobTitle,
   useDepartmentTitles,
   useRemoveDepartmentTitle,
   useUpdateDepartmentTitle,
@@ -108,7 +110,7 @@ function TitleRow({
 }: {
   item: DepartmentJobTitle;
   canManage: boolean;
-  departmentId: number;
+  departmentId: number | null;
 }) {
   const { toast } = useToast();
   const update = useUpdateDepartmentTitle();
@@ -361,6 +363,105 @@ function TitlesPanel({
   );
 }
 
+/** Hech qaysi bo‘limga bog‘lanmagan umumiy lavozimlar/rollar */
+function GlobalTitlesPanel({ titles, canManage }: { titles: DepartmentJobTitle[]; canManage: boolean }) {
+  const { toast } = useToast();
+  const add = useAddGlobalJobTitle();
+  const [value, setValue] = useState("");
+  const [showHidden, setShowHidden] = useState(false);
+  const active = titles.filter((t) => t.active);
+  const hidden = titles.filter((t) => !t.active);
+  const taken = new Set(titles.map((t) => t.title.toLocaleLowerCase("uz")));
+  const suggestions = GLOBAL_TITLE_SUGGESTIONS.filter((s) => !taken.has(s.toLocaleLowerCase("uz"))).slice(0, 6);
+
+  const submit = (title: string) => {
+    const clean = title.trim();
+    if (clean.length < 2) {
+      toast({ title: "Lavozim nomini kiriting", variant: "destructive" });
+      return;
+    }
+    add.mutate(
+      { title: clean },
+      {
+        onSuccess: (r) => {
+          toast({ title: r.reactivated ? "Lavozim qayta ochildi" : "Lavozim qo‘shildi", description: `Umumiy · ${clean}` });
+          setValue("");
+        },
+        onError: (e) => toast({ title: "Qo‘shilmadi", description: errMessage(e, "Xato"), variant: "destructive" }),
+      },
+    );
+  };
+
+  return (
+    <div className="border-t border-slate-100 bg-gradient-to-b from-violet-50/50 to-white px-4 pb-4 pt-3 dark:border-white/10 dark:from-violet-500/[0.04] dark:to-transparent sm:px-5">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-300">
+          <Briefcase className="h-3.5 w-3.5" /> Umumiy lavozimlar · {active.length}
+        </p>
+        {hidden.length ? (
+          <button type="button" onClick={() => setShowHidden((v) => !v)} className="text-[11px] font-semibold text-slate-500 hover:text-[#0b3a5c]">
+            {showHidden ? "Yashirilganlarni berkitish" : `Yashirilganlar (${hidden.length})`}
+          </button>
+        ) : null}
+      </div>
+
+      {active.length || (showHidden && hidden.length) ? (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {[...active, ...(showHidden ? hidden : [])].map((t) => (
+            <TitleRow key={t.id} item={t} canManage={canManage} departmentId={null} />
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-violet-200 px-4 py-6 text-center dark:border-violet-500/30">
+          <Briefcase className="h-7 w-7 text-violet-300" />
+          <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">Hali umumiy lavozim yo‘q</p>
+          <p className="text-xs text-muted-foreground">Bo‘limga bog‘lanmagan rollarni shu yerda qo‘shing.</p>
+        </div>
+      )}
+
+      {canManage ? (
+        <form
+          className="mt-3 rounded-xl border border-violet-200/80 bg-white p-3 dark:border-violet-500/20 dark:bg-slate-950"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit(value);
+          }}
+        >
+          <Label className="text-[11px] font-bold uppercase tracking-wide text-violet-500">Yangi umumiy lavozim</Label>
+          <div className="mt-1.5 flex gap-2">
+            <Input value={value} maxLength={80} onChange={(e) => setValue(e.target.value)} placeholder="Masalan: Direktor, HR menejer" className="h-10" />
+            <Button type="submit" className="h-10 shrink-0 gap-1.5 bg-violet-700 hover:bg-violet-800" disabled={add.isPending || value.trim().length < 2}>
+              {add.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              Qo‘shish
+            </Button>
+          </div>
+          {suggestions.length ? (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] font-semibold text-slate-400">Tez tanlash:</span>
+              {suggestions.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setValue(s)}
+                  className={cn(
+                    "h-7 rounded-full border px-2.5 text-[11px] font-semibold transition",
+                    value === s
+                      ? "border-violet-700 bg-violet-700 text-white"
+                      : "border-slate-200 text-slate-600 hover:border-violet-400 hover:text-violet-700 dark:border-white/10 dark:text-slate-300",
+                  )}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <p className="mt-2 text-[11px] text-muted-foreground">Bu lavozim hech qaysi bo‘limga bog‘lanmaydi — umumiy rol sifatida ishlatiladi.</p>
+        </form>
+      ) : null}
+    </div>
+  );
+}
+
 export default function AdminDepartmentsPage() {
   const { user: me } = useAuth();
   const { toast } = useToast();
@@ -371,8 +472,11 @@ export default function AdminDepartmentsPage() {
 
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [globalOpen, setGlobalOpen] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
+  const [roleOpen, setRoleOpen] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newRole, setNewRole] = useState("");
   const [editing, setEditing] = useState<Department | null>(null);
   const [editName, setEditName] = useState("");
   const [headId, setHeadId] = useState<string>("none");
@@ -384,16 +488,22 @@ export default function AdminDepartmentsPage() {
   const createMutation = useCreateDepartment();
   const updateMutation = useUpdateDepartment();
   const deleteMutation = useDeleteDepartment();
+  const addGlobalTitle = useAddGlobalJobTitle();
 
   const titlesByDept = useMemo(() => {
     const map = new Map<number, DepartmentJobTitle[]>();
     for (const tt of titlesQ.data?.titles ?? []) {
+      if (tt.departmentId == null) continue;
       const list = map.get(tt.departmentId) ?? [];
       list.push(tt);
       map.set(tt.departmentId, list);
     }
     return map;
   }, [titlesQ.data]);
+  const globalTitles = useMemo(
+    () => (titlesQ.data?.titles ?? []).filter((t) => t.departmentId == null),
+    [titlesQ.data],
+  );
   const staffByDept = titlesQ.data?.staffByDepartment ?? {};
 
   const headCandidates = useMemo(
@@ -416,6 +526,12 @@ export default function AdminDepartmentsPage() {
     );
   }, [departments, search, titlesByDept]);
 
+  const globalSearchHit = useMemo(() => {
+    const q = search.trim().toLocaleLowerCase("uz");
+    if (!q) return true;
+    return globalTitles.some((x) => x.title.toLocaleLowerCase("uz").includes(q));
+  }, [globalTitles, search]);
+
   const totals = useMemo(() => {
     const all = titlesQ.data?.titles ?? [];
     return {
@@ -433,6 +549,35 @@ export default function AdminDepartmentsPage() {
   const openCreate = () => {
     setNewName("");
     setCreateOpen(true);
+  };
+
+  const openRoleCreate = () => {
+    setNewRole("");
+    setRoleOpen(true);
+  };
+
+  const onCreateRole = (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = newRole.trim().replace(/\s+/g, " ");
+    if (clean.length < 2) {
+      toast({ title: "Lavozim nomini yozing", variant: "destructive" });
+      return;
+    }
+    addGlobalTitle.mutate(
+      { title: clean },
+      {
+        onSuccess: (r) => {
+          toast({
+            title: r.reactivated ? "Lavozim qayta ochildi" : "Lavozim qo‘shildi",
+            description: `Bo‘limga bog‘lanmagan · ${clean}`,
+          });
+          setRoleOpen(false);
+          setGlobalOpen(true);
+          invalidate();
+        },
+        onError: (err) => toast({ title: "Qo‘shilmadi", description: errMessage(err, "Xato"), variant: "destructive" }),
+      },
+    );
   };
 
   const openEdit = (d: Department) => {
@@ -517,13 +662,19 @@ export default function AdminDepartmentsPage() {
             <div>
               <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-sky-200/80">Tashkiliy tuzilma</p>
               <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">{t("admin.departments")}</h1>
-              <p className="mt-1 max-w-xl text-sm text-white/75">Bo‘limlar, ularning boshliqlari va lavozimlari. Yangi bo‘lim ochilganda asosiy lavozimlar o‘zi yaratiladi.</p>
+              <p className="mt-1 max-w-xl text-sm text-white/75">Bo‘limlar, boshliqlar va lavozimlar. Bo‘limga bog‘lanmagan umumiy rollarni ham shu yerdan qo‘shishingiz mumkin.</p>
             </div>
             {canManage ? (
-              <Button onClick={openCreate} className="h-11 gap-2 rounded-xl bg-white px-5 font-semibold text-[#0b3a5c] shadow-md hover:bg-sky-50">
-                <Plus className="h-4 w-4" />
-                {t("admin.newDept")}
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={openRoleCreate} variant="outline" className="h-11 gap-2 rounded-xl border-white/30 bg-white/10 px-4 font-semibold text-white hover:bg-white/20 hover:text-white">
+                  <Briefcase className="h-4 w-4" />
+                  Yangi lavozim
+                </Button>
+                <Button onClick={openCreate} className="h-11 gap-2 rounded-xl bg-white px-5 font-semibold text-[#0b3a5c] shadow-md hover:bg-sky-50">
+                  <Plus className="h-4 w-4" />
+                  {t("admin.newDept")}
+                </Button>
+              </div>
             ) : null}
           </div>
         </div>
@@ -552,18 +703,57 @@ export default function AdminDepartmentsPage() {
             <Skeleton className="h-16 w-full" />
             <Skeleton className="h-16 w-full" />
           </div>
-        ) : filtered.length === 0 ? (
+        ) : filtered.length === 0 && !globalSearchHit ? (
           <div className="flex flex-col items-center justify-center gap-2 px-4 py-14 text-center text-muted-foreground">
             <Building2 className="h-10 w-10 opacity-40" />
             <p className="font-semibold">{search ? "Hech narsa topilmadi" : t("admin.deptEmpty")}</p>
             {canManage && !search ? (
-              <Button variant="outline" size="sm" onClick={openCreate}>
-                {t("admin.deptAddFirst")}
-              </Button>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button variant="outline" size="sm" onClick={openRoleCreate}>
+                  <Briefcase className="mr-1.5 h-3.5 w-3.5" />
+                  Yangi lavozim
+                </Button>
+                <Button variant="outline" size="sm" onClick={openCreate}>
+                  {t("admin.deptAddFirst")}
+                </Button>
+              </div>
             ) : null}
           </div>
         ) : (
           <ul className="divide-y divide-slate-100 dark:divide-white/10">
+            {globalSearchHit ? (
+              <li className={cn("transition", globalOpen && "bg-violet-50/40 dark:bg-violet-500/[0.04]")}>
+                <div className="flex items-center gap-3 px-4 py-3 sm:px-5">
+                  <button
+                    type="button"
+                    onClick={() => setGlobalOpen((v) => !v)}
+                    className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                    aria-expanded={globalOpen}
+                  >
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 text-white shadow-sm">
+                      <Briefcase className="h-5 w-5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-semibold text-[#0f2744] dark:text-white">Umumiy lavozimlar</span>
+                      <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                        <span>Hech qaysi bo‘limga bog‘lanmagan rollar</span>
+                        <span className="text-slate-300">•</span>
+                        <span className="inline-flex items-center gap-1">
+                          <Briefcase className="h-3 w-3" /> {globalTitles.filter((x) => x.active).length} lavozim
+                        </span>
+                      </span>
+                    </span>
+                    <ChevronDown className={cn("h-4 w-4 shrink-0 text-slate-400 transition-transform", globalOpen && "rotate-180")} />
+                  </button>
+                  {canManage ? (
+                    <Button type="button" variant="ghost" size="icon" className="h-9 w-9 text-violet-700 hover:bg-violet-50 hover:text-violet-800" onClick={openRoleCreate} title="Yangi lavozim">
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  ) : null}
+                </div>
+                {globalOpen ? <GlobalTitlesPanel titles={globalTitles} canManage={canManage} /> : null}
+              </li>
+            ) : null}
             {filtered.map((d, idx) => {
               const titles = titlesByDept.get(d.id) ?? [];
               const activeTitles = titles.filter((x) => x.active);
@@ -618,6 +808,70 @@ export default function AdminDepartmentsPage() {
           </ul>
         )}
       </div>
+
+      <Dialog open={roleOpen} onOpenChange={setRoleOpen}>
+        <DialogContent hideClose className="gap-0 overflow-hidden p-0 sm:max-w-lg">
+          <div className="relative bg-violet-700 px-6 py-5 text-white">
+            <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-white/[0.07]" />
+            <div className="relative flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20">
+                  <Briefcase className="h-5 w-5" />
+                </span>
+                <div>
+                  <DialogTitle className="text-lg font-semibold text-white">Yangi lavozim</DialogTitle>
+                  <p className="text-xs text-white/70">Bo‘limga bog‘lanmagan umumiy rol</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setRoleOpen(false)} className="rounded-lg p-1.5 text-white/70 hover:bg-white/10 hover:text-white" aria-label="Yopish">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+          <form onSubmit={onCreateRole} className="space-y-5 px-6 py-5">
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">Lavozim nomi</Label>
+              <Input
+                value={newRole}
+                onChange={(e) => setNewRole(e.target.value)}
+                placeholder="Masalan: Direktor, HR menejer, Trener"
+                maxLength={80}
+                autoFocus
+                className="h-12 rounded-xl text-base"
+              />
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {GLOBAL_TITLE_SUGGESTIONS.filter((s) => !globalTitles.some((t) => t.title.toLocaleLowerCase("uz") === s.toLocaleLowerCase("uz"))).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setNewRole(s)}
+                  className={cn(
+                    "h-8 rounded-full border px-3 text-xs font-semibold transition",
+                    newRole === s
+                      ? "border-violet-700 bg-violet-700 text-white"
+                      : "border-slate-200 text-slate-600 hover:border-violet-400 hover:text-violet-700",
+                  )}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+            <p className="rounded-xl bg-violet-50 px-3 py-2 text-xs text-violet-900 dark:bg-violet-500/10 dark:text-violet-200">
+              Bu lavozim hech qaysi bo‘lim ichida ko‘rinmaydi — umumiy rol sifatida saqlanadi.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setRoleOpen(false)}>
+                {t("ui.cancel")}
+              </Button>
+              <Button type="submit" className="min-w-[140px] gap-1.5 bg-violet-700 hover:bg-violet-800" disabled={addGlobalTitle.isPending || newRole.trim().length < 2}>
+                {addGlobalTitle.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                Lavozim qo‘shish
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent hideClose className="gap-0 overflow-hidden p-0 sm:max-w-lg">

@@ -262,6 +262,7 @@ const NAV_SECTIONS: {
       '/admin/preboarding',
       '/admin/darsliklar',
       '/admin/atestatsiya',
+      '/admin/atestatsiya/baza',
       '/admin/faces',
       '/admin/smena-sozlamalar',
       '/admin/davomat-qr',
@@ -400,6 +401,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/admin/kirish-videolar')) return '/admin/kirish-videolar';
   if (path.startsWith('/admin/preboarding')) return '/admin/preboarding';
   if (path.startsWith('/admin/darsliklar')) return '/admin/darsliklar';
+  if (path.startsWith('/admin/atestatsiya/baza')) return '/admin/atestatsiya/baza';
   if (path.startsWith('/admin/atestatsiya')) return '/admin/atestatsiya';
   if (path.startsWith('/dashboard')) return '/dashboard';
 
@@ -1069,6 +1071,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const oquvchilarNav = { name: 'O‘quvchilar', path: '/oquvchilar', icon: GraduationCap };
   const atestatsiyaNav = { name: 'Atestatsiya', path: '/atestatsiya', icon: BadgeCheck };
   const atestatsiyaJoylashNav = { name: 'Atestatsiya joylash', path: '/admin/atestatsiya', icon: BadgeCheck };
+  const atestatsiyaBazaNav = { name: 'Test bazasi', path: '/admin/atestatsiya/baza', icon: Library };
   const reviziyaNav = { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck };
   const itNav = { name: 'AyTi', path: '/it', icon: Cpu };
   const distribNav = { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck };
@@ -1446,6 +1449,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       oquvchilarNav,
   { name: 'Preboarding', path: '/admin/preboarding', icon: GraduationCap },
       darslikJoylashNav,
+      atestatsiyaBazaNav,
       atestatsiyaJoylashNav,
     ],
     asoschi: [
@@ -1490,6 +1494,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       oquvchilarNav,
     { name: 'Preboarding', path: '/admin/preboarding', icon: GraduationCap },
       darslikJoylashNav,
+      atestatsiyaBazaNav,
       atestatsiyaJoylashNav,
     ],
     recruiter: [
@@ -1537,6 +1542,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       oquvchilarNav,
     { name: 'Preboarding', path: '/admin/preboarding', icon: GraduationCap },
       darslikJoylashNav,
+      atestatsiyaBazaNav,
       atestatsiyaJoylashNav,
       { name: 'Face ID', path: '/admin/faces', icon: ScanFace },
       { name: 'Smena sozlamalari', path: '/admin/smena-sozlamalar', icon: AlarmClock },
@@ -1562,6 +1568,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       oquvchilarNav,
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
       darslikJoylashNav,
+      atestatsiyaBazaNav,
       atestatsiyaJoylashNav,
     ],
     mudir: [

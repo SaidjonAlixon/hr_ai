@@ -46,7 +46,11 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    document.documentElement.lang = locale === "ru" ? "ru" : "uz";
+    const root = document.documentElement;
+    root.lang = locale === "ru" ? "ru" : "uz";
+    // Brauzer avtomatik tarjimasini o‘chirib turamiz (React DOM crash oldini olish)
+    root.setAttribute("translate", "no");
+    root.classList.add("notranslate");
   }, [locale]);
 
   const t = useCallback(

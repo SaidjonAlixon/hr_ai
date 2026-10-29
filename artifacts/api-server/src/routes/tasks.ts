@@ -85,19 +85,43 @@ function isAdminRole(role?: string | null) {
   return hasFullPlatformAccess(role);
 }
 
-/** To‘liq tahrirlash: admin/direktor — hammasi; qolganlar — faqat o‘zi yaratgani */
+/** Nazoratchi belgilash — faqat asoschi va korxona direktori */
+function canAssignTaskSupervisor(role?: string | null) {
+  return isDirectorRole(role);
+}
+
+function supervisorUserIdOf(row: typeof tasksTable.$inferSelect): number | null {
+  const meta = taskMeta(row);
+  const id = Number(meta.supervisorUserId);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  return Math.floor(id);
+}
+
+function isSupervisor(row: typeof tasksTable.$inferSelect, userId?: number) {
+  const sid = supervisorUserIdOf(row);
+  return !!userId && sid != null && sid === userId;
+}
+
+/** Beruvchi yoki belgilangan nazoratchi */
+function isCreatorOrSupervisor(row: typeof tasksTable.$inferSelect, userId?: number) {
+  return isCreator(row, userId) || isSupervisor(row, userId);
+}
+
+/** To‘liq tahrirlash: admin/direktor — hammasi; beruvchi/nazoratchi — o‘z vazifasi */
 function canManageTask(
   row: typeof tasksTable.$inferSelect,
   userId?: number,
   role?: string,
 ) {
   if (isAdminRole(role) || isDirectorRole(role)) return true;
-  return isCreator(row, userId);
+  return isCreatorOrSupervisor(row, userId);
 }
 
-/** Tasdiqlash: beruvchi, admin yoki direktor */
+/** Tasdiqlash / muddat: beruvchi, nazoratchi, admin yoki direktor */
 function canApproveTask(row: typeof tasksTable.$inferSelect, userId?: number, role?: string) {
-  return isCreator(row, userId) || isAdminRole(role) || isDirectorRole(role);
+  return (
+    isCreatorOrSupervisor(row, userId) || isAdminRole(role) || isDirectorRole(role)
+  );
 }
 
 /** To‘liq boshqaruv (o‘chirish va h.k.) — admin, asoschi va korxona direktori */
@@ -180,7 +204,13 @@ function denyIfAssigneeOverdue(
   userId?: number,
   role?: string,
 ): { ok: true } | { ok: false; error: string; code: string } {
-  if (isAdminRole(role) || isDirectorRole(role) || isCreator(row, userId)) return { ok: true };
+  if (
+    isAdminRole(role) ||
+    isDirectorRole(role) ||
+    isCreatorOrSupervisor(row, userId)
+  ) {
+    return { ok: true };
+  }
   if (isAssignee(row, userId) && isAcceptOverdue(row)) {
     return {
       ok: false,
@@ -224,7 +254,14 @@ function isTaskAuditorRole(role?: string | null) {
 
 function canViewTask(row: typeof tasksTable.$inferSelect, userId?: number, role?: string) {
   if (isStrictAdminRole(role) || isDirectorRole(role)) return true;
-  if (isCreator(row, userId) || isAssignee(row, userId)) return true;
+  if (isCreator(row, userId) || isAssignee(row, userId) || isSupervisor(row, userId)) {
+    return true;
+  }
+  // Asosiy topshiriq oluvchisi — shu asosida yaratilgan davomini ham ko‘radi
+  if (userId) {
+    const srcUid = Number(taskMeta(row).basedOnSourceAssigneeUserId);
+    if (Number.isFinite(srcUid) && srcUid > 0 && srcUid === userId) return true;
+  }
   // Auditor: Maxfiydan tashqari barcha topshiriqlarni ko‘radi (tahrirlash yo‘q)
   if (isTaskBrowseRole(role) && !isPrivateTask(row)) return true;
   return false;
@@ -371,8 +408,85 @@ function sanitizeMeta(raw: unknown): Record<string, unknown> {
     const n = Number(src.batchSize);
     if (Number.isFinite(n) && n >= 1) out.batchSize = Math.min(Math.floor(n), 50);
   }
+  // Asosiy topshiriq bog‘lanishi (yuborilgan / mavjud vazifadan yaratish)
+  if (src.basedOnTaskId != null) {
+    const bid = Number(src.basedOnTaskId);
+    if (Number.isFinite(bid) && bid > 0) {
+      out.basedOnTaskId = Math.floor(bid);
+      if (src.basedOnTitle != null) {
+        out.basedOnTitle = String(src.basedOnTitle).trim().slice(0, 200) || null;
+      }
+      if (src.basedOnAssigneeName != null) {
+        out.basedOnAssigneeName = String(src.basedOnAssigneeName).trim().slice(0, 120) || null;
+      }
+      if (src.basedOnStatus != null) {
+        out.basedOnStatus = String(src.basedOnStatus).trim().slice(0, 40) || null;
+      }
+      if (src.basedOnCompletedAt != null) {
+        out.basedOnCompletedAt = String(src.basedOnCompletedAt).slice(0, 40);
+      }
+      if (src.basedOnResultNote != null) {
+        out.basedOnResultNote = String(src.basedOnResultNote).trim().slice(0, 400) || null;
+      }
+      if (src.basedOnSourceAssigneeUserId != null) {
+        const suid = Number(src.basedOnSourceAssigneeUserId);
+        if (Number.isFinite(suid) && suid > 0) {
+          out.basedOnSourceAssigneeUserId = Math.floor(suid);
+        }
+      }
+    }
+  }
+  // Nazoratchi: null/0 → olib tashlash; musbat id → belgilash
+  if (Object.prototype.hasOwnProperty.call(src, "supervisorUserId")) {
+    if (
+      src.supervisorUserId === null ||
+      src.supervisorUserId === "" ||
+      src.supervisorUserId === 0 ||
+      src.supervisorUserId === "0"
+    ) {
+      out.supervisorUserId = null;
+      out.supervisorName = null;
+    } else {
+      const sid = Number(src.supervisorUserId);
+      if (Number.isFinite(sid) && sid > 0) {
+        out.supervisorUserId = Math.floor(sid);
+        if (src.supervisorName != null) {
+          out.supervisorName = String(src.supervisorName).trim().slice(0, 120) || null;
+        }
+      }
+    }
+  }
 
   return out;
+}
+
+/**
+ * Nazoratchini faqat asoschi/direktor o‘zgartira oladi.
+ * Boshqalar meta yuborsa — avvalgi qiymat saqlanadi.
+ */
+function applySupervisorAssignPolicy(
+  meta: Record<string, unknown>,
+  prevMeta: Record<string, unknown>,
+  role?: string | null,
+): Record<string, unknown> {
+  if (canAssignTaskSupervisor(role)) {
+    if (meta.supervisorUserId === null) {
+      const { supervisorUserId: _a, supervisorName: _b, ...rest } = meta;
+      return rest;
+    }
+    return meta;
+  }
+  const next = { ...meta };
+  delete next.supervisorUserId;
+  delete next.supervisorName;
+  const prevId = Number(prevMeta.supervisorUserId);
+  if (Number.isFinite(prevId) && prevId > 0) {
+    next.supervisorUserId = Math.floor(prevId);
+    if (prevMeta.supervisorName != null) {
+      next.supervisorName = String(prevMeta.supervisorName).slice(0, 120);
+    }
+  }
+  return next;
 }
 
 /** Maxfiy faqat admin / asoschi / direktor / direktor yordamchisi */
@@ -809,10 +923,82 @@ router.post("/tasks", requireAuth, async (req: AuthRequest, res): Promise<void> 
   const statusVal = status || "todo";
   const batchId =
     list.length > 1 ? `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : null;
-  const baseMeta = applyTaskVisibilityPolicy(sanitizeMeta(meta), req.userRole);
+  const baseMeta = applySupervisorAssignPolicy(
+    applyTaskVisibilityPolicy(sanitizeMeta(meta), req.userRole),
+    {},
+    req.userRole,
+  );
+  // Asosiy topshiriq — ko‘rish huquqi + snapshot
+  {
+    const basedId = Number(baseMeta.basedOnTaskId);
+    if (Number.isFinite(basedId) && basedId > 0) {
+      const [source] = await db
+        .select()
+        .from(tasksTable)
+        .where(eq(tasksTable.id, basedId))
+        .limit(1);
+      if (!source || isPipelineRecruitmentTask(source)) {
+        res.status(400).json({ error: "Asosiy topshiriq topilmadi" });
+        return;
+      }
+      if (!canViewTask(source, req.userId, req.userRole)) {
+        res.status(403).json({ error: "Asosiy topshiriqni ko‘rishga ruxsat yo‘q" });
+        return;
+      }
+      baseMeta.basedOnTaskId = source.id;
+      baseMeta.basedOnTitle =
+        String(baseMeta.basedOnTitle || source.title || "").trim().slice(0, 200) ||
+        source.title;
+      baseMeta.basedOnStatus = source.status;
+      baseMeta.basedOnAssigneeName =
+        (await resolveAssigneeName(source.assigneeKind, source.assigneeId)) || null;
+      const sourceAssigneeUid = await resolveNotifyUserId(
+        source.assigneeKind,
+        source.assigneeId,
+      );
+      if (sourceAssigneeUid) {
+        baseMeta.basedOnSourceAssigneeUserId = sourceAssigneeUid;
+      }
+      if (source.completedAt) {
+        baseMeta.basedOnCompletedAt = new Date(source.completedAt).toISOString();
+      }
+      if (source.completionNote && !baseMeta.basedOnResultNote) {
+        baseMeta.basedOnResultNote = String(source.completionNote).trim().slice(0, 400);
+      }
+      const hist = Array.isArray(baseMeta.history) ? baseMeta.history : [];
+      baseMeta.history = [
+        ...hist,
+        {
+          id: `h-based-${Date.now()}`,
+          text: `Asos: TK-${source.id} — «${source.title}»`,
+          createdAt: new Date().toISOString(),
+        },
+      ].slice(-100);
+    }
+  }
+  // Nazoratchi ijrochi bo‘lmasin
+  {
+    const sid = Number(baseMeta.supervisorUserId);
+    if (Number.isFinite(sid) && sid > 0) {
+      for (const a of list) {
+        const uid = await resolveNotifyUserId(a.kind, a.id);
+        if (uid === sid) {
+          res.status(400).json({
+            error: "Nazoratchi va topshiriq oluvchi bir xil bo‘lmasligi kerak",
+          });
+          return;
+        }
+      }
+      if (!baseMeta.supervisorName) {
+        baseMeta.supervisorName = await resolveUserDisplayName(sid);
+      }
+    }
+  }
   const fileAtt = sanitizeAttachments(attachments);
   const creatorName = await resolveUserDisplayName(req.userId);
   const createdRows = [];
+  const supervisorId = Number(baseMeta.supervisorUserId);
+  const hasSupervisor = Number.isFinite(supervisorId) && supervisorId > 0;
 
   for (const a of list) {
     const rowMeta = applyTaskVisibilityPolicy(
@@ -848,6 +1034,9 @@ router.post("/tasks", requireAuth, async (req: AuthRequest, res): Promise<void> 
       .returning();
 
     if (a.id) {
+      const basedTitle =
+        typeof baseMeta.basedOnTitle === "string" ? baseMeta.basedOnTitle : "";
+      const basedId = Number(baseMeta.basedOnTaskId);
       await notifyTaskAssignee({
         kind: a.kind,
         assigneeId: a.id,
@@ -857,13 +1046,66 @@ router.post("/tasks", requireAuth, async (req: AuthRequest, res): Promise<void> 
           fromName: creatorName,
           dueAt: created.dueAt,
           description: created.description,
+          extraLine:
+            Number.isFinite(basedId) && basedId > 0
+              ? `🔗 Asos: TK-${basedId}${basedTitle ? ` — «${basedTitle}»` : ""}`
+              : null,
         }),
         linkUrl: `/vazifalar?task=${created.id}`,
         type: "task_assigned",
         title: "Yangi vazifa",
       });
     }
+    if (hasSupervisor && supervisorId !== req.userId) {
+      await notifyUser({
+        userId: supervisorId,
+        text: [
+          `👁 Nazorat: «${created.title}»`,
+          `👤 Belgilagan: ${creatorName}`,
+          `⏰ Muddat: ${formatTaskDueUz(created.dueAt)}`,
+          "👉 Tasdiqlash va muddat — sizda ham bor (o‘chirishdan tashqari)",
+        ].join("\n"),
+        type: "task_assigned",
+        linkUrl: `/vazifalar?task=${created.id}`,
+        title: "Nazoratchi etib belgilandingiz",
+        telegram: true,
+      });
+    }
     createdRows.push(created);
+  }
+
+  // Asosiy topshiriq oluvchisiga — davomi yaratilgani haqida
+  {
+    const srcUid = Number(baseMeta.basedOnSourceAssigneeUserId);
+    const basedId = Number(baseMeta.basedOnTaskId);
+    const first = createdRows[0];
+    if (
+      first &&
+      Number.isFinite(srcUid) &&
+      srcUid > 0 &&
+      srcUid !== req.userId &&
+      Number.isFinite(basedId) &&
+      basedId > 0
+    ) {
+      const alreadyAssignee = createdRows.some(
+        (r) => r.assigneeKind === "user" && r.assigneeId === srcUid,
+      );
+      if (!alreadyAssignee) {
+        await notifyUser({
+          userId: srcUid,
+          text: [
+            `🔗 Sizning TK-${basedId} asosida yangi topshiriq`,
+            `📋 «${first.title}»`,
+            `👤 Belgilagan: ${creatorName}`,
+            "👉 Vazifalar — asosiy va davomini ko‘ring",
+          ].join("\n"),
+          type: "task_assigned",
+          linkUrl: `/vazifalar?task=${first.id}`,
+          title: "Asosingizdan yangi topshiriq",
+          telegram: true,
+        });
+      }
+    }
   }
 
   const enriched = await Promise.all(createdRows.map(enrichTask));
@@ -978,6 +1220,10 @@ async function notifyAuditorMessage(rows: TaskRow[], existing: TaskRow, msg: Tas
   if (existing.createdById && !recipients.has(existing.createdById)) {
     recipients.set(existing.createdById, existing.id);
   }
+  {
+    const sid = supervisorUserIdOf(existing);
+    if (sid && !recipients.has(sid)) recipients.set(sid, existing.id);
+  }
   recipients.delete(auditorId);
 
   for (const [userId, taskId] of recipients) {
@@ -1010,7 +1256,10 @@ router.post(
       res.status(403).json({ error: "Ruxsat yo'q" });
       return;
     }
-    const isParty = isCreator(existing, req.userId) || isAssignee(existing, req.userId);
+    const isParty =
+      isCreator(existing, req.userId) ||
+      isAssignee(existing, req.userId) ||
+      isSupervisor(existing, req.userId);
     const asAuditor = !isParty && isTaskAuditorRole(req.userRole);
     if (!isParty && !asAuditor && !isAdminRole(req.userRole)) {
       res.status(403).json({ error: "Faqat beruvchi yoki ijrochi yozishi mumkin" });
@@ -1174,10 +1423,38 @@ router.patch("/tasks/:id", requireAuth, async (req: AuthRequest, res): Promise<v
       : {};
   let nextMeta: Record<string, unknown> | undefined;
   if (body.meta !== undefined) {
-    nextMeta = applyTaskVisibilityPolicy(
-      sanitizeMeta({ ...prevMeta, ...(body.meta as object) }),
+    nextMeta = applySupervisorAssignPolicy(
+      applyTaskVisibilityPolicy(
+        sanitizeMeta({ ...prevMeta, ...(body.meta as object) }),
+        req.userRole,
+      ),
+      prevMeta,
       req.userRole,
     );
+    const newSid = Number(nextMeta.supervisorUserId);
+    const oldSid = Number(prevMeta.supervisorUserId);
+    if (
+      canAssignTaskSupervisor(req.userRole) &&
+      Number.isFinite(newSid) &&
+      newSid > 0 &&
+      newSid !== oldSid
+    ) {
+      if (!nextMeta.supervisorName) {
+        nextMeta.supervisorName = await resolveUserDisplayName(newSid);
+      }
+      const aidUid = await resolveNotifyUserId(
+        (body.assigneeKind as string) || existing.assigneeKind,
+        body.assigneeId !== undefined
+          ? parseInt(String(body.assigneeId), 10)
+          : existing.assigneeId,
+      );
+      if (aidUid === newSid) {
+        res.status(400).json({
+          error: "Nazoratchi va topshiriq oluvchi bir xil bo‘lmasligi kerak",
+        });
+        return;
+      }
+    }
   }
 
   if (body.assigneeKind !== undefined || body.assigneeId !== undefined) {
@@ -1325,7 +1602,232 @@ router.patch("/tasks/:id", requireAuth, async (req: AuthRequest, res): Promise<v
     .where(eq(tasksTable.id, id))
     .returning();
 
+  if (nextMeta !== undefined) {
+    const newSid = Number(nextMeta.supervisorUserId);
+    const oldSid = Number(prevMeta.supervisorUserId);
+    if (
+      Number.isFinite(newSid) &&
+      newSid > 0 &&
+      newSid !== oldSid &&
+      newSid !== req.userId
+    ) {
+      const byName = await resolveUserDisplayName(req.userId);
+      await notifyUser({
+        userId: newSid,
+        text: [
+          `👁 Nazorat: «${existing.title}»`,
+          `👤 Belgilagan: ${byName}`,
+          `⏰ Muddat: ${formatTaskDueUz(updated.dueAt ?? existing.dueAt)}`,
+          "👉 Tasdiqlash va muddat — sizda ham bor (o‘chirishdan tashqari)",
+        ].join("\n"),
+        type: "task_assigned",
+        linkUrl: `/vazifalar?task=${existing.id}`,
+        title: "Nazoratchi etib belgilandingiz",
+        telegram: true,
+      });
+    }
+  }
+
   res.json(await enrichTask(updated));
+});
+
+/**
+ * Mavjud topshiriqqa boshqa oluvchilar qo‘shish.
+ * Har biri uchun alohida vazifa ochiladi (bir batch), yangilariga xabar ketadi.
+ */
+router.post("/tasks/:id/add-assignees", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  const [existing] = await db.select().from(tasksTable).where(eq(tasksTable.id, id));
+  if (!existing || isPipelineRecruitmentTask(existing)) {
+    res.status(404).json({ error: "Vazifa topilmadi" });
+    return;
+  }
+  if (!canManageTask(existing, req.userId, req.userRole)) {
+    res.status(403).json({
+      error: "Oluvchi qo‘shish faqat belgilagan shaxs, admin yoki direktor uchun",
+    });
+    return;
+  }
+  if (existing.status === "cancelled") {
+    res.status(400).json({ error: "Bekor qilingan topshiriqqa oluvchi qo‘shib bo‘lmaydi" });
+    return;
+  }
+
+  type AssigneeSpec = { kind: "user" | "employee"; id: number };
+  const list: AssigneeSpec[] = [];
+  const seen = new Set<string>();
+  const pushAssignee = (kindRaw: unknown, idRaw: unknown) => {
+    const kind = kindRaw === "employee" ? "employee" : "user";
+    const aid = parseInt(String(idRaw), 10);
+    if (!Number.isFinite(aid) || aid <= 0) return;
+    const key = `${kind}:${aid}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    list.push({ kind, id: aid });
+  };
+  const raw = req.body?.assignees;
+  if (Array.isArray(raw)) {
+    for (const a of raw) {
+      if (!a || typeof a !== "object") continue;
+      pushAssignee(
+        (a as { assigneeKind?: unknown; kind?: unknown }).assigneeKind ??
+          (a as { kind?: unknown }).kind,
+        (a as { assigneeId?: unknown; id?: unknown }).assigneeId ?? (a as { id?: unknown }).id,
+      );
+    }
+  }
+  if (list.length === 0) {
+    res.status(400).json({ error: "Kamida bitta yangi oluvchi tanlang" });
+    return;
+  }
+  if (list.length > 40) {
+    res.status(400).json({ error: "Bir vaqtda 40 tadan ortiq qo‘shib bo‘lmaydi" });
+    return;
+  }
+
+  const meta0 = metaRecord(existing);
+  let batchId =
+    typeof meta0.batchId === "string" && meta0.batchId.trim() ? meta0.batchId.trim() : null;
+  const siblings = batchId
+    ? await db.select().from(tasksTable).where(sql`${tasksTable.meta}->>'batchId' = ${batchId}`)
+    : [existing];
+  const occupied = new Set(
+    siblings.map((r) => `${r.assigneeKind}:${r.assigneeId}`),
+  );
+  occupied.add(`${existing.assigneeKind}:${existing.assigneeId}`);
+
+  const toAdd: AssigneeSpec[] = [];
+  for (const a of list) {
+    if (occupied.has(`${a.kind}:${a.id}`)) continue;
+    const uid = await resolveNotifyUserId(a.kind, a.id);
+    if (uid != null && uid === req.userId) {
+      res.status(400).json({ error: "O‘zingizni oluvchi qilib qo‘shib bo‘lmaydi" });
+      return;
+    }
+    const name = await resolveAssigneeName(a.kind, a.id);
+    if (!name) {
+      res.status(400).json({ error: `Oluvchi topilmadi (${a.kind} #${a.id})` });
+      return;
+    }
+    toAdd.push(a);
+  }
+  if (toAdd.length === 0) {
+    res.status(400).json({ error: "Tanlanganlar allaqachon shu topshiriqda" });
+    return;
+  }
+
+  const weekendErr = await assertOfisWeekendDueOk(existing.dueAt, toAdd);
+  if (weekendErr) {
+    res.status(400).json({ error: weekendErr });
+    return;
+  }
+
+  if (!batchId) {
+    batchId = `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  const creatorName = await resolveUserDisplayName(req.userId);
+  const nowIso = new Date().toISOString();
+  const addedNames: string[] = [];
+  const createdRows: (typeof tasksTable.$inferSelect)[] = [];
+
+  const baseMetaClean = { ...meta0 };
+  delete baseMetaClean.messages;
+  delete baseMetaClean.assigneeHistory;
+  delete baseMetaClean.acceptDeadlineBase;
+  delete baseMetaClean.verifiedAt;
+  delete baseMetaClean.lastReworkNote;
+  delete baseMetaClean.lastReworkAt;
+  delete baseMetaClean.lastReworkByName;
+  delete baseMetaClean.reworkCount;
+  delete baseMetaClean.lastReturnAttachments;
+  delete baseMetaClean.submissionHistory;
+
+  for (const a of toAdd) {
+    const name = (await resolveAssigneeName(a.kind, a.id)) || `#${a.id}`;
+    addedNames.push(name);
+    const histEvt = {
+      id: `h-add-${Date.now()}-${a.id}`,
+      text: `Topshiriqqa qo‘shildi (mavjud vazifadan). Kimdan: ${creatorName}`,
+      createdAt: nowIso,
+    };
+    const rowMeta = applyTaskVisibilityPolicy(
+      sanitizeMeta({
+        ...baseMetaClean,
+        batchId,
+        batchSize: siblings.length + toAdd.length,
+        history: [histEvt],
+      }),
+      req.userRole,
+    );
+    const [created] = await db
+      .insert(tasksTable)
+      .values({
+        title: existing.title,
+        description: existing.description,
+        status: "todo",
+        priority: existing.priority || "normal",
+        dueAt: existing.dueAt,
+        assigneeKind: a.kind,
+        assigneeId: a.id,
+        createdById: existing.createdById,
+        attachments: (existing.attachments as TaskAttachment[]) || [],
+        meta: rowMeta,
+        acceptedAt: null,
+      })
+      .returning();
+    createdRows.push(created);
+    await notifyTaskAssignee({
+      kind: a.kind,
+      assigneeId: a.id,
+      actorUserId: req.userId,
+      text: buildTaskAssignedText({
+        title: existing.title,
+        fromName: creatorName,
+        dueAt: existing.dueAt,
+        description: existing.description,
+        extraLine: "➕ Mavjud topshiriqqa qo‘shildingiz",
+      }),
+      linkUrl: `/vazifalar?task=${created.id}`,
+      type: "task_assigned",
+      title: "Yangi vazifa",
+    });
+  }
+
+  const finalSize = siblings.length + createdRows.length;
+  const addHist = {
+    id: `h-batch-add-${Date.now()}`,
+    text: `Yangi oluvchilar qo‘shildi: ${addedNames.join(", ")}`,
+    createdAt: nowIso,
+  };
+
+  // Barcha batch a’zolarida batchId / batchSize / history yangilansin
+  const allInBatch = [...siblings.filter((r) => r.id !== existing.id), existing, ...createdRows];
+  for (const row of allInBatch) {
+    const m = metaRecord(row);
+    const history = Array.isArray(m.history) ? m.history : [];
+    const nextMeta = sanitizeMeta({
+      ...m,
+      batchId,
+      batchSize: finalSize,
+      history: row.id === existing.id || createdRows.some((c) => c.id === row.id)
+        ? [...history, addHist].slice(-100)
+        : [...history, addHist].slice(-100),
+    });
+    await db.update(tasksTable).set({ meta: nextMeta }).where(eq(tasksTable.id, row.id));
+  }
+
+  const [fresh] = await db.select().from(tasksTable).where(eq(tasksTable.id, id));
+  const enrichedCreated = await Promise.all(createdRows.map(enrichTask));
+  res.status(201).json({
+    ok: true,
+    added: enrichedCreated.length,
+    batchId,
+    batchSize: finalSize,
+    names: addedNames,
+    items: enrichedCreated,
+    task: fresh ? await enrichTask(fresh) : null,
+  });
 });
 
 /** Ijrochi — vazifani qabul qilish (todo → in_progress) */
@@ -1363,9 +1865,17 @@ router.post("/tasks/:id/accept", requireAuth, async (req: AuthRequest, res): Pro
 
   await syncBranchNeedFromTask({ taskId: id, event: "accepted" });
 
-  if (existing.createdById !== req.userId) {
+  const acceptRecipients = new Set<number>();
+  if (existing.createdById && existing.createdById !== req.userId) {
+    acceptRecipients.add(existing.createdById);
+  }
+  {
+    const sid = supervisorUserIdOf(existing);
+    if (sid && sid !== req.userId) acceptRecipients.add(sid);
+  }
+  for (const uid of acceptRecipients) {
     await notifyUser({
-      userId: existing.createdById,
+      userId: uid,
       text: `📥 «${existing.title}» qabul qilindi`,
       type: "stage_change",
       linkUrl: "/vazifalar",
@@ -1427,13 +1937,22 @@ router.post("/tasks/:id/complete", requireAuth, async (req: AuthRequest, res): P
 
   await syncBranchNeedFromTask({ taskId: id, event: "completed" });
 
-  // Belgilagan odamga har doim xabar
-  await notifyUser({
-    userId: existing.createdById,
-    text: `✅ «${existing.title}» bajarildi — natijani ko‘rib tasdiqlang`,
-    type: "stage_change",
-    linkUrl: "/vazifalar",
-  });
+  // Belgilagan va nazoratchiga xabar
+  const doneRecipients = new Set<number>();
+  if (existing.createdById) doneRecipients.add(existing.createdById);
+  {
+    const sid = supervisorUserIdOf(existing);
+    if (sid) doneRecipients.add(sid);
+  }
+  for (const uid of doneRecipients) {
+    if (uid === req.userId) continue;
+    await notifyUser({
+      userId: uid,
+      text: `✅ «${existing.title}» bajarildi — natijani ko‘rib tasdiqlang`,
+      type: "stage_change",
+      linkUrl: "/vazifalar",
+    });
+  }
 
   res.json(await enrichTask(updated));
 });
@@ -1700,9 +2219,17 @@ router.post(
       .where(eq(tasksTable.id, id))
       .returning();
 
-    if (existing.createdById !== req.userId) {
+    const extRecipients = new Set<number>();
+    if (existing.createdById && existing.createdById !== req.userId) {
+      extRecipients.add(existing.createdById);
+    }
+    {
+      const sid = supervisorUserIdOf(existing);
+      if (sid && sid !== req.userId) extRecipients.add(sid);
+    }
+    for (const uid of extRecipients) {
       await notifyUser({
-        userId: existing.createdById,
+        userId: uid,
         text: `«${existing.title}» uchun muddat uzaytirish so'raldi`,
         type: "expired_task",
         linkUrl: "/vazifalar",

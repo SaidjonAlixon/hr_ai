@@ -115,6 +115,7 @@ import {
   useGetTasks,
   useCreateTask,
   useUpdateTask,
+  useAddTaskAssignees,
   useDeleteTask,
   useCompleteTask,
   useAcceptTask,
@@ -636,6 +637,7 @@ export default function VazifalarPage() {
 
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
+  const addTaskAssignees = useAddTaskAssignees();
   const deleteTask = useDeleteTask();
   const completeTask = useCompleteTask();
   const acceptTask = useAcceptTask();
@@ -652,6 +654,7 @@ export default function VazifalarPage() {
   const [editing, setEditing] = useState<Vazifa | null>(null);
   const [activeTask, setActiveTask] = useState<Vazifa | null>(null);
   const [createDueAt, setCreateDueAt] = useState<string | null>(null);
+  const [createFromSource, setCreateFromSource] = useState<Vazifa | null>(null);
   const deepLinkHandled = useRef<string | null>(null);
   const fullBoardOpened = useRef(false);
 
@@ -931,6 +934,10 @@ export default function VazifalarPage() {
   ]);
 
   const isCreatorOf = (t: Vazifa) => !!user && t.createdById === user.id;
+  const isSupervisorOf = (t: Vazifa) =>
+    !!user &&
+    Number((t.meta as { supervisorUserId?: number } | null)?.supervisorUserId) ===
+      user.id;
   const isAssigneeOf = (t: Vazifa) =>
     !!user && t.assigneeKind === "user" && t.assigneeId === user.id;
 
@@ -958,17 +965,29 @@ export default function VazifalarPage() {
         if (!user?.id) return false;
         return (
           t.createdById === user.id ||
-          (t.assigneeKind === "user" && t.assigneeId === user.id)
+          (t.assigneeKind === "user" && t.assigneeId === user.id) ||
+          Number((t.meta as { supervisorUserId?: number } | null)?.supervisorUserId) ===
+            user.id ||
+          Number(
+            (t.meta as { basedOnSourceAssigneeUserId?: number } | null)
+              ?.basedOnSourceAssigneeUserId,
+          ) === user.id
         );
       });
     }
     if (assigneeFilter === null) {
-      // O‘zim — menga kelgan + men qo‘ygan (boshqalarga ham)
+      // O‘zim — menga kelgan + men qo‘ygan + men nazorat + mening ishim asosidagi davomlar
       if (user?.id) {
         list = list.filter(
           (t) =>
             (t.assigneeKind === "user" && t.assigneeId === user.id) ||
-            t.createdById === user.id,
+            t.createdById === user.id ||
+            Number((t.meta as { supervisorUserId?: number } | null)?.supervisorUserId) ===
+              user.id ||
+            Number(
+              (t.meta as { basedOnSourceAssigneeUserId?: number } | null)
+                ?.basedOnSourceAssigneeUserId,
+            ) === user.id,
         );
       } else {
         list = [];
@@ -1217,6 +1236,7 @@ export default function VazifalarPage() {
 
   function openCreate(presetCol?: BoardCol) {
     setEditing(null);
+    setCreateFromSource(null);
     const base = startOfDay(new Date());
     let target = base;
     if (presetCol === "past") target = addDays(base, -1);
@@ -1224,6 +1244,29 @@ export default function VazifalarPage() {
     target.setHours(18, 0, 0, 0);
     setCreateDueAt(target.toISOString());
     setEditOpen(true);
+  }
+
+  function openCreateFrom(source: Vazifa) {
+    setViewOpen(false);
+    setEditing(null);
+    setCreateFromSource(source);
+    const base = startOfDay(new Date());
+    base.setHours(18, 0, 0, 0);
+    setCreateDueAt(addDays(base, 1).toISOString());
+    setEditOpen(true);
+  }
+
+  function openLinkedTask(taskId: number) {
+    const found = tasks.find((t) => t.id === taskId);
+    if (!found) {
+      toast({
+        title: "Topshiriq topilmadi",
+        description: `TK-${taskId}`,
+        variant: "destructive",
+      });
+      return;
+    }
+    openEdit(found);
   }
 
   function formatExportDate(iso: string | null | undefined) {
@@ -1462,6 +1505,7 @@ export default function VazifalarPage() {
         });
       }
       setEditOpen(false);
+      setCreateFromSource(null);
     } catch (e: any) {
       toast({
         title: "Saqlanmadi",
@@ -1732,7 +1776,7 @@ export default function VazifalarPage() {
         task={task}
         column={colId}
         overdue={overdue}
-        isCreator={isCreatorOf(task)}
+        isCreator={isCreatorOf(task) || isSupervisorOf(task)}
         isAssignee={isAssigneeOf(task)}
         canApprove={canApproveTaskUi(task, user?.id, user?.role)}
         canDelete={canDelete}
@@ -3423,7 +3467,10 @@ export default function VazifalarPage() {
 
       <TaskFormDialog
         open={editOpen}
-        onOpenChange={setEditOpen}
+        onOpenChange={(v) => {
+          setEditOpen(v);
+          if (!v) setCreateFromSource(null);
+        }}
         editing={editing}
         assigneeOptions={assigneeOptions}
         branchOptions={branchOptions}
@@ -3458,6 +3505,34 @@ export default function VazifalarPage() {
         onOpenBatchTask={(task) => {
           setEditing(task);
         }}
+        addingAssignees={addTaskAssignees.isPending}
+        onAddAssignees={
+          editing
+            ? async (assignees) => {
+                const res = await addTaskAssignees.mutateAsync({
+                  id: editing.id,
+                  assignees,
+                });
+                if (res.task) setEditing(res.task);
+              }
+            : undefined
+        }
+        basedOnSource={!editing ? createFromSource : null}
+        onOpenLinkedTask={openLinkedTask}
+        derivedTasks={
+          editing
+            ? tasks.filter((t) => Number(t.meta?.basedOnTaskId) === editing.id)
+            : []
+        }
+        canCreateFromTask={
+          !!editing &&
+          canAssign &&
+          (canManageTaskUi(editing, user?.id, user?.role) ||
+            canApproveTaskUi(editing, user?.id, user?.role))
+        }
+        onCreateFromTask={
+          editing ? () => openCreateFrom(editing) : undefined
+        }
       />
 
       <TaskReturnDialog
@@ -3545,6 +3620,23 @@ export default function VazifalarPage() {
           openExtend(activeTask);
         }}
         onTaskUpdated={(updated) => setActiveTask(updated)}
+        onOpenLinkedTask={(taskId) => {
+          setViewOpen(false);
+          openLinkedTask(taskId);
+        }}
+        derivedTasks={
+          activeTask
+            ? tasks.filter((t) => Number(t.meta?.basedOnTaskId) === activeTask.id)
+            : []
+        }
+        canCreateFromTask={
+          !!activeTask &&
+          canAssign &&
+          canManageTaskUi(activeTask, user?.id, user?.role)
+        }
+        onCreateFromTask={
+          activeTask ? () => openCreateFrom(activeTask) : undefined
+        }
       />
 
       {/* Ijrochi: bajarish — legacy fallback (kartadan ochilmasa) */}
@@ -4081,6 +4173,11 @@ function TaskCard({
             {task.meta!.batchSize}
           </span>
         ) : null}
+        {Number(task.meta?.basedOnTaskId) > 0 ? (
+          <span className="inline-flex items-center gap-0.5 rounded-md border border-sky-300/70 bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-800 dark:border-sky-700/50 dark:bg-sky-950/40 dark:text-sky-200">
+            {t("tasks.form.basedOnBadge")} TK-{task.meta!.basedOnTaskId}
+          </span>
+        ) : null}
       </div>
 
       <h3 className="mb-1 text-[13px] font-bold leading-snug text-foreground">{task.title}</h3>
@@ -4228,8 +4325,9 @@ function TaskCard({
         const showAccept = isAssignee && needsAccept && !assigneeFrozen;
         const showProgress = isAssignee && isAccepted && !assigneeFrozen;
         const showApprove = canApprove && awaitingReview;
-        const showExtReview = isCreator && pendingExt;
-        const showExtend = isCreator && overdue && !awaitingReview && !isVerified;
+        const showExtReview = (isCreator || canApprove) && pendingExt;
+        const showExtend =
+          (isCreator || canApprove) && overdue && !awaitingReview && !isVerified;
         const hasActions = showAccept || showProgress || showApprove || showExtReview || showExtend || canDelete;
         if (!hasActions) return null;
         return (

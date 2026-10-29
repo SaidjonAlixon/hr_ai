@@ -63,6 +63,7 @@ const AdminPreboardingPage = lazyPage('/admin/preboarding', () => import('./page
 const PreboardingPage = lazyPage('/preboarding', () => import('./pages/preboarding/index'));
 const AdminDarsliklarPage = lazyPage('/admin/darsliklar', () => import('./pages/admin/darsliklar'));
 const AdminAtestatsiyaPage = lazyPage('/admin/atestatsiya', () => import('./pages/admin/atestatsiya'));
+const AdminAtestatsiyaBazaPage = lazyPage('/admin/atestatsiya/baza', () => import('./pages/admin/atestatsiya-baza'));
 const AdminFacesPage = lazyPage('/admin/faces', () => import('./pages/admin/faces'));
 const AdminDavomatQrPage = lazyPage('/admin/davomat-qr', () => import('./pages/admin/davomat-qr'));
 const AdminTestPage = lazyPage('/admin/test', () => import('./pages/admin/test'));
@@ -338,6 +339,7 @@ function Router() {
       <ProtectedRoute path="/admin/kirish-videolar" component={AdminKirishVideosPage} />
       <ProtectedRoute path="/admin/preboarding" component={AdminPreboardingPage} />
       <ProtectedRoute path="/admin/darsliklar" component={AdminDarsliklarPage} />
+      <ProtectedRoute path="/admin/atestatsiya/baza" component={AdminAtestatsiyaBazaPage} />
       <ProtectedRoute path="/admin/atestatsiya" component={AdminAtestatsiyaPage} />
       <ProtectedRoute path="/admin/faces" component={AdminFacesPage} />
       <Route path="/admin/smena-sozlamalar">

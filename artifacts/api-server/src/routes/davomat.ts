@@ -44,6 +44,7 @@ import {
   canViewFullDavomatDashboard,
   isReviziyaRole,
   isBoshAdmin,
+  isHiddenFromDavomat,
   NON_STAFF_ROLES,
 } from "../lib/roles";
 import {
@@ -1003,6 +1004,7 @@ async function loadActiveEmployees(filters: {
 
   const rows = staff
     .filter((s) => {
+      if (isHiddenFromDavomat(s.userRole)) return false;
       const st = String(s.employmentStatus || "").toLowerCase();
       return st !== "dismissed" && st !== "closed";
     })
@@ -1094,6 +1096,7 @@ async function loadArchivedDavomatEmployees(
     if (!employmentOverlaps(from, to, hiredAt, dismissedAt)) continue;
     if (filters.employeeId && id !== Number(filters.employeeId)) continue;
     const userRole = row.role || null;
+    if (isHiddenFromDavomat(userRole)) continue;
     const orgRole = row.orgRole || orgRoleFromUserRole(userRole || "") || null;
     const emp = {
       id,
@@ -8254,7 +8257,7 @@ router.get("/davomat/method-access", requireAuth, async (req: AuthRequest, res):
     const zoneById = await loadZoneListFlags(ids);
     const fingerById = await fingerprintInfoByUser(ids);
     const items = staff
-      .filter((row) => row.userId != null)
+      .filter((row) => row.userId != null && !isHiddenFromDavomat(row.userRole))
       .map((row) => {
         const flag = flagById.get(row.userId!);
         const access = effectiveDavomatAccess(row.userRole, flag?.face, flag?.qr, flag?.finger);

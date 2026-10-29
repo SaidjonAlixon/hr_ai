@@ -449,7 +449,7 @@ router.get("/users/export", requireAuth, async (req: AuthRequest, res): Promise<
 router.post("/users", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireUsersAdmin(req, res)) return;
 
-  const { fullName, role, departmentId, login, password, phone, status, assignedViloyat } = req.body ?? {};
+  const { fullName, role, departmentId, login, password, phone, status, assignedViloyat, position } = req.body ?? {};
   if (!fullName?.trim() || !role) {
     res.status(400).json({ error: "Ism-familiya va rol majburiy" });
     return;
@@ -458,6 +458,7 @@ router.post("/users", requireAuth, async (req: AuthRequest, res): Promise<void> 
     res.status(400).json({ error: "Noto'g'ri rol" });
     return;
   }
+  const jobPosition = String(position || "").trim().slice(0, 80) || null;
   const viloyatSlug =
     role === "regional_menejer" ? String(assignedViloyat || "").trim() || null : null;
   if (role === "regional_menejer" && !isValidViloyatSlug(viloyatSlug)) {
@@ -505,6 +506,7 @@ router.post("/users", requireAuth, async (req: AuthRequest, res): Promise<void> 
       fullName: user.fullName,
       role: user.role,
       departmentId: user.departmentId,
+      position: jobPosition,
     });
 
     let departmentName: string | null = null;
@@ -788,6 +790,15 @@ router.patch("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<v
         .update(employeesTable)
         .set({ fullName: formatPersonName(String(updates.fullName)) })
         .where(eq(employeesTable.userId, id));
+    }
+    if (req.body?.position !== undefined) {
+      const jobPosition = String(req.body.position || "").trim().slice(0, 80);
+      if (jobPosition) {
+        await db
+          .update(employeesTable)
+          .set({ position: jobPosition, updatedAt: new Date() })
+          .where(eq(employeesTable.userId, id));
+      }
     }
     if (updates.status !== undefined) {
       const { employmentFromUserStatus } = await import("../lib/staff-directory");

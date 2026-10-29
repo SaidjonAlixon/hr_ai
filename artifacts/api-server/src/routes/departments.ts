@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { db, departmentJobTitlesTable, departmentsTable, pool, usersTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
@@ -29,16 +29,24 @@ function cleanTitle(raw: unknown): string {
     .slice(0, 80);
 }
 
-async function departmentTitles(departmentId: number) {
+function titleKey(departmentId: number | null | undefined, title: string) {
+  return `${departmentId == null ? "none" : departmentId}|${normTitle(title)}`;
+}
+
+async function departmentTitles(departmentId: number | null) {
   return db
     .select()
     .from(departmentJobTitlesTable)
-    .where(eq(departmentJobTitlesTable.departmentId, departmentId))
+    .where(
+      departmentId == null
+        ? isNull(departmentJobTitlesTable.departmentId)
+        : eq(departmentJobTitlesTable.departmentId, departmentId),
+    )
     .orderBy(asc(departmentJobTitlesTable.sortOrder), asc(departmentJobTitlesTable.id));
 }
 
-/** Lavozim qo‘shish: bir xil nom bo‘lsa yangisi ochilmaydi, nofaol bo‘lsa qayta yoqiladi */
-async function addDepartmentTitle(departmentId: number, title: string) {
+/** Lavozim qo‘shish. departmentId = null → bo‘limga bog‘lanmagan umumiy rol */
+async function addDepartmentTitle(departmentId: number | null, title: string) {
   const existing = await departmentTitles(departmentId);
   const hit = existing.find((t) => normTitle(t.title) === normTitle(title));
   if (hit) {
@@ -65,7 +73,11 @@ async function seedDefaultTitles(departmentId: number) {
 }
 
 /** Lavozim bo‘yicha xodimlar soni (bo‘shatilganlarsiz) */
-async function titleStaffCounts(): Promise<{ byTitle: Map<string, number>; byDept: Map<number, number> }> {
+async function titleStaffCounts(): Promise<{
+  byTitle: Map<string, number>;
+  byTitleName: Map<string, number>;
+  byDept: Map<number, number>;
+}> {
   const { rows } = await pool.query(
     `SELECT department_id, position, count(*)::int AS n
        FROM employees
@@ -73,33 +85,42 @@ async function titleStaffCounts(): Promise<{ byTitle: Map<string, number>; byDep
       GROUP BY department_id, position`,
   );
   const byTitle = new Map<string, number>();
+  const byTitleName = new Map<string, number>();
   const byDept = new Map<number, number>();
   for (const r of rows) {
-    const dept = Number(r.department_id);
+    const dept = r.department_id == null ? null : Number(r.department_id);
     const n = Number(r.n) || 0;
-    byDept.set(dept, (byDept.get(dept) ?? 0) + n);
-    const key = `${dept}|${normTitle(String(r.position || ""))}`;
+    if (dept != null) byDept.set(dept, (byDept.get(dept) ?? 0) + n);
+    const pos = String(r.position || "");
+    const key = titleKey(dept, pos);
     byTitle.set(key, (byTitle.get(key) ?? 0) + n);
+    const nameKey = normTitle(pos);
+    if (nameKey) byTitleName.set(nameKey, (byTitleName.get(nameKey) ?? 0) + n);
   }
-  return { byTitle, byDept };
+  return { byTitle, byTitleName, byDept };
 }
 
-async function titlesPayload(departmentId?: number) {
-  const rows = departmentId
-    ? await departmentTitles(departmentId)
-    : await db
-        .select()
-        .from(departmentJobTitlesTable)
-        .orderBy(asc(departmentJobTitlesTable.departmentId), asc(departmentJobTitlesTable.sortOrder), asc(departmentJobTitlesTable.id));
-  const { byTitle, byDept } = await titleStaffCounts();
+async function titlesPayload(departmentId?: number | null) {
+  const rows =
+    departmentId === undefined
+      ? await db
+          .select()
+          .from(departmentJobTitlesTable)
+          .orderBy(asc(departmentJobTitlesTable.departmentId), asc(departmentJobTitlesTable.sortOrder), asc(departmentJobTitlesTable.id))
+      : await departmentTitles(departmentId);
+  const { byTitle, byTitleName, byDept } = await titleStaffCounts();
   return {
     titles: rows.map((t) => ({
       id: t.id,
-      departmentId: t.departmentId,
+      departmentId: t.departmentId ?? null,
       title: t.title,
       sortOrder: t.sortOrder,
       active: t.active,
-      staffCount: byTitle.get(`${t.departmentId}|${normTitle(t.title)}`) ?? 0,
+      // Umumiy (bo‘limsiz) lavozim — barcha bo‘limlardagi shu nomdagi xodimlar
+      staffCount:
+        t.departmentId == null
+          ? byTitleName.get(normTitle(t.title)) ?? 0
+          : byTitle.get(titleKey(t.departmentId, t.title)) ?? 0,
       createdAt: t.createdAt.toISOString(),
     })),
     staffByDepartment: Object.fromEntries(byDept),
@@ -201,6 +222,112 @@ router.get("/department-job-titles", requireAuth, async (_req, res): Promise<voi
   } catch (err) {
     console.error("GET /department-job-titles", err);
     res.status(503).json({ error: "Lavozimlar yuklanmadi" });
+  }
+});
+
+/** Bo‘limga bog‘lanmagan umumiy lavozim/rol qo‘shish */
+router.post("/job-titles", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageDepartments(req.userRole)) {
+    res.status(403).json({ error: "Lavozimni HR, admin yoki direktor qo‘shadi" });
+    return;
+  }
+  try {
+    const title = cleanTitle(req.body?.title);
+    if (title.length < 2) {
+      res.status(400).json({ error: "Lavozim nomini kiriting (kamida 2 harf)" });
+      return;
+    }
+    const result = await addDepartmentTitle(null, title);
+    if (!result.created && !result.reactivated) {
+      res.status(409).json({ error: `«${result.title.title}» umumiy lavozim allaqachon bor` });
+      return;
+    }
+    res.status(201).json({ ok: true, title: result.title, reactivated: result.reactivated });
+  } catch (err) {
+    console.error("POST /job-titles", err);
+    res.status(503).json({ error: "Lavozim saqlanmadi" });
+  }
+});
+
+/** Umumiy (bo‘limsiz) yoki istalgan lavozimni id bo‘yicha yangilash */
+router.patch("/job-titles/:titleId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageDepartments(req.userRole)) {
+    res.status(403).json({ error: "Lavozimni HR, admin yoki direktor o‘zgartiradi" });
+    return;
+  }
+  const titleId = Number(req.params.titleId);
+  if (!Number.isFinite(titleId)) {
+    res.status(400).json({ error: "id noto‘g‘ri" });
+    return;
+  }
+  try {
+    const [current] = await db.select().from(departmentJobTitlesTable).where(eq(departmentJobTitlesTable.id, titleId)).limit(1);
+    if (!current) {
+      res.status(404).json({ error: "Lavozim topilmadi" });
+      return;
+    }
+    const siblings = await departmentTitles(current.departmentId ?? null);
+    const updates: Partial<typeof departmentJobTitlesTable.$inferInsert> = {};
+    if (req.body?.title !== undefined) {
+      const title = cleanTitle(req.body.title);
+      if (title.length < 2) {
+        res.status(400).json({ error: "Lavozim nomini kiriting (kamida 2 harf)" });
+        return;
+      }
+      if (siblings.some((t) => t.id !== titleId && normTitle(t.title) === normTitle(title))) {
+        res.status(409).json({ error: `«${title}» lavozimi allaqachon bor` });
+        return;
+      }
+      updates.title = title;
+    }
+    if (typeof req.body?.active === "boolean") updates.active = req.body.active;
+    if (!Object.keys(updates).length) {
+      res.status(400).json({ error: "O‘zgarish yo‘q" });
+      return;
+    }
+    const [updated] = await db
+      .update(departmentJobTitlesTable)
+      .set(updates)
+      .where(eq(departmentJobTitlesTable.id, titleId))
+      .returning();
+    res.json({ ok: true, title: updated });
+  } catch (err) {
+    console.error("PATCH /job-titles/:titleId", err);
+    res.status(503).json({ error: "Lavozim saqlanmadi" });
+  }
+});
+
+router.delete("/job-titles/:titleId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageDepartments(req.userRole)) {
+    res.status(403).json({ error: "Lavozimni HR, admin yoki direktor o‘chiradi" });
+    return;
+  }
+  const titleId = Number(req.params.titleId);
+  if (!Number.isFinite(titleId)) {
+    res.status(400).json({ error: "id noto‘g‘ri" });
+    return;
+  }
+  try {
+    const [current] = await db.select().from(departmentJobTitlesTable).where(eq(departmentJobTitlesTable.id, titleId)).limit(1);
+    if (!current) {
+      res.status(404).json({ error: "Lavozim topilmadi" });
+      return;
+    }
+    const { byTitle, byTitleName } = await titleStaffCounts();
+    const staff =
+      current.departmentId == null
+        ? byTitleName.get(normTitle(current.title)) ?? 0
+        : byTitle.get(titleKey(current.departmentId, current.title)) ?? 0;
+    if (staff > 0) {
+      await db.update(departmentJobTitlesTable).set({ active: false }).where(eq(departmentJobTitlesTable.id, titleId));
+      res.json({ ok: true, deactivated: true, staff });
+      return;
+    }
+    await db.delete(departmentJobTitlesTable).where(eq(departmentJobTitlesTable.id, titleId));
+    res.json({ ok: true, deleted: true });
+  } catch (err) {
+    console.error("DELETE /job-titles/:titleId", err);
+    res.status(503).json({ error: "Lavozim o‘chirilmadi" });
   }
 });
 
@@ -313,7 +440,7 @@ router.delete("/departments/:id/job-titles/:titleId", requireAuth, async (req: A
       return;
     }
     const { byTitle } = await titleStaffCounts();
-    const staff = byTitle.get(`${id}|${normTitle(current.title)}`) ?? 0;
+    const staff = byTitle.get(titleKey(id, current.title)) ?? 0;
     if (staff > 0) {
       await db
         .update(departmentJobTitlesTable)

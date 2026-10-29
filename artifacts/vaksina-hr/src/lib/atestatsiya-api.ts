@@ -10,6 +10,18 @@ export type AttestAttemptStatus = "in_progress" | "submitted" | "expired" | "ann
 export type AttestQuestion = { id: string; text: string; options: string[]; correctIndex: number };
 export type AttestQuestionPublic = { id: string; text: string; options: string[] };
 
+export type AttestReviewItem = {
+  number: number;
+  questionId: string;
+  question: string;
+  options: string[];
+  chosenIndex: number | null;
+  chosenText: string;
+  correctIndex: number;
+  correctText: string;
+  ok: boolean;
+};
+
 export type AttestLearnerAttempt = {
   id: number;
   attemptNo: number;
@@ -26,6 +38,9 @@ export type AttestLearnerAttempt = {
   locationLabel: string | null;
   retakeAllowed: boolean;
   annulReason: string | null;
+  examTitle?: string;
+  /** showResult yoqilganda tugatgach to‘liq tahlil */
+  review?: AttestReviewItem[];
   questions?: AttestQuestionPublic[];
   answers?: Record<string, number>;
 };
@@ -301,11 +316,16 @@ export type AttestResultRow = {
   durationMinutes: number;
   windowStart: string;
   windowEnd: string;
+  windowClosed?: boolean;
+  published?: boolean;
   userId: number;
   fullName: string;
   phone: string | null;
+  role?: AttestTrack;
   branchLabel: string | null;
   status: AttestAttemptStatus;
+  /** Muddat yopilgan va boshlamagan */
+  missed?: boolean;
   score: number | null;
   correct: number | null;
   /** Nechta savolga javob bergani (ishlagani) */
@@ -328,12 +348,20 @@ export type AttestResultRow = {
 export type AttestResults = {
   track: AttestTrack;
   trackLabel: string;
-  exams: Array<{ id: number; title: string }>;
+  exams: Array<{
+    id: number;
+    title: string;
+    published?: boolean;
+    window?: AttestWindow;
+    startsAt?: string;
+    endsAt?: string;
+  }>;
   stats: {
     people: number;
     exams: number;
     rows: number;
     notStarted: number;
+    missed?: number;
     inProgress: number;
     finished: number;
     passed: number;
@@ -343,6 +371,15 @@ export type AttestResults = {
     avgScore: number | null;
   };
   rows: AttestResultRow[];
+};
+
+export type AttestBank = {
+  track: AttestTrack;
+  label: string;
+  title: string;
+  count: number;
+  questions: AttestQuestion[];
+  updatedAt: string | null;
 };
 
 export function useAttestResults(track: AttestTrack, enabled: boolean) {
@@ -382,6 +419,22 @@ export function useAttestBankQuestions(tracks: AttestTrack[], enabled: boolean) 
   });
 }
 
+export function useAttestBanks(enabled: boolean) {
+  return useQuery({
+    queryKey: [...MANAGE_KEY, "banks"],
+    queryFn: () => apiFetch<{ banks: AttestBank[] }>("/atestatsiya/manage/banks"),
+    enabled,
+  });
+}
+
+export function useAttestBank(track: AttestTrack, enabled: boolean) {
+  return useQuery({
+    queryKey: [...MANAGE_KEY, "banks", track],
+    queryFn: () => apiFetch<{ bank: AttestBank }>(`/atestatsiya/manage/banks/${track}`),
+    enabled,
+  });
+}
+
 export function useAttestMonitor(examId: number | null) {
   return useQuery({
     queryKey: [...MANAGE_KEY, "monitor", examId],
@@ -397,6 +450,15 @@ function useManageMut<V>(fn: (v: V) => Promise<unknown>) {
     mutationFn: fn,
     onSuccess: () => void qc.invalidateQueries({ queryKey: MANAGE_KEY }),
   });
+}
+
+export function useSaveAttestBank() {
+  return useManageMut(({ track, title, questions }: { track: AttestTrack; title?: string; questions: AttestQuestion[] }) =>
+    apiFetch<{ bank: AttestBank }>(`/atestatsiya/manage/banks/${track}`, {
+      method: "PUT",
+      body: JSON.stringify({ title, questions }),
+    }),
+  );
 }
 
 export function useSaveAttestExam() {

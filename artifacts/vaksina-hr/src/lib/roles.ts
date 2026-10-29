@@ -149,6 +149,14 @@ export function isAsoschiRole(role?: string | null): boolean {
   return normalizeUserRole(role) === "asoschi";
 }
 
+/** Davomat doskasi / hisobotlarda ko‘rinmaydi; tizimda ishlayveradi */
+export const DAVOMAT_HIDDEN_ROLES = ["asoschi"] as const;
+
+export function isHiddenFromDavomat(role?: string | null): boolean {
+  const r = normalizeUserRole(role);
+  return (DAVOMAT_HIDDEN_ROLES as readonly string[]).includes(r);
+}
+
 /** Maxfiy vazifa — faqat admin, asoschi, direktor, direktor yordamchisi */
 export function canSetPrivateTaskVisibility(role?: string | null): boolean {
   const r = normalizeUserRole(role);

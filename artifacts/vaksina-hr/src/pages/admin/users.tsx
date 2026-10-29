@@ -9,7 +9,7 @@ import {
 } from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { VerifiedName } from '@/components/VerifiedBadge';
-import { Plus, Search, Copy, Check, ChevronDown, Eye, EyeOff, Trash2, UserPlus, UserX, FileSpreadsheet, Loader2, Pencil, KeyRound } from 'lucide-react';
+import { Plus, Search, Copy, Check, ChevronDown, Eye, EyeOff, Trash2, UserPlus, UserX, FileSpreadsheet, Loader2, Pencil, KeyRound, ChevronsUpDown, Briefcase, Building2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -18,6 +18,17 @@ import { Badge } from '../../components/ui/badge';
 import { Checkbox } from '../../components/ui/checkbox';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from '../../components/ui/command';
+import { scriptIncludes } from '../../lib/script-search';
+import { useDepartmentTitles, type DepartmentJobTitle } from '../../lib/department-titles-api';
 import {
   Dialog,
   DialogContent,
@@ -268,6 +279,8 @@ export default function AdminUsersPage() {
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState('');
   const [rolePick, setRolePick] = useState('');
+  const [jobPosition, setJobPosition] = useState('');
+  const [roleMenuOpen, setRoleMenuOpen] = useState(false);
   const [phone, setPhone] = useState('');
   const [departmentId, setDepartmentId] = useState<string>('none');
   const [assignedViloyat, setAssignedViloyat] = useState<string>('');
@@ -278,6 +291,7 @@ export default function AdminUsersPage() {
     role: roleFilter !== 'all' ? roleFilter : undefined,
   });
   const { data: departments, refetch: refetchDepartments } = useGetDepartments();
+  const titlesQ = useDepartmentTitles();
   const createMutation = useCreateUser();
   const updateMutation = useUpdateUser();
   const [dismissTarget, setDismissTarget] = useState<User | null>(null);
@@ -289,12 +303,38 @@ export default function AdminUsersPage() {
     [departments],
   );
 
+  const activeTitles = useMemo(
+    () =>
+      (titlesQ.data?.titles ?? [])
+        .filter((t) => t.active)
+        .sort((a, b) => a.title.localeCompare(b.title, 'uz')),
+    [titlesQ.data],
+  );
+
+  const rolePickLabel = useMemo(() => {
+    if (rolePick.startsWith('dept:')) {
+      const id = rolePick.slice(5);
+      return deptChoices.find((d) => String(d.id) === id)?.name || 'Bo‘lim';
+    }
+    if (rolePick.startsWith('title:')) {
+      const id = Number(rolePick.slice(6));
+      const hit = activeTitles.find((t) => t.id === id);
+      return hit?.title || jobPosition || 'Lavozim';
+    }
+    if (jobPosition && role) {
+      const roleLab = ROLES.find((r) => r.value === role)?.label || role;
+      return jobPosition === roleLab ? roleLab : `${jobPosition} · ${roleLab}`;
+    }
+    return ROLES.find((r) => r.value === rolePick)?.label || rolePick || '';
+  }, [rolePick, deptChoices, activeTitles, jobPosition, role]);
+
   useEffect(() => {
     if (createOpen || editOpen) void refetchDepartments();
   }, [createOpen, editOpen, refetchDepartments]);
 
   function applyDepartment(id: string) {
     setDepartmentId(id);
+    setJobPosition('');
     if (id === 'none') return;
     const dept = deptChoices.find((d) => String(d.id) === id);
     const next = dept ? primaryRoleForDepartment(dept.name) : null;
@@ -307,21 +347,67 @@ export default function AdminUsersPage() {
     setRolePick(`dept:${id}`);
   }
 
+  function applyJobTitle(title: DepartmentJobTitle) {
+    setJobPosition(title.title);
+    setRolePick(`title:${title.id}`);
+    const byLabel = ROLES.find((r) => normDept(r.label) === normDept(title.title));
+    if (title.departmentId != null) {
+      const dept = deptChoices.find((d) => d.id === title.departmentId);
+      setDepartmentId(String(title.departmentId));
+      const next =
+        byLabel?.value ||
+        (dept ? primaryRoleForDepartment(dept.name) : null) ||
+        role ||
+        '';
+      setRole(next);
+      if (next && isRegionalManagerRole(next) === false) setAssignedViloyat('');
+      return;
+    }
+    if (byLabel) {
+      setRole(byLabel.value);
+      if (!isRegionalManagerRole(byLabel.value)) setAssignedViloyat('');
+      const deptName = ROLE_DEPARTMENT[byLabel.value];
+      if (deptName) {
+        const hit = deptChoices.find((d) => normDept(d.name) === normDept(deptName));
+        if (hit) setDepartmentId(String(hit.id));
+      }
+      return;
+    }
+    // Umumiy lavozim — tizim roli oldingi tanlovda qoladi yoki bo‘sh
+    if (!role) setRole('');
+  }
+
   function onCreateRole(value: string) {
     if (value.startsWith('dept:')) {
       applyDepartment(value.slice(5));
+      setRoleMenuOpen(false);
+      return;
+    }
+    if (value.startsWith('title:')) {
+      const id = Number(value.slice(6));
+      const hit = activeTitles.find((t) => t.id === id);
+      if (hit) applyJobTitle(hit);
+      setRoleMenuOpen(false);
       return;
     }
     setRolePick(value);
     setRole(value);
+    setJobPosition('');
     if (!isRegionalManagerRole(value)) setAssignedViloyat('');
     const deptName = ROLE_DEPARTMENT[value];
-    if (!deptName) return;
+    if (!deptName) {
+      setRoleMenuOpen(false);
+      return;
+    }
     const hit = deptChoices.find((d) => normDept(d.name) === normDept(deptName));
-    if (!hit) return;
+    if (!hit) {
+      setRoleMenuOpen(false);
+      return;
+    }
     const current = deptChoices.find((d) => String(d.id) === departmentId);
     const currentIsKnown = current ? rolesForDepartment(current.name).length > 0 : false;
     if (departmentId === 'none' || currentIsKnown) setDepartmentId(String(hit.id));
+    setRoleMenuOpen(false);
   }
 
   const canManage = canManageUsers(me?.role);
@@ -394,6 +480,8 @@ export default function AdminUsersPage() {
     setFullName('');
     setRole('');
     setRolePick('');
+    setJobPosition('');
+    setRoleMenuOpen(false);
     setPhone('');
     setDepartmentId('none');
     setAssignedViloyat('');
@@ -407,6 +495,7 @@ export default function AdminUsersPage() {
     // Eski «hr» roli ro‘yxatdan olib tashlangan — tahrirda HR Menejer
     setRole(u.role === 'hr' ? 'hr_menejer' : u.role);
     setRolePick(u.role === 'hr' ? 'hr_menejer' : u.role);
+    setJobPosition('');
     setPhone(u.phone || '');
     setDepartmentId(u.departmentId != null ? String(u.departmentId) : 'none');
     setAssignedViloyat((u as User & { assignedViloyat?: string | null }).assignedViloyat || '');
@@ -464,6 +553,7 @@ export default function AdminUsersPage() {
           phone: normalizeUzPhone(phone) || undefined,
           departmentId: departmentId === 'none' ? null : Number(departmentId),
           assignedViloyat: isRegionalManagerRole(role) ? assignedViloyat : null,
+          position: jobPosition.trim() || undefined,
         } as any,
       },
       {
@@ -540,6 +630,7 @@ export default function AdminUsersPage() {
           departmentId: departmentId === 'none' ? null : Number(departmentId),
           status,
           assignedViloyat: isRegionalManagerRole(role) ? assignedViloyat : null,
+          ...(jobPosition.trim() ? { position: jobPosition.trim() } : {}),
         } as any,
       },
       {
@@ -1044,32 +1135,95 @@ export default function AdminUsersPage() {
               </div>
               <div className="space-y-2">
                 <Label>Rol *</Label>
-                <Select value={rolePick || undefined} onValueChange={onCreateRole}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Rol yoki bo‘lim" />
-                  </SelectTrigger>
-                  <SelectContent position="popper" className="z-[100] max-h-80">
-                    {deptChoices.length > 0 ? (
-                      <SelectGroup>
-                        <SelectLabel>Bo‘limlar</SelectLabel>
-                        {deptChoices.map((d) => (
-                          <SelectItem key={`dept-${d.id}`} value={`dept:${d.id}`}>{d.name}</SelectItem>
-                        ))}
-                      </SelectGroup>
-                    ) : null}
-                    <SelectSeparator />
-                    <SelectGroup>
-                      <SelectLabel>Rollar</SelectLabel>
-                      {ROLES.map((r) => (
-                        <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                <Popover open={roleMenuOpen && createOpen} onOpenChange={setRoleMenuOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      className="h-10 w-full justify-between px-3 font-normal"
+                    >
+                      <span className={cn('truncate', !rolePick && 'text-muted-foreground')}>
+                        {rolePickLabel || "Rol, bo‘lim yoki lavozim…"}
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="z-[120] w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                    <Command
+                      filter={(value, searchQ) => {
+                        if (!searchQ.trim()) return 1;
+                        return scriptIncludes(value, searchQ) ? 1 : 0;
+                      }}
+                    >
+                      <CommandInput placeholder="Yozib qidiring: rol, bo‘lim, lavozim…" />
+                      <CommandList className="max-h-72">
+                        <CommandEmpty>Hech narsa topilmadi</CommandEmpty>
+                        {activeTitles.length ? (
+                          <CommandGroup heading="Lavozimlar">
+                            {activeTitles.map((t) => {
+                              const deptName =
+                                t.departmentId != null
+                                  ? deptChoices.find((d) => d.id === t.departmentId)?.name
+                                  : 'Umumiy';
+                              return (
+                                <CommandItem
+                                  key={`title-${t.id}`}
+                                  value={`lavozim ${t.title} ${deptName || ''}`}
+                                  onSelect={() => onCreateRole(`title:${t.id}`)}
+                                >
+                                  <Briefcase className="mr-2 h-3.5 w-3.5 shrink-0 text-violet-600" />
+                                  <span className="min-w-0 flex-1 truncate">
+                                    <span className="font-medium">{t.title}</span>
+                                    {deptName ? (
+                                      <span className="block truncate text-[11px] text-muted-foreground">{deptName}</span>
+                                    ) : null}
+                                  </span>
+                                  <Check className={cn('ml-2 h-4 w-4 shrink-0', rolePick === `title:${t.id}` ? 'opacity-100' : 'opacity-0')} />
+                                </CommandItem>
+                              );
+                            })}
+                          </CommandGroup>
+                        ) : null}
+                        {activeTitles.length && deptChoices.length ? <CommandSeparator /> : null}
+                        {deptChoices.length ? (
+                          <CommandGroup heading="Bo‘limlar">
+                            {deptChoices.map((d) => (
+                              <CommandItem
+                                key={`dept-${d.id}`}
+                                value={`bolim ${d.name}`}
+                                onSelect={() => onCreateRole(`dept:${d.id}`)}
+                              >
+                                <Building2 className="mr-2 h-3.5 w-3.5 shrink-0 text-sky-600" />
+                                <span className="truncate">{d.name}</span>
+                                <Check className={cn('ml-auto h-4 w-4 shrink-0', rolePick === `dept:${d.id}` ? 'opacity-100' : 'opacity-0')} />
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        ) : null}
+                        <CommandSeparator />
+                        <CommandGroup heading="Rollar">
+                          {ROLES.map((r) => (
+                            <CommandItem
+                              key={r.value}
+                              value={`rol ${r.label} ${r.value}`}
+                              onSelect={() => onCreateRole(r.value)}
+                            >
+                              <span className="truncate">{r.label}</span>
+                              <Check className={cn('ml-auto h-4 w-4 shrink-0', role === r.value && !jobPosition ? 'opacity-100' : 'opacity-0')} />
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
                 <p className="text-xs text-muted-foreground">
-                  {role
-                    ? `Rol: ${ROLES.find((r) => r.value === role)?.label || role}`
-                    : "Bo‘limni tanlang — rol shu bo‘limga mos qo‘yiladi. Rekruter avtomatik yozilmaydi."}
+                  {jobPosition
+                    ? `Lavozim: ${jobPosition}${role ? ` · Rol: ${ROLES.find((r) => r.value === role)?.label || role}` : ''}`
+                    : role
+                      ? `Rol: ${ROLES.find((r) => r.value === role)?.label || role}`
+                      : "Yozib qidiring — lavozim, bo‘lim yoki rol. Lavozim tanlansa xodim kartasiga yoziladi."}
                   {departmentId !== 'none'
                     ? ` · Bo‘lim: ${deptChoices.find((d) => String(d.id) === departmentId)?.name || ''}`
                     : ''}
@@ -1162,23 +1316,76 @@ export default function AdminUsersPage() {
               </div>
               <div className="space-y-2">
                 <Label>Rol *</Label>
-                <Select
-                  value={role}
-                  onValueChange={(v) => {
-                    setRole(v);
-                    setRolePick(v);
-                    if (!isRegionalManagerRole(v)) setAssignedViloyat('');
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Rolni tanlang" />
-                  </SelectTrigger>
-                  <SelectContent position="popper" className="z-[100]">
-                    {ROLES.map((r) => (
-                      <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Popover open={roleMenuOpen && editOpen} onOpenChange={setRoleMenuOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      className="h-10 w-full justify-between px-3 font-normal"
+                    >
+                      <span className={cn('truncate', !rolePick && 'text-muted-foreground')}>
+                        {rolePickLabel || "Rol, bo‘lim yoki lavozim…"}
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="z-[120] w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                    <Command
+                      filter={(value, searchQ) => {
+                        if (!searchQ.trim()) return 1;
+                        return scriptIncludes(value, searchQ) ? 1 : 0;
+                      }}
+                    >
+                      <CommandInput placeholder="Yozib qidiring: rol, bo‘lim, lavozim…" />
+                      <CommandList className="max-h-72">
+                        <CommandEmpty>Hech narsa topilmadi</CommandEmpty>
+                        {activeTitles.length ? (
+                          <CommandGroup heading="Lavozimlar">
+                            {activeTitles.map((t) => {
+                              const deptName =
+                                t.departmentId != null
+                                  ? deptChoices.find((d) => d.id === t.departmentId)?.name
+                                  : 'Umumiy';
+                              return (
+                                <CommandItem
+                                  key={`edit-title-${t.id}`}
+                                  value={`lavozim ${t.title} ${deptName || ''}`}
+                                  onSelect={() => onCreateRole(`title:${t.id}`)}
+                                >
+                                  <Briefcase className="mr-2 h-3.5 w-3.5 shrink-0 text-violet-600" />
+                                  <span className="min-w-0 flex-1 truncate">
+                                    <span className="font-medium">{t.title}</span>
+                                    {deptName ? (
+                                      <span className="block truncate text-[11px] text-muted-foreground">{deptName}</span>
+                                    ) : null}
+                                  </span>
+                                  <Check className={cn('ml-2 h-4 w-4 shrink-0', rolePick === `title:${t.id}` ? 'opacity-100' : 'opacity-0')} />
+                                </CommandItem>
+                              );
+                            })}
+                          </CommandGroup>
+                        ) : null}
+                        {activeTitles.length ? <CommandSeparator /> : null}
+                        <CommandGroup heading="Rollar">
+                          {ROLES.map((r) => (
+                            <CommandItem
+                              key={`edit-${r.value}`}
+                              value={`rol ${r.label} ${r.value}`}
+                              onSelect={() => onCreateRole(r.value)}
+                            >
+                              <span className="truncate">{r.label}</span>
+                              <Check className={cn('ml-auto h-4 w-4 shrink-0', role === r.value && !jobPosition ? 'opacity-100' : 'opacity-0')} />
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                {jobPosition ? (
+                  <p className="text-xs text-muted-foreground">Lavozim: {jobPosition}</p>
+                ) : null}
               </div>
               {isRegionalManagerRole(role) ? (
                 <div className="space-y-2">

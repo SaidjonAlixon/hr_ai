@@ -195,6 +195,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS attestatsiya_attempts_active_uidx ON attestats
 ALTER TABLE attestatsiya_attempts ADD COLUMN IF NOT EXISTS option_orders JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE attestatsiya_attempts ADD COLUMN IF NOT EXISTS questions_snapshot JSONB;
 
+-- Atestatsiya savol bazalari (lavozim bo‘yicha alohida)
+CREATE TABLE IF NOT EXISTS attestatsiya_banks (
+  id SERIAL PRIMARY KEY,
+  track TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL DEFAULT '',
+  questions_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  updated_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS attestatsiya_banks_track_idx ON attestatsiya_banks (track);
+INSERT INTO attestatsiya_banks (track, title, questions_json) VALUES
+  ('stajyor', 'Stajyor savol bazasi', '[]'::jsonb),
+  ('farmasevt', 'Farmasevt savol bazasi', '[]'::jsonb),
+  ('mudir', 'Mudir savol bazasi', '[]'::jsonb)
+ON CONFLICT (track) DO NOTHING;
+
 -- Kirish (stajyor o‘quv)
 CREATE TABLE IF NOT EXISTS kirish_progress (
   id SERIAL PRIMARY KEY,
@@ -1168,7 +1185,7 @@ CREATE INDEX IF NOT EXISTS ops_tickets_escalated_idx ON ops_tickets (status, esc
 
 CREATE TABLE IF NOT EXISTS department_job_titles (
   id SERIAL PRIMARY KEY,
-  department_id INTEGER NOT NULL,
+  department_id INTEGER,
   title TEXT NOT NULL,
   sort_order INTEGER NOT NULL DEFAULT 0,
   active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -1176,6 +1193,7 @@ CREATE TABLE IF NOT EXISTS department_job_titles (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS department_job_titles_dept_idx ON department_job_titles (department_id);
+ALTER TABLE department_job_titles ALTER COLUMN department_id DROP NOT NULL;
 
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_in_method TEXT;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_out_method TEXT;

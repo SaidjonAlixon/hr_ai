@@ -130,10 +130,6 @@ function audienceTo(track: AttestTrack): string {
   return "barcha stajyorlarga";
 }
 
-function emptyQuestion(): AttestQuestion {
-  return { id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, text: "", options: ["", "", "", ""], correctIndex: 0 };
-}
-
 function emptyDraft(): Draft {
   const start = new Date();
   start.setMinutes(0, 0, 0);
@@ -158,7 +154,7 @@ function emptyDraft(): Draft {
     showResult: true,
     retakeIfFailed: true,
     published: false,
-    questions: [emptyQuestion()],
+    questions: [],
     lockedQuestions: false,
   };
 }
@@ -219,8 +215,6 @@ function ExamEditor({
     targetTracks: initial.targetTracks.length ? initial.targetTracks : [track],
   }));
   const [bankTab, setBankTab] = useState<AttestTrack | "all">("all");
-  const setQ = (i: number, patch: Partial<AttestQuestion>) =>
-    setD((p) => ({ ...p, questions: p.questions.map((q, n) => (n === i ? { ...q, ...patch } : q)) }));
 
   const selectedPools = d.poolTracks.length ? d.poolTracks : [track];
   const selectedTargets = d.targetTracks.length ? d.targetTracks : [track];
@@ -278,22 +272,21 @@ function ExamEditor({
   };
 
   const onSave = async () => {
-    const questions = d.questions.map((q) => {
-      const kept = q.options.map((o, i) => ({ o: o.trim(), i })).filter((x) => x.o);
-      return {
-        id: q.id,
-        text: q.text.trim(),
-        options: kept.map((x) => x.o),
-        correctIndex: Math.max(0, kept.findIndex((x) => x.i === q.correctIndex)),
-      };
-    });
+    if (!estimatedPool) {
+      toast({
+        title: "Baza bo‘sh",
+        description: "Avval Test bazasiga savol kiriting.",
+        variant: "destructive",
+      });
+      return;
+    }
     try {
       const saved = await save.mutateAsync({
         id: d.id,
         track,
         title: d.title.trim(),
         description: d.description.trim(),
-        questions,
+        questions: [],
         passScore: d.passScore,
         durationMinutes: d.durationMinutes,
         questionsPerAttempt: d.questionsPerAttempt,
@@ -327,7 +320,9 @@ function ExamEditor({
           <h2 className="text-lg font-extrabold tracking-tight text-slate-900 dark:text-white">
             {d.id ? "Atestatsiyani tahrirlash" : "Yangi atestatsiya"}
           </h2>
-          <p className="text-xs text-slate-500">{audienceTo(track)} · aniq va sodda sozlama</p>
+          <p className="text-xs text-slate-500">
+            {audienceTo(track)} · savollar «Test bazasi»dan olinadi
+          </p>
         </div>
         <Button variant="ghost" size="icon" onClick={onClose} aria-label="Yopish">
           <X className="h-4 w-4" />
@@ -380,9 +375,14 @@ function ExamEditor({
       </div>
 
       <div className="rounded-2xl border border-violet-200 bg-violet-50/70 p-3 sm:p-4 dark:border-violet-900/40 dark:bg-violet-950/30">
-        <p className="mb-1 text-sm font-bold text-slate-900 dark:text-white">2. Qaysi bazalardan savol kelsin</p>
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-bold text-slate-900 dark:text-white">2. Qaysi bazadan savol kelsin</p>
+          <Link href="/admin/atestatsiya/baza" className="text-[11px] font-semibold text-violet-700 underline-offset-2 hover:underline">
+            Savollarni tahrirlash →
+          </Link>
+        </div>
         <p className="mb-3 text-[11px] text-slate-600 dark:text-slate-400">
-          Ptichka qo‘yilgan bazadan random savol keladi. Olib tashlansa — o‘sha bazadan kelmaydi. Har bir xodimga har xil to‘plam.
+          Faqat tayyor bazadan tanlang. Savol qo‘shish/o‘zgartirish — alohida «Test bazasi» bo‘limida.
         </p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {ATTESTATSIYA_TRACKS.map((t) => {
@@ -484,9 +484,18 @@ function ExamEditor({
               </div>
             )}
             <p className="mt-2 text-[10px] text-slate-500">
-              Bu yerda ko‘rinadi — xodimga har safar shu pooldan random tanlanadi. Tahrirlash uchun pastga qo‘shing yoki manba testda o‘zgartiring.
+              Ko‘rinish — preview. Xodimga har safar shu pooldan random tanlanadi.
             </p>
           </div>
+        ) : null}
+        {!estimatedPool ? (
+          <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Tanlangan baza bo‘sh. Avval{" "}
+            <Link href="/admin/atestatsiya/baza" className="font-semibold underline">
+              Test bazasi
+            </Link>
+            ga savol kiriting.
+          </p>
         ) : null}
       </div>
 
@@ -604,50 +613,13 @@ function ExamEditor({
         </div>
       </div>
 
-      <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-slate-950">
-        <div className="flex items-center justify-between gap-2">
-          <Label className="flex items-center gap-2 text-sm font-bold">
-            <ClipboardList className="h-4 w-4 text-sky-600" /> 6. Shu testning o‘z savollari ({localPool})
-          </Label>
-          <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-[11px] font-semibold text-sky-800 dark:bg-sky-950 dark:text-sky-200">
-            Pool ~{pool} · har biriga {askCount}
-          </span>
-        </div>
-        {d.lockedQuestions ? <p className="text-[11px] text-amber-700">Boshlangan — savollar qulflangan</p> : null}
-        {d.questions.map((q, qi) => (
-          <div key={q.id} className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3 dark:border-white/10 dark:bg-white/5">
-            <div className="flex gap-2">
-              <span className="mt-2 text-sm font-bold text-sky-600">{qi + 1}.</span>
-              <Textarea rows={2} disabled={d.lockedQuestions} value={q.text} placeholder="Savol" onChange={(e) => setQ(qi, { text: e.target.value })} />
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-red-600"
-                disabled={d.lockedQuestions || d.questions.length <= 1}
-                onClick={() => patchWindow({ questions: d.questions.filter((_, i) => i !== qi) })}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {q.options.map((opt, oi) => (
-                <label key={oi} className={cn("flex items-center gap-2 rounded-lg border bg-white px-2 py-1.5 dark:bg-slate-900", q.correctIndex === oi && "border-emerald-500")}>
-                  <input type="radio" disabled={d.lockedQuestions} name={`c-${q.id}`} checked={q.correctIndex === oi} onChange={() => setQ(qi, { correctIndex: oi })} className="accent-emerald-600" />
-                  <span className="text-xs font-bold text-muted-foreground">{String.fromCharCode(65 + oi)}</span>
-                  <input className="min-w-0 flex-1 bg-transparent text-sm outline-none" disabled={d.lockedQuestions} value={opt} placeholder={`Variant ${String.fromCharCode(65 + oi)}`} onChange={(e) => setQ(qi, { options: q.options.map((o, i) => (i === oi ? e.target.value : o)) })} />
-                </label>
-              ))}
-            </div>
-          </div>
-        ))}
-        <Button
-          variant="outline"
-          className="w-full border-dashed"
-          disabled={d.lockedQuestions}
-          onClick={() => patchWindow({ questions: [...d.questions, emptyQuestion()] })}
-        >
-          <Plus className="mr-1.5 h-4 w-4" /> Savol qo‘shish
-        </Button>
+      <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-xs text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+        <span className="font-semibold text-slate-900 dark:text-white">Savollar:</span> pool ~{pool} · har biriga {askCount}.
+        Yangi savol qo‘shish uchun{" "}
+        <Link href="/admin/atestatsiya/baza" className="font-semibold text-violet-700 underline">
+          Test bazasi
+        </Link>
+        .
       </div>
 
       <div className="flex flex-col gap-2 text-sm">
@@ -699,14 +671,7 @@ function ExamEditor({
   );
 }
 
-const FILTERS = [
-  ["all", "Hammasi"],
-  ["in_progress", "Ishlayapti"],
-  ["passed", "O‘tgan"],
-  ["failed", "O‘tmagan"],
-  ["not_started", "Boshlamagan"],
-  ["annulled", "Bekor"],
-] as const;
+type MonitorFilter = "all" | "in_progress" | "passed" | "failed" | "not_started" | "annulled";
 
 function Monitor({ examId, onBack }: { examId: number; onBack: () => void }) {
   const { toast } = useToast();
@@ -715,7 +680,7 @@ function Monitor({ examId, onBack }: { examId: number; onBack: () => void }) {
   const restore = useRestoreAttempt();
   const finish = useFinishAttempt();
   const retake = useGrantRetake();
-  const [filter, setFilter] = useState<(typeof FILTERS)[number][0]>("all");
+  const [filter, setFilter] = useState<MonitorFilter>("all");
   const [search, setSearch] = useState("");
   const [annulFor, setAnnulFor] = useState<AttestMonitorRow | null>(null);
   const [reason, setReason] = useState("");
@@ -760,85 +725,208 @@ function Monitor({ examId, onBack }: { examId: number; onBack: () => void }) {
   };
 
   if (q.isLoading) return <Skeleton className="h-64 rounded-3xl" />;
-  if (q.isError || !data) return <p className="rounded-2xl bg-red-50 p-4 text-sm text-red-700">{(q.error as Error)?.message || "Yuklanmadi"}</p>;
+  if (q.isError || !data) {
+    return <p className="rounded-2xl bg-red-50 p-4 text-sm text-red-700">{(q.error as Error)?.message || "Yuklanmadi"}</p>;
+  }
   const s = data.stats;
+  const place =
+    data.exam.locationMode === "anywhere"
+      ? "Istalgan joy"
+      : data.exam.locationMode === "office"
+        ? "Asosiy ofis"
+        : "O‘z filiali";
+
+  const cards: Array<{
+    key: MonitorFilter | "rate" | "avg";
+    label: string;
+    value: string | number;
+    hint: string;
+    cls: string;
+    activeCls: string;
+  }> = [
+    {
+      key: "passed",
+      label: "O‘tganlar",
+      value: s.passed,
+      hint: "Ismlarni ko‘rish",
+      cls: "border-emerald-200 bg-emerald-50/90 dark:border-emerald-900/40 dark:bg-emerald-950/30",
+      activeCls: "ring-2 ring-emerald-500",
+    },
+    {
+      key: "failed",
+      label: "O‘tmaganlar",
+      value: s.failed,
+      hint: "Ismlarni ko‘rish",
+      cls: "border-rose-200 bg-rose-50/90 dark:border-rose-900/40 dark:bg-rose-950/30",
+      activeCls: "ring-2 ring-rose-500",
+    },
+    {
+      key: "not_started",
+      label: "Kirmaganlar",
+      value: s.notStarted,
+      hint: "Ismlarni ko‘rish",
+      cls: "border-amber-200 bg-amber-50/90 dark:border-amber-900/40 dark:bg-amber-950/30",
+      activeCls: "ring-2 ring-amber-500",
+    },
+    {
+      key: "in_progress",
+      label: "Ishlayapti",
+      value: s.inProgress,
+      hint: "Hozir ochiq",
+      cls: "border-violet-200 bg-violet-50/90 dark:border-violet-900/40 dark:bg-violet-950/30",
+      activeCls: "ring-2 ring-violet-500",
+    },
+    {
+      key: "rate",
+      label: "O‘tish %",
+      value: s.passRate != null ? `${s.passRate}%` : "—",
+      hint: "Tugatganlar",
+      cls: "border-sky-200 bg-sky-50/90 dark:border-sky-900/40 dark:bg-sky-950/30",
+      activeCls: "",
+    },
+    {
+      key: "avg",
+      label: "O‘rtacha",
+      value: s.avgScore != null ? `${s.avgScore}%` : "—",
+      hint: `${s.targets} xodim`,
+      cls: "border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-white/5",
+      activeCls: "",
+    },
+  ];
+
+  const filterTitle =
+    filter === "passed"
+      ? "O‘tganlar"
+      : filter === "failed"
+        ? "O‘tmaganlar"
+        : filter === "not_started"
+          ? "Kirmaganlar"
+          : filter === "in_progress"
+            ? "Ishlayapti"
+            : filter === "annulled"
+              ? "Bekor"
+              : "Barcha xodimlar";
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="mr-1 h-4 w-4" /> Orqaga</Button>
-        <h2 className="min-w-0 flex-1 truncate text-lg font-bold">{data.exam.title}</h2>
-        <Button size="sm" variant="outline" disabled={exporting !== null} onClick={() => void runExport("excel")}>
-          {exporting === "excel" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-700" />} Excel
-        </Button>
-        <Button size="sm" variant="outline" disabled={exporting !== null} onClick={() => void runExport("pdf")}>
-          {exporting === "pdf" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5 text-rose-700" />} PDF
-        </Button>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        {data.trackLabel} · {formatAttestDt(data.exam.startsAt)} – {formatAttestDt(data.exam.endsAt)} · {data.exam.durationMinutes} daq ·{" "}
-        {data.exam.locationMode === "anywhere"
-          ? "Istalgan joy"
-          : data.exam.locationMode === "office"
-            ? "Asosiy ofis"
-            : "O‘z filiali"}{" "}
-        · pool {data.exam.poolCount} · har biriga {data.exam.askCount} savol ·
-        Excelda har bir xodimning foizi va har bir javobi bor · har 10 soniyada yangilanadi
-      </p>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
-        {[
-          ["Xodim", s.targets],
-          ["Boshlamagan", s.notStarted],
-          ["Ishlayapti", s.inProgress],
-          ["Tugatgan", s.finished],
-          ["O‘tgan", s.passed],
-          ["O‘tmagan", s.failed],
-          ["O‘tish", s.passRate != null ? `${s.passRate}%` : "—"],
-          ["O‘rtacha", s.avgScore != null ? `${s.avgScore}%` : "—"],
-        ].map(([k, v]) => (
-          <div key={String(k)} className="rounded-2xl border border-border bg-card p-3 text-center">
-            <p className="text-lg font-bold tabular-nums">{v}</p>
-            <p className="text-[11px] text-muted-foreground">{k}</p>
+      <section className="overflow-hidden rounded-3xl border border-sky-200/80 bg-gradient-to-br from-sky-600 via-sky-700 to-indigo-800 p-4 text-white shadow-sm sm:p-5">
+        <div className="flex flex-wrap items-start gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-9 shrink-0 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+            onClick={onBack}
+          >
+            <ArrowLeft className="mr-1 h-4 w-4" /> Orqaga
+          </Button>
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-xl font-extrabold tracking-tight">{data.exam.title}</h2>
+            <p className="mt-1 text-xs text-white/80">
+              {data.trackLabel} · {formatAttestDt(data.exam.startsAt)} – {formatAttestDt(data.exam.endsAt)} ·{" "}
+              {data.exam.durationMinutes} daq · {place} · pool {data.exam.poolCount} · har biriga {data.exam.askCount}
+            </p>
           </div>
-        ))}
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-9 bg-white text-sky-900 hover:bg-white/90"
+              disabled={exporting !== null}
+              onClick={() => void runExport("excel")}
+            >
+              {exporting === "excel" ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="mr-1 h-3.5 w-3.5 text-emerald-700" />}
+              Excel
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-9 bg-white/15 text-white ring-1 ring-white/30 hover:bg-white/25"
+              disabled={exporting !== null}
+              onClick={() => void runExport("pdf")}
+            >
+              {exporting === "pdf" ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <FileDown className="mr-1 h-3.5 w-3.5" />}
+              PDF
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        {cards.map((c) => {
+          const clickable = c.key === "passed" || c.key === "failed" || c.key === "not_started" || c.key === "in_progress";
+          const active = clickable && filter === c.key;
+          const Comp = clickable ? "button" : "div";
+          return (
+            <Comp
+              key={c.key}
+              type={clickable ? "button" : undefined}
+              onClick={clickable ? () => setFilter(c.key as MonitorFilter) : undefined}
+              className={cn(
+                "rounded-2xl border p-3 text-left transition",
+                c.cls,
+                active && c.activeCls,
+                clickable && "cursor-pointer hover:shadow-sm",
+              )}
+            >
+              <p className="text-2xl font-extrabold tabular-nums tracking-tight">{c.value}</p>
+              <p className="mt-0.5 text-sm font-bold">{c.label}</p>
+              <p className="text-[11px] text-muted-foreground">{c.hint}</p>
+            </Comp>
+          );
+        })}
       </div>
+
       <div className="grid gap-3 lg:grid-cols-2">
-        <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="mb-2 text-sm font-semibold">Ball taqsimoti</p>
+        <div className="rounded-3xl border border-border bg-card p-4 shadow-sm">
+          <p className="mb-3 text-sm font-bold">Ball taqsimoti</p>
           {s.buckets.map((b) => (
-            <div key={b.label} className="mb-1.5 flex items-center gap-2 text-xs">
+            <div key={b.label} className="mb-2 flex items-center gap-2 text-xs">
               <span className="w-14 text-muted-foreground">{b.label}</span>
-              <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                <div className="h-full rounded-full bg-[#2AABEE]" style={{ width: `${s.finished ? (b.count / s.finished) * 100 : 0}%` }} />
+              <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-sky-500"
+                  style={{ width: `${s.finished ? (b.count / s.finished) * 100 : 0}%` }}
+                />
               </div>
-              <span className="w-6 text-right tabular-nums">{b.count}</span>
+              <span className="w-6 text-right tabular-nums font-semibold">{b.count}</span>
             </div>
           ))}
           <p className="mt-2 text-[11px] text-muted-foreground">
-            Eng yuqori {s.maxScore ?? "—"} · eng past {s.minScore ?? "—"} · o‘rtacha vaqt {s.avgDurationMin ?? "—"} daq · fokus yo‘qotgan {s.focusLostPeople}
+            Eng yuqori {s.maxScore ?? "—"} · eng past {s.minScore ?? "—"} · o‘rtacha vaqt {s.avgDurationMin ?? "—"} daq
           </p>
         </div>
-        <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="mb-2 text-sm font-semibold">Filiallar</p>
-          <div className="max-h-48 space-y-1 overflow-y-auto text-xs">
-            {data.branches.map((b) => (
-              <div key={b.label} className="flex items-center justify-between gap-2">
-                <span className="truncate">{b.label}</span>
-                <span className="shrink-0 tabular-nums text-muted-foreground">{b.passed}/{b.finished} o‘tdi · {b.avgScore ?? "—"}%</span>
-              </div>
-            ))}
+        <div className="rounded-3xl border border-border bg-card p-4 shadow-sm">
+          <p className="mb-3 text-sm font-bold">Filiallar</p>
+          <div className="max-h-48 space-y-1.5 overflow-y-auto text-xs">
+            {data.branches.length ? (
+              data.branches.map((b) => (
+                <div key={b.label} className="flex items-center justify-between gap-2 rounded-xl bg-muted/40 px-2.5 py-1.5">
+                  <span className="truncate font-medium">{b.label}</span>
+                  <span className="shrink-0 tabular-nums text-muted-foreground">
+                    {b.passed}/{b.finished} o‘tdi · {b.avgScore ?? "—"}%
+                  </span>
+                </div>
+              ))
+            ) : (
+              <p className="text-muted-foreground">Hali filial bo‘yicha natija yo‘q</p>
+            )}
           </div>
         </div>
       </div>
+
       {data.questionStats.length ? (
-        <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="mb-2 text-sm font-semibold">Qaysi savol qiyin</p>
+        <div className="rounded-3xl border border-border bg-card p-4 shadow-sm">
+          <p className="mb-3 text-sm font-bold">Qaysi savol qiyin</p>
           <div className="space-y-1.5">
-            {data.questionStats.map((qq) => (
+            {data.questionStats.slice(0, 12).map((qq) => (
               <div key={qq.id} className="flex items-center gap-2 text-xs">
-                <span className="w-6 font-bold text-[#2AABEE]">{qq.number}</span>
-                <span className="min-w-0 flex-1 truncate" title={qq.text}>{qq.text}</span>
-                <span className={cn("w-12 text-right font-semibold tabular-nums", (qq.percent ?? 100) < 50 && "text-rose-600")}>{qq.percent ?? "—"}%</span>
+                <span className="w-6 font-bold text-sky-600">{qq.number}</span>
+                <span className="min-w-0 flex-1 truncate" title={qq.text}>
+                  {qq.text}
+                </span>
+                <span className={cn("w-12 text-right font-semibold tabular-nums", (qq.percent ?? 100) < 50 && "text-rose-600")}>
+                  {qq.percent ?? "—"}%
+                </span>
               </div>
             ))}
           </div>
@@ -846,27 +934,45 @@ function Monitor({ examId, onBack }: { examId: number; onBack: () => void }) {
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
-        <Input className="h-9 max-w-xs" placeholder="Xodim yoki filial…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        {FILTERS.map(([k, label]) => (
-          <button key={k} type="button" onClick={() => setFilter(k)} className={cn("rounded-full px-3 py-1 text-xs font-semibold", filter === k ? "bg-foreground text-background" : "bg-card text-muted-foreground ring-1 ring-border")}>
-            {label}
-          </button>
-        ))}
+        <p className="mr-auto text-sm font-semibold">
+          {filterTitle}
+          <span className="ml-1.5 font-normal text-muted-foreground">· {rows.length} ta</span>
+        </p>
+        <Input
+          className="h-9 max-w-xs rounded-xl"
+          placeholder="Xodim yoki filial…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <button
+          type="button"
+          onClick={() => setFilter("all")}
+          className={cn(
+            "rounded-full px-3 py-1 text-xs font-semibold",
+            filter === "all" ? "bg-foreground text-background" : "bg-card text-muted-foreground ring-1 ring-border",
+          )}
+        >
+          Hammasi · {s.targets}
+        </button>
       </div>
 
       <div className="space-y-2">
         {rows.map((r) => {
-          const sheet = (data.answerSheets || []).find((s) => s.userId === r.userId);
+          const sheet = (data.answerSheets || []).find((x) => x.userId === r.userId);
           const opened = openSheet === r.userId;
           return (
-            <div key={r.userId} className="rounded-2xl border border-border bg-card p-3">
-              <div className="flex flex-wrap items-center gap-3">
+            <div
+              key={r.userId}
+              className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm transition hover:border-sky-200"
+            >
+              <div className="flex flex-wrap items-center gap-3 p-3.5 sm:p-4">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-semibold">{r.fullName}</p>
+                  <p className="truncate text-sm font-bold sm:text-base">{r.fullName}</p>
                   <p className="truncate text-[11px] text-muted-foreground">
                     {r.branchLabel || "Filialsiz"}
                     {r.locationLabel ? ` · ${r.locationLabel}${r.distanceM != null ? ` (${r.distanceM} m)` : ""}` : ""}
-                    {r.focusLost ? ` · fokus ${r.focusLost}` : ""}
+                    {r.startedAt ? ` · boshlangan ${formatAttestDt(r.startedAt)}` : ""}
+                    {r.submittedAt ? ` · tugatgan ${formatAttestDt(r.submittedAt)}` : ""}
                   </p>
                 </div>
                 <div className="text-right text-xs">
@@ -881,42 +987,85 @@ function Monitor({ examId, onBack }: { examId: number; onBack: () => void }) {
                     >
                       {r.passed ? "✓ O‘tdi" : "✗ O‘tmadi"}
                     </span>
+                  ) : r.status === "not_started" ? (
+                    <span className="mb-1 inline-block rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-extrabold uppercase tracking-wide text-amber-900">
+                      Kirmagan
+                    </span>
                   ) : null}
-                  <p className={cn("text-base font-bold tabular-nums", r.passed ? "text-emerald-700 dark:text-emerald-400" : r.passed === false ? "text-rose-700 dark:text-rose-400" : "text-foreground")}>
+                  <p
+                    className={cn(
+                      "text-lg font-extrabold tabular-nums",
+                      r.passed ? "text-emerald-700" : r.passed === false ? "text-rose-700" : "text-foreground",
+                    )}
+                  >
                     {r.score != null ? `${r.score}%` : ATTEST_STATUS_LABEL[r.status]}
                   </p>
                   <p className="text-muted-foreground">
-                    {r.correct != null ? `${r.correct}/${r.total} to‘g‘ri · ishlagani ${r.answeredCount}/${r.total}` : r.status === "in_progress" && r.remainingSec != null
-                      ? `${Math.ceil(r.remainingSec / 60)} daq · ${r.answeredCount}/${r.total}`
-                      : r.attemptsCount
-                        ? `${r.attemptsCount}-urinish`
+                    {r.correct != null
+                      ? `${r.correct}/${r.total} to‘g‘ri`
+                      : r.status === "in_progress" && r.remainingSec != null
+                        ? `${Math.ceil(r.remainingSec / 60)} daq qoldi`
                         : "—"}
-                    {r.retakeAllowed ? " · qayta" : ""}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-1">
                   {sheet?.items.length ? (
-                    <Button size="sm" variant="outline" className="h-8" onClick={() => setOpenSheet(opened ? null : r.userId)}>
+                    <Button size="sm" variant="outline" className="h-8 rounded-xl" onClick={() => setOpenSheet(opened ? null : r.userId)}>
                       {opened ? "Yopish" : "Javoblar"}
                     </Button>
                   ) : null}
                   {r.status === "in_progress" && r.attemptId ? (
-                    <Button size="sm" variant="outline" className="h-8" disabled={finish.isPending} onClick={() => void act(() => finish.mutateAsync(r.attemptId!), "Yakunlandi")}>Yakunlash</Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 rounded-xl"
+                      disabled={finish.isPending}
+                      onClick={() => void act(() => finish.mutateAsync(r.attemptId!), "Yakunlandi")}
+                    >
+                      Yakunlash
+                    </Button>
                   ) : null}
                   {r.status !== "not_started" && r.status !== "in_progress" ? (
-                    <Button size="sm" variant="outline" className="h-8" disabled={retake.isPending} onClick={() => void act(() => retake.mutateAsync({ examId, userId: r.userId }), "Qayta topshirishga ruxsat berildi")}>Qayta</Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 rounded-xl"
+                      disabled={retake.isPending}
+                      onClick={() =>
+                        void act(() => retake.mutateAsync({ examId, userId: r.userId }), "Qayta topshirishga ruxsat berildi")
+                      }
+                    >
+                      Qayta
+                    </Button>
                   ) : null}
                   {r.status === "annulled" && r.attemptId ? (
-                    <Button size="sm" variant="outline" className="h-8" onClick={() => void act(() => restore.mutateAsync(r.attemptId!), "Natija tiklandi")}>Tiklash</Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 rounded-xl"
+                      onClick={() => void act(() => restore.mutateAsync(r.attemptId!), "Natija tiklandi")}
+                    >
+                      Tiklash
+                    </Button>
                   ) : null}
                   {r.attemptId && r.status !== "annulled" ? (
-                    <Button size="sm" variant="ghost" className="h-8 text-rose-600" onClick={() => { setReason(""); setAnnulFor(r); }}>Bekor</Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 rounded-xl text-rose-600"
+                      onClick={() => {
+                        setReason("");
+                        setAnnulFor(r);
+                      }}
+                    >
+                      Bekor
+                    </Button>
                   ) : null}
                 </div>
               </div>
               {opened && sheet ? (
-                <div className="mt-3 space-y-1.5 border-t border-border/70 pt-3">
-                  <p className="mb-1 text-[11px] font-semibold text-muted-foreground">
+                <div className="space-y-2 border-t border-border/70 bg-muted/20 px-3.5 py-3 sm:px-4">
+                  <p className="text-[11px] font-semibold text-muted-foreground">
                     {sheet.fullName} · {sheet.score ?? "—"}% · {sheet.correct ?? "—"}/{sheet.total}
                     {sheet.passed == null ? "" : sheet.passed ? " · O‘tdi" : " · O‘tmadi"}
                   </p>
@@ -924,17 +1073,15 @@ function Monitor({ examId, onBack }: { examId: number; onBack: () => void }) {
                     <div
                       key={`${sheet.userId}-${it.number}`}
                       className={cn(
-                        "rounded-xl px-3 py-2 text-xs",
-                        it.ok ? "bg-emerald-50 text-emerald-950" : "bg-rose-50 text-rose-950",
+                        "rounded-2xl px-3 py-2.5 text-xs",
+                        it.ok ? "bg-emerald-50 text-emerald-950 dark:bg-emerald-950/40 dark:text-emerald-100" : "bg-rose-50 text-rose-950 dark:bg-rose-950/40 dark:text-rose-100",
                       )}
                     >
                       <p className="font-semibold">
-                        {it.number}. {it.question}
+                        {it.ok ? "✓" : "✗"} {it.number}. {it.question}
                       </p>
-                      <p className="mt-0.5 opacity-90">
-                        Tanlagan: {it.chosenText}
-                        {!it.ok ? ` · To‘g‘ri: ${it.correctText}` : ""}
-                      </p>
+                      <p className="mt-1 opacity-90">Sizning / tanlagan: {it.chosenText}</p>
+                      {!it.ok ? <p className="mt-0.5 font-medium text-emerald-800 dark:text-emerald-300">To‘g‘ri: {it.correctText}</p> : null}
                     </div>
                   ))}
                 </div>
@@ -942,14 +1089,20 @@ function Monitor({ examId, onBack }: { examId: number; onBack: () => void }) {
             </div>
           );
         })}
-        {!rows.length ? <p className="py-8 text-center text-sm text-muted-foreground">Hech kim topilmadi</p> : null}
+        {!rows.length ? (
+          <p className="rounded-3xl border border-dashed border-border py-12 text-center text-sm text-muted-foreground">
+            Bu kartada hech kim yo‘q — boshqa kartani bosing.
+          </p>
+        ) : null}
       </div>
 
       <AlertDialog open={Boolean(annulFor)} onOpenChange={(o) => !o && setAnnulFor(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Natijani bekor qilasizmi?</AlertDialogTitle>
-            <AlertDialogDescription>{annulFor?.fullName} natijasi hisobdan chiqadi. Qayta topshirish alohida ruxsat bilan beriladi.</AlertDialogDescription>
+            <AlertDialogDescription>
+              {annulFor?.fullName} natijasi hisobdan chiqadi. Qayta topshirish alohida ruxsat bilan beriladi.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Sabab (ixtiyoriy)" maxLength={400} />
           <AlertDialogFooter>
@@ -971,25 +1124,6 @@ function Monitor({ examId, onBack }: { examId: number; onBack: () => void }) {
   );
 }
 
-type ResultFilter = "finished" | "passed" | "failed" | "in_progress" | "not_started" | "annulled" | "all";
-
-const RESULT_FILTERS: Array<[ResultFilter, string]> = [
-  ["finished", "Tugatganlar"],
-  ["passed", "O‘tgan"],
-  ["failed", "O‘tmagan"],
-  ["in_progress", "Ishlayapti"],
-  ["not_started", "Boshlamagan"],
-  ["annulled", "Bekor"],
-  ["all", "Hammasi"],
-];
-
-const TRACK_FILTERS: Array<[AttestTrack | "all", string]> = [
-  ["all", "Hammasi"],
-  ["stajyor", "Stajyor"],
-  ["farmasevt", "Farmasevt"],
-  ["mudir", "Mudir"],
-];
-
 function resultStatusBadge(r: AttestResultRow): { label: string; cls: string } {
   if (r.status === "submitted" || r.status === "expired")
     return r.passed
@@ -1002,76 +1136,103 @@ function resultStatusBadge(r: AttestResultRow): { label: string; cls: string } {
   return { label: "Boshlamagan", cls: "bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400" };
 }
 
+type ResultBucket = "passed" | "failed" | "missed" | "progress" | "all";
+
 function ResultsBoard() {
   const { toast } = useToast();
   const qStajyor = useAttestResults("stajyor", true);
   const qFarmasevt = useAttestResults("farmasevt", true);
   const qMudir = useAttestResults("mudir", true);
   const queries = [qStajyor, qFarmasevt, qMudir];
-  const [scope, setScope] = useState<AttestTrack | "all">("all");
+  const [scope, setScope] = useState<AttestTrack>("mudir");
   const [examId, setExamId] = useState<number | "all">("all");
-  const [filter, setFilter] = useState<ResultFilter>("finished");
+  const [bucket, setBucket] = useState<ResultBucket>("passed");
   const [search, setSearch] = useState("");
   const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
 
   type RowX = AttestResultRow & { track: AttestTrack; trackLabel: string };
-  const allRows: RowX[] = queries.flatMap((q) =>
-    (q.data?.rows ?? []).map((r) => ({ ...r, track: q.data!.track, trackLabel: q.data!.trackLabel })),
+  const active = queries.find((q) => q.data?.track === scope) || qMudir;
+  const allRows: RowX[] = useMemo(
+    () =>
+      (active.data?.rows ?? []).map((r) => ({
+        ...r,
+        track: active.data!.track,
+        trackLabel: active.data!.trackLabel,
+      })),
+    [active.data],
   );
-  const allExams = queries.flatMap((q) =>
-    (q.data?.exams ?? []).map((e) => ({ ...e, track: q.data!.track, trackLabel: q.data!.trackLabel })),
-  );
-  const scopedRows = scope === "all" ? allRows : allRows.filter((r) => r.track === scope);
-  const scopedExams = scope === "all" ? allExams : allExams.filter((e) => e.track === scope);
+  const scopedExams = active.data?.exams ?? [];
 
   const isFinished = (r: AttestResultRow) => r.status === "submitted" || r.status === "expired";
-  const finishedRows = scopedRows.filter(isFinished);
-  const passedRows = finishedRows.filter((r) => r.passed);
-  const scoreList = finishedRows.map((r) => r.score ?? 0);
-  const s = {
-    people: new Set(scopedRows.map((r) => r.userId)).size,
-    exams: scopedExams.length,
-    rows: scopedRows.length,
-    notStarted: scopedRows.filter((r) => r.status === "not_started").length,
-    inProgress: scopedRows.filter((r) => r.status === "in_progress").length,
-    finished: finishedRows.length,
-    passed: passedRows.length,
-    failed: finishedRows.length - passedRows.length,
-    annulled: scopedRows.filter((r) => r.status === "annulled").length,
-    passRate: finishedRows.length ? Math.round((passedRows.length / finishedRows.length) * 100) : null,
-    avgScore: scoreList.length ? Math.round(scoreList.reduce((a, b) => a + b, 0) / scoreList.length) : null,
-  };
+  const isMissed = (r: AttestResultRow) => Boolean(r.missed) || r.status === "not_started";
+
+  /** Avval test filtri — kartalar soni jadval bilan mos */
+  const examRows = useMemo(
+    () => (examId === "all" ? allRows : allRows.filter((r) => r.examId === examId)),
+    [allRows, examId],
+  );
+
+  const passedRows = useMemo(() => examRows.filter((r) => isFinished(r) && r.passed === true), [examRows]);
+  const failedRows = useMemo(() => examRows.filter((r) => isFinished(r) && r.passed === false), [examRows]);
+  const missedRows = useMemo(() => examRows.filter(isMissed), [examRows]);
+  const progressRows = useMemo(() => examRows.filter((r) => r.status === "in_progress"), [examRows]);
+  const finishedRows = useMemo(() => examRows.filter(isFinished), [examRows]);
+  const passRate = finishedRows.length ? Math.round((passedRows.length / finishedRows.length) * 100) : null;
 
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    const rank = (r: AttestResultRow) => (isFinished(r) ? 0 : r.status === "in_progress" ? 1 : r.status === "annulled" ? 3 : 2);
-    return scopedRows
+    const base =
+      bucket === "passed"
+        ? passedRows
+        : bucket === "failed"
+          ? failedRows
+          : bucket === "missed"
+            ? missedRows
+            : bucket === "progress"
+              ? progressRows
+              : examRows;
+    return base
       .filter((r) => {
-        if (examId !== "all" && r.examId !== examId) return false;
-        if (needle && !`${r.fullName} ${r.branchLabel || ""} ${r.phone || ""} ${r.examTitle}`.toLowerCase().includes(needle)) return false;
-        if (filter === "finished") return isFinished(r);
-        if (filter === "passed") return isFinished(r) && r.passed === true;
-        if (filter === "failed") return isFinished(r) && r.passed === false;
-        if (filter === "all") return true;
-        return r.status === filter;
+        if (!needle) return true;
+        return `${r.fullName} ${r.branchLabel || ""} ${r.phone || ""} ${r.examTitle}`.toLowerCase().includes(needle);
       })
-      .sort((a, b) => rank(a) - rank(b) || String(b.submittedAt || b.startedAt || "").localeCompare(String(a.submittedAt || a.startedAt || "")));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopedRows, examId, filter, search]);
+      .sort((a, b) => {
+        if (bucket === "missed") return a.fullName.localeCompare(b.fullName, "uz");
+        return String(b.submittedAt || b.startedAt || "").localeCompare(String(a.submittedAt || a.startedAt || ""));
+      });
+  }, [bucket, passedRows, failedRows, missedRows, progressRows, examRows, search]);
 
   const runExport = async (kind: "excel" | "pdf") => {
+    // To‘liq hisobot: filtrlangan bucket emas — tanlangan test/lavozimdagi hammasi
     const payload = {
-      track: scope === "all" ? ("stajyor" as AttestTrack) : scope,
-      trackLabel: scope === "all" ? "Barcha yo‘nalishlar" : scopedRows[0]?.trackLabel || "",
-      exams: scopedExams.map((e) => ({ id: e.id, title: e.title })),
-      stats: s,
-      rows,
+      track: scope,
+      trackLabel: active.data?.trackLabel || "",
+      exams: scopedExams
+        .filter((e) => examId === "all" || e.id === examId)
+        .map((e) => ({ id: e.id, title: e.title })),
+      stats: {
+        people: new Set(examRows.map((r) => r.userId)).size,
+        exams: examId === "all" ? scopedExams.length : 1,
+        rows: examRows.length,
+        notStarted: missedRows.length,
+        missed: missedRows.length,
+        inProgress: progressRows.length,
+        finished: finishedRows.length,
+        passed: passedRows.length,
+        failed: failedRows.length,
+        annulled: examRows.filter((r) => r.status === "annulled").length,
+        passRate,
+        avgScore: finishedRows.length
+          ? Math.round(finishedRows.reduce((a, r) => a + (r.score ?? 0), 0) / finishedRows.length)
+          : null,
+      },
+      rows: examRows,
     } as AttestResults;
     setExporting(kind);
     try {
       if (kind === "excel") await exportAttestResultsExcel(payload);
       else await exportAttestResultsPdf(payload);
-      toast({ title: "Fayl yuklandi" });
+      toast({ title: "Hisobot yuklandi", description: "O‘tgan / o‘tmagan / kirmagan — to‘liq" });
     } catch (e) {
       toast({ title: "Yuklab bo‘lmadi", description: e instanceof Error ? e.message : "", variant: "destructive" });
     } finally {
@@ -1082,123 +1243,253 @@ function ResultsBoard() {
   if (queries.some((q) => q.isLoading)) return <Skeleton className="h-64 rounded-3xl" />;
   const errQ = queries.find((q) => q.isError);
   if (errQ) {
-    return <p className="rounded-2xl bg-red-50 p-4 text-sm text-red-700 dark:bg-rose-500/10 dark:text-rose-300">{(errQ.error as Error)?.message || "Yuklanmadi"}</p>;
+    return (
+      <p className="rounded-2xl bg-red-50 p-4 text-sm text-red-700 dark:bg-rose-500/10 dark:text-rose-300">
+        {(errQ.error as Error)?.message || "Yuklanmadi"}
+      </p>
+    );
   }
+
+  const cards: Array<{
+    key: ResultBucket | "rate";
+    label: string;
+    value: string | number;
+    hint: string;
+    cls: string;
+    activeCls: string;
+  }> = [
+    {
+      key: "passed",
+      label: "O‘tganlar",
+      value: passedRows.length,
+      hint: "Ismlarni ko‘rish",
+      cls: "border-emerald-200 bg-emerald-50/80 dark:border-emerald-900/40 dark:bg-emerald-950/30",
+      activeCls: "ring-2 ring-emerald-500 border-emerald-500",
+    },
+    {
+      key: "failed",
+      label: "O‘tmaganlar",
+      value: failedRows.length,
+      hint: "Ismlarni ko‘rish",
+      cls: "border-rose-200 bg-rose-50/80 dark:border-rose-900/40 dark:bg-rose-950/30",
+      activeCls: "ring-2 ring-rose-500 border-rose-500",
+    },
+    {
+      key: "missed",
+      label: "Kirmaganlar",
+      value: missedRows.length,
+      hint: "Ismlarni ko‘rish",
+      cls: "border-amber-200 bg-amber-50/80 dark:border-amber-900/40 dark:bg-amber-950/30",
+      activeCls: "ring-2 ring-amber-500 border-amber-500",
+    },
+    {
+      key: "progress",
+      label: "Ishlayapti",
+      value: progressRows.length,
+      hint: "Hozir ochiq",
+      cls: "border-violet-200 bg-violet-50/80 dark:border-violet-900/40 dark:bg-violet-950/30",
+      activeCls: "ring-2 ring-violet-500 border-violet-500",
+    },
+    {
+      key: "rate",
+      label: "O‘tish foizi",
+      value: passRate != null ? `${passRate}%` : "—",
+      hint: "Tugatganlar ichida",
+      cls: "border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-white/5",
+      activeCls: "",
+    },
+  ];
+
+  const bucketTitle =
+    bucket === "passed"
+      ? "O‘tganlar"
+      : bucket === "failed"
+        ? "O‘tmaganlar"
+        : bucket === "missed"
+          ? "Kirmaganlar"
+          : bucket === "progress"
+            ? "Hozir ishlayapti"
+            : "Hammasi";
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1">
-          <h2 className="text-lg font-bold">Natijalar · barcha attestatsiyalar</h2>
+          <h2 className="text-lg font-bold">Natijalar</h2>
           <p className="text-xs text-muted-foreground">
-            Kim qaysi testni ishlagani: nechta savolga javob bergani (ishlagani), nechtasi to‘g‘ri, foizi va o‘tgan/o‘tmagani. 20 soniyada yangilanadi.
+            Kartani bosing — ism-familiyalar chiqadi. Excel/PDF — to‘liq hisobot (o‘tgan, o‘tmagan, kirmagan).
           </p>
         </div>
-        <Button size="sm" variant="outline" disabled={exporting !== null || !rows.length} onClick={() => void runExport("excel")}>
-          {exporting === "excel" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-700" />} Excel
+        <Button size="sm" variant="outline" disabled={exporting !== null || !examRows.length} onClick={() => void runExport("excel")}>
+          {exporting === "excel" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-700" />}{" "}
+          Excel hisobot
         </Button>
-        <Button size="sm" variant="outline" disabled={exporting !== null || !rows.length} onClick={() => void runExport("pdf")}>
+        <Button size="sm" variant="outline" disabled={exporting !== null || !examRows.length} onClick={() => void runExport("pdf")}>
           {exporting === "pdf" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5 text-rose-700" />} PDF
         </Button>
       </div>
 
-      <div className="flex flex-wrap gap-1.5">
-        {TRACK_FILTERS.map(([k, label]) => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => { setScope(k); setExamId("all"); }}
-            className={cn("rounded-full px-3 py-1.5 text-xs font-semibold", scope === k ? "bg-foreground text-background" : "bg-card text-muted-foreground ring-1 ring-border")}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
-        {[
-          ["Tugatgan", s.finished],
-          ["O‘tgan", s.passed],
-          ["O‘tmagan", s.failed],
-          ["Ishlayapti", s.inProgress],
-          ["Boshlamagan", s.notStarted],
-          ["Xodim", s.people],
-          ["O‘tish", s.passRate != null ? `${s.passRate}%` : "—"],
-          ["O‘rtacha", s.avgScore != null ? `${s.avgScore}%` : "—"],
-        ].map(([k, v]) => (
-          <div key={String(k)} className="rounded-2xl border border-border bg-card p-3 text-center">
-            <p className="text-lg font-bold tabular-nums">{v}</p>
-            <p className="text-[11px] text-muted-foreground">{k}</p>
-          </div>
-        ))}
+      <div className="grid grid-cols-3 gap-2">
+        {ATTESTATSIYA_TRACKS.map((t) => {
+          const q = queries.find((x) => x.data?.track === t.key);
+          const st = q?.data?.stats;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => {
+                setScope(t.key);
+                setExamId("all");
+                setBucket("passed");
+              }}
+              className={cn(
+                "rounded-2xl border p-3 text-left transition",
+                scope === t.key
+                  ? "border-sky-500 bg-sky-50 shadow-sm dark:bg-sky-950/40"
+                  : "border-slate-200 bg-white dark:border-white/10 dark:bg-slate-950",
+              )}
+            >
+              <p className="text-sm font-bold">{t.label}</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {st
+                  ? `${st.passed} o‘tdi · ${st.failed} o‘tmadi · ${st.missed ?? st.notStarted} kirmagan`
+                  : "—"}
+              </p>
+            </button>
+          );
+        })}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Input className="h-9 max-w-xs" placeholder="Xodim, telefon, filial…" value={search} onChange={(e) => setSearch(e.target.value)} />
         <select
-          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          className="h-10 min-w-[200px] flex-1 rounded-xl border border-input bg-background px-3 text-sm font-medium sm:max-w-md"
           value={examId}
-          onChange={(e) => setExamId(e.target.value === "all" ? "all" : Number(e.target.value))}
+          onChange={(e) => {
+            setExamId(e.target.value === "all" ? "all" : Number(e.target.value));
+            setBucket("passed");
+          }}
         >
           <option value="all">Barcha atestatsiyalar</option>
           {scopedExams.map((e) => (
-            <option key={e.id} value={e.id}>{e.title}</option>
+            <option key={e.id} value={e.id}>
+              {e.title}
+            </option>
           ))}
         </select>
-        {RESULT_FILTERS.map(([k, label]) => (
-          <button key={k} type="button" onClick={() => setFilter(k)} className={cn("rounded-full px-3 py-1 text-xs font-semibold", filter === k ? "bg-foreground text-background" : "bg-card text-muted-foreground ring-1 ring-border")}>
-            {label}
-          </button>
-        ))}
+        <Input
+          className="h-10 max-w-xs rounded-xl"
+          placeholder="Qidiruv: ism, telefon, filial…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        {cards.map((c) => {
+          const clickable = c.key !== "rate";
+          const active = clickable && bucket === c.key;
+          const Comp = clickable ? "button" : "div";
+          return (
+            <Comp
+              key={c.key}
+              type={clickable ? "button" : undefined}
+              onClick={
+                clickable
+                  ? () => setBucket(c.key as ResultBucket)
+                  : undefined
+              }
+              className={cn(
+                "rounded-2xl border p-3 text-left transition",
+                c.cls,
+                active && c.activeCls,
+                clickable && "cursor-pointer hover:shadow-sm",
+              )}
+            >
+              <p className="text-2xl font-extrabold tabular-nums tracking-tight">{c.value}</p>
+              <p className="mt-0.5 text-sm font-bold">{c.label}</p>
+              <p className="text-[11px] text-muted-foreground">{c.hint}</p>
+            </Comp>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold">
+          {bucketTitle}
+          <span className="ml-1.5 font-normal text-muted-foreground">· {rows.length} ta</span>
+        </p>
+        <button
+          type="button"
+          className={cn(
+            "rounded-full px-3 py-1 text-xs font-semibold",
+            bucket === "all" ? "bg-slate-800 text-white" : "bg-card text-muted-foreground ring-1 ring-border",
+          )}
+          onClick={() => setBucket("all")}
+        >
+          Hammasi · {examRows.length}
+        </button>
       </div>
 
       <div className="overflow-x-auto rounded-2xl border border-border bg-card">
-        <table className="w-full min-w-[860px] text-left text-xs">
+        <table className="w-full min-w-[920px] text-left text-xs">
           <thead className="bg-muted/60 text-[11px] uppercase text-muted-foreground">
             <tr>
-              {["Xodim", "Test", "Ishlagani", "To‘g‘ri", "Ball", "Holat", "Urinish", "Topshirgan"].map((h) => (
-                <th key={h} className="whitespace-nowrap px-3 py-2 font-semibold">{h}</th>
+              {["№", "Xodim", "Test", "Boshlagan", "Tugatgan", "Ball", "Holat", "Filial"].map((h) => (
+                <th key={h} className="whitespace-nowrap px-3 py-2.5 font-semibold">
+                  {h}
+                </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => {
-              const badge = resultStatusBadge(r);
+            {rows.map((r, i) => {
+              const badge = isMissed(r)
+                ? { label: "Kirmagan", cls: "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200" }
+                : resultStatusBadge(r);
               return (
-                <tr key={`${r.examId}-${r.userId}`} className="border-t border-border/70">
-                  <td className="px-3 py-2">
+                <tr key={`${r.examId}-${r.userId}`} className="border-t border-border/70 hover:bg-muted/30">
+                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground">{i + 1}</td>
+                  <td className="px-3 py-2.5">
                     <p className="font-semibold text-foreground">{r.fullName}</p>
-                    <p className="text-[10px] text-muted-foreground">{r.branchLabel || "Filialsiz"}{r.phone ? ` · ${r.phone}` : ""}</p>
+                    <p className="text-[10px] text-muted-foreground">{r.phone || "—"}</p>
                   </td>
-                  <td className="max-w-[200px] px-3 py-2">
-                    <p className="truncate font-medium" title={r.examTitle}>{r.examTitle}</p>
-                    <p className="text-[10px] text-muted-foreground">{r.trackLabel} · o‘tish {r.passScore}%</p>
+                  <td className="max-w-[200px] px-3 py-2.5">
+                    <p className="truncate font-medium" title={r.examTitle}>
+                      {r.examTitle}
+                    </p>
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 tabular-nums font-semibold">{r.answered}/{r.total}</td>
-                  <td className="whitespace-nowrap px-3 py-2 tabular-nums">{r.correct != null ? `${r.correct}/${r.total}` : "—"}</td>
-                  <td className="whitespace-nowrap px-3 py-2">
-                    <span className={cn("text-sm font-bold tabular-nums", r.passed ? "text-emerald-600 dark:text-emerald-400" : r.passed === false ? "text-rose-600 dark:text-rose-400" : "text-foreground")}>
+                  <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">{formatAttestDt(r.startedAt)}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">{formatAttestDt(r.submittedAt)}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5">
+                    <span
+                      className={cn(
+                        "text-sm font-bold tabular-nums",
+                        r.passed ? "text-emerald-600" : r.passed === false ? "text-rose-600" : "text-foreground",
+                      )}
+                    >
                       {r.score != null ? `${r.score}%` : "—"}
                     </span>
+                    {r.correct != null ? (
+                      <span className="ml-1 text-[10px] text-muted-foreground">
+                        ({r.correct}/{r.total})
+                      </span>
+                    ) : null}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2">
+                  <td className="whitespace-nowrap px-3 py-2.5">
                     <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", badge.cls)}>{badge.label}</span>
-                    {r.retakeAllowed ? <span className="ml-1 text-muted-foreground">· qayta</span> : null}
-                    {r.annulReason ? <p className="max-w-[140px] truncate font-normal text-muted-foreground" title={r.annulReason}>{r.annulReason}</p> : null}
                   </td>
-                  <td className="px-3 py-2 tabular-nums">{r.attemptsCount || "—"}</td>
-                  <td className="whitespace-nowrap px-3 py-2">{r.submittedAt ? formatAttestDt(r.submittedAt) : r.startedAt ? formatAttestDt(r.startedAt) : "—"}</td>
+                  <td className="px-3 py-2.5 text-muted-foreground">{r.branchLabel || "—"}</td>
                 </tr>
               );
             })}
           </tbody>
         </table>
-        {!rows.length ? <p className="py-8 text-center text-sm text-muted-foreground">Natija topilmadi</p> : null}
+        {!rows.length ? (
+          <p className="py-10 text-center text-sm text-muted-foreground">
+            Bu kartada hech kim yo‘q. Boshqa kartani bosing yoki testni «Barcha atestatsiyalar»ga qo‘ying.
+          </p>
+        ) : null}
       </div>
-      <p className="text-[11px] text-muted-foreground">
-        «Ishlagani» — nechta savolga javob bergani / jami savol. «To‘g‘ri» — to‘g‘ri javoblar soni. Excel/PDF da ham shu ustunlar bor.
-        Bitta testni «Atestatsiyalar»da ochsangiz — har bir xodimning har bir javobi ham ko‘rinadi.
-      </p>
     </div>
   );
 }
@@ -1242,8 +1533,8 @@ export default function AtestatsiyaAdminPage() {
   const counts = new Map((manage.data?.tracks ?? []).map((t) => [t.key, t]));
 
   const beginTrial = async (exam: AttestManageExam) => {
-    if (!exam.questions.length) {
-      toast({ title: "Testda savollar yo‘q", variant: "destructive" });
+    if (!(exam.poolCount > 0 || exam.questions.length)) {
+      toast({ title: "Bazada savol yo‘q", description: "Avval Test bazasiga savol kiriting.", variant: "destructive" });
       return;
     }
     setTryingId(exam.id);
@@ -1296,15 +1587,23 @@ export default function AtestatsiyaAdminPage() {
                 <BadgeCheck className="h-6 w-6" />
               </span>
               <div>
-                <h1 className="text-xl font-bold sm:text-2xl">Atestatsiya</h1>
+                <h1 className="text-xl font-bold sm:text-2xl">Atestatsiya e’lon qilish</h1>
                 <p className="mt-1 max-w-xl text-sm opacity-80">
-                  Muddat, avto davomiylik, har biriga nechta savol, tasodifiy tartib — natija foizi va Excel to‘liq.
+                  Tayyor bazadan test tuzing, kimga chiqishini belgilang va e’lon qiling. Savollar — alohida «Test bazasi»da.
                 </p>
               </div>
             </div>
-            <Link href="/atestatsiya" className="inline-flex h-10 items-center gap-2 rounded-xl bg-white/15 px-4 text-sm font-semibold ring-1 ring-white/25">
-              <Eye className="h-4 w-4" /> Xodim ko‘rinishi
-            </Link>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/admin/atestatsiya/baza"
+                className="inline-flex h-10 items-center gap-2 rounded-xl bg-white/15 px-4 text-sm font-semibold ring-1 ring-white/25"
+              >
+                <ClipboardList className="h-4 w-4" /> Test bazasi
+              </Link>
+              <Link href="/atestatsiya" className="inline-flex h-10 items-center gap-2 rounded-xl bg-white/15 px-4 text-sm font-semibold ring-1 ring-white/25">
+                <Eye className="h-4 w-4" /> Xodim ko‘rinishi
+              </Link>
+            </div>
           </div>
         </section>
 
@@ -1505,7 +1804,7 @@ export default function AtestatsiyaAdminPage() {
                           size="sm"
                           variant="outline"
                           className="h-9"
-                          disabled={tryingId === e.id || !e.questions.length}
+                          disabled={tryingId === e.id || !(e.poolCount > 0 || e.questions.length)}
                           onClick={() => void beginTrial(e)}
                         >
                           {tryingId === e.id ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-1 h-3.5 w-3.5" />}

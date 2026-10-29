@@ -28,6 +28,7 @@ import {
   scheduleWithOverride,
   type ScheduleOverride,
 } from "../lib/employee-schedule-override";
+import { isHiddenFromDavomat } from "../lib/roles";
 
 async function overridesForRows(rows: Array<{ empId: number; workDate: string }>): Promise<Map<number, ScheduleOverride[]>> {
   if (!rows.length) return new Map();
@@ -155,6 +156,7 @@ export async function remindShiftStart15Min(): Promise<number> {
   for (const e of linked) {
     if (!e.userId) continue;
     const role = roles.get(e.userId) || "";
+    if (isHiddenFromDavomat(role)) continue;
     if (
       isScheduledRestDay(ymd, {
         employeeId: e.empId,
@@ -232,6 +234,7 @@ export async function remindCheckoutOneHourBefore(): Promise<number> {
   for (const r of open) {
     if (!r.userId || !r.checkInAt) continue;
     const role = roles.get(r.userId) || "";
+    if (isHiddenFromDavomat(role)) continue;
     const planType = await dayPlanShiftType(r.empId, r.workDate);
     const shiftType = planType || r.shiftType;
     const shiftLabel = planType ? null : r.shiftLabel;
@@ -325,6 +328,7 @@ export async function autoCloseMissedCheckoutSilent(): Promise<{ closed: number 
   for (const r of open) {
     if (!r.userId || !r.checkInAt) continue;
     const role = roles.get(r.userId) || "";
+    if (isHiddenFromDavomat(role)) continue;
     const planType = await dayPlanShiftType(r.empId, r.workDate);
     const shiftType = planType || r.shiftType;
     const shiftLabel = planType ? null : r.shiftLabel;

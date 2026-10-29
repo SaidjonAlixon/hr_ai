@@ -132,34 +132,57 @@ export function isTaskAuditViewer(role?: string | null) {
   return TASK_AUDIT_BROWSE_ROLES.has(normalizeUserRole(role));
 }
 
+/** Nazoratchi belgilash — faqat asoschi va korxona direktori */
+export function canAssignTaskSupervisor(role?: string | null) {
+  return isDirectorRole(role);
+}
+
+export function isTaskSupervisor(
+  task: Pick<Vazifa, "meta">,
+  userId?: number | null,
+) {
+  if (!userId) return false;
+  const sid = Number(
+    (task.meta as { supervisorUserId?: number | null } | null | undefined)
+      ?.supervisorUserId,
+  );
+  return Number.isFinite(sid) && sid > 0 && sid === userId;
+}
+
 /**
  * To‘liq tahrirlash (forma, mas’ulni o‘zgartirish):
  * - admin, director — barcha
- * - qolganlar (shu jumladan hr_direktor / hr_auditor) — faqat o‘zi yaratganini tahrirlaydi
+ * - beruvchi yoki nazoratchi — o‘z vazifasi
  */
 export function canManageTaskUi(
-  task: Pick<Vazifa, "createdById">,
+  task: Pick<Vazifa, "createdById" | "meta">,
   userId?: number | null,
   role?: string | null,
 ) {
   if (!userId) return false;
   if (isTaskAdmin(role) || isTaskDirector(role)) return true;
-  return task.createdById === userId;
+  return task.createdById === userId || isTaskSupervisor(task, userId);
 }
 
 export function canApproveTaskUi(
-  task: Pick<Vazifa, "createdById">,
+  task: Pick<Vazifa, "createdById" | "meta">,
   userId?: number | null,
   role?: string | null,
 ) {
   if (!userId) return false;
-  return task.createdById === userId || isTaskAdmin(role) || isTaskDirector(role);
+  return (
+    task.createdById === userId ||
+    isTaskSupervisor(task, userId) ||
+    isTaskAdmin(role) ||
+    isTaskDirector(role)
+  );
 }
 
 /**
  * O‘chirish:
  * - sof admin — ko‘rinadigan hammasi
  * - boshqalar — faqat o‘zi yaratgan (qo‘ygan) vazifa
+ * - nazoratchi o‘chira olmaydi
  */
 export function canDeleteTaskUi(
   task: Pick<Vazifa, "createdById">,

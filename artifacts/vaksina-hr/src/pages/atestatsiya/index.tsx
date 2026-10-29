@@ -5,8 +5,11 @@ import {
   BadgeCheck,
   Building2,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Eye,
+  FileDown,
   ListChecks,
   Loader2,
   MapPin,
@@ -37,8 +40,75 @@ import {
   useStartAttest,
   type AttestExamCard,
   type AttestLearnerAttempt,
+  type AttestReviewItem,
   type AttestTrack,
 } from "@/lib/atestatsiya-api";
+
+function printAttemptReview(attempt: AttestLearnerAttempt, examTitle?: string) {
+  const items = attempt.review || [];
+  const title = examTitle || attempt.examTitle || "Atestatsiya natijasi";
+  const rows = items
+    .map(
+      (it) => `
+      <div style="margin:10px 0;padding:12px;border-radius:12px;border:1px solid ${it.ok ? "#a7f3d0" : "#fecdd3"};background:${it.ok ? "#ecfdf5" : "#fff1f2"}">
+        <div style="font-weight:700;margin-bottom:6px">${it.number}. ${escapeHtml(it.question)}</div>
+        <div style="font-size:13px;margin-bottom:4px"><b>Sizning javobingiz:</b> ${escapeHtml(it.chosenText)} ${it.ok ? "✓" : "✗"}</div>
+        ${it.ok ? "" : `<div style="font-size:13px"><b>To‘g‘ri javob:</b> ${escapeHtml(it.correctText)}</div>`}
+      </div>`,
+    )
+    .join("");
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${escapeHtml(title)}</title>
+    <style>body{font-family:system-ui,sans-serif;padding:24px;color:#0f172a;max-width:800px;margin:0 auto}
+    h1{font-size:20px;margin:0 0 8px} .meta{color:#64748b;font-size:13px;margin-bottom:16px}</style></head><body>
+    <h1>${escapeHtml(title)}</h1>
+    <div class="meta">Ball: ${attempt.score ?? "—"}% · To‘g‘ri: ${attempt.correct ?? "—"}/${attempt.total} · ${attempt.passed ? "O‘tdi" : "O‘tmadi"} · ${formatAttestDt(attempt.submittedAt)}</div>
+    ${rows || "<p>Tahlil yo‘q</p>"}
+    <script>window.onload=function(){window.print()}<\/script>
+    </body></html>`;
+  const w = window.open("", "_blank", "noopener,noreferrer,width=900,height=700");
+  if (!w) return;
+  w.document.write(html);
+  w.document.close();
+}
+
+function escapeHtml(s: string) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function ReviewList({ items }: { items: AttestReviewItem[] }) {
+  return (
+    <div className="mt-3 space-y-2">
+      {items.map((it) => (
+        <div
+          key={`${it.questionId}-${it.number}`}
+          className={cn(
+            "rounded-2xl border px-3 py-2.5 text-sm",
+            it.ok
+              ? "border-emerald-200 bg-emerald-50/90 dark:border-emerald-900/40 dark:bg-emerald-950/40"
+              : "border-rose-200 bg-rose-50/90 dark:border-rose-900/40 dark:bg-rose-950/40",
+          )}
+        >
+          <p className="font-semibold text-foreground">
+            <span className={cn("mr-1.5", it.ok ? "text-emerald-600" : "text-rose-600")}>{it.ok ? "✓" : "✗"}</span>
+            {it.number}. {it.question}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Sizning javobingiz: <span className="font-semibold text-foreground">{it.chosenText}</span>
+          </p>
+          {!it.ok ? (
+            <p className="mt-0.5 text-xs text-emerald-800 dark:text-emerald-300">
+              To‘g‘ri javob: <span className="font-semibold">{it.correctText}</span>
+            </p>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function useCountdown(deadlineIso: string | null, serverNow: string | null) {
   const offset = useMemo(() => (serverNow ? Date.now() - new Date(serverNow).getTime() : 0), [serverNow]);
@@ -418,10 +488,15 @@ function durationLabel(min: number): string {
 function ResultBanner({
   attempt,
   canRetake,
+  examTitle,
 }: {
   attempt: AttestLearnerAttempt;
   canRetake?: boolean;
+  examTitle?: string;
 }) {
+  const [open, setOpen] = useState(false);
+  const review = attempt.review || [];
+
   if (attempt.status === "annulled") {
     return (
       <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
@@ -457,41 +532,70 @@ function ResultBanner({
   }
   if (attempt.score == null) return null;
   const ok = attempt.passed;
+  const wrong = review.filter((x) => !x.ok).length;
+  const right = review.filter((x) => x.ok).length;
   return (
     <div
       className={cn(
-        "flex items-center gap-3 rounded-2xl border px-4 py-3",
+        "rounded-2xl border px-4 py-3",
         ok
           ? "border-emerald-200 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-500/10"
           : "border-rose-200 bg-rose-50 dark:border-rose-500/30 dark:bg-rose-500/10",
       )}
     >
-      {ok ? (
-        <CheckCircle2 className="h-8 w-8 shrink-0 text-emerald-600 dark:text-emerald-400" />
-      ) : (
-        <XCircle className="h-8 w-8 shrink-0 text-rose-600 dark:text-rose-400" />
-      )}
-      <div className="min-w-0 text-sm">
-        <p
-          className={cn(
-            "text-base font-extrabold uppercase tracking-wide",
-            ok ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300",
-          )}
-        >
-          {ok ? "✓ O‘tdingiz" : "✗ O‘tolmadingiz"}
-        </p>
-        <p className="mt-0.5 font-semibold text-foreground">
-          Ball: {attempt.score}%{attempt.correct != null ? ` · To‘g‘ri: ${attempt.correct}/${attempt.total}` : ""}
-        </p>
-        <p className="text-muted-foreground">
-          {attempt.status === "expired" ? "Vaqt tugagach yopildi. " : ""}
-          {canRetake && !ok
-            ? "Qayta topshirishingiz mumkin — pastdagi tugmani bosing."
-            : attempt.retakeAllowed
-              ? "Qayta topshirishga ruxsat berilgan."
-              : ATTEST_STATUS_LABEL[attempt.status]}
-        </p>
+      <div className="flex items-start gap-3">
+        {ok ? (
+          <CheckCircle2 className="mt-0.5 h-8 w-8 shrink-0 text-emerald-600 dark:text-emerald-400" />
+        ) : (
+          <XCircle className="mt-0.5 h-8 w-8 shrink-0 text-rose-600 dark:text-rose-400" />
+        )}
+        <div className="min-w-0 flex-1 text-sm">
+          <p
+            className={cn(
+              "text-base font-extrabold uppercase tracking-wide",
+              ok ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300",
+            )}
+          >
+            {ok ? "✓ O‘tdingiz" : "✗ O‘tolmadingiz"}
+          </p>
+          <p className="mt-0.5 font-semibold text-foreground">
+            Ball: {attempt.score}%{attempt.correct != null ? ` · To‘g‘ri: ${attempt.correct}/${attempt.total}` : ""}
+            {review.length ? ` · ${right} to‘g‘ri · ${wrong} xato` : ""}
+          </p>
+          <p className="text-muted-foreground">
+            {attempt.status === "expired" ? "Vaqt tugagach yopildi. " : ""}
+            {canRetake && !ok
+              ? "Qayta topshirishingiz mumkin — pastdagi tugmani bosing."
+              : attempt.retakeAllowed
+                ? "Qayta topshirishga ruxsat berilgan."
+                : ATTEST_STATUS_LABEL[attempt.status]}
+          </p>
+          {review.length ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 bg-white/80 dark:bg-slate-950/50"
+                onClick={() => setOpen((v) => !v)}
+              >
+                {open ? <ChevronUp className="mr-1 h-3.5 w-3.5" /> : <ChevronDown className="mr-1 h-3.5 w-3.5" />}
+                {open ? "Yopish" : "Savollarni ko‘rish"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 bg-white/80 dark:bg-slate-950/50"
+                onClick={() => printAttemptReview(attempt, examTitle)}
+              >
+                <FileDown className="mr-1 h-3.5 w-3.5" /> PDF / chop etish
+              </Button>
+            </div>
+          ) : null}
+        </div>
       </div>
+      {open && review.length ? <ReviewList items={review} /> : null}
     </div>
   );
 }
@@ -789,6 +893,7 @@ export default function AtestatsiyaPage() {
                 {exam.attempt ? (
                   <ResultBanner
                     attempt={exam.attempt}
+                    examTitle={exam.title}
                     canRetake={Boolean(exam.canStart && !exam.canResume && exam.attempt.passed !== true)}
                   />
                 ) : !data.preview ? (

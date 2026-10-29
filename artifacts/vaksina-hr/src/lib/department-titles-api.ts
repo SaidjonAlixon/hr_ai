@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export type DepartmentJobTitle = {
   id: number;
-  departmentId: number;
+  /** null = hech qaysi bo‘limga bog‘lanmagan umumiy lavozim/rol */
+  departmentId: number | null;
   title: string;
   sortOrder: number;
   active: boolean;
@@ -26,6 +27,16 @@ export const TITLE_SUGGESTIONS = [
   "Menejer",
   "Operator",
   "Stajyor",
+];
+
+export const GLOBAL_TITLE_SUGGESTIONS = [
+  "Direktor",
+  "Direktor o‘rinbosari",
+  "HR menejer",
+  "Trener",
+  "Koordinator",
+  "Haydovchi",
+  "Omborchi",
 ];
 
 const KEY = ["department-job-titles"] as const;
@@ -74,14 +85,34 @@ export function useAddDepartmentTitle() {
   });
 }
 
+/** Bo‘limga bog‘lanmagan umumiy lavozim/rol */
+export function useAddGlobalJobTitle() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (p: { title: string }) =>
+      json<{ ok: boolean; reactivated?: boolean }>("/api/job-titles", {
+        method: "POST",
+        body: JSON.stringify({ title: p.title }),
+      }),
+    onSuccess: invalidate,
+  });
+}
+
 export function useUpdateDepartmentTitle() {
   const invalidate = useInvalidate();
   return useMutation({
-    mutationFn: (p: { departmentId: number; id: number; title?: string; active?: boolean }) =>
-      json<{ ok: boolean }>(`/api/departments/${p.departmentId}/job-titles/${p.id}`, {
+    mutationFn: (p: { departmentId: number | null; id: number; title?: string; active?: boolean }) => {
+      if (p.departmentId == null) {
+        return json<{ ok: boolean }>(`/api/job-titles/${p.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ title: p.title, active: p.active }),
+        });
+      }
+      return json<{ ok: boolean }>(`/api/departments/${p.departmentId}/job-titles/${p.id}`, {
         method: "PATCH",
         body: JSON.stringify({ title: p.title, active: p.active }),
-      }),
+      });
+    },
     onSuccess: invalidate,
   });
 }
@@ -89,11 +120,17 @@ export function useUpdateDepartmentTitle() {
 export function useRemoveDepartmentTitle() {
   const invalidate = useInvalidate();
   return useMutation({
-    mutationFn: (p: { departmentId: number; id: number }) =>
-      json<{ ok: boolean; deleted?: boolean; deactivated?: boolean; staff?: number }>(
+    mutationFn: (p: { departmentId: number | null; id: number }) => {
+      if (p.departmentId == null) {
+        return json<{ ok: boolean; deleted?: boolean; deactivated?: boolean; staff?: number }>(`/api/job-titles/${p.id}`, {
+          method: "DELETE",
+        });
+      }
+      return json<{ ok: boolean; deleted?: boolean; deactivated?: boolean; staff?: number }>(
         `/api/departments/${p.departmentId}/job-titles/${p.id}`,
         { method: "DELETE" },
-      ),
+      );
+    },
     onSuccess: invalidate,
   });
 }

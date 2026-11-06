@@ -148,8 +148,8 @@ export function canMarkDavomatExcuse(
   return isBoshAdmin({ role: roleOrUser as string | null | undefined, login });
 }
 
-/** Davomat xatoliklar — faqat admin va asoschi. Korxona direktori ko‘rmaydi. */
-export function canViewDavomatXatoliklar(role?: string | null): boolean {
+/** Ulanganlar (Telegram bot) — faqat admin va asoschi. Korxona direktori ko‘rmaydi. */
+export function canViewUlanganlar(role?: string | null): boolean {
   const r = (role ?? "").trim().toLowerCase();
   return r === "admin" || r === "asoschi";
 }
@@ -172,6 +172,7 @@ export const DEPT_HEAD_ROLES = [
   "ombor_rahbar",
   "oshpaz_rahbar",
   "marketing_rahbar",
+  "qurulish_rahbar",
 ] as const;
 
 export function isDeptHeadRole(role?: string | null): boolean {
@@ -418,10 +419,10 @@ export const STUDENT_ROLE = "oquvchi";
 export const NON_STAFF_ROLES = ["admin", STUDENT_ROLE] as const;
 
 /**
- * Davomat doskasi / hisobot / analitika / e’lonlarda ko‘rinmaydi.
+ * Davomat doskasi / hisobot / analitika / e’lonlarda ko‘rinmaydi (sonlarda ham yo‘q).
  * Tizimda (login, menyu, vazifa…) to‘liq ishlayveradi.
  */
-export const DAVOMAT_HIDDEN_ROLES = ["asoschi"] as const;
+export const DAVOMAT_HIDDEN_ROLES = ["asoschi", "direktor_yordamchisi", "broker"] as const;
 
 export function isHiddenFromDavomat(role?: string | null): boolean {
   const r = (role ?? "").trim().toLowerCase();

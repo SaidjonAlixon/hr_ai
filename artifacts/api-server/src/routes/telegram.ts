@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { Router, type IRouter } from "express";
 import express from "express";
 import { and, asc, eq, gt, isNotNull, ne, sql } from "drizzle-orm";
@@ -10,7 +11,7 @@ import {
 } from "@workspace/db";
 import { setTelegramSessionCookie } from "../lib/session";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
-import { canManageSettings } from "../lib/roles";
+import { canManageSettings, canViewUlanganlar, NON_STAFF_ROLES } from "../lib/roles";
 import { formatPersonName } from "../lib/person-name";
 import { completeEnforcedDeviceLogin, shouldEnforceDeviceLogin } from "../lib/device-login";
 import { clientIp, writeLoginAudit } from "../lib/device-security";
@@ -42,6 +43,9 @@ import {
 } from "../lib/telegram-support";
 import { handleAiAssistantMessage, handleAiGroupGate, registerBusinessConnection } from "../lib/ai-assistant";
 import { isReportChat, observeGroupMessage } from "../lib/telegram-report-group";
+import { isOfisStaffEmp } from "../lib/ofis-weekend";
+import { logger } from "../lib/logger";
+import { rateLimitAllow } from "../lib/rate-limit";
 
 const router: IRouter = Router();
 const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
@@ -68,6 +72,9 @@ async function ensureTelegramSchema() {
         ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_id text
       `);
       await db.execute(sql`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_linked_at timestamptz
+      `);
+      await db.execute(sql`
         CREATE TABLE IF NOT EXISTS telegram_auth_tokens (
           id serial PRIMARY KEY,
           token text NOT NULL UNIQUE,
@@ -84,6 +91,24 @@ async function ensureTelegramSchema() {
       `);
       await db.execute(sql`
         CREATE INDEX IF NOT EXISTS telegram_auth_tokens_tg_idx ON telegram_auth_tokens (telegram_user_id)
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS telegram_link_tokens (
+          token text PRIMARY KEY,
+          user_id integer NOT NULL,
+          expires_at timestamptz NOT NULL,
+          used_at timestamptz,
+          created_at timestamptz NOT NULL DEFAULT now()
+        )
+      `);
+      await db.execute(sql`
+        CREATE INDEX IF NOT EXISTS telegram_link_tokens_user_idx ON telegram_link_tokens (user_id)
+      `);
+      await db.execute(sql`
+        ALTER TABLE telegram_link_tokens ADD COLUMN IF NOT EXISTS code text
+      `);
+      await db.execute(sql`
+        CREATE INDEX IF NOT EXISTS telegram_link_tokens_code_idx ON telegram_link_tokens (code) WHERE used_at IS NULL
       `);
     })().catch((err) => {
       telegramSchemaReady = null;
@@ -137,6 +162,8 @@ async function linkTelegram(userId: number, telegramUserId: string) {
     .update(usersTable)
     .set({ telegramId: telegramUserId })
     .where(eq(usersTable.id, userId));
+  await ensureTelegramSchema();
+  await db.execute(sql`UPDATE users SET telegram_linked_at = now() WHERE id = ${userId}`);
 }
 
 async function unlinkTelegram(telegramUserId: string) {
@@ -144,6 +171,78 @@ async function unlinkTelegram(telegramUserId: string) {
     .update(usersTable)
     .set({ telegramId: null })
     .where(eq(usersTable.telegramId, telegramUserId));
+}
+
+type UlanganCategory = "ofis" | "dorixona" | "boshqa";
+
+const PHARMACY_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor"]);
+
+function ulanganCategory(role: string, orgRole: string | null, position: string | null): UlanganCategory {
+  if (PHARMACY_USER_ROLES.has(role) || orgRole === "manager" || orgRole === "pharmacist" || orgRole === "intern") {
+    return "dorixona";
+  }
+  if (isOfisStaffEmp({ userRole: role, orgRole, position })) return "ofis";
+  return "boshqa";
+}
+
+type UlanganRow = {
+  id: number;
+  fullName: string;
+  login: string;
+  role: string;
+  roleLabel: string;
+  phone: string | null;
+  status: string;
+  department: string | null;
+  position: string | null;
+  branch: string | null;
+  category: UlanganCategory;
+  linked: boolean;
+  telegramId: string | null;
+  linkedAt: string | null;
+};
+
+async function loadUlanganlar(): Promise<UlanganRow[]> {
+  await ensureTelegramSchema();
+  const result = await db.execute(sql`
+    SELECT u.id, u.full_name, u.login, u.role, u.phone, u.status, u.telegram_id, u.telegram_linked_at,
+           d.name AS department, e.position, e.org_role,
+           COALESCE(NULLIF(TRIM(b.location), ''), NULLIF(TRIM(e.location), '')) AS branch
+      FROM users u
+      LEFT JOIN departments d ON d.id = u.department_id
+      LEFT JOIN LATERAL (
+        SELECT position, org_role, location, assigned_branch_id
+          FROM employees WHERE user_id = u.id ORDER BY id LIMIT 1
+      ) e ON true
+      LEFT JOIN employees b ON b.id = e.assigned_branch_id
+     WHERE u.status IN ('active', 'on_leave')
+       AND u.role NOT IN (${sql.join(NON_STAFF_ROLES.map((r) => sql`${r}`), sql`, `)})
+     ORDER BY u.full_name
+  `);
+  const rows = (Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows ?? [])) as Array<
+    Record<string, unknown>
+  >;
+  return rows.map((r) => {
+    const role = String(r.role ?? "");
+    const telegramId = String(r.telegram_id ?? "").trim() || null;
+    const linkedAt = r.telegram_linked_at ? new Date(String(r.telegram_linked_at)).toISOString() : null;
+    return {
+      id: Number(r.id),
+      fullName: formatPersonName(String(r.full_name ?? "")),
+      login: String(r.login ?? ""),
+      role,
+      roleLabel: ROLE_LABEL_UZ[role] || role,
+      phone: (r.phone as string | null) ?? null,
+      status: String(r.status ?? ""),
+      department: (r.department as string | null) ?? null,
+      position: (r.position as string | null) ?? null,
+      branch: (r.branch as string | null) ?? null,
+      category: ulanganCategory(role, (r.org_role as string | null) ?? null, (r.position as string | null) ?? null),
+      linked: Boolean(telegramId),
+      telegramId,
+      linkedAt: telegramId ? linkedAt : null,
+    };
+  });
 }
 
 async function createMiniToken(opts: {
@@ -228,7 +327,10 @@ function welcomeText(name?: string): string {
     `👋 <b>Xush kelibsiz${greet}!</b>`,
     ``,
     `VAKSINA MED HR Telegram botiga hush kelibsiz.`,
-    `Davom etish uchun <b>login</b> va <b>parol</b>ni yuboring.`,
+    ``,
+    `🔗 <b>Eng oson yo‘l:</b> platformada <b>Botga ulanish</b> tugmasini bosing va chiqqan <b>6 xonali kodni</b> shu yerga yuboring.`,
+    ``,
+    `Yoki <b>login</b> va <b>parol</b>ni yuboring.`,
     ``,
     `<b>Namuna (1 qator):</b>`,
     `<code>farmasevt1 pass123</code>`,
@@ -468,7 +570,100 @@ async function sendDavomatMiniApp(
   });
 }
 
-async function handleStart(chatId: number, fromId: number, firstName?: string) {
+const LINK_TOKEN_TTL_MS = 30 * 60_000;
+const LINK_PAYLOAD_PREFIX = "link_";
+
+const LINK_CODE_RE = /^\d{6}$/;
+
+/**
+ * Platformadagi «Botga ulanish»: t.me/<bot>?start=link_<token> yoki 6 xonali kod.
+ * Kod — chat oldindan ochiq bo‘lsa Telegram start payload ni yubormasligi uchun zaxira.
+ */
+async function handleLinkStart(
+  chatId: number,
+  fromId: number,
+  key: { token: string } | { code: string },
+): Promise<boolean> {
+  if ("token" in key && !/^[a-f0-9]{32}$/.test(key.token)) return false;
+  if ("code" in key) {
+    if (!LINK_CODE_RE.test(key.code)) return false;
+    if (!rateLimitAllow(`tg-link-code:${fromId}`, 8, 10 * 60_000)) {
+      await sendMessage(chatId, "⏳ Juda ko‘p urinish. 10 daqiqadan keyin qayta yuboring.");
+      return true;
+    }
+  }
+  await ensureTelegramSchema();
+  const claimed =
+    "token" in key
+      ? await db.execute(sql`
+          UPDATE telegram_link_tokens SET used_at = now()
+           WHERE token = ${key.token} AND used_at IS NULL AND expires_at > now()
+           RETURNING user_id
+        `)
+      : await db.execute(sql`
+          UPDATE telegram_link_tokens SET used_at = now()
+           WHERE code = ${key.code} AND used_at IS NULL AND expires_at > now()
+           RETURNING user_id
+        `);
+  const rows = (
+    Array.isArray(claimed) ? claimed : ((claimed as { rows?: unknown[] }).rows ?? [])
+  ) as Array<{ user_id?: number }>;
+  const userId = Number(rows[0]?.user_id);
+  logger.info(
+    { event: "telegram_link", via: "token" in key ? "deeplink" : "code", ok: userId > 0, fromId },
+    "telegram link attempt",
+  );
+  if (!Number.isFinite(userId) || userId <= 0) {
+    await sendMessage(
+      chatId,
+      "code" in key
+        ? "❌ Kod noto‘g‘ri yoki eskirgan.\nPlatformada <b>Botga ulanish</b> tugmasini qayta bosing va yangi kodni yuboring."
+        : "⌛ Ulash havolasi eskirgan yoki ishlatilgan.\nPlatformada <b>Botga ulanish</b> tugmasini qayta bosing.",
+      { parse_mode: "HTML" },
+    );
+    return true;
+  }
+  const user = await getUserWithDept(userId);
+  if (!user || !canSignIn(user.status)) {
+    await sendMessage(chatId, `⛔ ${statusBlockMessage(user?.status)}`);
+    return true;
+  }
+  await linkTelegram(user.id, String(fromId));
+  await sendMessage(
+    chatId,
+    [
+      `🎉 <b>Akkaunt botga ulandi!</b>`,
+      ``,
+      `👤 ${escapeHtml(user.fullName)}`,
+      ``,
+      `Endi topshiriqlar, davomat, eslatmalar va barcha muhim holatlar shu yerga keladi.`,
+    ].join("\n"),
+    { parse_mode: "HTML" },
+  );
+  await sendLoggedInCard(chatId, { ...user, telegramId: String(fromId) }, String(fromId));
+  return true;
+}
+
+let cachedBotUsername: string | null = null;
+async function botUsername(): Promise<string> {
+  if (cachedBotUsername) return cachedBotUsername;
+  try {
+    const me = await getMe();
+    if (me?.username) cachedBotUsername = me.username;
+  } catch {
+    /* fallback */
+  }
+  return cachedBotUsername || "vaksinahrbot";
+}
+
+async function handleStart(chatId: number, fromId: number, firstName?: string, payload = "") {
+  logger.info({ event: "telegram_start", fromId, payload: payload ? payload.slice(0, 5) : null }, "telegram /start");
+  if (payload.startsWith(LINK_PAYLOAD_PREFIX)) {
+    if (await handleLinkStart(chatId, fromId, { token: payload.slice(LINK_PAYLOAD_PREFIX.length) })) return;
+  }
+  if (LINK_CODE_RE.test(payload)) {
+    if (await handleLinkStart(chatId, fromId, { code: payload })) return;
+  }
   const linked = await findUserByTelegramId(String(fromId));
   if (linked && canSignIn(linked.status)) {
     await sendMessage(
@@ -629,7 +824,7 @@ async function handleUpdate(update: TelegramUpdate) {
   const text = msg.text.trim();
 
   if (text === "/start" || text.startsWith("/start ")) {
-    await handleStart(chatId, fromId, msg.from.first_name);
+    await handleStart(chatId, fromId, msg.from.first_name, text.slice(6).trim());
     return;
   }
   if (text === "/yordam" || text === "/help") {
@@ -668,6 +863,11 @@ async function handleUpdate(update: TelegramUpdate) {
     await unlinkTelegram(String(fromId));
     await sendMessage(chatId, "🚪 Chiqildi. Qayta kirish: /start");
     return;
+  }
+
+  const maybeCode = text.replace(/[\s-]/g, "");
+  if (LINK_CODE_RE.test(maybeCode)) {
+    if (await handleLinkStart(chatId, fromId, { code: maybeCode })) return;
   }
 
   const creds = parseLoginPassword(text);
@@ -907,6 +1107,168 @@ router.post(
     }
   },
 );
+
+/** Joriy akkaunt botga ulanganmi — ofis xodimlariga banner ko‘rsatish uchun */
+router.get("/telegram/link-status", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const [u] = await db
+      .select({ role: usersTable.role, telegramId: usersTable.telegramId })
+      .from(usersTable)
+      .where(eq(usersTable.id, req.userId!))
+      .limit(1);
+    const linked = Boolean(u?.telegramId?.trim());
+    const office = isOfisStaffEmp({ userRole: u?.role });
+    res.json({
+      linked,
+      office,
+      show: isTelegramConfigured() && office && !linked,
+      botUsername: await botUsername(),
+    });
+  } catch (err) {
+    console.error("GET /telegram/link-status:", err);
+    res.status(503).json({ error: "Holat yuklanmadi" });
+  }
+});
+
+/** Bir martalik ulash havolasi — bot /start link_<token> orqali akkauntni bog‘laydi */
+router.post("/telegram/link-token", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    if (!isTelegramConfigured()) {
+      res.status(503).json({ error: "Telegram bot sozlanmagan" });
+      return;
+    }
+    await ensureTelegramSchema();
+    const userId = req.userId!;
+    const token = crypto.randomBytes(16).toString("hex");
+    const expiresAt = new Date(Date.now() + LINK_TOKEN_TTL_MS);
+    await db.execute(sql`
+      DELETE FROM telegram_link_tokens
+       WHERE used_at IS NOT NULL OR expires_at < now() OR (user_id = ${userId} AND used_at IS NULL)
+    `);
+    let code = "";
+    for (let i = 0; i < 8 && !code; i++) {
+      const candidate = String(crypto.randomInt(100_000, 1_000_000));
+      const taken = await db.execute(sql`
+        SELECT 1 FROM telegram_link_tokens WHERE code = ${candidate} AND used_at IS NULL AND expires_at > now() LIMIT 1
+      `);
+      const takenRows = Array.isArray(taken) ? taken : ((taken as { rows?: unknown[] }).rows ?? []);
+      if (!takenRows.length) code = candidate;
+    }
+    if (!code) throw new Error("Kod yaratilmadi");
+    await db.execute(sql`
+      INSERT INTO telegram_link_tokens (token, user_id, expires_at, code)
+      VALUES (${token}, ${userId}, ${expiresAt}, ${code})
+    `);
+    const username = await botUsername();
+    const payload = `${LINK_PAYLOAD_PREFIX}${token}`;
+    res.json({
+      url: `https://t.me/${username}?start=${payload}`,
+      appUrl: `tg://resolve?domain=${username}&start=${payload}`,
+      botUrl: `https://t.me/${username}`,
+      botUsername: username,
+      code,
+      expiresAt: expiresAt.toISOString(),
+    });
+  } catch (err) {
+    console.error("POST /telegram/link-token:", err);
+    res.status(503).json({ error: "Havola yaratilmadi" });
+  }
+});
+
+const CATEGORY_LABEL: Record<UlanganCategory, string> = { ofis: "Ofis", dorixona: "Dorixona", boshqa: "Boshqa" };
+
+/** Ulanganlar — botga ulangan / ulanmagan xodimlar (admin, asoschi) */
+router.get("/telegram/ulanganlar", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canViewUlanganlar(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
+  try {
+    const items = await loadUlanganlar();
+    const bucket = () => ({ total: 0, linked: 0 });
+    const byCategory = { ofis: bucket(), dorixona: bucket(), boshqa: bucket() };
+    for (const it of items) {
+      byCategory[it.category].total += 1;
+      if (it.linked) byCategory[it.category].linked += 1;
+    }
+    const linked = items.filter((i) => i.linked).length;
+    res.json({
+      generatedAt: new Date().toISOString(),
+      botUsername: await botUsername(),
+      totals: { all: items.length, linked, unlinked: items.length - linked, byCategory },
+      items,
+    });
+  } catch (err) {
+    console.error("GET /telegram/ulanganlar:", err);
+    res.status(503).json({ error: "Ro‘yxat yuklanmadi" });
+  }
+});
+
+/** Ulanganlar — Excel (ikki varaq: Ulanganlar / Ulanmaganlar) */
+router.get("/telegram/ulanganlar/export", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canViewUlanganlar(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
+  try {
+    const cat = String(req.query.category || "");
+    const items = (await loadUlanganlar()).filter((i) => !cat || cat === "all" || i.category === cat);
+    const wb = new ExcelJS.Workbook();
+    const fmt = (iso: string | null) =>
+      iso
+        ? new Intl.DateTimeFormat("uz-UZ", {
+            timeZone: "Asia/Tashkent",
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          }).format(new Date(iso))
+        : "";
+    for (const [title, list] of [
+      ["Ulanganlar", items.filter((i) => i.linked)],
+      ["Ulanmaganlar", items.filter((i) => !i.linked)],
+    ] as const) {
+      const ws = wb.addWorksheet(title);
+      ws.columns = [
+        { header: "№", key: "n", width: 6 },
+        { header: "F.I.Sh.", key: "name", width: 32 },
+        { header: "Login", key: "login", width: 22 },
+        { header: "Lavozim", key: "role", width: 22 },
+        { header: "Turi", key: "cat", width: 12 },
+        { header: "Bo‘lim", key: "dept", width: 24 },
+        { header: "Filial", key: "branch", width: 28 },
+        { header: "Telefon", key: "phone", width: 16 },
+        { header: "Ulangan vaqti", key: "at", width: 18 },
+      ];
+      list.forEach((i, idx) =>
+        ws.addRow({
+          n: idx + 1,
+          name: i.fullName,
+          login: i.login,
+          role: i.roleLabel,
+          cat: CATEGORY_LABEL[i.category],
+          dept: i.department || "",
+          branch: i.branch || "",
+          phone: i.phone || "",
+          at: fmt(i.linkedAt),
+        }),
+      );
+      const head = ws.getRow(1);
+      head.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      head.fill = { type: "pattern", pattern: "solid", fgColor: { argb: title === "Ulanganlar" ? "FF0F766E" : "FFB45309" } };
+      ws.views = [{ state: "frozen", ySplit: 1 }];
+      ws.autoFilter = { from: "A1", to: "I1" };
+    }
+    const buf = await wb.xlsx.writeBuffer();
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="Ulanganlar_${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    res.send(Buffer.from(buf));
+  } catch (err) {
+    console.error("GET /telegram/ulanganlar.xlsx:", err);
+    res.status(503).json({ error: "Excel tayyorlanmadi" });
+  }
+});
 
 /** Holat: bot sozlanganmi */
 router.get("/telegram/status", async (_req, res): Promise<void> => {

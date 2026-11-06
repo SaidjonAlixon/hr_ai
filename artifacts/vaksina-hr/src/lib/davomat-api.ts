@@ -50,6 +50,7 @@ export type DavomatEmployee = {
   orgRole: string | null;
   userRole?: string | null;
   userId?: number | null;
+  phone?: string | null;
   shiftType?: string | null;
   shiftLabel?: string | null;
   /** Omborxona xodimi (ofis/apteka guruhlariga kirmaydi) */

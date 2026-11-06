@@ -2,6 +2,7 @@
  * Vazifalar eslatmasi (Telegram + platforma):
  *  - 10:00 va 15:00 — ochiq topshirig‘i bor xodimlarga lichka (PDF) + platforma;
  *  - botga ulanmaganlarga — VaksinaMed e’lon / hisobot guruhiga (kuniga 3 marta: 10, 15, 18);
+ *  - asoschi va direktor topshiriqlari guruhga CHIQMASIN (faqat lichka + platforma);
  *  - har digestdan keyin adminlarga PDF: kimga lichka, kimga guruh, kimga yuborilmadi;
  *  - 09 / 12 / 18 — tekshiruvda qolganlar uchun rahbarga alohida eslatma.
  */
@@ -35,7 +36,12 @@ type TaskRow = {
   isPrivate: boolean;
 };
 
-type Person = { id: number; name: string; telegramId: string | null; active: boolean };
+type Person = { id: number; name: string; telegramId: string | null; active: boolean; role: string };
+
+/** Topshiriqlar hech kim uchun e’lon guruhiga chiqmaydi — faqat shaxsiy lichka + platforma. */
+function skipGroupAnnounce(_p: Person | null | undefined): boolean {
+  return true;
+}
 
 type Bucket = { todo: TaskRow[]; doing: TaskRow[]; inReview: TaskRow[]; toApprove: TaskRow[] };
 
@@ -110,13 +116,17 @@ async function loadOpen(): Promise<{ tasks: TaskRow[]; people: Map<number, Perso
   const ids = [...new Set(tasks.flatMap((t) => [t.createdById, t.assigneeUid]).filter((x): x is number => x != null))];
   const people = new Map<number, Person>();
   if (ids.length) {
-    const { rows: users } = await pool.query(`SELECT id, full_name, telegram_id, status FROM users WHERE id = ANY($1::int[])`, [ids]);
+    const { rows: users } = await pool.query(
+      `SELECT id, full_name, telegram_id, status, role FROM users WHERE id = ANY($1::int[])`,
+      [ids],
+    );
     for (const u of users) {
       people.set(Number(u.id), {
         id: Number(u.id),
         name: String(u.full_name || `#${u.id}`),
         telegramId: u.telegram_id && /^-?\d+$/.test(String(u.telegram_id).trim()) ? String(u.telegram_id).trim() : null,
         active: u.status !== "terminated",
+        role: String(u.role || ""),
       });
     }
   }
@@ -532,6 +542,17 @@ export async function sendTaskDigest(): Promise<{
   let failed = 0;
 
   const sendGroupFor = async (p: Person, b: Bucket, reason: string) => {
+    if (skipGroupAnnounce(p)) {
+      deliveries.push({
+        userId: p.id,
+        name: p.name,
+        channel: "platform_only",
+        openCount: bucketSize(b),
+        action: actionNeeded(b, now),
+        detail: `${reason} · guruhga yuborilmaydi (faqat lichka)`,
+      });
+      return false;
+    }
     if (!reportGroup) {
       deliveries.push({
         userId: p.id,
@@ -572,7 +593,7 @@ export async function sendTaskDigest(): Promise<{
   };
 
   for (const [id, b] of order) {
-    const p = people.get(id) ?? { id, name: `#${id}`, telegramId: null, active: true };
+    const p = people.get(id) ?? { id, name: `#${id}`, telegramId: null, active: true, role: "" };
     const mine = b.doing.length + b.todo.length;
     const warn = [
       mine ? `Sizga ${mine} ta topshiriq bor — kirib qabul qiling yoki bajaring.` : "",
@@ -656,7 +677,14 @@ export async function sendNoBotGroupReminders(): Promise<{ people: number; group
 
   const targets = [...buckets.entries()]
     .map(([id, b]) => ({ p: people.get(id), b }))
-    .filter((x) => x.p && x.p.active !== false && bucketSize(x.b) > 0 && !x.p.telegramId) as Array<{ p: Person; b: Bucket }>;
+    .filter(
+      (x) =>
+        x.p &&
+        x.p.active !== false &&
+        bucketSize(x.b) > 0 &&
+        !x.p.telegramId &&
+        !skipGroupAnnounce(x.p),
+    ) as Array<{ p: Person; b: Bucket }>;
 
   const deliveries: DeliveryRow[] = [];
   let groupN = 0;
@@ -809,8 +837,6 @@ export async function taskDigestTick(): Promise<void> {
     const { ymd, hour } = tashkentNow();
     // To‘liq digest: 10:00 va 15:00
     if (DIGEST_HOURS.includes(hour)) await runSlot(`digest:${ymd}:${hour}`, sendTaskDigest);
-    // Botga ulanmaganlar uchun qo‘shimcha (18:00) — 10/15 da allaqachon digest ichida guruhga ketadi
-    if (hour === 18) await runSlot(`nobot-group:${ymd}:${hour}`, sendNoBotGroupReminders);
     if (REVIEW_HOURS.includes(hour)) await runSlot(`review:${ymd}:${hour}`, sendReviewReminder);
   } finally {
     running = false;

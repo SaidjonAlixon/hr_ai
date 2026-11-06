@@ -34,6 +34,8 @@ const ALLOWED_ROLES = [
   "it_rahbar",
   "it_dasturchi",
   "it_tarmoq",
+  "qurulish_rahbar",
+  "qurulish",
   "ombor",
   "sb",
   "sb_boshliq",
@@ -67,6 +69,7 @@ const ALLOWED_ROLES = [
   "komunalniy",
   "farrosh",
   "mexanik",
+  "broker",
   "direktor_yordamchisi",
 ] as const;
 
@@ -91,6 +94,8 @@ const ROLE_LABEL_UZ: Record<string, string> = {
   it_rahbar: "AyTi bo‘lim boshlig‘i",
   it_dasturchi: "Dasturchi",
   it_tarmoq: "Tarmoq administratori",
+  qurulish_rahbar: "Qurulish bo‘lim boshlig‘i",
+  qurulish: "Qurulish xodimi",
   ombor: "Ombor",
   sb: "SB operatori",
   sb_boshliq: "SB bo‘limi boshlig‘i",
@@ -124,6 +129,7 @@ const ROLE_LABEL_UZ: Record<string, string> = {
   komunalniy: "Kommunal",
   farrosh: "Farrosh",
   mexanik: "Mexanik",
+  broker: "Broker",
   direktor_yordamchisi: "Direktor yordamchisi",
 };
 

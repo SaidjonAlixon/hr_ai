@@ -83,7 +83,7 @@ export const ru: Messages = {
   "nav.ofisda": "Пребывание в офисе",
   "nav.davomatQr": "QR посещаемости",
   "nav.davomatAnalytics": "Аналитика посещаемости",
-  "nav.davomatXatoliklar": "Ошибки",
+  "nav.davomatUlanganlar": "Подключённые",
   "nav.davomatBloklash": "Окно блокировки",
   "nav.dorixonaOchilishi": "Открытие аптек",
   "nav.smena": "Смена и филиал",

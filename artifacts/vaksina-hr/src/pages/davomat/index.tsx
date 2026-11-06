@@ -102,6 +102,7 @@ import { Label } from "../../components/ui/label";
 import { Tabs, TabsContent } from "../../components/ui/tabs";
 import { useToast } from "../../hooks/use-toast";
 import { cn } from "../../lib/utils";
+import { formatUzPhoneDashed } from "../../lib/phone";
 import { scriptIncludes } from "../../lib/script-search";
 import {
   downloadDavomatExcel,
@@ -2871,7 +2872,7 @@ export default function DavomatPage() {
                   ) : null}
                 </CardHeader>
                 <CardContent className="max-h-[calc(100dvh-7rem)] overflow-auto overscroll-contain p-0 sm:px-6 sm:pb-6">
-                  <table className="w-full min-w-[1100px] border-separate border-spacing-0 text-sm">
+                  <table className="w-full min-w-[1220px] border-separate border-spacing-0 text-sm">
                     <thead className="sticky top-0 z-20 shadow-[0_4px_10px_-4px_rgba(11,58,92,0.45)]">
                       <tr className="text-left text-[11px] font-bold uppercase tracking-wide text-white [&>th]:bg-[#0b3a5c] [&>th]:whitespace-nowrap [&>th]:py-3 [&>th]:align-middle [&>th:first-child]:rounded-tl-xl [&>th:last-child]:rounded-tr-xl">
                         <th className="w-12 px-2 py-2 text-center">№</th>
@@ -2888,6 +2889,7 @@ export default function DavomatPage() {
                         {canSeeNotes ? (
                           <th className="w-14 px-2 py-2 text-center">Izoh</th>
                         ) : null}
+                        <th className="px-3 py-2">Raqam</th>
                         {showRowActions ? <th className="px-3 py-2 w-20" /> : null}
                       </tr>
                     </thead>
@@ -2898,6 +2900,7 @@ export default function DavomatPage() {
                             colSpan={
                               (showShiftCol ? 11 : 10) +
                               (canSeeNotes ? 1 : 0) +
+                              1 +
                               (showRowActions ? 1 : 0)
                             }
                             className="px-3 py-10 text-center text-sm text-muted-foreground"
@@ -3018,6 +3021,19 @@ export default function DavomatPage() {
                               )}
                             </td>
                           ) : null}
+                          <td className="px-3 py-2 whitespace-nowrap tabular-nums text-[12px] text-slate-700 dark:text-slate-200">
+                            {emp.phone?.trim() ? (
+                              <a
+                                href={`tel:${emp.phone.replace(/\s+/g, "")}`}
+                                className="font-medium text-[#0b5fff] hover:underline"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {formatUzPhoneDashed(emp.phone)}
+                              </a>
+                            ) : (
+                              <span className="text-muted-foreground/60">—</span>
+                            )}
+                          </td>
                           {showRowActions ? (
                             <td className="px-2 py-2">
                               <div className="flex items-center gap-0.5">

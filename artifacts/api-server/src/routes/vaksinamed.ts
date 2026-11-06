@@ -6,7 +6,8 @@ import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
-import { canViewLogistika } from "../lib/roles";
+import { canManageSettings, canViewLogistika } from "../lib/roles";
+import { syncVaksinamedAttendance } from "../lib/vaksinamed-attendance";
 
 const router: IRouter = Router();
 
@@ -263,5 +264,25 @@ router.get("/integrations/vaksinamed/fleet", requireAuth, async (req: AuthReques
     res.status(503).json({ error: "Logistika ulanmadi" });
   }
 });
+
+/** POST /integrations/vaksinamed/attendance-sync { month: "YYYY-MM" } — admin qo‘lda tortish */
+router.post(
+  "/integrations/vaksinamed/attendance-sync",
+  requireAuth,
+  async (req: AuthRequest, res): Promise<void> => {
+    if (!canManageSettings(req.userRole)) {
+      res.status(403).json({ error: "Ruxsat yo‘q" });
+      return;
+    }
+    const month =
+      String(req.body?.month || "").trim() ||
+      new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" }).slice(0, 7);
+    try {
+      res.json({ ok: true, ...(await syncVaksinamedAttendance(month)) });
+    } catch (err) {
+      res.status(503).json({ error: err instanceof Error ? err.message : "Sinxronlanmadi" });
+    }
+  },
+);
 
 export default router;

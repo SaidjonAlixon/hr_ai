@@ -28,6 +28,10 @@ export type ReminderEvent = {
   fromStatus: string | null;
   toStatus: string | null;
   createdById: number | null;
+  createdByName?: string | null;
+  createdByRole?: string | null;
+  createdByRoleLabel?: string | null;
+  createdByPosition?: string | null;
   createdAt: string;
 };
 
@@ -35,6 +39,14 @@ export type Reminder = {
   id: number;
   userId: number;
   createdById?: number | null;
+  createdByName?: string | null;
+  createdByRole?: string | null;
+  createdByRoleLabel?: string | null;
+  createdByPosition?: string | null;
+  assigneeName?: string | null;
+  assigneeRole?: string | null;
+  assigneeRoleLabel?: string | null;
+  assigneePosition?: string | null;
   title: string;
   description: string | null;
   dueAt: string;
@@ -54,6 +66,8 @@ export type Reminder = {
   remainingLabel: string;
   forOthers?: boolean;
   forMe?: boolean;
+  /** Menga boshqa odam qo‘ygan */
+  assignedByOther?: boolean;
   events?: ReminderEvent[];
 };
 

@@ -21,6 +21,7 @@ import { startTaskDigestJob } from "./jobs/task-digest";
 import { startUsdSalaryJob } from "./jobs/usd-salary";
 import { startAbetJob } from "./jobs/abet";
 import { startScannerDocsSweepJob } from "./jobs/scanner-docs-sweep";
+import { startVaksinamedAttendanceJob } from "./jobs/vaksinamed-attendance";
 
 /** Vercel sets VERCEL=1 — serverless uses exported app, no listen. */
 const isVercel = process.env.VERCEL === "1" || process.env.VERCEL === "true";
@@ -72,6 +73,7 @@ if (!isVercel) {
     startUsdSalaryJob();
     startAbetJob();
     startScannerDocsSweepJob();
+    startVaksinamedAttendanceJob();
   });
 }
 

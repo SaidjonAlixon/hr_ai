@@ -24,6 +24,8 @@ const ROLE_POSITION: Record<string, string> = {
   it_rahbar: "AyTi bo‘lim boshlig‘i",
   it_dasturchi: "Dasturchi",
   it_tarmoq: "Tarmoq administratori",
+  qurulish_rahbar: "Qurulish bo‘lim boshlig‘i",
+  qurulish: "Qurulish xodimi",
   revizor: "Revizor-yig‘uvchi",
   reviziya_rahbar: "Reviziya bo‘limi rahbari",
   sb: "SB operatori",
@@ -57,6 +59,7 @@ const ROLE_POSITION: Record<string, string> = {
   komunalniy: "Kommunal",
   farrosh: "Farrosh",
   mexanik: "Mexanik",
+  broker: "Broker",
   direktor_yordamchisi: "Direktor yordamchisi",
 };
 

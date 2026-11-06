@@ -52,6 +52,7 @@ const ROLE_LABEL_UZ: Record<string, string> = {
   komunalniy: "Kommunal",
   farrosh: "Farrosh",
   mexanik: "Mexanik",
+  broker: "Broker",
   direktor_yordamchisi: "Direktor yordamchisi",
 };
 

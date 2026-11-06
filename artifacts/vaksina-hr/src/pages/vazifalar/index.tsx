@@ -33,7 +33,6 @@ import {
   MoreHorizontal,
   FileSpreadsheet,
   Archive,
-  LayoutTemplate,
   AlertTriangle,
   PlayCircle,
   CircleDot,
@@ -56,6 +55,9 @@ import {
   Sparkles,
   Hourglass,
   CalendarRange,
+  CheckCheck,
+  Pin,
+  PinOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -64,6 +66,7 @@ import {
   canDeleteTaskUi,
   canManageTaskUi,
   canSeePrivateTasks,
+  isAcceptWindowEnabled,
   isTaskAuditViewer,
   isTaskOverdue,
 } from "@/lib/vazifalar-permissions";
@@ -122,8 +125,10 @@ import {
   useRequestExtension,
   useResolveExtension,
   useVerifyTask,
+  useCloseTasks,
   useSendTaskMessage,
   fileToAttachment,
+  fetchTaskById,
   type Vazifa,
   type TaskAttachment,
 } from "@/lib/vazifalar-api";
@@ -133,7 +138,7 @@ import { VerifiedName } from "@/components/VerifiedBadge";
 import { useI18n } from "@/i18n/I18nProvider";
 import { TaskFormDialog } from "@/components/vazifalar/TaskFormDialog";
 import { AcceptWindowCountdown } from "@/components/vazifalar/AcceptWindowCountdown";
-import { TaskReturnDialog } from "@/components/vazifalar/TaskReturnDialog";
+import { TaskReturnDialog, type TaskReturnPayload } from "@/components/vazifalar/TaskReturnDialog";
 import { TasksSidebar, rankActiveStaff } from "@/components/vazifalar/TasksSidebar";
 import {
   downloadTasksExcel,
@@ -145,6 +150,12 @@ import {
 
 type BoardCol = "past" | "today" | "progress" | "review" | "completed";
 type BoardView = "kanban" | "list" | "calendar";
+
+/** Statistika + filtr paneli: "1" — ochiq (pin), "0" — yig‘ilgan */
+const TOP_PANEL_KEY = "vazifalar.topPanel.pinned";
+
+/** Belgilovchi yopishi mumkin bo‘lgan holatlar (qabul qilinmagan, jarayonda, tekshiruvda) */
+const CLOSABLE_STATUSES = new Set(["todo", "in_progress", "done"]);
 
 /** Apteka smena — vazifa qo‘yolmaydi; yurist va barcha ofis xodimlari qo‘ya oladi */
 const TASK_ASSIGN_BLOCKED = new Set(["farmasevt", "stajyor"]);
@@ -644,6 +655,7 @@ export default function VazifalarPage() {
   const requestExtension = useRequestExtension();
   const resolveExtension = useResolveExtension();
   const verifyTask = useVerifyTask();
+  const closeTasks = useCloseTasks();
   const sendTaskMessage = useSendTaskMessage();
 
   const [editOpen, setEditOpen] = useState(false);
@@ -655,6 +667,7 @@ export default function VazifalarPage() {
   const [activeTask, setActiveTask] = useState<Vazifa | null>(null);
   const [createDueAt, setCreateDueAt] = useState<string | null>(null);
   const [createFromSource, setCreateFromSource] = useState<Vazifa | null>(null);
+  const [preferDraftsOpen, setPreferDraftsOpen] = useState(false);
   const deepLinkHandled = useRef<string | null>(null);
   const fullBoardOpened = useRef(false);
 
@@ -785,11 +798,12 @@ export default function VazifalarPage() {
       setSearch(opt.name);
       return;
     }
-    setAssigneeFilter((prev) =>
-      prev && prev.kind === deepAssigneeKind && prev.id === id
-        ? prev
-        : { kind: deepAssigneeKind, id, name: deepQ || prev?.name || `#${id}` },
-    );
+    setAssigneeFilter((prev) => {
+      const current = prev && prev !== "all" ? prev : null;
+      return current && current.kind === deepAssigneeKind && current.id === id
+        ? current
+        : { kind: deepAssigneeKind, id, name: deepQ || current?.name || `#${id}` };
+    });
   }, [deepAssigneeKind, deepAssigneeId, deepQ, assigneeOptions]);
 
   const departmentOptions = useMemo(() => {
@@ -1178,9 +1192,24 @@ export default function VazifalarPage() {
   const [mobileCol, setMobileCol] = useState<BoardCol>("today");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectCol, setSelectCol] = useState<BoardCol | null>(null);
+  const [listSelecting, setListSelecting] = useState(false);
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<number>>(
     () => new Set(),
   );
+  const [topPinned, setTopPinned] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(TOP_PANEL_KEY) !== "0";
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(TOP_PANEL_KEY, topPinned ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [topPinned]);
   const mobileColTouched = useRef(false);
 
   useEffect(() => {
@@ -1234,9 +1263,10 @@ export default function VazifalarPage() {
       });
   }, [byColumn.today, byColumn.past]);
 
-  function openCreate(presetCol?: BoardCol) {
+  function openCreate(presetCol?: BoardCol, opts?: { drafts?: boolean }) {
     setEditing(null);
     setCreateFromSource(null);
+    setPreferDraftsOpen(!!opts?.drafts);
     const base = startOfDay(new Date());
     let target = base;
     if (presetCol === "past") target = addDays(base, -1);
@@ -1249,6 +1279,7 @@ export default function VazifalarPage() {
   function openCreateFrom(source: Vazifa) {
     setViewOpen(false);
     setEditing(null);
+    setPreferDraftsOpen(false);
     setCreateFromSource(source);
     const base = startOfDay(new Date());
     base.setHours(18, 0, 0, 0);
@@ -1256,15 +1287,21 @@ export default function VazifalarPage() {
     setEditOpen(true);
   }
 
-  function openLinkedTask(taskId: number) {
-    const found = tasks.find((t) => t.id === taskId);
+  async function openLinkedTask(taskId: number) {
+    setEditOpen(false);
+    setCreateFromSource(null);
+    let found = tasks.find((t) => t.id === taskId) || null;
     if (!found) {
-      toast({
-        title: "Topshiriq topilmadi",
-        description: `TK-${taskId}`,
-        variant: "destructive",
-      });
-      return;
+      try {
+        found = await fetchTaskById(taskId);
+      } catch (e: any) {
+        toast({
+          title: "Topshiriq topilmadi",
+          description: e?.message || `TK-${taskId}`,
+          variant: "destructive",
+        });
+        return;
+      }
     }
     openEdit(found);
   }
@@ -1684,16 +1721,79 @@ export default function VazifalarPage() {
     );
   }
 
+  function canCloseTask(task: Vazifa): boolean {
+    return CLOSABLE_STATUSES.has(task.status) && canApproveTaskUi(task, user?.id, user?.role);
+  }
+
+  function canSelectTask(task: Vazifa): boolean {
+    return canCloseTask(task) || canDeleteTaskUi(task, user?.id, user?.role);
+  }
+
+  function closableInColumn(colId: BoardCol): Vazifa[] {
+    return byColumn[colId].filter(canCloseTask);
+  }
+
+  function selectableInColumn(colId: BoardCol): Vazifa[] {
+    return byColumn[colId].filter(canSelectTask);
+  }
+
   function exitSelectMode() {
     setSelectCol(null);
+    setListSelecting(false);
     setSelectedTaskIds(new Set());
   }
 
   function enterSelectMode(colId: BoardCol) {
     setSelectCol(colId);
+    setListSelecting(false);
     setSelectedTaskIds(new Set());
     mobileColTouched.current = true;
     setMobileCol(colId);
+  }
+
+  function enterListSelect() {
+    setSelectCol(null);
+    setListSelecting(true);
+    setSelectedTaskIds(new Set());
+  }
+
+  function selectTasks(tasks: Vazifa[]) {
+    setSelectedTaskIds(new Set(tasks.filter(canSelectTask).map((t) => t.id)));
+  }
+
+  async function closeTasksBatch(targets: Vazifa[]) {
+    const list = targets.filter(canCloseTask);
+    if (list.length === 0) {
+      toast({ title: "Yopiladigan vazifa yo‘q", description: "Faqat o‘zingiz qo‘ygan, hali yakunlanmagan vazifalar yopiladi." });
+      return;
+    }
+    const overdueN = list.filter((t) => isTaskOverdue(t)).length;
+    const notAcceptedN = list.filter((t) => t.status === "todo").length;
+    const extra = [
+      overdueN ? `${overdueN} ta muddati o‘tgan` : "",
+      notAcceptedN ? `${notAcceptedN} ta qabul qilinmagan` : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+    const msg =
+      list.length === 1
+        ? `«${list[0]!.title}» yopilib, «Bajarildi» ga o‘tkazilsinmi?`
+        : `${list.length} ta vazifa yopilib, «Bajarildi» ga o‘tkazilsinmi?${extra ? `\n(${extra})` : ""}`;
+    if (!confirm(msg)) return;
+    try {
+      const res = await closeTasks.mutateAsync({ ids: list.map((t) => t.id) });
+      toast({
+        title: res.closed === 1 ? "Vazifa yopildi — bajarildi" : `${res.closed} ta vazifa yopildi — bajarildi`,
+        description: res.skipped.length ? `${res.skipped.length} tasi o‘tkazib yuborildi: ${res.skipped[0]!.reason}` : undefined,
+      });
+      exitSelectMode();
+    } catch (e: any) {
+      toast({ title: "Yopilmadi", description: e?.message, variant: "destructive" });
+    }
+  }
+
+  function selectedFrom(tasks: Vazifa[]): Vazifa[] {
+    return tasks.filter((task) => selectedTaskIds.has(task.id));
   }
 
   function toggleTaskSelected(taskId: number) {
@@ -1706,8 +1806,7 @@ export default function VazifalarPage() {
   }
 
   function selectAllDeletableInColumn(colId: BoardCol) {
-    const ids = deletableInColumn(colId).map((t) => t.id);
-    setSelectedTaskIds(new Set(ids));
+    selectTasks(selectableInColumn(colId));
   }
 
   async function removeTasksBatch(targets: Vazifa[], confirmMsg: string) {
@@ -1753,8 +1852,9 @@ export default function VazifalarPage() {
     await removeTasksBatch(targets, msg);
   }
 
-  async function removeSelectedTasks(colId: BoardCol) {
-    const targets = byColumn[colId].filter(
+  async function removeSelectedTasks(colId: BoardCol | "list") {
+    const pool = colId === "list" ? filtered : byColumn[colId];
+    const targets = pool.filter(
       (task) =>
         selectedTaskIds.has(task.id) &&
         canDeleteTaskUi(task, user?.id, user?.role),
@@ -1769,7 +1869,9 @@ export default function VazifalarPage() {
   function renderTaskCard(task: Vazifa, colId: BoardCol) {
     const overdue = colId === "past" || isTaskOverdue(task);
     const canDelete = canDeleteTaskUi(task, user?.id, user?.role);
-    const selecting = selectCol === colId;
+    const canClose = canCloseTask(task);
+    const canSelect = canDelete || canClose;
+    const selecting = selectCol === colId || (viewMode === "list" && listSelecting);
   return (
       <TaskCard
         key={task.id}
@@ -1780,13 +1882,15 @@ export default function VazifalarPage() {
         isAssignee={isAssigneeOf(task)}
         canApprove={canApproveTaskUi(task, user?.id, user?.role)}
         canDelete={canDelete}
+        canClose={canClose}
+        onClose={() => void closeTasksBatch([task])}
         selectMode={selecting}
         selected={selectedTaskIds.has(task.id)}
-        canSelect={canDelete}
+        canSelect={canSelect}
         onToggleSelect={() => toggleTaskSelected(task.id)}
         onOpen={() => {
           if (selecting) {
-            if (canDelete) toggleTaskSelected(task.id);
+            if (canSelect) toggleTaskSelected(task.id);
             return;
           }
           openEdit(task);
@@ -2020,11 +2124,11 @@ export default function VazifalarPage() {
   return (
     <div className="flex h-full min-h-0 bg-background">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="shrink-0 border-b border-border/70 bg-card/90 px-3 pb-3 pt-3 backdrop-blur-md supports-[backdrop-filter]:bg-card/80 md:px-6 md:pb-4 md:pt-5">
-        <div className="flex flex-col gap-2.5 md:gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div className="shrink-0 border-b border-border/70 bg-card/90 px-3 pb-2.5 pt-2.5 backdrop-blur-md supports-[backdrop-filter]:bg-card/80 md:px-5 md:pb-3 md:pt-3">
+        <div className="flex flex-col gap-2 md:gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <div className="flex items-center justify-between gap-2">
-              <h1 className="text-xl font-bold tracking-tight text-foreground md:text-[1.75rem]">
+              <h1 className="text-xl font-bold tracking-tight text-foreground md:text-[1.45rem]">
               {t("tasks.title")}
             </h1>
           {canAssign && (
@@ -2038,9 +2142,31 @@ export default function VazifalarPage() {
             </Button>
           )}
         </div>
-            <p className="mt-0.5 hidden max-w-2xl text-sm leading-relaxed text-muted-foreground md:mt-1 md:block">
-              {t("tasks.subtitle")}
-            </p>
+            {topPinned ? (
+              <p className="mt-0.5 hidden max-w-2xl text-[13px] leading-snug text-muted-foreground xl:block">
+                {t("tasks.subtitle")}
+              </p>
+            ) : (
+              <div className="mt-1 hidden flex-wrap items-center gap-1.5 md:flex">
+                {kpiCards.map((card) => (
+                  <button
+                    key={card.key}
+                    type="button"
+                    onClick={() => {
+                      if (card.col === "all") return setStatusColFilter("all");
+                      setStatusColFilter(statusColFilter === card.col ? "all" : card.col);
+                    }}
+                    className={cn(
+                      "inline-flex h-6 items-center gap-1 rounded-full border border-border/70 bg-background px-2 text-[11px] text-muted-foreground transition hover:text-foreground",
+                      card.col !== "all" && statusColFilter === card.col && "border-[#0b3a5c] bg-[#0b3a5c] text-white hover:text-white",
+                    )}
+                  >
+                    {card.label}
+                    <b className="tabular-nums">{card.value}</b>
+                  </button>
+                ))}
+              </div>
+            )}
             <p className="mt-0.5 text-[11px] text-muted-foreground md:hidden">
               {kpi.total} ta · {kpi.overdue > 0 ? `${kpi.overdue} kechikkan` : "navbatda"}
             </p>
@@ -2098,6 +2224,26 @@ export default function VazifalarPage() {
                 );
               })}
             </div>
+            <button
+              type="button"
+              onClick={() => setTopPinned((v) => !v)}
+              aria-pressed={topPinned}
+              title={topPinned ? "Statistika va filtrlarni yig‘ish — vazifalar to‘liq ko‘rinadi" : "Statistika va filtrlarni ochish (pin)"}
+              className={cn(
+                "inline-flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-2xl border px-3 text-[12.5px] font-semibold transition",
+                topPinned
+                  ? "border-border/70 bg-card text-muted-foreground hover:text-foreground"
+                  : "border-[#0b3a5c]/40 bg-[#0b3a5c]/[0.06] text-[#0b3a5c] dark:border-sky-400/40 dark:text-sky-300",
+              )}
+            >
+              {topPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+              <span>{topPinned ? "Yig‘ish" : "Panel"}</span>
+              {!topPinned && activeFilterCount > 0 ? (
+                <span className="rounded-full bg-[#0b3a5c] px-1.5 py-px text-[10px] font-bold tabular-nums text-white dark:bg-sky-400 dark:text-slate-950">
+                  {activeFilterCount}
+                </span>
+              ) : null}
+            </button>
             {canAssign && (
               <button
                 type="button"
@@ -2114,8 +2260,10 @@ export default function VazifalarPage() {
         </div>
       </div>
 
+        {topPinned ? (
+        <div className="shrink-0 space-y-2 px-3 pt-2.5 md:px-5">
         {/* KPI — bosilganda faqat shu holatdagi vazifalar */}
-        <div className="mt-3 flex gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:mt-4 md:grid md:grid-cols-3 md:gap-3 md:overflow-visible md:pb-0 2xl:grid-cols-6">
+        <div className="flex gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:grid md:grid-cols-3 md:gap-2 md:overflow-visible md:pb-0 xl:grid-cols-6">
           {kpiCards.map((card) => {
             const Icon = card.icon;
             const targetCol = card.col;
@@ -2145,7 +2293,7 @@ export default function VazifalarPage() {
                 }}
                 title={active ? B.activeHint : B.clickHint}
                 className={cn(
-                  "group relative flex min-w-[150px] shrink-0 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card px-3 py-2.5 text-left shadow-[0_1px_2px_rgba(15,39,68,0.04),0_8px_24px_-16px_rgba(15,39,68,0.25)] transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-[0_2px_4px_rgba(15,39,68,0.05),0_14px_30px_-16px_rgba(15,39,68,0.35)] md:min-w-0 md:px-4 md:py-3.5 dark:shadow-black/20",
+                  "group relative flex min-w-[140px] shrink-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-card px-2.5 py-2 text-left shadow-[0_1px_2px_rgba(15,39,68,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-[0_2px_4px_rgba(15,39,68,0.05),0_10px_24px_-16px_rgba(15,39,68,0.35)] md:min-w-0 md:px-3 md:py-2 dark:shadow-black/20",
                   active &&
                     "border-[#0b3a5c]/45 ring-2 ring-[#0b3a5c]/15 dark:border-sky-400/50 dark:ring-sky-400/20",
                 )}
@@ -2160,18 +2308,23 @@ export default function VazifalarPage() {
                 <div className="flex items-center gap-2.5 md:gap-3">
                   <span
                     className={cn(
-                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ring-1 transition-transform duration-200 group-hover:scale-105 md:h-11 md:w-11",
+                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ring-1 transition-transform duration-200 group-hover:scale-105",
                       card.tone,
                     )}
                   >
-                    <Icon className="h-4 w-4 md:h-5 md:w-5" />
+                    <Icon className="h-4 w-4" />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[9.5px] font-bold uppercase tracking-[0.08em] text-muted-foreground md:text-[10.5px]">
+                    <p className="truncate text-[9.5px] font-bold uppercase tracking-[0.08em] text-muted-foreground md:text-[10px]">
                       {card.label}
                     </p>
-                    <p className="text-lg font-extrabold leading-tight tabular-nums text-foreground md:text-[26px]">
+                    <p className="flex items-baseline gap-1.5 text-lg font-extrabold leading-tight tabular-nums text-foreground md:text-[20px]">
                       {card.value}
+                      <span className="hidden text-[10.5px] font-semibold text-muted-foreground md:inline">
+                        {card.key === "total"
+                          ? `${kpi.doneRate}%`
+                          : `${kpi.total ? Math.round((card.value / kpi.total) * 100) : 0}%`}
+                      </span>
                     </p>
                   </div>
                   {active ? (
@@ -2180,12 +2333,8 @@ export default function VazifalarPage() {
                     </span>
                   ) : null}
                 </div>
-                <div className="mt-2.5 hidden md:block">
-                  <div className="mb-1 flex items-center justify-between text-[10.5px] text-muted-foreground">
-                    <span>{card.key === "total" ? B.completion : B.ofTotal}</span>
-                    <span className="font-semibold tabular-nums text-foreground/80">{share}%</span>
-                  </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                <div className="mt-1.5 hidden md:block" title={card.key === "total" ? B.completion : B.ofTotal}>
+                  <div className="h-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                     <div
                       className={cn("h-full rounded-full transition-all duration-700", card.key === "total" ? "bg-emerald-500" : card.bar)}
                       style={{ width: `${share}%` }}
@@ -2197,7 +2346,7 @@ export default function VazifalarPage() {
           })}
       </div>
 
-        <div className={cn(surface, "mt-3 overflow-hidden md:mt-4")}>
+        <div className={cn(surface, "overflow-hidden")}>
           <div className="mb-0 flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2.5 lg:hidden">
             <button
               type="button"
@@ -2730,6 +2879,8 @@ export default function VazifalarPage() {
             </div>
           </div>
         </div>
+        </div>
+        ) : null}
 
       <div className="min-h-0 flex-1 overflow-auto p-3 sm:p-4 md:p-5">
         <div key={viewMode} className="min-h-0 min-w-0 animate-in fade-in-0 duration-200">
@@ -2739,14 +2890,85 @@ export default function VazifalarPage() {
                 </div>
           ) : viewMode === "list" ? (
             <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <h2 className="text-sm font-bold text-foreground">{t("tasks.view.list")}</h2>
-                  <p className="text-xs text-muted-foreground">
-                    {filtered.length} {t("tasks.filteredCount")}
-                  </p>
-            </div>
-            </div>
+              {(() => {
+                const selectable = filtered.filter(canSelectTask);
+                const closable = filtered.filter(canCloseTask);
+                const picked = selectedFrom(filtered);
+                const pickedClose = picked.filter(canCloseTask);
+                const pickedDelete = picked.filter((task) => canDeleteTaskUi(task, user?.id, user?.role));
+                const allPicked = selectable.length > 0 && picked.length === selectable.length;
+                return (
+                  <div
+                    className={cn(
+                      "flex flex-wrap items-center justify-between gap-2 rounded-xl",
+                      listSelecting && "border border-[#0b3a5c]/20 bg-[#0b3a5c]/[0.04] px-3 py-2 dark:border-sky-400/20 dark:bg-sky-400/5",
+                    )}
+                  >
+                    <div className="min-w-0">
+                      <h2 className="text-sm font-bold text-foreground">{t("tasks.view.list")}</h2>
+                      <p className="text-xs text-muted-foreground">
+                        {listSelecting
+                          ? `${picked.length} ta tanlandi · ${selectable.length} tadan`
+                          : `${filtered.length} ${t("tasks.filteredCount")}`}
+                      </p>
+                    </div>
+                    {listSelecting ? (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 gap-1.5"
+                          onClick={() => (allPicked ? setSelectedTaskIds(new Set()) : selectTasks(selectable))}
+                        >
+                          {allPicked ? <CheckSquare className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
+                          {allPicked ? "Tanlovni bekor" : `Hammasini tanlash · ${selectable.length}`}
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="h-8 gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700"
+                          disabled={pickedClose.length === 0 || closeTasks.isPending}
+                          onClick={() => void closeTasksBatch(pickedClose)}
+                        >
+                          <CheckCheck className="h-3.5 w-3.5" />
+                          Bajarildi{pickedClose.length ? ` · ${pickedClose.length}` : ""}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 gap-1.5 border-rose-300 text-rose-600 hover:bg-rose-50 dark:border-rose-700 dark:text-rose-300"
+                          disabled={pickedDelete.length === 0 || deleteTask.isPending}
+                          onClick={() => void removeSelectedTasks("list")}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          O‘chirish{pickedDelete.length ? ` · ${pickedDelete.length}` : ""}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-8" onClick={exitSelectMode}>
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ) : selectable.length > 0 ? (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {closable.length > 0 ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300"
+                            disabled={closeTasks.isPending}
+                            onClick={() => void closeTasksBatch(closable)}
+                          >
+                            <CheckCheck className="h-3.5 w-3.5" />
+                            Hammasini yopish · {closable.length}
+                          </Button>
+                        ) : null}
+                        <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={enterListSelect}>
+                          <CheckSquare className="h-3.5 w-3.5" />
+                          Tanlash
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })()}
 
               {/* Mobil: kartalar — jadval emas */}
               <div className="space-y-2.5 md:hidden">
@@ -2764,6 +2986,23 @@ export default function VazifalarPage() {
                   <table className="w-full min-w-[720px] text-left text-sm">
                     <thead className="border-b border-border bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
                       <tr>
+                        {listSelecting ? (
+                          <th className="w-10 px-3 py-3">
+                            {(() => {
+                              const selectable = filtered.filter(canSelectTask);
+                              const all = selectable.length > 0 && selectable.every((task) => selectedTaskIds.has(task.id));
+                              return (
+                                <input
+                                  type="checkbox"
+                                  className="h-4 w-4 cursor-pointer accent-[#0b3a5c]"
+                                  checked={all}
+                                  onChange={() => (all ? setSelectedTaskIds(new Set()) : selectTasks(selectable))}
+                                  aria-label="Hammasini tanlash"
+                                />
+                              );
+                            })()}
+                          </th>
+                        ) : null}
                         <th className="px-4 py-3 font-semibold">ID</th>
                         <th className="px-4 py-3 font-semibold">{t("tasks.field.title")}</th>
                         <th className="px-4 py-3 font-semibold">{t("tasks.assignee")}</th>
@@ -2776,12 +3015,36 @@ export default function VazifalarPage() {
                     <tbody>
                       {filtered.map((task) => {
                         const col = boardColumnFor(task);
+                        const selectable = canSelectTask(task);
+                        const picked = selectedTaskIds.has(task.id);
                         return (
                           <tr
                             key={task.id}
-                            className="cursor-pointer border-b border-border/60 hover:bg-muted/40"
-                            onClick={() => openEdit(task)}
+                            className={cn(
+                              "cursor-pointer border-b border-border/60 hover:bg-muted/40",
+                              listSelecting && picked && "bg-[#0b3a5c]/[0.06] dark:bg-sky-400/10",
+                              listSelecting && !selectable && "opacity-50",
+                            )}
+                            onClick={() => {
+                              if (listSelecting) {
+                                if (selectable) toggleTaskSelected(task.id);
+                                return;
+                              }
+                              openEdit(task);
+                            }}
                           >
+                            {listSelecting ? (
+                              <td className="w-10 px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  className="h-4 w-4 cursor-pointer accent-[#0b3a5c] disabled:cursor-not-allowed"
+                                  checked={picked}
+                                  disabled={!selectable}
+                                  onChange={() => toggleTaskSelected(task.id)}
+                                  aria-label={`TK-${task.id} tanlash`}
+                                />
+                              </td>
+                            ) : null}
                             <td className="px-4 py-3 text-xs text-muted-foreground">
                               TK-{task.id}
                             </td>
@@ -2825,17 +3088,35 @@ export default function VazifalarPage() {
                               {t(`tasks.status.${task.status}`)}
                             </td>
                             <td className="px-4 py-3 text-right">
-            <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 text-xs"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openEdit(task);
-                                }}
-                              >
-                                {t("tasks.analytics.openTask")}
-            </Button>
+                              <div className="flex items-center justify-end gap-1">
+                                {!listSelecting && canCloseTask(task) && task.status !== "done" ? (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 gap-1 text-xs text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 dark:text-emerald-300"
+                                    disabled={closeTasks.isPending}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void closeTasksBatch([task]);
+                                    }}
+                                    title="Yopish — Bajarildi"
+                                  >
+                                    <CheckCheck className="h-3.5 w-3.5" />
+                                    Yopish
+                                  </Button>
+                                ) : null}
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 text-xs"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openEdit(task);
+                                  }}
+                                >
+                                  {t("tasks.analytics.openTask")}
+                                </Button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -3217,12 +3498,17 @@ export default function VazifalarPage() {
                           </span>
                         {(() => {
                           const deletable = deletableInColumn(col.id);
+                          const closable = closableInColumn(col.id);
+                          const selectable = selectableInColumn(col.id);
                           const isAdminDelete = canSeePrivateTasks(user?.role);
                           const selecting = selectCol === col.id;
                           const selectedInCol = deletable.filter((t) =>
                             selectedTaskIds.has(t.id),
                           ).length;
-                          if (deletable.length === 0 && !isAdminDelete) return null;
+                          const selectedClosable = closable.filter((t) =>
+                            selectedTaskIds.has(t.id),
+                          ).length;
+                          if (selectable.length === 0 && !isAdminDelete) return null;
                           return (
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
@@ -3240,7 +3526,7 @@ export default function VazifalarPage() {
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="min-w-[230px]">
                                 <DropdownMenuItem
-                                  disabled={deletable.length === 0}
+                                  disabled={selectable.length === 0}
                                   className="gap-2"
                                   onClick={() => {
                                     if (selecting) exitSelectMode();
@@ -3249,15 +3535,13 @@ export default function VazifalarPage() {
                                 >
                                   <CheckSquare className="h-3.5 w-3.5" />
                                   <span className="flex-1 truncate">
-                                    {selecting
-                                      ? t("tasks.col.cancelSelect")
-                                      : t("tasks.col.selectDelete")}
+                                    {selecting ? t("tasks.col.cancelSelect") : "Tanlash (yopish / o‘chirish)"}
                                   </span>
                                 </DropdownMenuItem>
                                 {selecting ? (
                                   <>
                                     <DropdownMenuItem
-                                      disabled={deletable.length === 0}
+                                      disabled={selectable.length === 0}
                                       className="gap-2"
                                       onClick={() => selectAllDeletableInColumn(col.id)}
                                     >
@@ -3266,8 +3550,17 @@ export default function VazifalarPage() {
                                         {t("tasks.col.selectAll")}
                                       </span>
                                       <span className="tabular-nums opacity-70">
-                                        {deletable.length}
+                                        {selectable.length}
                                       </span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      disabled={selectedClosable === 0 || closeTasks.isPending}
+                                      className="gap-2 text-emerald-700 focus:bg-emerald-50 focus:text-emerald-800 dark:text-emerald-300 dark:focus:bg-emerald-950/50"
+                                      onClick={() => void closeTasksBatch(selectedFrom(closable))}
+                                    >
+                                      <CheckCheck className="h-3.5 w-3.5" />
+                                      <span className="flex-1 truncate">Tanlanganlarni bajarildi qilish</span>
+                                      <span className="tabular-nums opacity-70">{selectedClosable}</span>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
                                       disabled={
@@ -3286,6 +3579,17 @@ export default function VazifalarPage() {
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator />
                                   </>
+                                ) : null}
+                                {closable.length > 0 ? (
+                                  <DropdownMenuItem
+                                    disabled={closeTasks.isPending}
+                                    className="gap-2 text-emerald-700 focus:bg-emerald-50 focus:text-emerald-800 dark:text-emerald-300 dark:focus:bg-emerald-950/50"
+                                    onClick={() => void closeTasksBatch(closable)}
+                                  >
+                                    <CheckCheck className="h-3.5 w-3.5" />
+                                    <span className="flex-1 truncate">Hammasini yopish — bajarildi</span>
+                                    <span className="tabular-nums opacity-70">{closable.length}</span>
+                                  </DropdownMenuItem>
                                 ) : null}
                                 <DropdownMenuItem
                                   disabled={deletable.length === 0 || deleteTask.isPending}
@@ -3323,44 +3627,58 @@ export default function VazifalarPage() {
                       </div>
                     </div>
                     {selectCol === col.id ? (
-                      <div className="flex flex-wrap items-center gap-1.5 border-t border-border/50 bg-rose-50/70 px-2.5 py-2 dark:bg-rose-950/30">
-                        <p className="min-w-0 flex-1 text-[10px] font-medium text-rose-800 dark:text-rose-200">
-                          {t("tasks.col.selectHint")}
-                          {(() => {
-                            const n = byColumn[col.id].filter((task) =>
-                              selectedTaskIds.has(task.id),
-                            ).length;
-                            return n > 0 ? ` · ${n}` : "";
-                          })()}
-                        </p>
-                        <button
-                          type="button"
-                          className="rounded-md px-2 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-card"
-                          onClick={() => selectAllDeletableInColumn(col.id)}
-                        >
-                          {t("tasks.col.selectAll")}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={
-                            !byColumn[col.id].some((task) =>
-                              selectedTaskIds.has(task.id),
-                            ) || deleteTask.isPending
-                          }
-                          className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2 py-1 text-[10px] font-bold text-white disabled:opacity-40"
-                          onClick={() => void removeSelectedTasks(col.id)}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                          {t("tasks.col.deleteSelected")}
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded-md px-2 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-card"
-                          onClick={exitSelectMode}
-                        >
-                          {t("tasks.col.cancelSelect")}
-                        </button>
-                      </div>
+                      (() => {
+                        const selectable = selectableInColumn(col.id);
+                        const picked = selectedFrom(byColumn[col.id]);
+                        const pickedClose = picked.filter(canCloseTask);
+                        const pickedDelete = picked.filter((task) => canDeleteTaskUi(task, user?.id, user?.role));
+                        const allPicked = selectable.length > 0 && picked.length === selectable.length;
+                        return (
+                          <div className="space-y-1.5 border-t border-border/50 bg-[#0b3a5c]/[0.04] px-2.5 py-2 dark:bg-sky-400/5">
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] font-semibold text-foreground hover:bg-card"
+                                onClick={() => (allPicked ? setSelectedTaskIds(new Set()) : selectAllDeletableInColumn(col.id))}
+                              >
+                                {allPicked ? <CheckSquare className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
+                                {allPicked ? "Tanlovni bekor" : t("tasks.col.selectAll")}
+                              </button>
+                              <span className="ml-auto text-[11px] font-semibold tabular-nums text-muted-foreground">
+                                {picked.length}/{selectable.length}
+                              </span>
+                              <button
+                                type="button"
+                                className="rounded-md p-1 text-muted-foreground hover:bg-card hover:text-foreground"
+                                onClick={exitSelectMode}
+                                aria-label={t("tasks.col.cancelSelect")}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                            <div className="flex gap-1.5">
+                              <button
+                                type="button"
+                                disabled={pickedClose.length === 0 || closeTasks.isPending}
+                                className="inline-flex flex-1 items-center justify-center gap-1 rounded-md bg-emerald-600 px-2 py-1.5 text-[11px] font-bold text-white disabled:opacity-40"
+                                onClick={() => void closeTasksBatch(pickedClose)}
+                              >
+                                <CheckCheck className="h-3.5 w-3.5" />
+                                Bajarildi{pickedClose.length ? ` · ${pickedClose.length}` : ""}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={pickedDelete.length === 0 || deleteTask.isPending}
+                                className="inline-flex items-center justify-center gap-1 rounded-md border border-rose-300 px-2 py-1.5 text-[11px] font-bold text-rose-600 disabled:opacity-40 dark:border-rose-700 dark:text-rose-300"
+                                onClick={() => void removeSelectedTasks(col.id)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                {pickedDelete.length ? pickedDelete.length : ""}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })()
                     ) : null}
                   </header>
 
@@ -3452,7 +3770,7 @@ export default function VazifalarPage() {
           }}
           onExcel={() => void exportExcel()}
           onPdf={() => void exportPdf()}
-          onTemplates={() => canAssign && openCreate("today")}
+          onTemplates={() => canAssign && openCreate("today", { drafts: true })}
           onArchive={() => {
             setPriorityFilter("all");
             setBranchFilter("all");
@@ -3469,9 +3787,13 @@ export default function VazifalarPage() {
         open={editOpen}
         onOpenChange={(v) => {
           setEditOpen(v);
-          if (!v) setCreateFromSource(null);
+          if (!v) {
+            setCreateFromSource(null);
+            setPreferDraftsOpen(false);
+          }
         }}
         editing={editing}
+        preferDraftsOpen={preferDraftsOpen}
         assigneeOptions={assigneeOptions}
         branchOptions={branchOptions}
         currentUserName={user?.fullName}
@@ -3518,18 +3840,13 @@ export default function VazifalarPage() {
             : undefined
         }
         basedOnSource={!editing ? createFromSource : null}
-        onOpenLinkedTask={openLinkedTask}
+        onOpenLinkedTask={(taskId) => void openLinkedTask(taskId)}
         derivedTasks={
           editing
             ? tasks.filter((t) => Number(t.meta?.basedOnTaskId) === editing.id)
             : []
         }
-        canCreateFromTask={
-          !!editing &&
-          canAssign &&
-          (canManageTaskUi(editing, user?.id, user?.role) ||
-            canApproveTaskUi(editing, user?.id, user?.role))
-        }
+        canCreateFromTask={!!editing && canAssign}
         onCreateFromTask={
           editing ? () => openCreateFrom(editing) : undefined
         }
@@ -3622,18 +3939,14 @@ export default function VazifalarPage() {
         onTaskUpdated={(updated) => setActiveTask(updated)}
         onOpenLinkedTask={(taskId) => {
           setViewOpen(false);
-          openLinkedTask(taskId);
+          void openLinkedTask(taskId);
         }}
         derivedTasks={
           activeTask
             ? tasks.filter((t) => Number(t.meta?.basedOnTaskId) === activeTask.id)
             : []
         }
-        canCreateFromTask={
-          !!activeTask &&
-          canAssign &&
-          canManageTaskUi(activeTask, user?.id, user?.role)
-        }
+        canCreateFromTask={!!activeTask && canAssign}
         onCreateFromTask={
           activeTask ? () => openCreateFrom(activeTask) : undefined
         }
@@ -4041,6 +4354,8 @@ function TaskCard({
   isAssignee,
   canApprove,
   canDelete,
+  canClose,
+  onClose,
   selectMode,
   selected,
   canSelect,
@@ -4062,6 +4377,8 @@ function TaskCard({
   isAssignee: boolean;
   canApprove: boolean;
   canDelete: boolean;
+  canClose?: boolean;
+  onClose?: () => void;
   selectMode?: boolean;
   selected?: boolean;
   canSelect?: boolean;
@@ -4100,339 +4417,294 @@ function TaskCard({
     ? [...task.meta!.messages!].reverse().find((m) => m.authorRole === "auditor")
     : undefined;
 
+  const closedByCreator = Boolean((task.meta as { closedByCreator?: boolean } | null)?.closedByCreator);
+  const lateOpen = Boolean(overdue && !awaitingReview && !isVerified);
+  const state: { label: string; tone: string; dot: string } = isVerified
+    ? {
+        label: closedByCreator ? "Yopildi" : "Bajarildi",
+        tone: "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-200 dark:ring-emerald-500/30",
+        dot: "bg-emerald-500",
+      }
+    : awaitingReview
+      ? {
+          label: "Tekshiruvda",
+          tone: "bg-violet-50 text-violet-700 ring-violet-200 dark:bg-violet-500/15 dark:text-violet-200 dark:ring-violet-500/30",
+          dot: "bg-violet-500",
+        }
+      : pendingExt
+        ? {
+            label: "Muddat so‘ralgan",
+            tone: "bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-500/15 dark:text-amber-200 dark:ring-amber-500/30",
+            dot: "bg-amber-500",
+          }
+        : lateOpen
+          ? {
+              label: needsAccept ? "Kechikkan · qabul qilinmagan" : "Kechikkan",
+              tone: "bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-500/15 dark:text-rose-200 dark:ring-rose-500/30",
+              dot: "bg-rose-500",
+            }
+          : needsAccept
+            ? {
+                label: "Qabul kutilmoqda",
+                tone: "bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-500/15 dark:text-sky-200 dark:ring-sky-500/30",
+                dot: "bg-sky-500",
+              }
+            : {
+                label: "Jarayonda",
+                tone: "bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-500/15 dark:text-blue-200 dark:ring-blue-500/30",
+                dot: "bg-blue-500",
+              };
+  const showProgressBar = isAccepted && !awaitingReview && !isVerified;
+  const fileCount = files.length + (task.completionAttachments?.length ?? 0);
+  const batchSize = Number(task.meta?.batchSize || 0);
+
+  const showAccept = isAssignee && needsAccept && !assigneeFrozen;
+  const showProgress = isAssignee && isAccepted && !assigneeFrozen;
+  const showApprove = canApprove && awaitingReview;
+  const showExtReview = (isCreator || canApprove) && pendingExt;
+  const showExtend = (isCreator || canApprove) && overdue && !awaitingReview && !isVerified && !pendingExt;
+  const showClose = Boolean(canClose && onClose) && !awaitingReview && !isVerified;
+  const btn =
+    "inline-flex h-7 min-w-0 items-center justify-center gap-1 rounded-md px-2 text-[11px] font-semibold transition disabled:opacity-40";
+
   return (
     <article
       className={cn(
-        "group relative cursor-pointer overflow-hidden rounded-xl border border-border/80 bg-card p-3 pl-3.5 shadow-[0_1px_2px_rgba(15,39,68,0.05)] transition-all duration-200",
+        "group relative flex h-[204px] cursor-pointer flex-col overflow-hidden rounded-xl border border-border/80 bg-card p-3 pl-3.5 shadow-[0_1px_2px_rgba(15,39,68,0.05)] transition-all duration-200",
         "hover:-translate-y-0.5 hover:border-border hover:shadow-[0_10px_24px_-14px_rgba(15,39,68,0.35)] dark:shadow-black/20",
-        overdue && !awaitingReview && !isVerified && "border-rose-300/80 dark:border-rose-500/40",
-        needsAccept && isAssignee && "border-sky-400/80 dark:border-sky-500/40",
+        lateOpen && "border-rose-300/80 dark:border-rose-500/40",
         awaitingReview && "border-violet-300/80 dark:border-violet-500/40",
-        isVerified && "border-emerald-300/80 dark:border-emerald-500/40",
-        pendingExt && "border-amber-400/80 dark:border-amber-500/40",
-        selectMode && selected && "border-rose-400 ring-1 ring-rose-400/40 dark:border-rose-500",
+        isVerified && "border-emerald-300/70 bg-emerald-50/20 dark:border-emerald-500/30",
+        selectMode && selected && "border-[#0b3a5c] ring-2 ring-[#0b3a5c]/25 dark:border-sky-400 dark:ring-sky-400/30",
         selectMode && !canSelect && "opacity-50",
       )}
       onClick={onOpen}
+      title={task.title}
     >
-      <span
-        className={cn(
-          "pointer-events-none absolute inset-y-0 left-0 w-[3px]",
-          COLUMNS.find((c) => c.id === column)?.accentDot ?? "bg-primary",
-        )}
-      />
-      {selectMode ? (
-        <button
-          type="button"
-          className={cn(
-            "absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-md border bg-card shadow-sm",
-            selected
-              ? "border-rose-500 bg-rose-500 text-white"
-              : "border-border text-muted-foreground",
-            !canSelect && "pointer-events-none opacity-40",
-          )}
-          disabled={!canSelect}
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleSelect?.();
-          }}
-          aria-label={t("ui.delete")}
-        >
-          {selected ? (
-            <Check className="h-3 w-3" strokeWidth={3} />
-          ) : (
-            <span className="h-2 w-2 rounded-sm" />
-          )}
-        </button>
-      ) : null}
-      {isVerified && !selectMode && (
-        <span className="absolute right-2.5 top-2.5 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm">
-          <Check className="h-3 w-3" strokeWidth={3} />
-        </span>
-      )}
+      <span className={cn("pointer-events-none absolute inset-y-0 left-0 w-[3px]", state.dot)} />
 
-      <div className={cn("mb-2 flex flex-wrap items-center gap-1.5", selectMode ? "pl-6 pr-1" : "pr-6")}>
+      {/* 1. Holat + ustuvorlik */}
+      <div className="flex h-5 shrink-0 items-center gap-1.5">
+        {selectMode ? (
+          <button
+            type="button"
+            className={cn(
+              "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border bg-card",
+              selected
+                ? "border-[#0b3a5c] bg-[#0b3a5c] text-white dark:border-sky-400 dark:bg-sky-400 dark:text-slate-950"
+                : "border-border text-muted-foreground",
+              !canSelect && "pointer-events-none opacity-40",
+            )}
+            disabled={!canSelect}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSelect?.();
+            }}
+            aria-label="Tanlash"
+          >
+            {selected ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
+          </button>
+        ) : null}
         <span
           className={cn(
-            "inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-bold",
-            priClass,
+            "inline-flex min-w-0 items-center gap-1 truncate rounded-full px-2 py-0.5 text-[10.5px] font-semibold ring-1",
+            state.tone,
           )}
+        >
+          {isVerified ? <Check className="h-3 w-3 shrink-0" strokeWidth={3} /> : <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", state.dot)} />}
+          <span className="truncate">{state.label}</span>
+        </span>
+        <span
+          className={cn("inline-flex shrink-0 items-center rounded-md border px-1.5 py-px text-[10px] font-bold", priClass)}
+          title={priLabel}
         >
           <Flag className="mr-0.5 h-2.5 w-2.5" />
           {priLabel}
         </span>
-        {tag ? (
-          <span className="inline-flex items-center gap-0.5 rounded-md border border-border/70 bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-            <Folder className="h-2.5 w-2.5 opacity-70" />
-            {tag}
-          </span>
-        ) : null}
-        {Number(task.meta?.batchSize || 0) > 1 ? (
-          <span className="inline-flex items-center gap-0.5 rounded-md border border-teal-300/70 bg-teal-50 px-1.5 py-0.5 text-[10px] font-bold text-teal-800 dark:border-teal-700/50 dark:bg-teal-950/40 dark:text-teal-200">
-            <Users className="h-2.5 w-2.5" />
-            {task.meta!.batchSize}
-          </span>
-        ) : null}
-        {Number(task.meta?.basedOnTaskId) > 0 ? (
-          <span className="inline-flex items-center gap-0.5 rounded-md border border-sky-300/70 bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-800 dark:border-sky-700/50 dark:bg-sky-950/40 dark:text-sky-200">
-            {t("tasks.form.basedOnBadge")} TK-{task.meta!.basedOnTaskId}
-          </span>
-        ) : null}
+        <span className="ml-auto flex shrink-0 items-center gap-1">
+          {lastAuditorMsg && !isVerified ? (
+            <span title="HR Auditordan xabar" className="text-amber-600">
+              <AlertTriangle className="h-3.5 w-3.5" />
+            </span>
+          ) : null}
+          {reworkCount > 0 && !isVerified ? (
+            <span
+              title={`${reworkCount} marta qaytarilgan`}
+              className="inline-flex items-center gap-0.5 rounded-md bg-amber-500/10 px-1 text-[10px] font-bold text-amber-700 dark:text-amber-300"
+            >
+              <RotateCcw className="h-2.5 w-2.5" />
+              {reworkCount}
+            </span>
+          ) : null}
+          <span className="text-[10px] font-medium tabular-nums text-muted-foreground/60">TK-{task.id}</span>
+        </span>
       </div>
 
-      <h3 className="mb-1 text-[13px] font-bold leading-snug text-foreground">{task.title}</h3>
+      {/* 2. Nom — 3 qatorgacha */}
+      <h3 className="mt-2 line-clamp-3 h-[3.6rem] shrink-0 text-[13px] font-semibold leading-[1.2rem] text-foreground">
+        {task.title}
+      </h3>
 
-      {task.description ? (
-        <p className="mb-2 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">
-          {htmlDescToPlain(task.description)}
-        </p>
-      ) : null}
-
-      {needsAccept ? (
-        <AcceptWindowCountdown task={task} compact className="mb-2" />
-      ) : null}
-
-      {lastAuditorMsg && !isVerified ? (
-        <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5 text-[10px] text-amber-950 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-100">
-          <p className="flex items-center gap-1 font-bold">
-            <AlertTriangle className="h-3 w-3" /> HR Auditordan xabar
-          </p>
-          <p className="mt-0.5 line-clamp-2">{lastAuditorMsg.text || lastAuditorMsg.attachment?.name || "📎"}</p>
-        </div>
-      ) : null}
-
-      {task.candidateId && task.pipelineStage && (
-        <a
-          href={
-            task.pipelineStage === "hired"
-              ? `/candidates/${task.candidateId}`
-              : `/candidates/${task.candidateId}/${
-                  task.pipelineStage === "offline_interview"
-                    ? "offline-interview"
-                    : task.pipelineStage === "final_decision"
-                      ? "final-decision"
-                      : task.pipelineStage
-                }`
-          }
-          className="mb-1.5 inline-flex text-[10px] font-medium text-primary hover:underline"
-          onClick={(e) => e.stopPropagation()}
-        >
-          Nomzod formasini ochish →
-        </a>
-      )}
-
-        <div
-          className={cn(
-          "mb-2 flex items-center gap-1.5 text-[11px]",
-          dueDateToneClass(task.dueAt, task.status),
+      {/* 3. Muddat / progress / qabul taymeri */}
+      <div className="mt-1.5 flex h-[30px] shrink-0 flex-col justify-center gap-1">
+        {needsAccept && !lateOpen && isAcceptWindowEnabled(task) ? (
+          <AcceptWindowCountdown task={task} compact className="py-0.5" />
+        ) : (
+          <>
+            <div className="flex items-center gap-2 text-[11px]">
+              <span className={cn("inline-flex min-w-0 items-center gap-1 truncate", dueDateToneClass(task.dueAt, task.status))}>
+                <Calendar className="h-3 w-3 shrink-0" />
+                {task.dueAt ? formatDate(task.dueAt) : t("tasks.noDue")}
+              </span>
+              {pendingExt ? (
+                <span className="truncate text-[10.5px] text-amber-700 dark:text-amber-300">
+                  → {formatDate(task.extensionRequestedDueAt)}
+                </span>
+              ) : null}
+              {showProgressBar ? (
+                <span className="ml-auto shrink-0 text-[10.5px] font-semibold tabular-nums text-primary">{progress}%</span>
+              ) : null}
+            </div>
+            {showProgressBar ? (
+              <div className="h-1 overflow-hidden rounded-full bg-muted">
+                <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+              </div>
+            ) : null}
+          </>
         )}
-      >
-        <Calendar className="h-3 w-3 shrink-0" />
-        <span>{task.dueAt ? formatDate(task.dueAt) : t("tasks.noDue")}</span>
-          </div>
+      </div>
 
-      {(column === "progress" || isAccepted || column === "today") &&
-        !awaitingReview &&
-        !isVerified && (
-          <div className="mb-2.5">
-            <div className="mb-1 flex items-center justify-between text-[10px] font-semibold text-muted-foreground">
-              <span>{t("tasks.progress")}</span>
-              <span className="tabular-nums text-primary">{progress}%</span>
-        </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-primary transition-all"
-                style={{ width: `${progress}%` }}
-              />
-        </div>
-        </div>
-      )}
-
-      {(awaitingReview || isVerified) &&
-        (task.completionNote || (task.completionAttachments?.length ?? 0) > 0) && (
-          <div className="mb-2 rounded-lg border border-emerald-200/80 bg-emerald-50/80 px-2 py-1 text-[10px] text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
-            <span className="font-semibold">{t("tasks.result")} </span>
-          {task.completionNote
-            ? task.completionNote.slice(0, 60) +
-              (task.completionNote.length > 60 ? "…" : "")
-            : `${task.completionAttachments.length} ta fayl`}
-        </div>
-      )}
-
-      {!awaitingReview &&
-      !isVerified &&
-      (task.meta?.lastReworkNote || lastArchived) ? (
-        <div className="mb-2 space-y-1.5">
-          {lastArchived?.note ? (
-            <div className="rounded-lg border border-emerald-300/60 bg-emerald-50/70 px-2 py-1.5 text-[10px] text-emerald-950 dark:border-emerald-700/40 dark:bg-emerald-950/30 dark:text-emerald-100">
-              <span className="font-semibold">{t("tasks.return.history")}: </span>
-              {String(lastArchived.note).slice(0, 80)}
-              {String(lastArchived.note).length > 80 ? "…" : ""}
-            </div>
-          ) : null}
-          {task.meta?.lastReworkNote ? (
-            <div className="rounded-lg border border-amber-300/70 bg-amber-50/80 px-2 py-1.5 text-[10px] text-amber-950 dark:border-amber-700/50 dark:bg-amber-950/30 dark:text-amber-100">
-              <span className="font-semibold">{t("tasks.rework")}: </span>
-              {String(task.meta.lastReworkNote).slice(0, 90)}
-              {String(task.meta.lastReworkNote).length > 90 ? "…" : ""}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      {pendingExt && (
-        <div className="mb-2 rounded-lg border border-amber-200/80 bg-amber-50 px-2 py-1 text-[10px] text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-          Muddat so‘ralgan: {formatDate(task.extensionRequestedDueAt)}
-        </div>
-      )}
-
-      <div className="flex items-center gap-2 border-t border-border/60 pt-2">
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+      {/* 4. Ijrochi + hisoblagichlar */}
+      <div className="mt-auto flex h-7 shrink-0 items-center gap-2 border-t border-border/60 pt-1.5">
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[8.5px] font-bold text-primary-foreground">
           {initials || "?"}
-            </span>
+        </span>
         <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground">
           {task.assigneeName || "—"}
-          {Array.isArray(task.meta?.assigneeHistory) &&
-          task.meta!.assigneeHistory!.length > 0 ? (
-            <span className="ml-1 font-normal text-muted-foreground">
-              · {t("tasks.transferredFrom")}:{" "}
-              {task.meta!.assigneeHistory![task.meta!.assigneeHistory!.length - 1]?.name}
-            </span>
-          ) : null}
         </span>
-        <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
-          <MessageSquare className="h-3 w-3" />
-          {msgCount}
-        </span>
-        <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
-              <Paperclip className="h-3 w-3" />
-          {files.length + (task.completionAttachments?.length ?? 0)}
-            </span>
-        <span className="text-[10px] font-medium tabular-nums text-muted-foreground/50">
-          TK-{task.id}
-        </span>
-        </div>
+        {batchSize > 1 ? (
+          <span title={`${batchSize} ijrochi`} className="inline-flex items-center gap-0.5 text-[10px] text-teal-700 dark:text-teal-300">
+            <Users className="h-3 w-3" />
+            {batchSize}
+          </span>
+        ) : null}
+        {msgCount > 0 ? (
+          <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
+            <MessageSquare className="h-3 w-3" />
+            {msgCount}
+          </span>
+        ) : null}
+        {fileCount > 0 ? (
+          <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
+            <Paperclip className="h-3 w-3" />
+            {fileCount}
+          </span>
+        ) : null}
+      </div>
 
-      {assigneeFrozen ? (
-        <p className="mt-2 w-full rounded-md bg-rose-500/15 px-2 py-1.5 text-center text-[10px] font-bold text-rose-700 ring-1 ring-rose-300/60 dark:bg-rose-950/50 dark:text-rose-300 dark:ring-rose-700/50">
-          {task.status === "todo" && !task.acceptedAt
-            ? "Qabul qilinmadi — faqat ko‘rish"
-            : "Vaqt tugagan — o‘zgartirish yopiq"}
-        </p>
-      ) : null}
-
-      {(() => {
-        const showAccept = isAssignee && needsAccept && !assigneeFrozen;
-        const showProgress = isAssignee && isAccepted && !assigneeFrozen;
-        const showApprove = canApprove && awaitingReview;
-        const showExtReview = (isCreator || canApprove) && pendingExt;
-        const showExtend =
-          (isCreator || canApprove) && overdue && !awaitingReview && !isVerified;
-        const hasActions = showAccept || showProgress || showApprove || showExtReview || showExtend || canDelete;
-        if (!hasActions) return null;
-        return (
-      <div
-        className="mt-2 flex flex-wrap gap-1 border-t border-border/40 pt-2"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {showAccept && (
-          <button
-            type="button"
-            className="flex-1 rounded-md bg-primary py-1.5 text-[11px] font-semibold text-primary-foreground hover:opacity-90"
-            onClick={onAccept}
-          >
-            {t("tasks.accept")}
-          </button>
-        )}
-        {showProgress && (
+      {/* 5. Amallar — doim bitta qator */}
+      <div className="mt-1.5 flex h-7 shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
+        {selectMode ? (
+          <span className="text-[11px] text-muted-foreground">{selected ? "Tanlandi" : canSelect ? "Tanlash uchun bosing" : "Tanlab bo‘lmaydi"}</span>
+        ) : assigneeFrozen ? (
+          <span className="truncate text-[10.5px] font-semibold text-rose-700 dark:text-rose-300">
+            {task.status === "todo" && !task.acceptedAt ? "Qabul qilinmadi — faqat ko‘rish" : "Vaqt tugagan — o‘zgartirish yopiq"}
+          </span>
+        ) : (
           <>
-            <button
-              type="button"
-              className="flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-[11px] text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300"
-              onClick={onComplete}
-            >
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              {t("tasks.markDone")}
-            </button>
-            <button
-              type="button"
-              className="inline-flex items-center justify-center gap-1 rounded-md px-2 py-1.5 text-[11px] text-amber-800 hover:bg-amber-500/10 dark:text-amber-300"
-              onClick={onExtend}
-            >
-              <Clock className="h-3.5 w-3.5" />
-              {t("tasks.deadline")}
-            </button>
+            {showAccept ? (
+              <button type="button" className={cn(btn, "flex-1 bg-primary text-primary-foreground hover:opacity-90")} onClick={onAccept}>
+                <Check className="h-3.5 w-3.5" />
+                {t("tasks.accept")}
+              </button>
+            ) : null}
+            {showProgress ? (
+              <>
+                <button type="button" className={cn(btn, "flex-1 bg-emerald-600 text-white hover:bg-emerald-700")} onClick={onComplete}>
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  {t("tasks.markDone")}
+                </button>
+                <button
+                  type="button"
+                  className={cn(btn, "border border-border text-muted-foreground hover:text-foreground")}
+                  onClick={onExtend}
+                  title={t("tasks.deadline")}
+                >
+                  <Clock className="h-3.5 w-3.5" />
+                </button>
+              </>
+            ) : null}
+            {showApprove ? (
+              <>
+                <button
+                  type="button"
+                  className={cn(btn, "flex-1 bg-emerald-600 text-white hover:bg-emerald-700")}
+                  onClick={() => startTransition(() => onVerify())}
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Tasdiqlash
+                </button>
+                <button
+                  type="button"
+                  className={cn(btn, "flex-1 border border-[#0b5fff]/35 text-[#0a2540] hover:bg-[#0b5fff]/10 dark:text-sky-100")}
+                  onClick={onOpenReturn}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Qaytarish
+                </button>
+              </>
+            ) : null}
+            {showExtReview ? (
+              <>
+                <button type="button" className={cn(btn, "flex-1 bg-amber-500/15 text-amber-800 hover:bg-amber-500/25 dark:text-amber-200")} onClick={onApproveExt}>
+                  {t("ui.approve")}
+                </button>
+                <button type="button" className={cn(btn, "text-rose-700 hover:bg-rose-500/10 dark:text-rose-300")} onClick={onRejectExt}>
+                  {t("tasks.rejectExt")}
+                </button>
+              </>
+            ) : null}
+            {showExtend ? (
+              <button
+                type="button"
+                className={cn(btn, "flex-1 border border-amber-300/80 bg-amber-50 text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200")}
+                onClick={onOpen}
+                title="Muddatni cho‘zish"
+              >
+                <Clock className="h-3.5 w-3.5" />
+                Muddat
+              </button>
+            ) : null}
+            {showClose ? (
+              <button
+                type="button"
+                className={cn(btn, "flex-1 border border-emerald-300/80 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200")}
+                onClick={() => onClose?.()}
+                title={needsAccept ? "Qabul qilinmagan bo‘lsa ham yopish — Bajarildi" : "Yopish — Bajarildi"}
+              >
+                <CheckCheck className="h-3.5 w-3.5" />
+                Yopish
+              </button>
+            ) : null}
+            {!showAccept && !showProgress && !showApprove && !showExtReview && !showExtend && !showClose ? (
+              <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground group-hover:text-foreground">
+                Batafsil
+                <ArrowRight className="h-3 w-3" />
+              </span>
+            ) : null}
+            {canDelete ? (
+              <button
+                type="button"
+                className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400"
+                onClick={onDelete}
+                title={t("ui.delete")}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
           </>
-        )}
-        {showApprove && (
-            <button
-              type="button"
-            className="flex w-full items-center justify-center gap-1.5 rounded-md bg-emerald-600 py-2 text-[12px] font-bold text-white shadow-sm hover:bg-emerald-700"
-            onClick={() => {
-              startTransition(() => {
-                onVerify();
-              });
-            }}
-          >
-            <CheckCircle2 className="h-4 w-4" />
-            Tasdiqlash
-            </button>
-        )}
-        {showApprove && (
-            <button
-              type="button"
-            className="flex w-full items-center justify-center gap-1.5 rounded-md bg-gradient-to-r from-[#0a2540]/10 to-[#0b5fff]/15 py-2 text-[11px] font-bold text-[#0a2540] ring-1 ring-[#0b5fff]/35 hover:from-[#0a2540]/15 hover:to-[#0b5fff]/25 dark:text-sky-100 dark:ring-[#0b5fff]/40"
-            onClick={onOpenReturn}
-            >
-            <RotateCcw className="h-3.5 w-3.5" />
-              {t("tasks.rework")}
-            {reworkCount > 0 ? ` · ${reworkCount}` : ""}
-            </button>
-        )}
-        {showExtReview && (
-          <>
-            <button
-              type="button"
-              className="flex-1 rounded-md py-1.5 text-[11px] text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300"
-              onClick={onApproveExt}
-            >
-              {t("ui.approve")}
-            </button>
-            <button
-              type="button"
-              className="flex-1 rounded-md py-1.5 text-[11px] text-rose-700 hover:bg-rose-500/10 dark:text-rose-300"
-              onClick={onRejectExt}
-            >
-              {t("tasks.rejectExt")}
-            </button>
-          </>
-        )}
-        {showExtend && (
-          <button
-            type="button"
-            className="flex w-full items-center justify-center gap-1 rounded-md border border-amber-300/80 bg-amber-50 py-1.5 text-[11px] font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200"
-            onClick={onOpen}
-          >
-            <Clock className="h-3.5 w-3.5" />
-            Muddatni cho‘zish
-          </button>
-        )}
-        {canDelete && !selectMode && (
-          <button
-            type="button"
-            className="ml-auto rounded-md p-1.5 text-rose-600 hover:bg-rose-500/10 dark:text-rose-400"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            title={t("ui.delete")}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
         )}
       </div>
-        );
-      })()}
     </article>
   );
 }

@@ -17,7 +17,8 @@ import {
   Send,
   Maximize2,
   Minimize2,
-  Wand2,
+  FilePenLine,
+  Trash2,
   FileText,
   Settings2,
   Paperclip,
@@ -72,9 +73,15 @@ import {
 import { cn } from "@/lib/utils";
 import { scriptIncludes } from "@/lib/script-search";
 import { useI18n } from "@/i18n/I18nProvider";
-import { isSbRole, userRoleLabel } from "@/lib/roles";
+import { userRoleLabel } from "@/lib/roles";
 import { VerifiedBadge, VerifiedName } from "@/components/VerifiedBadge";
-import { SB_TASK_TEMPLATES } from "@/lib/sb";
+import {
+  draftLabel,
+  readTaskFormDrafts,
+  removeTaskFormDraft,
+  upsertTaskFormDraft,
+  type TaskFormDraft,
+} from "@/lib/task-form-drafts";
 import {
   fileToAttachment,
   useSendTaskMessage,
@@ -105,7 +112,6 @@ import {
   acceptDeadlineHours,
   canAssignTaskSupervisor,
 } from "@/lib/vazifalar-permissions";
-import { isOfisWorkplace, isWeekendYmd } from "@/lib/ofis-weekend";
 import { canSetPrivateTaskVisibility } from "@/lib/roles";
 import {
   clampDescHtml,
@@ -238,6 +244,8 @@ type Props = {
   /** «Shu asosida yangi» tugmasi */
   onCreateFromTask?: () => void;
   canCreateFromTask?: boolean;
+  /** Ochilganda qoralamalar ro‘yxatini ochish */
+  preferDraftsOpen?: boolean;
 };
 
 const TITLE_MAX = 200;
@@ -470,8 +478,15 @@ function BasedOnBanner({
               {title}
             </span>
             <span className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+              {meta.basedOnCreatedByName ? (
+                <span>
+                  {t("tasks.form.basedOnFrom")}: {meta.basedOnCreatedByName}
+                </span>
+              ) : null}
               {meta.basedOnAssigneeName ? (
-                <span>{meta.basedOnAssigneeName}</span>
+                <span>
+                  {t("tasks.form.receiverBadge")}: {meta.basedOnAssigneeName}
+                </span>
               ) : null}
               {meta.basedOnStatus ? (
                 <span>
@@ -1174,6 +1189,7 @@ export function TaskFormDialog({
   derivedTasks = [],
   onCreateFromTask,
   canCreateFromTask,
+  preferDraftsOpen = false,
 }: Props) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -1227,7 +1243,9 @@ export function TaskFormDialog({
   const [supervisorKey, setSupervisorKey] = useState("");
   const [supervisorOpen, setSupervisorOpen] = useState(false);
   const [basedOnMeta, setBasedOnMeta] = useState<Partial<TaskMeta>>({});
-  const [templateOpen, setTemplateOpen] = useState(false);
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const [draftList, setDraftList] = useState<TaskFormDraft[]>([]);
+  const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [sideTab, setSideTab] = useState<"chat" | "files" | "history">("chat");
   const [mobilePanel, setMobilePanel] = useState<"main" | "settings" | "side">("main");
   const [messages, setMessages] = useState<TaskChatMessage[]>([]);
@@ -1273,6 +1291,10 @@ export function TaskFormDialog({
   // To‘liq hydrate — faqat ochilganda / vazifa id o‘zgaganda (chat yangilanishi natija matnini o‘chirmasin)
   useEffect(() => {
     if (!open) return;
+    setActiveDraftId(null);
+    refreshDraftList();
+    if (!editing && preferDraftsOpen) setDraftsOpen(true);
+    else setDraftsOpen(false);
     if (editing) {
       const meta = (editing.meta || {}) as TaskMeta;
       const due = splitDue(toDatetimeLocalValue(editing.dueAt));
@@ -1317,6 +1339,7 @@ export function TaskFormDialog({
         basedOnTaskId: meta.basedOnTaskId ?? null,
         basedOnTitle: meta.basedOnTitle ?? null,
         basedOnAssigneeName: meta.basedOnAssigneeName ?? null,
+        basedOnCreatedByName: meta.basedOnCreatedByName ?? null,
         basedOnStatus: meta.basedOnStatus ?? null,
         basedOnCompletedAt: meta.basedOnCompletedAt ?? null,
         basedOnResultNote: meta.basedOnResultNote ?? null,
@@ -1416,6 +1439,7 @@ export function TaskFormDialog({
         basedOnTaskId: src.id,
         basedOnTitle: src.title,
         basedOnAssigneeName: src.assigneeName,
+        basedOnCreatedByName: src.createdByName,
         basedOnStatus: src.status,
         basedOnCompletedAt: src.completedAt,
         basedOnResultNote: src.completionNote
@@ -1854,12 +1878,102 @@ export function TaskFormDialog({
     }
   }
 
-  function applyTemplate(idx: number) {
-    const tpl = SB_TASK_TEMPLATES[idx];
-    if (!tpl) return;
-    setTitle(tpl.title.slice(0, TITLE_MAX));
-    setDescEditorContent(tpl.description);
-    setTemplateOpen(false);
+  function refreshDraftList() {
+    setDraftList(readTaskFormDrafts());
+  }
+
+  function collectDraftPayload() {
+    return {
+      title: title.slice(0, TITLE_MAX),
+      description,
+      priority,
+      dueDate,
+      dueTime,
+      assigneeKey,
+      multiAssigneeKeys: [...multiAssigneeKeys],
+      filterOfis,
+      filterDorixona,
+      branchOrDept,
+      taskType,
+      tags: [...tags],
+      attachments: [...attachments],
+      checklist: checklist.map((c) => ({ ...c })),
+      notes,
+      reminderEnabled,
+      reminderOffset,
+      acceptWindowEnabled,
+      recurrence,
+      recurrencePeriod,
+      visibility,
+      supervisorKey,
+    };
+  }
+
+  function saveAsDraft() {
+    const payload = collectDraftPayload();
+    const hasContent =
+      !!payload.title.trim() ||
+      !!htmlDescToPlain(payload.description).trim() ||
+      payload.multiAssigneeKeys.length > 0 ||
+      !!payload.assigneeKey ||
+      !!payload.dueDate ||
+      payload.checklist.length > 0 ||
+      payload.attachments.length > 0 ||
+      !!payload.notes.trim();
+    if (!hasContent) {
+      toast({
+        title: t("tasks.form.draftEmpty"),
+        variant: "destructive",
+      });
+      return;
+    }
+    const saved = upsertTaskFormDraft(payload, activeDraftId);
+    setActiveDraftId(saved.id);
+    refreshDraftList();
+    toast({
+      title: t("tasks.form.draftSaved"),
+      description: draftLabel(saved),
+    });
+  }
+
+  function applyDraft(d: TaskFormDraft) {
+    setActiveDraftId(d.id);
+    setTitle(d.title.slice(0, TITLE_MAX));
+    setDescEditorContent(d.description || "");
+    setPriority(d.priority || "normal");
+    setDueDate(d.dueDate || "");
+    setDueTime(d.dueTime || "18:00");
+    setAssigneeKey(d.assigneeKey || "");
+    setMultiAssigneeKeys(d.multiAssigneeKeys || []);
+    setFilterOfis(d.filterOfis !== false);
+    setFilterDorixona(d.filterDorixona !== false);
+    setBranchOrDept(d.branchOrDept || "");
+    setTaskType(d.taskType || "hisobot");
+    setTags(d.tags || []);
+    setAttachments(d.attachments || []);
+    setChecklist(d.checklist || []);
+    setNotes(d.notes || "");
+    setReminderEnabled(d.reminderEnabled !== false);
+    setReminderOffset(d.reminderOffset || "1d");
+    setAcceptWindowEnabled(!!d.acceptWindowEnabled);
+    setRecurrence(d.recurrence || "none");
+    setRecurrencePeriod(d.recurrencePeriod || "weekly");
+    setVisibility(d.visibility === "private" ? "private" : "all");
+    setSupervisorKey(d.supervisorKey || "");
+    setDraftsOpen(false);
+    toast({
+      title: t("tasks.form.draftLoaded"),
+      description: draftLabel(d),
+    });
+  }
+
+  function deleteDraft(id: string, e?: React.MouseEvent) {
+    e?.preventDefault();
+    e?.stopPropagation();
+    removeTaskFormDraft(id);
+    if (activeDraftId === id) setActiveDraftId(null);
+    refreshDraftList();
+    toast({ title: t("tasks.form.draftDeleted") });
   }
 
   function applyAiAssist() {
@@ -1941,24 +2055,6 @@ export function TaskFormDialog({
       });
       return;
     }
-    if (dueLocal && isWeekendYmd(dueDate)) {
-      const ofisHit = useMulti
-        ? multiSpecs.some((s) => {
-            const o = assigneeOptions.find(
-              (x) => x.key === `${s.assigneeKind}:${s.assigneeId}`,
-            );
-            return isOfisWorkplace(o?.workplace);
-          })
-        : isOfisWorkplace(selectedAssignee?.workplace);
-      if (ofisHit) {
-        toast({
-          title: t("tasks.form.ofisWeekendBlocked"),
-          description: t("tasks.form.ofisWeekendHint"),
-          variant: "destructive",
-        });
-        return;
-      }
-    }
     const [kind, idStr] = useMulti
       ? [
           multiSpecs[0].assigneeKind,
@@ -2014,6 +2110,8 @@ export function TaskFormDialog({
       basedOnTitle: basedOnMeta.basedOnTitle ?? prevMeta.basedOnTitle ?? null,
       basedOnAssigneeName:
         basedOnMeta.basedOnAssigneeName ?? prevMeta.basedOnAssigneeName ?? null,
+      basedOnCreatedByName:
+        basedOnMeta.basedOnCreatedByName ?? prevMeta.basedOnCreatedByName ?? null,
       basedOnStatus: basedOnMeta.basedOnStatus ?? prevMeta.basedOnStatus ?? null,
       basedOnCompletedAt:
         basedOnMeta.basedOnCompletedAt ?? prevMeta.basedOnCompletedAt ?? null,
@@ -2040,6 +2138,11 @@ export function TaskFormDialog({
       attachments,
       meta,
     });
+    if (!editing && activeDraftId) {
+      removeTaskFormDraft(activeDraftId);
+      setActiveDraftId(null);
+      refreshDraftList();
+    }
   }
 
   function buildLiveMeta(
@@ -2069,6 +2172,8 @@ export function TaskFormDialog({
       basedOnTitle: prevMeta.basedOnTitle ?? basedOnMeta.basedOnTitle ?? null,
       basedOnAssigneeName:
         prevMeta.basedOnAssigneeName ?? basedOnMeta.basedOnAssigneeName ?? null,
+      basedOnCreatedByName:
+        prevMeta.basedOnCreatedByName ?? basedOnMeta.basedOnCreatedByName ?? null,
       basedOnStatus: prevMeta.basedOnStatus ?? basedOnMeta.basedOnStatus ?? null,
       basedOnCompletedAt:
         prevMeta.basedOnCompletedAt ?? basedOnMeta.basedOnCompletedAt ?? null,
@@ -2471,7 +2576,7 @@ export function TaskFormDialog({
           "xl:!inset-auto xl:!left-[50%] xl:!top-[50%] xl:!h-auto xl:!translate-x-[-50%] xl:!translate-y-[-50%] xl:!rounded-3xl",
           expanded
             ? "xl:!h-[96vh] xl:!max-h-[96vh] xl:!w-[98vw] xl:!max-w-[98vw]"
-            : "xl:!max-h-[94vh] xl:!w-[96vw] xl:!max-w-7xl",
+            : "xl:!max-h-[94vh] xl:!w-[97vw] xl:!max-w-[1680px]",
         )}
       >
         <div
@@ -2540,67 +2645,114 @@ export function TaskFormDialog({
               </DialogDescription>
             </div>
             <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
-              {!isReadOnly && (
-              <Popover open={templateOpen} onOpenChange={setTemplateOpen}>
+              {!isReadOnly && !editing && (
+              <Popover
+                open={draftsOpen}
+                onOpenChange={(v) => {
+                  setDraftsOpen(v);
+                  if (v) refreshDraftList();
+                }}
+              >
                 <PopoverTrigger asChild>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-8 gap-1.5 rounded-full border-blue-200 bg-[#eef4ff] px-2.5 text-xs font-semibold text-[#0b5fff] hover:bg-[#dde9ff] dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-300 sm:px-3"
+                    className="h-8 gap-1.5 rounded-full border-amber-200 bg-amber-50 px-2.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200 sm:px-3"
                   >
-                    <Wand2 className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">{t("tasks.form.fromTemplate")}</span>
+                    <FilePenLine className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">{t("tasks.form.drafts")}</span>
+                    {draftList.length > 0 ? (
+                      <span className="rounded-full bg-amber-200/80 px-1.5 text-[10px] font-bold tabular-nums text-amber-900 dark:bg-amber-900 dark:text-amber-100">
+                        {draftList.length}
+                      </span>
+                    ) : null}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent align="end" className="z-[100] w-80 p-0">
+                <PopoverContent align="end" className="z-[100] w-[min(22rem,calc(100vw-1.5rem))] p-0">
+                  <div className="border-b border-slate-100 px-3 py-2 dark:border-slate-800">
+                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                      {t("tasks.form.drafts")}
+                    </p>
+                    <p className="text-[10px] leading-snug text-muted-foreground">
+                      {t("tasks.form.draftsHint")}
+                    </p>
+                  </div>
                   <Command>
-                    <CommandInput placeholder={t("tasks.form.searchTemplate")} />
-                    <CommandList className="max-h-64">
-                      <CommandEmpty>{t("tasks.form.noTemplate")}</CommandEmpty>
+                    <CommandInput placeholder={t("tasks.form.searchDraft")} />
+                    <CommandList className="max-h-72">
+                      <CommandEmpty>{t("tasks.form.noDraft")}</CommandEmpty>
                       <CommandGroup>
-                        {(isSbRole(currentUserRole)
-                          ? SB_TASK_TEMPLATES
-                          : [
-                              {
-                                group: "Umumiy",
-                                title: "Haftalik hisobot",
-                                description:
-                                  "• Ma’lumotlarni yig‘ish\n• Tahlil qilish\n• Hisobotni tayyorlash\n• Rahbarga yuborish",
-                              },
-                              {
-                                group: "Umumiy",
-                                title: "Filial tekshiruvi",
-                                description:
-                                  "• Joyida ko‘rik\n• Kamchiliklarni qayd etish\n• Chora-tadbirlar\n• Natijani yuborish",
-                              },
-                              {
-                                group: "Umumiy",
-                                title: "Xodim bilan suhbat",
-                                description:
-                                  "• Suhbatni rejalashtirish\n• Savollarni tayyorlash\n• Natijani yozib qo‘yish",
-                              },
-                            ]
-                        ).map((tpl, i) => (
-                          <CommandItem
-                            key={`${tpl.group}-${tpl.title}-${i}`}
-                            value={`${tpl.group} ${tpl.title}`}
-                            onSelect={() => {
-                              if (isSbRole(currentUserRole)) applyTemplate(i);
-                              else {
-                                setTitle(tpl.title.slice(0, TITLE_MAX));
-                                setDescEditorContent(tpl.description);
-                                setTemplateOpen(false);
-                              }
-                            }}
-                          >
-                            <span className="truncate text-xs text-muted-foreground">{tpl.group}:</span>
-                            <span className="ml-1 truncate">{tpl.title}</span>
-                          </CommandItem>
-                        ))}
+                        {draftList.map((d) => {
+                          const n =
+                            d.multiAssigneeKeys.length ||
+                            (d.assigneeKey ? 1 : 0);
+                          const when = (() => {
+                            try {
+                              return new Date(d.savedAt).toLocaleString("uz-UZ", {
+                                day: "2-digit",
+                                month: "short",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              });
+                            } catch {
+                              return "";
+                            }
+                          })();
+                          return (
+                            <CommandItem
+                              key={d.id}
+                              value={`${draftLabel(d)} ${when} ${d.id}`}
+                              onSelect={() => applyDraft(d)}
+                              className="items-start gap-2 py-2"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="truncate text-sm font-medium">
+                                    {draftLabel(d)}
+                                  </span>
+                                  {activeDraftId === d.id ? (
+                                    <span className="shrink-0 rounded bg-amber-100 px-1 text-[9px] font-bold uppercase text-amber-800 dark:bg-amber-900 dark:text-amber-200">
+                                      {t("ui.draft")}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <p className="mt-0.5 text-[10px] text-muted-foreground">
+                                  {when}
+                                  {n > 0
+                                    ? ` · ${t("tasks.form.draftAssignees").replace("{n}", String(n))}`
+                                    : ""}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                className="mt-0.5 rounded-md p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950"
+                                title={t("tasks.form.draftDelete")}
+                                onClick={(e) => deleteDraft(d.id, e)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </CommandItem>
+                          );
+                        })}
                       </CommandGroup>
                     </CommandList>
                   </Command>
+                  <div className="border-t border-slate-100 p-2 dark:border-slate-800">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 w-full gap-1.5 rounded-lg text-xs font-semibold"
+                      onClick={() => {
+                        saveAsDraft();
+                        setDraftsOpen(false);
+                      }}
+                    >
+                      <FilePenLine className="h-3.5 w-3.5" />
+                      {t("tasks.form.saveDraft")}
+                    </Button>
+                  </div>
                 </PopoverContent>
               </Popover>
               )}
@@ -2678,7 +2830,7 @@ export function TaskFormDialog({
         <div
           className={cn(
             "flex min-h-0 flex-1 flex-col gap-0 overflow-hidden px-3 py-2.5",
-            "xl:grid xl:gap-3.5 xl:p-3.5 xl:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.78fr)_minmax(300px,0.85fr)]",
+            "xl:grid xl:gap-4 xl:p-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(380px,1fr)_minmax(340px,0.95fr)]",
           )}
         >
           {/* LEFT */}
@@ -2753,16 +2905,23 @@ export function TaskFormDialog({
 
             {(basedOnMeta.basedOnTaskId ||
               (editing?.meta as TaskMeta | null)?.basedOnTaskId) && (
-              <BasedOnBanner
-                meta={
-                  {
-                    ...((editing?.meta as TaskMeta) || {}),
-                    ...basedOnMeta,
-                  } as TaskMeta
-                }
-                onOpen={onOpenLinkedTask}
-                t={t}
-              />
+              <div className="space-y-1.5">
+                {!editing && basedOnSource ? (
+                  <p className="px-0.5 text-[11px] font-semibold text-[#0b5fff]">
+                    {t("tasks.form.basedOnDraft")}
+                  </p>
+                ) : null}
+                <BasedOnBanner
+                  meta={
+                    {
+                      ...((editing?.meta as TaskMeta) || {}),
+                      ...basedOnMeta,
+                    } as TaskMeta
+                  }
+                  onOpen={editing ? onOpenLinkedTask : undefined}
+                  t={t}
+                />
+              </div>
             )}
 
             {editing && derivedTasks.length > 0 ? (
@@ -2774,24 +2933,30 @@ export function TaskFormDialog({
             ) : null}
 
             {editing && canCreateFromTask && onCreateFromTask ? (
-              <div className="rounded-2xl border border-dashed border-[#0b5fff]/35 bg-[#0b5fff]/[0.04] p-3 dark:border-blue-700/50 dark:bg-blue-950/20">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="overflow-hidden rounded-2xl border border-[#0b5fff]/30 bg-white shadow-[0_8px_24px_rgba(11,95,255,0.08)] ring-1 ring-[#0b5fff]/10 dark:border-blue-800/60 dark:bg-slate-900 dark:ring-blue-500/10">
+                <div className="flex items-center gap-2 border-b border-[#0b5fff]/15 bg-gradient-to-r from-[#0b5fff]/10 via-[#eef4ff] to-transparent px-3.5 py-2.5 dark:border-blue-800/50 dark:from-blue-950/50 dark:via-slate-900">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#0b5fff] text-white shadow-sm shadow-blue-500/30">
+                    <Link2 className="h-4 w-4" />
+                  </span>
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-[#0a2540] dark:text-slate-100">
+                    <p className="text-[13px] font-bold leading-tight text-[#0a2540] dark:text-slate-50">
                       {t("tasks.form.createFrom")}
                     </p>
-                    <p className="text-[11px] leading-snug text-muted-foreground">
-                      {t("tasks.form.createFromHint")}
+                    <p className="mt-0.5 text-[11px] leading-snug text-slate-600 dark:text-slate-300">
+                      {isWork || isView
+                        ? t("tasks.form.createFromReceived")
+                        : t("tasks.form.createFromHint")}
                     </p>
                   </div>
+                </div>
+                <div className="p-3">
                   <Button
                     type="button"
-                    variant="outline"
-                    className="h-10 shrink-0 gap-1.5 rounded-xl border-[#0b5fff]/40 font-semibold text-[#0b5fff] hover:bg-[#0b5fff]/10"
+                    className="h-11 w-full gap-2 rounded-xl bg-gradient-to-r from-[#0a54e6] to-[#0b5fff] text-[13px] font-bold text-white shadow-[0_8px_20px_rgba(11,95,255,0.25)] hover:from-[#0949c9] hover:to-[#0a54e6]"
                     onClick={() => onCreateFromTask()}
                   >
-                    <Plus className="h-4 w-4" />
-                    {t("tasks.form.createFrom")}
+                    <Plus className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{t("tasks.form.createFrom")}</span>
                   </Button>
                 </div>
               </div>
@@ -3752,11 +3917,6 @@ export function TaskFormDialog({
                   />
                 </div>
               </div>
-              {dueDate && isWeekendYmd(dueDate) ? (
-                <p className="text-[10px] font-medium leading-snug text-amber-700 dark:text-amber-300">
-                  {t("tasks.form.ofisWeekendHint")}
-                </p>
-              ) : null}
             </div>
 
             <div className="space-y-1.5">
@@ -4480,86 +4640,91 @@ export function TaskFormDialog({
                   Yopish
                 </Button>
               ) : isWork ? (
-                <>
-                  {needsWorkAccept && (
-                    <Button
-                      type="button"
-                      className="flex-1 gap-1.5 rounded-xl bg-[#0b5fff] shadow-md shadow-blue-500/25 hover:bg-[#0a54e6]"
-                      disabled={workBusy}
-                      onClick={() => {
-                        void (async () => {
-                          if (!onWorkAccept) return;
-                          setWorkBusy(true);
-                          try {
-                            await onWorkAccept();
-                          } finally {
-                            setWorkBusy(false);
-                          }
-                        })();
-                      }}
-                    >
-                      {t("tasks.accept")}
-                    </Button>
-                  )}
-                  {canWorkComplete && (
-                    <>
+                <div className="flex w-full flex-col gap-2.5">
+                  <div className="flex w-full items-stretch gap-2.5">
+                    {needsWorkAccept ? (
                       <Button
                         type="button"
-                        className="flex-1 gap-1.5 rounded-xl bg-[#0b5fff] shadow-md shadow-blue-500/25 hover:bg-[#0a54e6]"
-                        disabled={workBusy || saving}
-                        onClick={() => void submitWorkComplete()}
+                        className="h-12 flex-1 gap-2 rounded-2xl bg-gradient-to-r from-[#0a54e6] to-[#0b5fff] px-5 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(11,95,255,0.28)] hover:from-[#0949c9] hover:to-[#0a54e6]"
+                        disabled={workBusy}
+                        onClick={() => {
+                          void (async () => {
+                            if (!onWorkAccept) return;
+                            setWorkBusy(true);
+                            try {
+                              await onWorkAccept();
+                            } finally {
+                              setWorkBusy(false);
+                            }
+                          })();
+                        }}
                       >
-                        <Send className="h-4 w-4" />
-                        {t("tasks.markDone")}
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
+                        {t("tasks.accept")}
                       </Button>
+                    ) : null}
+                    {canWorkComplete ? (
+                      <>
+                        <Button
+                          type="button"
+                          className="h-12 min-w-0 flex-1 gap-2 rounded-2xl bg-gradient-to-r from-[#0a54e6] to-[#0b5fff] px-4 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(11,95,255,0.28)] hover:from-[#0949c9] hover:to-[#0a54e6]"
+                          disabled={workBusy || saving}
+                          onClick={() => void submitWorkComplete()}
+                        >
+                          <Send className="h-4 w-4 shrink-0" />
+                          <span className="truncate">{t("tasks.markDone")}</span>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-12 shrink-0 gap-1.5 rounded-2xl border-slate-200/90 bg-white px-4 text-[14px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                          onClick={() => onWorkExtend?.()}
+                        >
+                          <Clock className="h-4 w-4 shrink-0" />
+                          {t("tasks.deadline")}
+                        </Button>
+                      </>
+                    ) : null}
+                    {!needsWorkAccept && !canWorkComplete ? (
                       <Button
                         type="button"
                         variant="outline"
-                        className="rounded-xl border-slate-200 px-4"
-                        onClick={() => onWorkExtend?.()}
+                        className="h-12 flex-1 rounded-2xl text-[15px] font-semibold"
+                        onClick={() => onOpenChange(false)}
                       >
-                        <Clock className="h-4 w-4" />
-                        {t("tasks.deadline")}
+                        {t("ui.close") !== "ui.close" ? t("ui.close") : "Yopish"}
                       </Button>
-                    </>
-                  )}
-                  {!needsWorkAccept && !canWorkComplete && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="flex-1 rounded-xl"
-                      onClick={() => onOpenChange(false)}
-                    >
-                      {t("ui.close") !== "ui.close" ? t("ui.close") : "Yopish"}
-                    </Button>
-                  )}
-                </>
+                    ) : null}
+                  </div>
+                </div>
               ) : (
-                <>
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1 rounded-xl border-slate-200"
-                onClick={() => onOpenChange(false)}
-              >
-                {t("ui.cancel")}
-              </Button>
-              <Button
-                type="button"
-                className="flex-1 gap-1.5 rounded-xl bg-[#0b5fff] shadow-md shadow-blue-500/25 hover:bg-[#0a54e6]"
-                disabled={saving}
-                onClick={() => void handleSubmit()}
-              >
-                {saving ? (
-                  t("tasks.form.saving")
-                ) : (
-                  <>
-                    <Send className="h-4 w-4" />
-                    {editing ? t("ui.save") : t("tasks.form.createAction")}
-                  </>
-                )}
-              </Button>
-                </>
+                <div className="flex w-full flex-col gap-2.5">
+                  <Button
+                    type="button"
+                    className="h-14 w-full gap-2.5 rounded-2xl bg-gradient-to-r from-[#0a54e6] to-[#0b5fff] px-5 text-[16px] font-bold tracking-tight text-white shadow-[0_12px_28px_rgba(11,95,255,0.32)] hover:from-[#0949c9] hover:to-[#0a54e6] disabled:opacity-60"
+                    disabled={saving}
+                    onClick={() => void handleSubmit()}
+                  >
+                    {saving ? (
+                      t("tasks.form.saving")
+                    ) : (
+                      <>
+                        <Send className="h-5 w-5 shrink-0" />
+                        <span className="whitespace-nowrap">
+                          {editing ? t("ui.save") : t("tasks.form.createAction")}
+                        </span>
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 w-full rounded-2xl border-slate-200/90 bg-white px-5 text-[14px] font-semibold text-slate-600 shadow-sm hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                    onClick={() => onOpenChange(false)}
+                  >
+                    {t("ui.cancel")}
+                  </Button>
+                </div>
               )}
             </div>
           </div>
@@ -5190,11 +5355,11 @@ export function TaskFormDialog({
                     Yopish
                   </Button>
                 ) : isWork ? (
-                  <>
-                    {needsWorkAccept && (
+                  <div className="flex w-full items-stretch gap-2.5">
+                    {needsWorkAccept ? (
                       <Button
                         type="button"
-                        className="h-12 flex-1 gap-1.5 rounded-2xl bg-[#0b5fff] text-[15px] font-semibold shadow-md shadow-blue-500/25"
+                        className="h-12 flex-1 gap-2 rounded-2xl bg-gradient-to-r from-[#0a54e6] to-[#0b5fff] px-4 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(11,95,255,0.28)]"
                         disabled={workBusy}
                         onClick={() => {
                           void (async () => {
@@ -5208,32 +5373,32 @@ export function TaskFormDialog({
                           })();
                         }}
                       >
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
                         {t("tasks.accept")}
                       </Button>
-                    )}
-                    {canWorkComplete && (
+                    ) : null}
+                    {canWorkComplete ? (
                       <>
                         <Button
                           type="button"
-                          className="h-12 min-w-0 flex-1 gap-1.5 rounded-2xl bg-[#0b5fff] text-[15px] font-semibold shadow-md shadow-blue-500/25"
+                          className="h-12 min-w-0 flex-1 gap-2 rounded-2xl bg-gradient-to-r from-[#0a54e6] to-[#0b5fff] px-3 text-[14px] font-bold text-white shadow-[0_10px_24px_rgba(11,95,255,0.28)]"
                           disabled={workBusy || saving}
                           onClick={() => void submitWorkComplete()}
                         >
                           <Send className="h-4 w-4 shrink-0" />
-                          {t("tasks.markDone")}
+                          <span className="truncate">{t("tasks.markDone")}</span>
                         </Button>
                         <Button
                           type="button"
                           variant="outline"
-                          className="h-12 shrink-0 rounded-2xl px-4 text-[15px] font-semibold"
+                          className="h-12 shrink-0 rounded-2xl px-3.5 text-[14px] font-semibold"
                           onClick={() => onWorkExtend?.()}
                         >
                           <Clock className="h-4 w-4" />
-                          {t("tasks.deadline")}
                         </Button>
                       </>
-                    )}
-                    {!needsWorkAccept && !canWorkComplete && (
+                    ) : null}
+                    {!needsWorkAccept && !canWorkComplete ? (
                       <Button
                         type="button"
                         variant="outline"
@@ -5242,21 +5407,13 @@ export function TaskFormDialog({
                       >
                         {t("ui.close") !== "ui.close" ? t("ui.close") : "Yopish"}
                       </Button>
-                    )}
-                  </>
+                    ) : null}
+                  </div>
                 ) : (
-                  <>
+                  <div className="flex w-full flex-col gap-2">
                     <Button
                       type="button"
-                      variant="outline"
-                      className="h-12 flex-1 rounded-2xl text-[15px] font-semibold"
-                      onClick={() => onOpenChange(false)}
-                    >
-                      {t("ui.cancel")}
-                    </Button>
-                    <Button
-                      type="button"
-                      className="h-12 flex-1 gap-1.5 rounded-2xl bg-[#0b5fff] text-[15px] font-semibold shadow-md shadow-blue-500/25"
+                      className="h-14 w-full gap-2.5 rounded-2xl bg-gradient-to-r from-[#0a54e6] to-[#0b5fff] px-4 text-[16px] font-bold tracking-tight text-white shadow-[0_12px_28px_rgba(11,95,255,0.32)] hover:from-[#0949c9] hover:to-[#0a54e6] disabled:opacity-60"
                       disabled={saving}
                       onClick={() => void handleSubmit()}
                     >
@@ -5264,12 +5421,22 @@ export function TaskFormDialog({
                         t("tasks.form.saving")
                       ) : (
                         <>
-                          <Send className="h-4 w-4" />
-                          {editing ? t("ui.save") : t("tasks.form.createAction")}
+                          <Send className="h-5 w-5 shrink-0" />
+                          <span className="whitespace-nowrap">
+                            {editing ? t("ui.save") : t("tasks.form.createAction")}
+                          </span>
                         </>
                       )}
                     </Button>
-                  </>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 w-full rounded-2xl border-slate-200/90 bg-white px-4 text-[14px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                      onClick={() => onOpenChange(false)}
+                    >
+                      {t("ui.cancel")}
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>

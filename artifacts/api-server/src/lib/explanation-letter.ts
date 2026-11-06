@@ -9,6 +9,7 @@ import { logger } from "./logger";
 import { notifyUser } from "./notify";
 import type { JarimaPerson } from "./attendance-jarima";
 import { isJarimaEnabled } from "./jarima-switch";
+import { isHiddenFromDavomat } from "./roles";
 
 /** Oxirgi ogohlantirish (ishdan bo‘shatishga rozilik) xati shu martadan */
 export const FINAL_STRIKE = 6;
@@ -402,9 +403,10 @@ export async function syncExplanationLetters(month: string, people: JarimaPerson
 
 export async function myLetters(userId: number): Promise<ExplanationLetterRow[]> {
   await ensureExplanationSchema();
-  // Dorixona xodimlariga tushuntirish xatlari umuman ko‘rinmaydi
+  // Dorixona / asoschi / direktor yordamchisi — tushuntirish xati yo‘q
   const { rows: roleRows } = await pool.query(`SELECT role FROM users WHERE id = $1`, [userId]);
-  if (jarimaGroupForRole(roleRows[0]?.role as string | undefined) === "pharmacy") return [];
+  const role = roleRows[0]?.role as string | undefined;
+  if (jarimaGroupForRole(role) === "pharmacy" || isHiddenFromDavomat(role)) return [];
   const { rows } = await pool.query(
     `SELECT ${SELECT_COLS} FROM explanation_letters l LEFT JOIN users u ON u.id = l.user_id
       WHERE l.user_id = $1 ORDER BY l.event_date DESC, l.id DESC LIMIT 100`,
@@ -444,9 +446,10 @@ export async function pendingLetterFor(userId: number): Promise<ExplanationLette
 
 export async function explanationPunchBlock(userId: number | null | undefined): Promise<Record<string, unknown> | null> {
   if (!userId || !(await isJarimaEnabled())) return null;
-  // Dorixona xodimlari xat sababli davomatdan bloklanmaydi
+  // Dorixona / asoschi / direktor yordamchisi — xat sababli davomat bloklanmaydi
   const { rows: roleRows } = await pool.query(`SELECT role FROM users WHERE id = $1`, [userId]).catch(() => ({ rows: [] as Array<{ role: string }> }));
-  if (jarimaGroupForRole(roleRows[0]?.role as string | undefined) === "pharmacy") return null;
+  const role = roleRows[0]?.role as string | undefined;
+  if (jarimaGroupForRole(role) === "pharmacy" || isHiddenFromDavomat(role)) return null;
   const l = await pendingLetterFor(userId).catch((err) => {
     logLetterError(err, "punch-gate");
     return null;

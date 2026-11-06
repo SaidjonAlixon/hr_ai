@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 import {
   db,
   tasksTable,
@@ -267,6 +267,28 @@ function canViewTask(row: typeof tasksTable.$inferSelect, userId?: number, role?
   return false;
 }
 
+/**
+ * Davom topshiriq oluvchisi — asosiy (basedOn) topshiriqni bosib ko‘ra oladi.
+ * Ro‘yxatda emas, faqat GET /tasks/:id orqali.
+ */
+async function userIsDerivedAssigneeOf(
+  sourceTaskId: number,
+  userId: number,
+): Promise<boolean> {
+  if (!Number.isFinite(sourceTaskId) || sourceTaskId <= 0 || !userId) return false;
+  const derived = await db
+    .select()
+    .from(tasksTable)
+    .where(sql`(${tasksTable.meta}->>'basedOnTaskId') = ${String(sourceTaskId)}`)
+    .limit(100);
+  for (const row of derived) {
+    if (isAssignee(row, userId)) return true;
+    const uid = await resolveNotifyUserId(row.assigneeKind, row.assigneeId);
+    if (uid === userId) return true;
+  }
+  return false;
+}
+
 function isAllowedAttachmentUrl(url: string) {
   if (!url) return false;
   if (url.startsWith("https://") || url.startsWith("http://")) return true;
@@ -418,6 +440,10 @@ function sanitizeMeta(raw: unknown): Record<string, unknown> {
       }
       if (src.basedOnAssigneeName != null) {
         out.basedOnAssigneeName = String(src.basedOnAssigneeName).trim().slice(0, 120) || null;
+      }
+      if (src.basedOnCreatedByName != null) {
+        out.basedOnCreatedByName =
+          String(src.basedOnCreatedByName).trim().slice(0, 120) || null;
       }
       if (src.basedOnStatus != null) {
         out.basedOnStatus = String(src.basedOnStatus).trim().slice(0, 40) || null;
@@ -711,78 +737,6 @@ function buildTaskAssignedText(opts: {
   return lines.join("\n");
 }
 
-async function assigneeIsOfisStaff(
-  kind: string,
-  assigneeId: number,
-): Promise<boolean> {
-  const { isOfisStaffEmp } = await import("../lib/ofis-weekend");
-  if (kind === "employee") {
-    const [row] = await db
-      .select({
-        fullName: employeesTable.fullName,
-        orgRole: employeesTable.orgRole,
-        position: employeesTable.position,
-        userId: employeesTable.userId,
-      })
-      .from(employeesTable)
-      .where(eq(employeesTable.id, assigneeId))
-      .limit(1);
-    if (!row) return false;
-    let userRole: string | null = null;
-    if (row.userId) {
-      const [u] = await db
-        .select({ role: usersTable.role })
-        .from(usersTable)
-        .where(eq(usersTable.id, row.userId))
-        .limit(1);
-      userRole = u?.role ?? null;
-    }
-    return isOfisStaffEmp({
-      userRole,
-      orgRole: row.orgRole,
-      position: row.position,
-    });
-  }
-  const [row] = await db
-    .select({
-      role: usersTable.role,
-    })
-    .from(usersTable)
-    .where(eq(usersTable.id, assigneeId))
-    .limit(1);
-  if (!row) return false;
-  return isOfisStaffEmp({
-    userRole: row.role,
-    orgRole: null,
-    position: null,
-  });
-}
-
-function dueAtYmdTashkent(dueAt: Date): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Tashkent",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(dueAt);
-}
-
-async function assertOfisWeekendDueOk(
-  dueAt: Date | null | undefined,
-  assignees: Array<{ kind: "user" | "employee"; id: number }>,
-): Promise<string | null> {
-  if (!dueAt) return null;
-  const { isWeekendYmd } = await import("../lib/ofis-weekend");
-  const ymd = dueAtYmdTashkent(dueAt);
-  if (!isWeekendYmd(ymd)) return null;
-  for (const a of assignees) {
-    if (await assigneeIsOfisStaff(a.kind, a.id)) {
-      return "Ofis xodimiga shanba/yakshanba (dam kuni)ga vazifa qo‘yib bo‘lmaydi";
-    }
-  }
-  return null;
-}
-
 async function enrichTask(row: typeof tasksTable.$inferSelect) {
   const [creator] = await db
     .select({ fullName: usersTable.fullName })
@@ -914,11 +868,6 @@ router.post("/tasks", requireAuth, async (req: AuthRequest, res): Promise<void> 
     res.status(400).json({ error: "Muddat noto‘g‘ri" });
     return;
   }
-  const weekendErr = await assertOfisWeekendDueOk(dueDate, list);
-  if (weekendErr) {
-    res.status(400).json({ error: weekendErr });
-    return;
-  }
 
   const statusVal = status || "todo";
   const batchId =
@@ -952,6 +901,8 @@ router.post("/tasks", requireAuth, async (req: AuthRequest, res): Promise<void> 
       baseMeta.basedOnStatus = source.status;
       baseMeta.basedOnAssigneeName =
         (await resolveAssigneeName(source.assigneeKind, source.assigneeId)) || null;
+      baseMeta.basedOnCreatedByName =
+        (await resolveUserDisplayName(source.createdById)) || null;
       const sourceAssigneeUid = await resolveNotifyUserId(
         source.assigneeKind,
         source.assigneeId,
@@ -1128,7 +1079,11 @@ router.get("/tasks/:id", requireAuth, async (req: AuthRequest, res): Promise<voi
     res.status(404).json({ error: "Vazifa topilmadi" });
     return;
   }
-  if (!canViewTask(row, req.userId, req.userRole)) {
+  let allowed = canViewTask(row, req.userId, req.userRole);
+  if (!allowed && req.userId) {
+    allowed = await userIsDerivedAssigneeOf(id, req.userId);
+  }
+  if (!allowed) {
     res.status(403).json({ error: "Ruxsat yo'q" });
     return;
   }
@@ -1577,25 +1532,6 @@ router.patch("/tasks/:id", requireAuth, async (req: AuthRequest, res): Promise<v
     updates.meta = nextMeta;
   }
 
-  {
-    const nextKind = (updates.assigneeKind as string) || existing.assigneeKind;
-    const nextAid = Number(updates.assigneeId ?? existing.assigneeId);
-    const nextDue =
-      updates.dueAt !== undefined
-        ? (updates.dueAt as Date | null)
-        : existing.dueAt;
-    const weekendErr = await assertOfisWeekendDueOk(nextDue, [
-      {
-        kind: nextKind === "employee" ? "employee" : "user",
-        id: nextAid,
-      },
-    ]);
-    if (weekendErr) {
-      res.status(400).json({ error: weekendErr });
-      return;
-    }
-  }
-
   const [updated] = await db
     .update(tasksTable)
     .set(updates)
@@ -1713,12 +1649,6 @@ router.post("/tasks/:id/add-assignees", requireAuth, async (req: AuthRequest, re
   }
   if (toAdd.length === 0) {
     res.status(400).json({ error: "Tanlanganlar allaqachon shu topshiriqda" });
-    return;
-  }
-
-  const weekendErr = await assertOfisWeekendDueOk(existing.dueAt, toAdd);
-  if (weekendErr) {
-    res.status(400).json({ error: weekendErr });
     return;
   }
 
@@ -1957,6 +1887,109 @@ router.post("/tasks/:id/complete", requireAuth, async (req: AuthRequest, res): P
   res.json(await enrichTask(updated));
 });
 
+const CLOSE_FROM_LABEL: Record<string, string> = {
+  todo: "qabul qilinmagan",
+  in_progress: "jarayonda",
+  done: "tekshiruvda",
+};
+
+/**
+ * Belgilovchi (yoki nazoratchi / admin / direktor) — vazifalarni yopish → «Bajarildi».
+ * Qabul qilinmagan, jarayondagi, muddati o‘tgan va tekshiruvdagi vazifalar uchun; bir yoki ko‘p.
+ */
+router.post("/tasks/close", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const rawIds: unknown[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  const ids = [...new Set(rawIds.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0))].slice(0, 300);
+  if (!ids.length) {
+    res.status(400).json({ error: "Yopiladigan vazifa tanlanmagan" });
+    return;
+  }
+  const note = String(req.body?.note ?? "").trim().slice(0, 500) || null;
+
+  const rows = await db.select().from(tasksTable).where(inArray(tasksTable.id, ids));
+  const [me] = await db
+    .select({ fullName: usersTable.fullName })
+    .from(usersTable)
+    .where(eq(usersTable.id, req.userId!));
+  const closer = me?.fullName || "Belgilovchi";
+
+  const closed: number[] = [];
+  const skipped: Array<{ id: number; reason: string }> = [];
+  for (const id of ids) {
+    if (!rows.some((r) => r.id === id)) skipped.push({ id, reason: "Vazifa topilmadi" });
+  }
+
+  for (const existing of rows) {
+    if (!canApproveTask(existing, req.userId, req.userRole)) {
+      skipped.push({ id: existing.id, reason: "Faqat belgilagan shaxs yopa oladi" });
+      continue;
+    }
+    if (existing.status === "verified" || existing.status === "cancelled") {
+      skipped.push({ id: existing.id, reason: "Allaqachon yakunlangan" });
+      continue;
+    }
+    const prevMeta =
+      existing.meta && typeof existing.meta === "object" && !Array.isArray(existing.meta)
+        ? (existing.meta as Record<string, unknown>)
+        : {};
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const prevHistory = Array.isArray(prevMeta.history) ? prevMeta.history : [];
+    const fromLabel = CLOSE_FROM_LABEL[existing.status] || existing.status;
+    const overdue = existing.dueAt ? new Date(existing.dueAt).getTime() < now.getTime() : false;
+    const histText = `${closer} yopdi → bajarildi (${fromLabel}${overdue ? ", muddati o‘tgan" : ""})${
+      note ? `: ${note}` : ""
+    }`;
+
+    const [updated] = await db
+      .update(tasksTable)
+      .set({
+        status: "verified",
+        completedAt: existing.completedAt ?? now,
+        meta: sanitizeMeta({
+          ...prevMeta,
+          verifiedAt: nowIso,
+          closedByCreator: true,
+          closedAt: nowIso,
+          closedById: req.userId ?? null,
+          closedByName: closer,
+          closedFromStatus: existing.status,
+          closeNote: note,
+          history: [
+            ...prevHistory,
+            { id: `h-close-${Date.now()}-${existing.id}`, text: histText.slice(0, 300), createdAt: nowIso },
+          ].slice(-100),
+        }),
+      })
+      .where(eq(tasksTable.id, existing.id))
+      .returning();
+    if (!updated) continue;
+    closed.push(existing.id);
+
+    await syncBranchNeedFromTask({ taskId: existing.id, event: "verified", verifiedById: req.userId ?? null });
+
+    if (existing.assigneeId) {
+      await notifyTaskAssignee({
+        kind: existing.assigneeKind || "user",
+        assigneeId: existing.assigneeId,
+        actorUserId: req.userId,
+        text: `✔ «${existing.title}» belgilovchi tomonidan yopildi — bajarildi${note ? `: ${note}` : ""}`,
+        type: "stage_change",
+        title: "Vazifa yopildi",
+        linkUrl: `/vazifalar?task=${existing.id}`,
+      }).catch((err) => req.log?.warn({ err, taskId: existing.id }, "close notify failed"));
+    }
+
+    try {
+      await spawnRecurringTask(existing, req.userId);
+    } catch (err) {
+      req.log?.error({ err, taskId: existing.id }, "Recurring task spawn failed");
+    }
+  }
+
+  res.json({ ok: true, closed: closed.length, closedIds: closed, skipped });
+});
+
 /** Belgilovchi — bajarilganini tasdiqlash yoki qaytarish */
 router.post("/tasks/:id/verify", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const id = parseId(req.params.id);
@@ -2128,16 +2161,6 @@ router.post("/tasks/:id/verify", requireAuth, async (req: AuthRequest, res): Pro
       meta: nextMeta,
     };
     if (!keepDue && nextDue) {
-      const weekendErr = await assertOfisWeekendDueOk(nextDue, [
-        {
-          kind: existing.assigneeKind === "employee" ? "employee" : "user",
-          id: existing.assigneeId,
-        },
-      ]);
-      if (weekendErr) {
-        res.status(400).json({ error: weekendErr });
-        return;
-      }
       updates.dueAt = nextDue;
     }
 

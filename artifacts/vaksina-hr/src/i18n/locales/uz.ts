@@ -83,7 +83,7 @@ export const uz: Messages = {
   "nav.ofisda": "Asosiy ofisda qolish",
   "nav.davomatQr": "Davomat QR",
   "nav.davomatAnalytics": "Davomat tahlili",
-  "nav.davomatXatoliklar": "Xatoliklar",
+  "nav.davomatUlanganlar": "Ulanganlar",
   "nav.davomatBloklash": "Bloklash oynasi",
   "nav.dorixonaOchilishi": "Dorixona ochilishi",
   "nav.smena": "Smena va filial",

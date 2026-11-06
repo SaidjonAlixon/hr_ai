@@ -166,6 +166,15 @@ async function buildAll() {
   const fontDest = path.join(distDir, "fonts");
   await mkdir(fontDest, { recursive: true });
   await cp(fontSrc, fontDest, { recursive: true });
+
+  const logoSrc = path.join(artifactDir, "assets", "vaksina-med-logo.png");
+  const logoDestDir = path.join(distDir, "assets");
+  await mkdir(logoDestDir, { recursive: true });
+  try {
+    await cp(logoSrc, path.join(logoDestDir, "vaksina-med-logo.png"));
+  } catch {
+    /* logo ixtiyoriy */
+  }
 }
 
 buildAll().catch((err) => {

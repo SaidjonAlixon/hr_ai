@@ -149,8 +149,8 @@ export function isAsoschiRole(role?: string | null): boolean {
   return normalizeUserRole(role) === "asoschi";
 }
 
-/** Davomat doskasi / hisobotlarda ko‘rinmaydi; tizimda ishlayveradi */
-export const DAVOMAT_HIDDEN_ROLES = ["asoschi"] as const;
+/** Davomat doskasi / hisobotlarda ko‘rinmaydi (sonlarda ham); tizimda ishlayveradi */
+export const DAVOMAT_HIDDEN_ROLES = ["asoschi", "direktor_yordamchisi", "broker"] as const;
 
 export function isHiddenFromDavomat(role?: string | null): boolean {
   const r = normalizeUserRole(role);
@@ -300,8 +300,8 @@ export function canSetEmployeeSchedule(role?: string | null): boolean {
   return hasFullPlatformAccess(role);
 }
 
-/** Davomat xatoliklar — faqat admin va asoschi. Korxona direktori ko‘rmaydi. */
-export function canViewDavomatXatoliklar(role?: string | null): boolean {
+/** Ulanganlar (Telegram bot) — faqat admin va asoschi. Korxona direktori ko‘rmaydi. */
+export function canViewUlanganlar(role?: string | null): boolean {
   const r = normalizeUserRole(role);
   return r === "admin" || r === "asoschi";
 }
@@ -346,6 +346,7 @@ export const EMPLOYEE_VIEW_ONLY_ROLES = [
   "ombor_rahbar",
   "oshpaz_rahbar",
   "marketing_rahbar",
+  "qurulish_rahbar",
   "distrib_rahbar",
   "distrib_hr",
   "tamojni_rahbar",
@@ -389,6 +390,7 @@ export const DEPT_HEAD_ROLES = [
   "ombor_rahbar",
   "oshpaz_rahbar",
   "marketing_rahbar",
+  "qurulish_rahbar",
 ] as const;
 
 /** Ofis bo‘lim xodimlari — faqat Mening ishim + Davomat */
@@ -401,11 +403,13 @@ export const LIMITED_OFFICE_STAFF_ROLES = [
   "ombor",
   "oshpaz",
   "marketing",
+  "qurulish",
   "kassir",
   "yurist",
   "komunalniy",
   "farrosh",
   "mexanik",
+  "broker",
   "direktor_yordamchisi",
   "resepsion",
 ] as const;
@@ -654,16 +658,17 @@ export function isOfisStaffRole(role?: string | null): boolean {
   const r = normalizeUserRole(role);
   if (!r) return false;
   if (r === "admin" || r === "oquvchi") return false;
+  if (isHiddenFromDavomat(r)) return false;
   if (r === "mudir" || r === "farmasevt" || r === "stajyor" || r === "koordinator") return false;
   if (r === "sb" || r === "sb_boshliq") return false;
   if (r === "ombor" || r === "ombor_rahbar") return false;
   return true;
 }
 
-/** Face ID ro‘yxatdan o‘tish majburiy: dorixona yoki ofis (resepsion istisno) */
+/** Face ID ro‘yxatdan o‘tish majburiy: dorixona yoki ofis (resepsion / davomatdan yashirin rollar istisno) */
 export function requiresMandatoryFaceEnroll(role?: string | null): boolean {
   const r = normalizeUserRole(role);
-  if (r === "resepsion") return false;
+  if (r === "resepsion" || isHiddenFromDavomat(r)) return false;
   return isPharmacyDeviceStaff(role) || isOfisStaffRole(role);
 }
 
@@ -723,6 +728,8 @@ export const USER_ROLE_LABELS: Record<string, string> = {
   it_rahbar: "AyTi bo‘lim boshlig‘i",
   it_dasturchi: "Dasturchi",
   it_tarmoq: "Tarmoq administratori",
+  qurulish_rahbar: "Qurulish bo‘lim boshlig‘i",
+  qurulish: "Qurulish xodimi",
   ombor: "Omborxona xodimi",
   ombor_rahbar: "Omborxona bo‘lim boshlig‘i",
   sb: "SB operatori",
@@ -757,6 +764,7 @@ export const USER_ROLE_LABELS: Record<string, string> = {
   komunalniy: "Kommunal",
   farrosh: "Farrosh",
   mexanik: "Mexanik",
+  broker: "Broker",
   direktor_yordamchisi: "Direktor yordamchisi",
 };
 

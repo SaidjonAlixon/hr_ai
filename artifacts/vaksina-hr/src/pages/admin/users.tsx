@@ -70,6 +70,8 @@ const ROLES = [
   { value: 'it', label: 'AyTi mutaxassisi' },
   { value: 'it_dasturchi', label: 'Dasturchi' },
   { value: 'it_tarmoq', label: 'Tarmoq administratori' },
+  { value: 'qurulish_rahbar', label: 'Qurulish bo‘lim boshlig‘i' },
+  { value: 'qurulish', label: 'Qurulish xodimi' },
   { value: 'ombor', label: 'Omborxona xodimi' },
   { value: 'ombor_rahbar', label: 'Omborxona bo‘lim boshlig‘i' },
   { value: 'sb', label: 'SB operatori' },
@@ -96,6 +98,7 @@ const ROLES = [
   { value: 'distrib_rahbar', label: 'Distribyutsiya rahbari' },
   { value: 'distrib_hr', label: 'Distribyutsiya HR' },
   { value: 'distrib', label: 'Distribyutsiya xodimi' },
+  { value: 'broker', label: 'Broker' },
   { value: 'tamojni_rahbar', label: 'Tamojni sklad bo‘lim boshlig‘i' },
   { value: 'tamojni', label: 'Tamojni sklad xodimi' },
   { value: 'kassir', label: 'Kassir' },
@@ -150,6 +153,8 @@ const ROLE_DEPARTMENT: Record<string, string> = {
   it_rahbar: "AyTi",
   it_dasturchi: "AyTi",
   it_tarmoq: "AyTi",
+  qurulish_rahbar: "Qurulish",
+  qurulish: "Qurulish",
   revizor: "Reviziya",
   reviziya_rahbar: "Reviziya",
   sb: "Xavfsizlik",
@@ -158,6 +163,7 @@ const ROLE_DEPARTMENT: Record<string, string> = {
   distrib_rahbar: "Distribyutsiya",
   distrib_hr: "Distribyutsiya",
   distrib: "Distribyutsiya",
+  broker: "Distribyutsiya",
   tamojni_rahbar: "Tamojni sklad",
   tamojni: "Tamojni sklad",
 };
@@ -170,6 +176,8 @@ const DEPT_DEFAULT_ROLE: Record<string, string> = {
   rahbariyat: "director",
   koordinator: "koordinator",
   ayti: "it",
+  qurulish: "qurulish",
+  qurilish: "qurulish",
   "ta'minot": "taminot",
   moliya: "moliya_xodim",
   rivojlantirish: "rivojlantirish",
@@ -193,21 +201,130 @@ function normDept(name: string) {
     .replace(/[\u2018\u2019\u02BB\u02BC'`]/g, "'");
 }
 
-function rolesForDepartment(name: string) {
+/** «QURULISH I/B» ↔ «Qurulish», «qurilish» ↔ «qurulish» */
+function deptKeyVariants(name: string): string[] {
   const key = normDept(name);
-  return ROLES.map((r) => r.value).filter((role) => normDept(ROLE_DEPARTMENT[role] || "") === key);
+  if (!key) return [];
+  const stripped = key
+    .replace(/\s*i\s*\/\s*b\s*$/i, "")
+    .replace(/\s*\(.*\)$/u, "")
+    .trim();
+  const out = new Set<string>([key, stripped].filter(Boolean));
+  for (const v of [...out]) {
+    if (v.includes("qurilish") || v.includes("qurulish")) {
+      out.add("qurulish");
+      out.add("qurilish");
+    }
+  }
+  return [...out];
+}
+
+function deptNamesMatch(a: string, b: string): boolean {
+  const av = deptKeyVariants(a);
+  const bv = deptKeyVariants(b);
+  for (const x of av) {
+    for (const y of bv) {
+      if (x === y) return true;
+      if (x.length >= 4 && y.length >= 4 && (x.includes(y) || y.includes(x))) return true;
+    }
+  }
+  return false;
+}
+
+function rolesForDepartment(name: string) {
+  return ROLES.map((r) => r.value).filter((role) =>
+    deptNamesMatch(ROLE_DEPARTMENT[role] || "", name),
+  );
 }
 
 function primaryRoleForDepartment(name: string): string | null {
   const roles = rolesForDepartment(name);
   const key = normDept(name);
-  const byLabel = ROLES.find((r) => normDept(r.label) === key)?.value;
+  const byLabel = ROLES.find((r) => deptNamesMatch(r.label, name))?.value;
   if (byLabel && (roles.length === 0 || roles.includes(byLabel))) return byLabel;
   if (roles.length === 1) return roles[0]!;
-  const preferred = DEPT_DEFAULT_ROLE[key];
-  if (preferred && roles.includes(preferred)) return preferred;
+  for (const variant of deptKeyVariants(name)) {
+    const preferred = DEPT_DEFAULT_ROLE[variant];
+    if (preferred && (!roles.length || roles.includes(preferred))) return preferred;
+  }
+  // Nom qisman mos (masalan «Moliya I/B» → moliya)
+  for (const [deptKey, roleVal] of Object.entries(DEPT_DEFAULT_ROLE)) {
+    if (key.includes(deptKey) || deptKey.includes(key) || deptNamesMatch(key, deptKey)) {
+      if (!roles.length || roles.includes(roleVal)) return roleVal;
+    }
+  }
   const worker = roles.find((r) => !/rahbar|boshliq|direktor|admin|asoschi/.test(r));
   return worker || roles[0] || null;
+}
+
+function pickRoleForDeptTitle(deptName: string, title: string): string | null {
+  const deptRoles = rolesForDepartment(deptName);
+  if (!deptRoles.length) return primaryRoleForDepartment(deptName);
+  const t = normDept(title);
+  const isHead = /boshlig|rahbar|direktor|\bmudir\b|bosh\s/.test(t);
+  const isStaff = /xodim|mutaxassis|operator|stajyor|menejer/.test(t);
+  if (isHead) {
+    const head = deptRoles.find((r) => /rahbar|boshliq|direktor|mudir/.test(r));
+    if (head) return head;
+  }
+  if (isStaff) {
+    const worker = deptRoles.find((r) => !/rahbar|boshliq|direktor|admin|asoschi/.test(r));
+    if (worker) return worker;
+  }
+  return primaryRoleForDepartment(deptName) || deptRoles[0] || null;
+}
+
+/** Lavozim matnidan tizim rolini topish — avvalo bo‘lim, fuzzy faqat aniq nomlar uchun */
+function inferRoleFromJobTitle(title: string, deptName?: string | null): string | null {
+  const t = normDept(title);
+  if (!t) return null;
+
+  // Umumiy lavozim («Bo‘lim boshlig‘i») hech qachon «AyTi bo‘lim boshlig‘i»ga fuzzy bo‘lmasin
+  const isGeneric =
+    /^(bo'?lim\s+)?(boshlig'?i|xodimi|rahbari|mutaxassisi)$/.test(t) ||
+    t === "bo'lim boshlig'i" ||
+    t === "bo'lim xodimi" ||
+    t === "bo'lim rahbari";
+
+  if (deptName) {
+    const fromDept = pickRoleForDeptTitle(deptName, title);
+    if (fromDept) return fromDept;
+  }
+
+  const exact = ROLES.find((r) => normDept(r.label) === t);
+  if (exact) {
+    if (deptName) {
+      const mapped = ROLE_DEPARTMENT[exact.value];
+      if (mapped && !deptNamesMatch(mapped, deptName)) {
+        return pickRoleForDeptTitle(deptName, title);
+      }
+    }
+    return exact.value;
+  }
+
+  // Fuzzy: qisqa umumiy nomlar uchun o‘chirilgan (lab.includes("bo'lim boshlig'i") → AyTi)
+  if (!isGeneric && t.length >= 8) {
+    const fuzzy = ROLES.find((r) => {
+      const lab = normDept(r.label);
+      if (lab.length < 8) return false;
+      if (t === lab) return true;
+      // Faqat deyarli to‘liq moslik
+      if (lab.includes(t) && t.length / lab.length >= 0.72) return true;
+      if (t.includes(lab) && lab.length / t.length >= 0.72) return true;
+      return false;
+    });
+    if (fuzzy) {
+      if (deptName) {
+        const mapped = ROLE_DEPARTMENT[fuzzy.value];
+        if (mapped && !deptNamesMatch(mapped, deptName)) {
+          return pickRoleForDeptTitle(deptName, title);
+        }
+      }
+      return fuzzy.value;
+    }
+  }
+
+  return deptName ? primaryRoleForDepartment(deptName) : null;
 }
 
 const STATUSES = [
@@ -332,54 +449,91 @@ export default function AdminUsersPage() {
     if (createOpen || editOpen) void refetchDepartments();
   }, [createOpen, editOpen, refetchDepartments]);
 
-  function applyDepartment(id: string) {
+  function applyDepartment(id: string, opts?: { fromRoleMenu?: boolean }) {
     setDepartmentId(id);
-    setJobPosition('');
+    if (opts?.fromRoleMenu) setJobPosition('');
+    if (id === 'none') {
+      if (opts?.fromRoleMenu && role) setRolePick(role);
+      return;
+    }
+    const dept = deptChoices.find((d) => String(d.id) === id);
+    if (!dept) return;
+    const next =
+      (jobPosition && !opts?.fromRoleMenu
+        ? inferRoleFromJobTitle(jobPosition, dept.name)
+        : null) || primaryRoleForDepartment(dept.name);
+    if (next) {
+      // Bo‘lim tanlanganda rol shu bo‘limga mos bo‘lsin (AyTi + Qurulish aralashmasin)
+      const roleDept = role ? ROLE_DEPARTMENT[role] : null;
+      const mismatch = !!(role && roleDept && !deptNamesMatch(roleDept, dept.name));
+      if (!role || opts?.fromRoleMenu || mismatch) {
+        setRole(next);
+        setRolePick(next);
+      }
+      return;
+    }
+    if (role && ROLES.some((r) => r.value === role)) {
+      const roleDept = ROLE_DEPARTMENT[role];
+      if (roleDept && !deptNamesMatch(roleDept, dept.name)) {
+        setRole('');
+        setRolePick(`dept:${id}`);
+        return;
+      }
+      setRolePick(role);
+      return;
+    }
+    if (opts?.fromRoleMenu) setRolePick(`dept:${id}`);
+  }
+
+  function setOptionalDepartment(id: string) {
+    setDepartmentId(id);
     if (id === 'none') return;
     const dept = deptChoices.find((d) => String(d.id) === id);
-    const next = dept ? primaryRoleForDepartment(dept.name) : null;
+    if (!dept) return;
+    const roleDept = role ? ROLE_DEPARTMENT[role] : null;
+    const mismatch = !!(role && roleDept && !deptNamesMatch(roleDept, dept.name));
+    if (role && !mismatch) return;
+    const next =
+      (jobPosition ? inferRoleFromJobTitle(jobPosition, dept.name) : null) ||
+      primaryRoleForDepartment(dept.name);
     if (next) {
       setRole(next);
       setRolePick(next);
-      return;
+    } else if (mismatch) {
+      setRole('');
+      setRolePick(`dept:${id}`);
     }
-    setRole('');
-    setRolePick(`dept:${id}`);
   }
 
   function applyJobTitle(title: DepartmentJobTitle) {
     setJobPosition(title.title);
     setRolePick(`title:${title.id}`);
-    const byLabel = ROLES.find((r) => normDept(r.label) === normDept(title.title));
+    const dept =
+      title.departmentId != null
+        ? deptChoices.find((d) => d.id === title.departmentId)
+        : departmentId !== 'none'
+          ? deptChoices.find((d) => String(d.id) === departmentId)
+          : null;
     if (title.departmentId != null) {
-      const dept = deptChoices.find((d) => d.id === title.departmentId);
       setDepartmentId(String(title.departmentId));
-      const next =
-        byLabel?.value ||
-        (dept ? primaryRoleForDepartment(dept.name) : null) ||
-        role ||
-        '';
-      setRole(next);
-      if (next && isRegionalManagerRole(next) === false) setAssignedViloyat('');
-      return;
     }
-    if (byLabel) {
-      setRole(byLabel.value);
-      if (!isRegionalManagerRole(byLabel.value)) setAssignedViloyat('');
-      const deptName = ROLE_DEPARTMENT[byLabel.value];
-      if (deptName) {
-        const hit = deptChoices.find((d) => normDept(d.name) === normDept(deptName));
+    // Faqat shu lavozim + bo‘limga mos rol — eski AyTi rolini saqlamaymiz
+    const next = inferRoleFromJobTitle(title.title, dept?.name) || '';
+    setRole(next);
+    if (next) {
+      if (!isRegionalManagerRole(next)) setAssignedViloyat('');
+      setRolePick(next);
+      const mappedDept = ROLE_DEPARTMENT[next];
+      if (mappedDept && title.departmentId == null) {
+        const hit = deptChoices.find((d) => deptNamesMatch(d.name, mappedDept));
         if (hit) setDepartmentId(String(hit.id));
       }
-      return;
     }
-    // Umumiy lavozim — tizim roli oldingi tanlovda qoladi yoki bo‘sh
-    if (!role) setRole('');
   }
 
   function onCreateRole(value: string) {
     if (value.startsWith('dept:')) {
-      applyDepartment(value.slice(5));
+      applyDepartment(value.slice(5), { fromRoleMenu: true });
       setRoleMenuOpen(false);
       return;
     }
@@ -390,6 +544,7 @@ export default function AdminUsersPage() {
       setRoleMenuOpen(false);
       return;
     }
+    // Tizim roli — bo‘lim ixtiyoriy, lekin tanlangan bo‘lim rolga mos kelmasa — rol bo‘limiga o‘tkazamiz
     setRolePick(value);
     setRole(value);
     setJobPosition('');
@@ -399,14 +554,16 @@ export default function AdminUsersPage() {
       setRoleMenuOpen(false);
       return;
     }
-    const hit = deptChoices.find((d) => normDept(d.name) === normDept(deptName));
+    const hit = deptChoices.find((d) => deptNamesMatch(d.name, deptName));
     if (!hit) {
       setRoleMenuOpen(false);
       return;
     }
-    const current = deptChoices.find((d) => String(d.id) === departmentId);
-    const currentIsKnown = current ? rolesForDepartment(current.name).length > 0 : false;
-    if (departmentId === 'none' || currentIsKnown) setDepartmentId(String(hit.id));
+    const currentDept =
+      departmentId !== 'none' ? deptChoices.find((d) => String(d.id) === departmentId) : null;
+    if (departmentId === 'none' || (currentDept && !deptNamesMatch(currentDept.name, deptName))) {
+      setDepartmentId(String(hit.id));
+    }
     setRoleMenuOpen(false);
   }
 
@@ -517,13 +674,35 @@ export default function AdminUsersPage() {
       toast({ title: 'Xatolik', description: 'Ism va familiyani to‘liq yozing', variant: 'destructive' });
       return;
     }
-    if (!role) {
-      const deptName = deptChoices.find((d) => String(d.id) === departmentId)?.name;
+    const selectedDept =
+      departmentId !== 'none' ? deptChoices.find((d) => String(d.id) === departmentId) : null;
+    let resolvedRole = role;
+    // Tanlangan bo‘lim bilan rol mos kelmasa — bo‘lim + lavozimdan qayta aniqlaymiz
+    if (selectedDept && resolvedRole) {
+      const mapped = ROLE_DEPARTMENT[resolvedRole];
+      if (mapped && !deptNamesMatch(mapped, selectedDept.name)) {
+        resolvedRole =
+          (jobPosition.trim()
+            ? inferRoleFromJobTitle(jobPosition, selectedDept.name)
+            : null) ||
+          primaryRoleForDepartment(selectedDept.name) ||
+          '';
+        if (resolvedRole) setRole(resolvedRole);
+      }
+    }
+    if (!resolvedRole && jobPosition.trim()) {
+      resolvedRole = inferRoleFromJobTitle(jobPosition, selectedDept?.name) || '';
+      if (resolvedRole) setRole(resolvedRole);
+    }
+    if (!resolvedRole && selectedDept) {
+      resolvedRole = primaryRoleForDepartment(selectedDept.name) || '';
+      if (resolvedRole) setRole(resolvedRole);
+    }
+    if (!resolvedRole || !ROLES.some((r) => r.value === resolvedRole)) {
       toast({
-        title: 'Rol tanlanmagan',
-        description: deptName
-          ? `«${deptName}» bo‘limi saqlanadi. Shu bo‘limga mos rolni tanlang — Rekruter avtomatik yozilmaydi.`
-          : 'Rol yoki bo‘limni tanlang',
+        title: 'Tizim roli kerak',
+        description:
+          '«Rollar» ro‘yxatidan aynan shu bo‘limga mos rolni tanlang (masalan Qurulish → Qurulish bo‘lim boshlig‘i).',
         variant: 'destructive',
       });
       return;
@@ -536,7 +715,7 @@ export default function AdminUsersPage() {
       });
       return;
     }
-    if (isRegionalManagerRole(role) && !assignedViloyat) {
+    if (isRegionalManagerRole(resolvedRole) && !assignedViloyat) {
       toast({
         title: 'Viloyat tanlanmagan',
         description: 'Regional menejer uchun viloyatni tanlang',
@@ -549,10 +728,10 @@ export default function AdminUsersPage() {
       {
         data: {
           fullName: fullName.trim(),
-          role,
+          role: resolvedRole,
           phone: normalizeUzPhone(phone) || undefined,
           departmentId: departmentId === 'none' ? null : Number(departmentId),
-          assignedViloyat: isRegionalManagerRole(role) ? assignedViloyat : null,
+          assignedViloyat: isRegionalManagerRole(resolvedRole) ? assignedViloyat : null,
           position: jobPosition.trim() || undefined,
         } as any,
       },
@@ -1219,11 +1398,13 @@ export default function AdminUsersPage() {
                   </PopoverContent>
                 </Popover>
                 <p className="text-xs text-muted-foreground">
-                  {jobPosition
-                    ? `Lavozim: ${jobPosition}${role ? ` · Rol: ${ROLES.find((r) => r.value === role)?.label || role}` : ''}`
-                    : role
-                      ? `Rol: ${ROLES.find((r) => r.value === role)?.label || role}`
-                      : "Yozib qidiring — lavozim, bo‘lim yoki rol. Lavozim tanlansa xodim kartasiga yoziladi."}
+                  {role
+                    ? `Rol: ${ROLES.find((r) => r.value === role)?.label || role}${
+                        jobPosition ? ` · Lavozim: ${jobPosition}` : ''
+                      }`
+                    : jobPosition
+                      ? `Lavozim: ${jobPosition} — hali tizim roli yo‘q. Pastdagi «Rollar»dan tanlang.`
+                      : "Majburiy: «Rollar»dan tizim roli. Bo‘lim ixtiyoriy."}
                   {departmentId !== 'none'
                     ? ` · Bo‘lim: ${deptChoices.find((d) => String(d.id) === departmentId)?.name || ''}`
                     : ''}
@@ -1256,7 +1437,7 @@ export default function AdminUsersPage() {
               </div>
               <div className="space-y-2">
                 <Label>Bo‘lim (ixtiyoriy)</Label>
-                <Select value={departmentId} onValueChange={applyDepartment}>
+                <Select value={departmentId} onValueChange={setOptionalDepartment}>
                   <SelectTrigger>
                     <SelectValue placeholder="Bo‘lim" />
                   </SelectTrigger>
@@ -1267,6 +1448,9 @@ export default function AdminUsersPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">
+                  Bo‘lim shart emas — asosiy «Rollar»dan tizim rolini tanlang.
+                </p>
               </div>
             </div>
             <DialogFooter className="gap-2 border-t bg-muted/30 px-5 py-3 sm:gap-2">

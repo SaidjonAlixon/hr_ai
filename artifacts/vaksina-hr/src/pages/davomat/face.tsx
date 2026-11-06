@@ -2825,7 +2825,7 @@ export default function DavomatFacePage() {
       ? workplace?.gpsError ||
         (workplaceGpsMissing
           ? "Filial GPS kiritilmagan — koordinator lokatsiyani qo‘shsin"
-          : "Doimiy filial GPS tayyor emas — Smena/filial yoki Xatoliklar bo‘limini tekshiring")
+          : "Doimiy filial GPS tayyor emas — Smena/filial bo‘limini tekshiring")
       : remain != null && remain > 0
         ? `Hududdan tashqaridasiz — yana ${formatMetersOrKm(Math.max(0, remain))}`
         : !geoInside

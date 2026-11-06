@@ -37,6 +37,8 @@ const JARIMA_EXEMPT_ROLES = new Set([
   "admin",
   "asoschi",
   "director",
+  "direktor_yordamchisi",
+  "broker",
   "koordinator",
   "sb",
   "oquvchi",

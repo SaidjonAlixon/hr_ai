@@ -67,7 +67,8 @@ export const FACE_AI_CONFIRM = envFlag("FACE_AI_CONFIRM", false);
  * Aniq lokal match bo‘lsa ham baza rasmi bilan AI tasdiq majburiy (noto‘g‘ri odam ochilmasin).
  * 1 = faqat lokal (tavsiya etilmaydi).
  */
-export const FACE_AI_SKIP_IF_CLEAR = envFlag("FACE_AI_SKIP_IF_CLEAR", false);
+/** Default ON — aniq lokal match bo‘lsa OpenAI chaqirilmaydi. */
+export const FACE_AI_SKIP_IF_CLEAR = envFlag("FACE_AI_SKIP_IF_CLEAR", true);
 export const FACE_AI_CLEAR_MARGIN = envNum("FACE_AI_CLEAR_MARGIN", 0.08);
 export const FACE_AI_MAX_IMAGE_CHARS = envNum("FACE_AI_MAX_IMAGE_CHARS", 180_000);
 export const FACE_AI_SOFT_DIST = envNum("FACE_AI_SOFT_DIST", 0.48);
@@ -75,6 +76,11 @@ export const FACE_AI_SOFT_DIST = envNum("FACE_AI_SOFT_DIST", 0.48);
 export const FACE_AI_MIN_CONFIDENCE = envNum("FACE_AI_MIN_CONFIDENCE", 0.9);
 export const FACE_AI_MIN_SIMILARITY = envNum("FACE_AI_MIN_SIMILARITY", 0.88);
 
+/**
+ * AI ixtiyoriy zaxira. Default ON (kalit bo‘lsa), lekin lokal aniq match
+ * FACE_AI_SKIP_IF_CLEAR orqali AI ni o‘tkazib yuboradi.
+ * To‘liq o‘chirish: FACE_AI_VERIFY=0
+ */
 export function isFaceAiEnabled(): boolean {
   if (!envFlag("FACE_AI_VERIFY", true)) return false;
   return Boolean(process.env.OPENAI_API_KEY?.trim());

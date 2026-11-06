@@ -741,6 +741,7 @@ export default function VazifalarTahlilPage() {
     const labels: Record<(typeof keys)[number], string> = {
       leader: t("tasks.analytics.source.leader"),
       director: t("tasks.analytics.source.director"),
+      asoschi: t("tasks.analytics.source.asoschi"),
       plan: t("tasks.analytics.source.plan"),
       auto: t("tasks.analytics.source.auto"),
       other_dept: t("tasks.analytics.source.other"),

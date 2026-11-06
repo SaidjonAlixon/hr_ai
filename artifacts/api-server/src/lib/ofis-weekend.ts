@@ -6,6 +6,7 @@
 import { isSecurityRestDay, securityShiftFor, SECURITY_USER_ROLES } from "./security-shifts";
 import { altDayOn, payrollCalendarScope, scopeDayStatus, swapOn } from "./work-calendar";
 import { isOmborStaffRole } from "./omborxona-department";
+import { isHiddenFromDavomat } from "./roles";
 
 const SHIFT_PHARMACY_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor"]);
 const SHIFT_PHARMACY_ORG_ROLES = new Set([
@@ -58,6 +59,7 @@ export function requiresMandatoryFaceEnroll(emp: {
   position?: string | null;
 }): boolean {
   if (String(emp.userRole || "").trim() === "resepsion") return false;
+  if (isHiddenFromDavomat(emp.userRole)) return false;
   return isOfisStaffEmp(emp);
 }
 
@@ -71,6 +73,7 @@ export function isOfisStaffEmp(emp: {
   const orgRole = emp.orgRole || "";
   const position = emp.position || "";
   if (userRole === "admin" || /^admin$/i.test(position.trim())) return false;
+  if (isHiddenFromDavomat(userRole)) return false;
   if (SECURITY_USER_ROLES.has(userRole)) return false;
   if (isOmborStaffRole(userRole)) return false;
 

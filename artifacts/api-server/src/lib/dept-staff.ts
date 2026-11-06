@@ -27,6 +27,7 @@ export const DEPT_HEAD_ROLES = [
   "ombor_rahbar",
   "oshpaz_rahbar",
   "marketing_rahbar",
+  "qurulish_rahbar",
 ] as const;
 
 const NAMED_HEAD_CREATABLE: Record<string, readonly string[]> = {
@@ -46,6 +47,7 @@ const NAMED_HEAD_CREATABLE: Record<string, readonly string[]> = {
   ombor_rahbar: ["ombor"],
   oshpaz_rahbar: ["oshpaz"],
   marketing_rahbar: ["marketing"],
+  qurulish_rahbar: ["qurulish_rahbar", "qurulish"],
 };
 
 const RAHBAR_SUFFIX = /_rahbar$|^sb_boshliq$|^hr_direktor$|^hr_menejer$/;
@@ -75,6 +77,8 @@ export const ROLE_LABEL_UZ: Record<string, string> = {
   it: "AyTi mutaxassisi",
   it_dasturchi: "Dasturchi",
   it_tarmoq: "Tarmoq administratori",
+  qurulish_rahbar: "Qurulish bo‘lim boshlig‘i",
+  qurulish: "Qurulish xodimi",
   revizor: "Revizor-yig‘uvchi",
   sb: "SB operatori",
   ombor: "Omborxona xodimi",
@@ -103,6 +107,7 @@ export const ROLE_LABEL_UZ: Record<string, string> = {
   komunalniy: "Kommunal",
   farrosh: "Farrosh",
   mexanik: "Mexanik",
+  broker: "Broker",
   direktor_yordamchisi: "Direktor yordamchisi",
 };
 

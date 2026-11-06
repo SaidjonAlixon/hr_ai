@@ -258,6 +258,50 @@ function formatDate(iso: string | null | undefined) {
   });
 }
 
+function initialsOf(name?: string | null) {
+  const parts = String(name || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!parts.length) return "?";
+  const a = parts[0]?.[0] || "";
+  const b = parts.length > 1 ? parts[parts.length - 1]?.[0] || "" : "";
+  return (a + b).toUpperCase() || "?";
+}
+
+function lavozimOf(opts: {
+  position?: string | null;
+  roleLabel?: string | null;
+  role?: string | null;
+}) {
+  return (
+    String(opts.position || "").trim() ||
+    String(opts.roleLabel || "").trim() ||
+    String(opts.role || "").replace(/_/g, " ").trim() ||
+    ""
+  );
+}
+
+function creatorLine(r: Reminder) {
+  const name = r.createdByName || "Noma’lum";
+  const lav = lavozimOf({
+    position: r.createdByPosition,
+    roleLabel: r.createdByRoleLabel,
+    role: r.createdByRole,
+  });
+  return lav ? `${name} · ${lav}` : name;
+}
+
+function assigneeLine(r: Reminder) {
+  const name = r.assigneeName || "Xodim";
+  const lav = lavozimOf({
+    position: r.assigneePosition,
+    roleLabel: r.assigneeRoleLabel,
+    role: r.assigneeRole,
+  });
+  return lav ? `${name} · ${lav}` : name;
+}
+
 function formatShort(iso: string | null | undefined) {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -580,7 +624,7 @@ export default function EslatmalarPage() {
         category,
         priority,
         notifySystem: notifyOn && chSystem,
-        notifyTelegram: notifyOn && chTelegram,
+        notifyTelegram: assignMode === "staff" ? true : notifyOn && chTelegram,
         targetUserIds: assignMode === "staff" ? targetUserIds : undefined,
         targetUserId: null,
       });
@@ -881,41 +925,57 @@ export default function EslatmalarPage() {
                       </span>
                     </div>
                   </div>
-                  <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto bg-gradient-to-b from-muted/30 to-card p-2.5 sm:p-3">
+                  <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-gradient-to-b from-muted/30 to-card p-3 sm:p-3.5">
                     {items.length === 0 ? (
                       <p className="px-2 py-10 text-center text-xs leading-relaxed text-muted-foreground">{col.empty}</p>
                     ) : (
                       items.map((r) => {
                         const pri = priMeta(r.priority);
                         const cat = catMeta(r.category);
+                        const personLabel = r.forOthers ? "Kimga" : "Kimdan";
+                        const personName = r.forOthers ? assigneeLine(r) : creatorLine(r);
+                        const personAvatarName = r.forOthers
+                          ? r.assigneeName || personName
+                          : r.createdByName || personName;
                         return (
                           <button
                             key={r.id}
                             type="button"
                             onClick={() => setDetailId(r.id)}
-                            className="group w-full rounded-xl border border-border bg-card p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-md dark:hover:border-sky-500/40"
+                            className="group w-full rounded-2xl border border-border/80 bg-card p-4 text-left shadow-sm ring-1 ring-transparent transition hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-lg hover:ring-sky-200/60 dark:hover:border-sky-500/40 dark:hover:ring-sky-500/20"
                           >
-                            <div className="flex items-start justify-between gap-2">
-                              <p className="text-sm font-semibold leading-snug text-foreground group-hover:text-sky-700 dark:group-hover:text-sky-300">
+                            <div className="flex items-start justify-between gap-2.5">
+                              <p className="line-clamp-3 text-[15px] font-semibold leading-snug tracking-tight text-foreground group-hover:text-sky-700 dark:group-hover:text-sky-300">
                                 {r.title}
                               </p>
-                              <MoreVertical className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-muted-foreground/70 transition group-hover:bg-muted group-hover:text-foreground">
+                                <MoreVertical className="h-4 w-4" />
+                              </span>
                             </div>
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                              <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", pri.className)}>
+                            <div className="mt-3 flex flex-wrap gap-1.5">
+                              <span className={cn("rounded-lg border px-2.5 py-1 text-[11px] font-semibold", pri.className)}>
                                 {pri.label}
                               </span>
-                              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                              <span className="rounded-lg bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
                                 {cat.label}
                               </span>
                             </div>
-                            <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                              <CalendarIcon className="h-3 w-3" />
-                              {formatShort(r.dueAt)}
+                            <div className="mt-3.5 flex items-center gap-2 rounded-xl bg-muted/40 px-2.5 py-2 text-xs text-muted-foreground">
+                              <CalendarIcon className="h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-400" />
+                              <span className="font-medium tabular-nums text-foreground/80">{formatShort(r.dueAt)}</span>
                             </div>
-                            <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                              <User className="h-3 w-3" />
-                              {user?.fullName || "Men"}
+                            <div className="mt-2.5 flex items-center gap-2.5 border-t border-border/60 pt-2.5">
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-600 to-slate-800 text-[10px] font-bold text-white shadow-sm">
+                                {initialsOf(personAvatarName)}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                  {personLabel}
+                                </p>
+                                <p className="truncate text-xs font-medium leading-snug text-foreground/90">
+                                  {personName}
+                                </p>
+                              </div>
                             </div>
                           </button>
                         );
@@ -923,15 +983,14 @@ export default function EslatmalarPage() {
                     )}
                   </div>
                   {col.allowCreate ? (
-                    <div className="border-t border-border/70 bg-card p-2">
+                    <div className="border-t border-border/70 bg-card p-2.5">
                       <Button
                         type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-9 w-full justify-center gap-1.5 rounded-xl text-xs font-semibold text-muted-foreground hover:bg-sky-50 hover:text-sky-700 dark:hover:bg-sky-500/10 dark:hover:text-sky-300"
+                        variant="outline"
+                        className="h-10 w-full justify-center gap-2 rounded-xl border-dashed text-sm font-semibold text-muted-foreground hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 dark:hover:bg-sky-500/10 dark:hover:text-sky-300"
                         onClick={() => openCreate(col.id)}
                       >
-                        <Plus className="h-3.5 w-3.5" />
+                        <Plus className="h-4 w-4" />
                         Eslatma qo‘shish
                       </Button>
                     </div>
@@ -946,6 +1005,7 @@ export default function EslatmalarPage() {
               <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3">Eslatma</th>
+                  <th className="px-4 py-3">Kim</th>
                   <th className="px-4 py-3">Toifa</th>
                   <th className="px-4 py-3">Ustuvorlik</th>
                   <th className="px-4 py-3">Muddat</th>
@@ -956,23 +1016,42 @@ export default function EslatmalarPage() {
                 {filtered.map((r) => (
                   <tr
                     key={r.id}
-                    className="cursor-pointer border-t border-border/70 hover:bg-sky-50 dark:hover:bg-sky-500/10"
+                    className="cursor-pointer border-t border-border/70 transition hover:bg-sky-50 dark:hover:bg-sky-500/10"
                     onClick={() => setDetailId(r.id)}
                   >
-                    <td className="px-4 py-3 font-medium text-foreground">{r.title}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{catMeta(r.category).label}</td>
-                    <td className="px-4 py-3">
-                      <span className={cn("rounded-full border px-2 py-0.5 text-[11px] font-semibold", priMeta(r.priority).className)}>
+                    <td className="px-4 py-4 text-[15px] font-semibold leading-snug text-foreground">{r.title}</td>
+                    <td className="max-w-[220px] px-4 py-4">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-600 to-slate-800 text-[10px] font-bold text-white">
+                          {initialsOf(r.forOthers ? r.assigneeName : r.createdByName)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            {r.forOthers ? "Kimga" : "Kimdan"}
+                          </p>
+                          <p className="truncate text-xs font-medium text-foreground/90">
+                            {r.forOthers ? assigneeLine(r) : creatorLine(r)}
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className="rounded-lg bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+                        {catMeta(r.category).label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className={cn("rounded-lg border px-2.5 py-1 text-[11px] font-semibold", priMeta(r.priority).className)}>
                         {priMeta(r.priority).label}
                       </span>
                     </td>
-                    <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatDate(r.dueAt)}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{r.remainingLabel}</td>
+                    <td className="px-4 py-4 text-sm tabular-nums font-medium text-foreground/80">{formatDate(r.dueAt)}</td>
+                    <td className="px-4 py-4 text-sm text-muted-foreground">{r.remainingLabel}</td>
                   </tr>
                 ))}
                 {!filtered.length ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-12 text-center text-muted-foreground">
+                    <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
                       Eslatma topilmadi
                     </td>
                   </tr>
@@ -1625,6 +1704,7 @@ export default function EslatmalarPage() {
                       type="button"
                       onClick={() => {
                         setAssignMode("self");
+                        setChTelegram(false);
                         setTargetUserIds([]);
                       }}
                       className={cn(
@@ -1647,7 +1727,10 @@ export default function EslatmalarPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setAssignMode("staff")}
+                      onClick={() => {
+                        setAssignMode("staff");
+                        setChTelegram(true);
+                      }}
                       className={cn(
                         "flex items-center gap-2.5 rounded-2xl border px-3.5 py-3 text-left text-sm font-semibold transition",
                         assignMode === "staff"
@@ -1922,11 +2005,28 @@ export default function EslatmalarPage() {
                           <p className="text-xs text-muted-foreground">Ilova bildirishnomalari</p>
                         </div>
                       </label>
-                      <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-border px-3 py-2.5">
-                        <input type="checkbox" className="h-4 w-4 accent-sky-600" checked={chTelegram} onChange={(e) => setChTelegram(e.target.checked)} />
+                      <label
+                        className={cn(
+                          "flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5",
+                          assignMode === "staff"
+                            ? "border-sky-300 bg-sky-50/80 dark:border-sky-500/40 dark:bg-sky-500/10"
+                            : "border-border",
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-sky-600"
+                          checked={assignMode === "staff" ? true : chTelegram}
+                          disabled={assignMode === "staff"}
+                          onChange={(e) => setChTelegram(e.target.checked)}
+                        />
                         <div>
                           <p className="text-sm font-medium text-foreground">Telegram</p>
-                          <p className="text-xs text-muted-foreground">Bot orqali xabar</p>
+                          <p className="text-xs text-muted-foreground">
+                            {assignMode === "staff"
+                              ? "Boshqaga — bot xabari avtomatik yuboriladi"
+                              : "Bot orqali xabar"}
+                          </p>
                         </div>
                       </label>
                     </div>
@@ -1936,11 +2036,21 @@ export default function EslatmalarPage() {
             ) : null}
           </div>
 
-          <DialogFooter className="border-t border-border/70 px-5 py-3 sm:justify-between">
-            <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+          <DialogFooter className="gap-2.5 border-t border-border/70 bg-muted/20 px-5 py-4 sm:justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 rounded-xl px-5 text-sm font-semibold"
+              onClick={() => setCreateOpen(false)}
+            >
               Bekor qilish
             </Button>
-            <Button type="button" className="gap-2 bg-sky-600 hover:bg-sky-700" onClick={submitCreate} disabled={createMut.isPending}>
+            <Button
+              type="button"
+              className="h-11 gap-2 rounded-xl bg-sky-600 px-6 text-sm font-semibold shadow-md shadow-sky-600/25 hover:bg-sky-700"
+              onClick={submitCreate}
+              disabled={createMut.isPending}
+            >
               <Save className="h-4 w-4" />
               Saqlash
             </Button>
@@ -1950,119 +2060,228 @@ export default function EslatmalarPage() {
 
       {/* Detail */}
       <Dialog open={detailId != null} onOpenChange={(o) => !o && setDetailId(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{detail?.title || "Eslatma"}</DialogTitle>
-          </DialogHeader>
+        <DialogContent className="max-h-[92vh] gap-0 overflow-hidden rounded-3xl border-border/80 p-0 shadow-2xl sm:max-w-2xl">
           {!detail ? (
-            <Skeleton className="h-40 w-full" />
-          ) : (
-            <div className="space-y-4 py-1">
-              {detail.description ? <p className="whitespace-pre-wrap text-sm text-foreground/90">{detail.description}</p> : null}
-              <div className="flex flex-wrap gap-2">
-                <span className={cn("rounded-full border px-2.5 py-1 text-xs font-semibold", priMeta(detail.priority).className)}>
-                  {priMeta(detail.priority).label}
-                </span>
-                <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                  {catMeta(detail.category).label}
-                </span>
-                {detail.notifySystem ? (
-                  <span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700">Tizim</span>
-                ) : null}
-                {detail.notifyTelegram ? (
-                  <span className="rounded-full bg-cyan-50 px-2.5 py-1 text-xs font-medium text-cyan-700">Telegram</span>
-                ) : null}
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div className="rounded-xl border bg-muted/40 px-3 py-2">
-                  <p className="text-[11px] text-muted-foreground">Muddat</p>
-                  <p className="font-medium">{formatDate(detail.dueAt)}</p>
-                </div>
-                <div className="rounded-xl border bg-muted/40 px-3 py-2">
-                  <p className="text-[11px] text-muted-foreground">Qolgan</p>
-                  <p className="font-medium">{detail.remainingLabel}</p>
-                </div>
-              </div>
-              {detail.attachments?.length ? (
-                <ul className="space-y-1">
-                  {detail.attachments.map((a) => (
-                    <li key={a.id}>
-                      <a href={a.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-sm hover:bg-muted/40">
-                        <FileText className="h-4 w-4 text-muted-foreground" />
-                        <span className="truncate">{a.name}</span>
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-              <div className="space-y-2">
-                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <History className="h-3.5 w-3.5" />
-                  Tarix
-                </p>
-                <ul className="max-h-40 space-y-2 overflow-y-auto">
-                  {(detail.events ?? []).map((ev) => (
-                    <li key={ev.id} className="rounded-lg border px-3 py-2 text-xs">
-                      <div className="flex justify-between gap-2">
-                        <span className="font-semibold">{EVENT_LABELS[ev.eventType] || ev.eventType}</span>
-                        <span className="text-muted-foreground">{formatDate(ev.createdAt)}</span>
-                      </div>
-                      {ev.note ? <p className="mt-0.5 text-muted-foreground">{ev.note}</p> : null}
-                    </li>
-                  ))}
-                  {!detail.events?.length ? <li className="text-center text-muted-foreground">Tarix bo‘sh</li> : null}
-                </ul>
-              </div>
-              <div className="flex flex-wrap gap-2 pt-1">
-                {detail.status !== "completed" && detail.forMe !== false ? (
-                  <Button
-                    size="sm"
-                    className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
-                    disabled={completeMut.isPending}
-                    onClick={() => markDone(detail.id)}
-                  >
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Bajardim
-                  </Button>
-                ) : detail.status === "completed" ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
-                    <Check className="h-3.5 w-3.5" />
-                    Bajarilgan
-                  </span>
-                ) : null}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5"
-                  onClick={() => {
-                    setNewDue(toDatetimeLocalValue(detail.dueAt));
-                    setPostponeNote("");
-                    setPostponeOpen(true);
-                  }}
-                >
-                  <CalendarClock className="h-3.5 w-3.5" />
-                  Muddatni ko‘chirish
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="gap-1.5 text-rose-600"
-                  onClick={async () => {
-                    if (!confirm("Eslatmani o‘chirasizmi?")) return;
-                    try {
-                      await deleteMut.mutateAsync(detail.id);
-                      setDetailId(null);
-                      toast({ title: "O‘chirildi" });
-                    } catch (e: any) {
-                      toast({ title: "Xato", description: e.message, variant: "destructive" });
-                    }
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  O‘chirish
-                </Button>
-              </div>
+            <div className="p-6">
+              <Skeleton className="h-48 w-full rounded-2xl" />
             </div>
+          ) : (
+            <>
+              <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-sky-900 px-5 pb-5 pt-6 text-white">
+                <div className="pointer-events-none absolute -right-8 -top-10 h-36 w-36 rounded-full bg-sky-400/20 blur-2xl" />
+                <div className="pointer-events-none absolute -bottom-12 left-10 h-28 w-28 rounded-full bg-cyan-300/10 blur-2xl" />
+                <DialogHeader className="relative space-y-3 text-left">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {detail.assignedByOther ? (
+                      <span className="rounded-full bg-amber-400/20 px-2.5 py-0.5 text-[11px] font-semibold text-amber-100 ring-1 ring-amber-300/30">
+                        Sizga biriktirilgan
+                      </span>
+                    ) : null}
+                    {detail.forOthers ? (
+                      <span className="rounded-full bg-violet-400/20 px-2.5 py-0.5 text-[11px] font-semibold text-violet-100 ring-1 ring-violet-300/30">
+                        Boshqaga qo‘yilgan
+                      </span>
+                    ) : null}
+                    <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-medium text-white/80">
+                      {detail.status === "completed"
+                        ? "Bajarilgan"
+                        : detail.status === "missed"
+                          ? "Muddat o‘tgan"
+                          : "Faol"}
+                    </span>
+                  </div>
+                  <DialogTitle className="text-xl font-bold leading-snug tracking-tight text-white">
+                    {detail.title}
+                  </DialogTitle>
+                  {detail.description ? (
+                    <DialogDescription className="whitespace-pre-wrap text-sm leading-relaxed text-slate-200/90">
+                      {detail.description}
+                    </DialogDescription>
+                  ) : (
+                    <DialogDescription className="sr-only">Eslatma tafsiloti</DialogDescription>
+                  )}
+                </DialogHeader>
+                <div className="relative mt-4 flex flex-wrap gap-2">
+                  <span
+                    className={cn(
+                      "rounded-full border px-2.5 py-1 text-xs font-semibold backdrop-blur",
+                      priMeta(detail.priority).className,
+                    )}
+                  >
+                    {priMeta(detail.priority).label}
+                  </span>
+                  <span className="rounded-full bg-white/15 px-2.5 py-1 text-xs font-medium text-white/90">
+                    {catMeta(detail.category).label}
+                  </span>
+                  {detail.notifySystem ? (
+                    <span className="rounded-full bg-sky-400/20 px-2.5 py-1 text-xs font-medium text-sky-100">Tizim</span>
+                  ) : null}
+                  {detail.notifyTelegram ? (
+                    <span className="rounded-full bg-cyan-400/20 px-2.5 py-1 text-xs font-medium text-cyan-100">Telegram</span>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="max-h-[min(58vh,520px)] space-y-4 overflow-y-auto px-5 py-4">
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="rounded-2xl border border-border bg-gradient-to-b from-muted/50 to-card px-3.5 py-3 shadow-sm">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Muddat</p>
+                    <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">{formatDate(detail.dueAt)}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border bg-gradient-to-b from-muted/50 to-card px-3.5 py-3 shadow-sm">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Qolgan</p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">{detail.remainingLabel}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-card p-3.5 shadow-sm">
+                  <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Kim qo‘ydi
+                  </p>
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-600 to-slate-800 text-sm font-bold text-white shadow-md">
+                      {initialsOf(detail.createdByName)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-foreground">
+                        {detail.createdByName || "Noma’lum"}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {lavozimOf({
+                          position: detail.createdByPosition,
+                          roleLabel: detail.createdByRoleLabel,
+                          role: detail.createdByRole,
+                        }) || "Lavozim ko‘rsatilmagan"}
+                      </p>
+                      <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        Qo‘yilgan: {formatDate(detail.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                  {detail.forOthers && detail.assigneeName ? (
+                    <div className="mt-3 rounded-xl border border-dashed border-border bg-muted/30 px-3 py-2">
+                      <p className="text-[11px] font-medium text-muted-foreground">Kimga</p>
+                      <p className="text-sm font-semibold text-foreground">{assigneeLine(detail)}</p>
+                    </div>
+                  ) : null}
+                </div>
+
+                {detail.attachments?.length ? (
+                  <ul className="space-y-1.5">
+                    {detail.attachments.map((a) => (
+                      <li key={a.id}>
+                        <a
+                          href={a.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm shadow-sm hover:bg-muted/40"
+                        >
+                          <FileText className="h-4 w-4 text-muted-foreground" />
+                          <span className="truncate">{a.name}</span>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+
+                <div className="space-y-2.5">
+                  <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    <History className="h-3.5 w-3.5" />
+                    Tarix
+                  </p>
+                  <ul className="relative max-h-52 space-y-0 overflow-y-auto pl-1">
+                    {(detail.events ?? []).map((ev, idx, arr) => {
+                      const actor =
+                        ev.createdByName ||
+                        (ev.createdById != null ? `Foydalanuvchi #${ev.createdById}` : null);
+                      const actorLav = lavozimOf({
+                        position: ev.createdByPosition,
+                        roleLabel: ev.createdByRoleLabel,
+                        role: ev.createdByRole,
+                      });
+                      return (
+                        <li key={ev.id} className="relative flex gap-3 pb-3 last:pb-0">
+                          {idx < arr.length - 1 ? (
+                            <span className="absolute left-[7px] top-4 h-[calc(100%-8px)] w-px bg-border" />
+                          ) : null}
+                          <span className="relative z-[1] mt-1.5 h-3.5 w-3.5 shrink-0 rounded-full border-2 border-sky-500 bg-card" />
+                          <div className="min-w-0 flex-1 rounded-xl border border-border bg-muted/20 px-3 py-2">
+                            <div className="flex flex-wrap items-baseline justify-between gap-2">
+                              <span className="text-xs font-semibold text-foreground">
+                                {EVENT_LABELS[ev.eventType] || ev.eventType}
+                              </span>
+                              <span className="text-[11px] tabular-nums text-muted-foreground">
+                                {formatDate(ev.createdAt)}
+                              </span>
+                            </div>
+                            {actor ? (
+                              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                                {actor}
+                                {actorLav ? ` · ${actorLav}` : ""}
+                              </p>
+                            ) : null}
+                            {ev.note ? <p className="mt-1 text-xs text-foreground/80">{ev.note}</p> : null}
+                          </div>
+                        </li>
+                      );
+                    })}
+                    {!detail.events?.length ? (
+                      <li className="py-6 text-center text-xs text-muted-foreground">Tarix bo‘sh</li>
+                    ) : null}
+                  </ul>
+                </div>
+              </div>
+
+              <div className="border-t border-border bg-gradient-to-b from-muted/30 to-muted/10 px-4 py-4 sm:px-5">
+                <div className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
+                  {detail.status !== "completed" && detail.forMe !== false ? (
+                    <Button
+                      className="h-11 flex-1 gap-2 rounded-xl bg-emerald-600 px-5 text-sm font-semibold text-white shadow-md shadow-emerald-600/25 hover:bg-emerald-700 sm:flex-none sm:min-w-[140px]"
+                      disabled={completeMut.isPending}
+                      onClick={() => markDone(detail.id)}
+                    >
+                      <CheckCircle2 className="h-5 w-5" />
+                      Bajardim
+                    </Button>
+                  ) : detail.status === "completed" ? (
+                    <span className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-50 px-4 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-500/30">
+                      <Check className="h-4 w-4" />
+                      Bajarilgan
+                    </span>
+                  ) : null}
+                  <Button
+                    variant="outline"
+                    className="h-11 flex-1 gap-2 rounded-xl border-border bg-card px-4 text-sm font-semibold shadow-sm hover:bg-sky-50 hover:text-sky-800 dark:hover:bg-sky-500/10 sm:flex-none"
+                    onClick={() => {
+                      setNewDue(toDatetimeLocalValue(detail.dueAt));
+                      setPostponeNote("");
+                      setPostponeOpen(true);
+                    }}
+                  >
+                    <CalendarClock className="h-4 w-4" />
+                    Muddatni ko‘chirish
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-11 gap-2 rounded-xl border-rose-200 bg-card px-4 text-sm font-semibold text-rose-600 shadow-sm hover:bg-rose-50 hover:text-rose-700 dark:border-rose-500/30 dark:hover:bg-rose-500/10"
+                    onClick={async () => {
+                      if (!confirm("Eslatmani o‘chirasizmi?")) return;
+                      try {
+                        await deleteMut.mutateAsync(detail.id);
+                        setDetailId(null);
+                        toast({ title: "O‘chirildi" });
+                      } catch (e: any) {
+                        toast({ title: "Xato", description: e.message, variant: "destructive" });
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    O‘chirish
+                  </Button>
+                </div>
+              </div>
+            </>
           )}
         </DialogContent>
       </Dialog>
@@ -2076,11 +2295,15 @@ export default function EslatmalarPage() {
             <Input type="datetime-local" value={newDue} onChange={(e) => setNewDue(e.target.value)} />
             <Textarea value={postponeNote} onChange={(e) => setPostponeNote(e.target.value)} placeholder="Izoh..." rows={2} />
           </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setPostponeOpen(false)}>
+          <DialogFooter className="gap-2.5 sm:justify-between">
+            <Button variant="outline" className="h-11 rounded-xl px-5 text-sm font-semibold" onClick={() => setPostponeOpen(false)}>
               Bekor
             </Button>
-            <Button onClick={submitPostpone} disabled={postponeMut.isPending}>
+            <Button
+              className="h-11 rounded-xl bg-sky-600 px-6 text-sm font-semibold shadow-md shadow-sky-600/25 hover:bg-sky-700"
+              onClick={submitPostpone}
+              disabled={postponeMut.isPending}
+            >
               Saqlash
             </Button>
           </DialogFooter>

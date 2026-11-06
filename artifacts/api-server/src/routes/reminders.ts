@@ -1,21 +1,60 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, inArray, or } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import {
   db,
   remindersTable,
   reminderEventsTable,
   usersTable,
+  employeesTable,
   type ReminderAttachment,
 } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { notifyUser } from "../lib/notify";
+import { ROLE_LABEL_UZ } from "../lib/dept-staff";
+import { escapeHtml } from "../lib/telegram";
 
 const router: IRouter = Router();
 
 const VALID_INTERVALS = new Set([15, 30, 60, 120, 360, 720, 1440]);
 const VALID_CATEGORIES = new Set(["work", "personal", "meeting", "check", "finance", "other"]);
 const VALID_PRIORITIES = new Set(["low", "medium", "high", "critical"]);
+
+const EXTRA_ROLE_LABELS: Record<string, string> = {
+  admin: "Admin",
+  director: "Direktor",
+  asoschi: "Asoschi",
+  mudir: "Mudir",
+  koordinator: "Koordinator",
+  regional_menejer: "Regional menejer",
+  farmasevt: "Farmasevt",
+  stajyor: "Stajyor",
+  moliya: "Moliyachi",
+  hr_direktor: "HR Direktor",
+  reviziya_rahbar: "Reviziya bo‘limi rahbari",
+  sb_boshliq: "SB bo‘limi boshlig‘i",
+};
+
+type PersonInfo = {
+  id: number;
+  name: string;
+  role: string;
+  roleLabel: string;
+  position: string | null;
+};
+
+function roleLabelOf(role?: string | null): string {
+  const r = String(role || "").trim().toLowerCase();
+  if (!r) return "";
+  return ROLE_LABEL_UZ[r] || EXTRA_ROLE_LABELS[r] || r;
+}
+
+function positionLine(p: PersonInfo | null | undefined): string {
+  if (!p) return "";
+  const pos = (p.position || "").trim();
+  if (pos) return pos;
+  return p.roleLabel || p.role || "";
+}
 
 function canAccessReminder(
   row: typeof remindersTable.$inferSelect,
@@ -48,6 +87,53 @@ function parseAttachments(raw: unknown): ReminderAttachment[] {
     }));
 }
 
+async function loadPeople(ids: number[]): Promise<Map<number, PersonInfo>> {
+  const uniq = [...new Set(ids.filter((id) => Number.isFinite(id) && id > 0))];
+  const out = new Map<number, PersonInfo>();
+  if (!uniq.length) return out;
+
+  const users = await db
+    .select({
+      id: usersTable.id,
+      fullName: usersTable.fullName,
+      role: usersTable.role,
+    })
+    .from(usersTable)
+    .where(inArray(usersTable.id, uniq));
+
+  const empRows = await db
+    .select({
+      userId: employeesTable.userId,
+      position: employeesTable.position,
+    })
+    .from(employeesTable)
+    .where(
+      and(
+        inArray(employeesTable.userId, uniq),
+        sql`${employeesTable.employmentStatus} NOT IN ('dismissed', 'closed')`,
+      ),
+    )
+    .catch(() => [] as Array<{ userId: number | null; position: string }>);
+
+  const posByUser = new Map<number, string>();
+  for (const e of empRows) {
+    if (e.userId == null) continue;
+    if (!posByUser.has(e.userId) && e.position) posByUser.set(e.userId, e.position);
+  }
+
+  for (const u of users) {
+    const role = String(u.role || "");
+    out.set(u.id, {
+      id: u.id,
+      name: String(u.fullName || "").trim() || `Foydalanuvchi #${u.id}`,
+      role,
+      roleLabel: roleLabelOf(role),
+      position: posByUser.get(u.id) || null,
+    });
+  }
+  return out;
+}
+
 async function addEvent(opts: {
   reminderId: number;
   eventType: string;
@@ -76,6 +162,24 @@ async function listEvents(reminderId: number) {
     .from(reminderEventsTable)
     .where(eq(reminderEventsTable.reminderId, reminderId))
     .orderBy(desc(reminderEventsTable.createdAt));
+}
+
+async function enrichEvents(
+  events: (typeof reminderEventsTable.$inferSelect)[],
+  people?: Map<number, PersonInfo>,
+) {
+  const ids = events.map((e) => e.createdById).filter((x): x is number => x != null);
+  const map = people ?? (await loadPeople(ids));
+  return events.map((ev) => {
+    const actor = ev.createdById != null ? map.get(ev.createdById) : null;
+    return {
+      ...ev,
+      createdByName: actor?.name ?? null,
+      createdByRole: actor?.role ?? null,
+      createdByRoleLabel: actor?.roleLabel ?? null,
+      createdByPosition: actor?.position ?? null,
+    };
+  });
 }
 
 function remainingMs(dueAt: Date, now = new Date()) {
@@ -165,9 +269,16 @@ async function syncReminderLifecycle(
   return current;
 }
 
-function enrich(row: typeof remindersTable.$inferSelect) {
+function enrich(
+  row: typeof remindersTable.$inferSelect,
+  viewerId: number,
+  people: Map<number, PersonInfo>,
+) {
   const now = new Date();
   const ms = remainingMs(row.dueAt, now);
+  const creatorId = row.createdById ?? row.userId;
+  const creator = creatorId != null ? people.get(creatorId) : null;
+  const assignee = people.get(row.userId) ?? null;
   return {
     ...row,
     remainingMs: ms,
@@ -177,6 +288,18 @@ function enrich(row: typeof remindersTable.$inferSelect) {
         : row.status === "missed" || ms < 0
           ? "Muddat o‘tgan"
           : formatRemaining(ms),
+    createdById: creatorId,
+    createdByName: creator?.name ?? null,
+    createdByRole: creator?.role ?? null,
+    createdByRoleLabel: creator?.roleLabel ?? null,
+    createdByPosition: creator?.position ?? null,
+    assigneeName: assignee?.name ?? null,
+    assigneeRole: assignee?.role ?? null,
+    assigneeRoleLabel: assignee?.roleLabel ?? null,
+    assigneePosition: assignee?.position ?? null,
+    forOthers: row.userId !== viewerId && row.createdById === viewerId,
+    forMe: row.userId === viewerId,
+    assignedByOther: row.userId === viewerId && row.createdById != null && row.createdById !== viewerId,
   };
 }
 
@@ -190,6 +313,85 @@ function formatRemaining(ms: number) {
   return `${Math.max(mins, 0)} daqiqa`;
 }
 
+function formatDueUz(due: Date): string {
+  return due.toLocaleString("uz-UZ", {
+    timeZone: "Asia/Tashkent",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function buildAssignNotify(opts: {
+  creator: PersonInfo;
+  title: string;
+  description: string | null;
+  due: Date;
+  category: string;
+}) {
+  const dueLabel = formatDueUz(opts.due);
+  const lavozim = positionLine(opts.creator);
+  const fromLine = lavozim ? `${opts.creator.name} · ${lavozim}` : opts.creator.name;
+  const isMeeting = opts.category === "meeting";
+  const text = isMeeting
+    ? [
+        "🏢 Qabulxona — uchrashuv",
+        "",
+        `📌 ${opts.title}`,
+        opts.description ? `📝 ${opts.description}` : null,
+        `🕐 Vaqt: ${dueLabel}`,
+        `👤 Kimdan: ${fromLine}`,
+        "",
+        "Eslatmalarim bo‘limida ko‘ring.",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : [
+        "🔔 Sizga yangi eslatma",
+        "",
+        `📌 ${opts.title}`,
+        opts.description ? `📝 ${opts.description.slice(0, 280)}${opts.description.length > 280 ? "…" : ""}` : null,
+        `🕐 Muddat: ${dueLabel}`,
+        `👤 Kim qo‘ydi: ${fromLine}`,
+        "",
+        "👉 Eslatmalar bo‘limida oching.",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+  const telegramHtml = isMeeting
+    ? [
+        "🏢 <b>Qabulxona — uchrashuv</b>",
+        "",
+        `📌 <b>${escapeHtml(opts.title)}</b>`,
+        opts.description ? `📝 ${escapeHtml(opts.description.slice(0, 280))}` : null,
+        `🕐 Vaqt: <b>${escapeHtml(dueLabel)}</b>`,
+        `👤 Kimdan: ${escapeHtml(fromLine)}`,
+        "",
+        "Eslatmalarim bo‘limida ko‘ring.",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : [
+        "🔔 <b>Sizga yangi eslatma</b>",
+        "",
+        `📌 <b>${escapeHtml(opts.title)}</b>`,
+        opts.description
+          ? `📝 ${escapeHtml(opts.description.slice(0, 280))}${opts.description.length > 280 ? "…" : ""}`
+          : null,
+        `🕐 Muddat: <b>${escapeHtml(dueLabel)}</b>`,
+        `👤 Kim qo‘ydi: ${escapeHtml(fromLine)}`,
+        "",
+        "👉 Eslatmalar bo‘limida oching.",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+  return { text, telegramHtml, title: "Yangi eslatma" };
+}
+
 router.get("/reminders", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const userId = req.userId!;
   const rows = await db
@@ -200,16 +402,14 @@ router.get("/reminders", requireAuth, async (req: AuthRequest, res): Promise<voi
     )
     .orderBy(desc(remindersTable.dueAt));
 
+  const personIds = rows.flatMap((r) => [r.userId, r.createdById].filter((x): x is number => x != null));
+  const people = await loadPeople(personIds);
+
   const synced = [];
   for (const row of rows) {
-    // Lifecycle faqat egasi uchun (bildirishnomalar unga boradi)
     const live =
       row.userId === userId ? await syncReminderLifecycle(row, userId) : row;
-    synced.push({
-      ...enrich(live),
-      forOthers: live.userId !== userId && live.createdById === userId,
-      forMe: live.userId === userId,
-    });
+    synced.push(enrich(live, userId, people));
   }
   res.json(synced);
 });
@@ -225,11 +425,15 @@ router.get("/reminders/:id", requireAuth, async (req: AuthRequest, res): Promise
   const current =
     row.userId === userId ? await syncReminderLifecycle(row, userId) : row;
   const events = await listEvents(id);
+  const personIds = [
+    current.userId,
+    current.createdById,
+    ...events.map((e) => e.createdById),
+  ].filter((x): x is number => x != null);
+  const people = await loadPeople(personIds);
   res.json({
-    ...enrich(current),
-    events,
-    forOthers: current.userId !== userId && current.createdById === userId,
-    forMe: current.userId === userId,
+    ...enrich(current, userId, people),
+    events: await enrichEvents(events, people),
   });
 });
 
@@ -321,6 +525,17 @@ router.post("/reminders", requireAuth, async (req: AuthRequest, res): Promise<vo
     return;
   }
 
+  const assigningToOthers = ownerIds.some((id) => id !== userId);
+  const wantTelegramSelf = notifyTelegram === true || notifyTelegram === "true";
+  const people = await loadPeople([userId, ...ownerIds]);
+  const creator = people.get(userId) ?? {
+    id: userId,
+    name: "Rahbar",
+    role: "",
+    roleLabel: "",
+    position: null,
+  };
+
   const baseValues = {
     createdById: userId,
     title: String(title).trim(),
@@ -332,12 +547,14 @@ router.post("/reminders", requireAuth, async (req: AuthRequest, res): Promise<vo
     category: parseCategory(category),
     priority: parsePriority(priority),
     notifySystem: notifySystem === false || notifySystem === "false" ? false : true,
-    notifyTelegram: notifyTelegram === true || notifyTelegram === "true",
+    // Boshqaga biriktirilganda Telegram har doim yoqiladi
+    notifyTelegram: assigningToOthers ? true : wantTelegramSelf,
     status: "active" as const,
   };
 
   const createdRows = [];
   for (const ownerId of ownerIds) {
+    const assignee = people.get(ownerId);
     const [created] = await db
       .insert(remindersTable)
       .values({
@@ -352,53 +569,36 @@ router.post("/reminders", requireAuth, async (req: AuthRequest, res): Promise<vo
       note:
         ownerId === userId
           ? "Eslatma yaratildi"
-          : `Xodimga biriktirildi (#${ownerId})`,
+          : `Xodimga biriktirildi: ${assignee?.name || `#${ownerId}`}`,
       toDueAt: due,
       toStatus: "active",
       createdById: userId,
     });
 
     if (ownerId !== userId) {
-      const dueLabel = due.toLocaleString("uz-UZ", {
-        timeZone: "Asia/Tashkent",
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
+      const payload = buildAssignNotify({
+        creator,
+        title: created.title,
+        description: created.description,
+        due,
+        category: baseValues.category,
       });
-      const isMeeting = baseValues.category === "meeting";
-      const text = isMeeting
-        ? [
-            "🏢 Qabulxona — uchrashuv",
-            "",
-            `📌 ${created.title}`,
-            created.description ? `📝 ${created.description}` : null,
-            `🕐 Vaqt: ${dueLabel}`,
-            "",
-            "Eslatmalarim bo‘limida ko‘ring.",
-          ]
-            .filter(Boolean)
-            .join("\n")
-        : `Sizga yangi eslatma: ${created.title}\n🕐 ${dueLabel}`;
       await notifyUser({
         userId: ownerId,
-        text,
+        text: payload.text,
+        telegramHtml: payload.telegramHtml,
+        title: payload.title,
         type: "reminder_assigned",
         linkUrl: "/eslatmalar",
-        telegram: Boolean(created.notifyTelegram),
-        system: created.notifySystem !== false,
-        webPush: created.notifySystem !== false,
+        telegram: true,
+        system: true,
+        webPush: true,
       });
     }
     createdRows.push(created);
   }
 
-  const enriched = createdRows.map((row) => ({
-    ...enrich(row),
-    forOthers: row.userId !== userId,
-    forMe: row.userId === userId,
-  }));
+  const enriched = createdRows.map((row) => enrich(row, userId, people));
 
   if (enriched.length === 1) {
     res.status(201).json(enriched[0]);
@@ -471,8 +671,14 @@ router.patch("/reminders/:id", requireAuth, async (req: AuthRequest, res): Promi
     }
   }
 
+  const people = await loadPeople([
+    existing.userId,
+    existing.createdById,
+    userId,
+  ].filter((x): x is number => x != null));
+
   if (!Object.keys(updates).length) {
-    res.json(enrich(existing));
+    res.json(enrich(existing, userId, people));
     return;
   }
 
@@ -489,7 +695,7 @@ router.patch("/reminders/:id", requireAuth, async (req: AuthRequest, res): Promi
     createdById: userId,
   });
 
-  res.json(enrich(updated));
+  res.json(enrich(updated, userId, people));
 });
 
 /** Muddatni ko‘chirish — tarix saqlanadi */
@@ -549,7 +755,12 @@ router.post("/reminders/:id/postpone", requireAuth, async (req: AuthRequest, res
     });
   }
 
-  res.json(enrich(updated));
+  const people = await loadPeople([
+    updated.userId,
+    updated.createdById,
+    userId,
+  ].filter((x): x is number => x != null));
+  res.json(enrich(updated, userId, people));
 });
 
 router.post("/reminders/:id/complete", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -579,7 +790,12 @@ router.post("/reminders/:id/complete", requireAuth, async (req: AuthRequest, res
     createdById: userId,
   });
 
-  res.json(enrich(updated));
+  const people = await loadPeople([
+    updated.userId,
+    updated.createdById,
+    userId,
+  ].filter((x): x is number => x != null));
+  res.json(enrich(updated, userId, people));
 });
 
 router.delete("/reminders/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {

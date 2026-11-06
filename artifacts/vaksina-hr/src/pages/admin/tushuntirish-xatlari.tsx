@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarX2,
@@ -130,7 +130,8 @@ export default function TushuntirishXatlariPage() {
   const review = useReviewLetter();
   const del = useDeleteLetters();
 
-  const [group, setGroupRaw] = useState<StaffGroup>("pharmacy");
+  // Dorixona jarimadan chiqarilgan — sukutda ofis (u yerda xatlar bo‘ladi)
+  const [group, setGroupRaw] = useState<StaffGroup>("office");
   const [branch, setBranch] = useState("");
   const [coord, setCoord] = useState("");
   const setGroup = (g: StaffGroup) => {
@@ -160,6 +161,23 @@ export default function TushuntirishXatlariPage() {
     if (month !== "all") set.add(month);
     return [...set].sort().reverse();
   }, [q.data?.months, month]);
+
+  // Joriy oy bo‘sh bo‘lsa — oxirgi xatlar bor oyga avtomatik o‘tish (bir marta)
+  const monthAutoDone = useRef(false);
+  useEffect(() => {
+    if (monthAutoDone.current || q.isLoading || !q.data) return;
+    const apiMonths = (q.data.months ?? []).filter((m) => /^\d{4}-\d{2}$/.test(m)).sort().reverse();
+    if (!apiMonths.length) {
+      monthAutoDone.current = true;
+      return;
+    }
+    if (month === thisMonth() && !(q.data.items?.length) && apiMonths[0] !== month) {
+      monthAutoDone.current = true;
+      setMonth(apiMonths[0]);
+      return;
+    }
+    monthAutoDone.current = true;
+  }, [q.isLoading, q.data, month]);
 
   const stats = useMemo(
     () => ({
@@ -505,11 +523,39 @@ export default function TushuntirishXatlariPage() {
           <Loader2 className="h-4 w-4 animate-spin" /> Yuklanmoqda…
         </p>
       ) : !list.length ? (
-        <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-slate-200 py-12 text-center text-sm text-slate-500 dark:border-white/10">
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-200 px-4 py-12 text-center text-sm text-slate-500 dark:border-white/10">
           <ShieldCheck className="h-8 w-8 text-emerald-500" />
-          {items.length || coord || branch
-            ? "Filtr bo‘yicha xat topilmadi."
-            : `${monthLabel(month)} — ${office ? "ofis" : "dorixona"} xodimlarida tushuntirish xati talab qilingan holat yo‘q.`}
+          {items.length || coord || branch ? (
+            <p>Filtr bo‘yicha xat topilmadi.</p>
+          ) : group === "pharmacy" ? (
+            <p>
+              Dorixona xodimlariga tushuntirish xati yaratilmaydi. Ofis xodimlari yorlig‘iga o‘ting.
+            </p>
+          ) : (
+            <>
+              <p>
+                {monthLabel(month)} — ofis xodimlarida tushuntirish xati talab qilingan holat yo‘q.
+              </p>
+              {months.some((m) => m !== month && m !== "all") ? (
+                <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                  <span className="text-xs text-slate-400">Boshqa oy:</span>
+                  {months
+                    .filter((m) => m !== month && m !== "all")
+                    .slice(0, 4)
+                    .map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setMonth(m)}
+                        className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-100 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200"
+                      >
+                        {monthLabel(m)}
+                      </button>
+                    ))}
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
       ) : (
         <>

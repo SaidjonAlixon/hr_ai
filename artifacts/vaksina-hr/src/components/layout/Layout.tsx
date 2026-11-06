@@ -52,12 +52,13 @@ import {
   SlidersHorizontal,
   Check,
   Eye,
-  AlertTriangle,
+  Send,
   ShieldOff,
   BookOpen,
   Library,
   BadgeCheck,
   FileSignature,
+  FileBadge2,
   UtensilsCrossed,
   Receipt,
   Sparkles,
@@ -83,6 +84,7 @@ import { fetchMyMobileAttendance } from '@/lib/mobile-attendance-api';
 import { MobileGpsBackgroundTracker } from '@/components/davomat/MobileGpsBackgroundTracker';
 import { DavomatAttendanceBanner } from '@/components/DavomatAttendanceBanner';
 import { BoglanishMissingBanner } from '@/components/BoglanishMissingBanner';
+import { TelegramLinkBanner } from '@/components/TelegramLinkBanner';
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { FaceIdEnroll } from '@/components/FaceIdEnroll';
@@ -91,7 +93,7 @@ import { useCall } from '@/lib/calls/engine';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
 import { VerifiedBadge, VerifiedName } from "@/components/VerifiedBadge";
-import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewEmployeesFull, canViewDavomat, canViewDavomatXatoliklar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome, isSbRole, canManageSmenaFilial, canManageStudents, canSeeAbet, canUseDocumentScanner } from "@/lib/roles";
+import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewEmployeesFull, canViewDavomat, canViewUlanganlar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome, isSbRole, canManageSmenaFilial, canManageStudents, canSeeAbet, canUseDocumentScanner } from "@/lib/roles";
 import { AI_CHAT_ENABLED } from "@/lib/chat-flag";
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
@@ -181,13 +183,14 @@ const NAV_SECTIONS: {
       '/davomat-face',
       '/davomat',
       '/davomat/analytics',
-      '/davomat/xatoliklar',
+      '/davomat/ulanganlar',
       '/davomat/bloklash',
       '/davomat/ofisda',
       '/davomat-qr',
       '/smena-filial',
       '/checklist-holati',
       '/admin/tushuntirish-xatlari',
+      '/admin/malumotnoma',
       '/admin/jarimalar',
     ],
   },
@@ -354,7 +357,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/employees')) return '/employees';
   if (path.startsWith('/smena-filial')) return '/smena-filial';
   if (path.startsWith('/davomat/analytics')) return '/davomat/analytics';
-  if (path.startsWith('/davomat/xatoliklar')) return '/davomat/xatoliklar';
+  if (path.startsWith('/davomat/ulanganlar')) return '/davomat/ulanganlar';
   if (path.startsWith('/davomat/bloklash')) return '/davomat/bloklash';
   if (path.startsWith('/davomat/dorixona-ochilishi')) return '/davomat/dorixona-ochilishi';
   if (path.startsWith('/davomat/ofisda')) return '/davomat/ofisda';
@@ -1048,7 +1051,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   };
   const orgNav = { name: 'Tashkiliy tuzilma', path: '/tashkiliy-tuzilma', icon: Network };
   const davomatAnalyticsNav = { name: 'Davomat tahlili', path: '/davomat/analytics', icon: BarChart3 };
-  const davomatXatoliklarNav = { name: 'Xatoliklar', path: '/davomat/xatoliklar', icon: AlertTriangle };
+  const davomatUlanganlarNav = { name: 'Ulanganlar', path: '/davomat/ulanganlar', icon: Send };
   const davomatBloklashNav = { name: 'Bloklash oynasi', path: '/davomat/bloklash', icon: ShieldOff };
   const dorixonaOchilishNav = { name: 'Dorixona ochilishi', path: '/davomat/dorixona-ochilishi', icon: Store };
   const davomatFaceNav = { name: 'Davomat', path: '/davomat-face', icon: ScanFace };
@@ -1061,6 +1064,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const davomatQrNav = { name: 'Davomat QR', path: '/davomat-qr', icon: ScanFace };
   const oylikNav = { name: 'Oylik', path: '/oylik', icon: Banknote };
   const txNav = { name: 'Tushuntirish xatlari', path: '/admin/tushuntirish-xatlari', icon: FileSignature };
+  const malumotnomaNav = { name: "Ma'lumotnoma", path: '/admin/malumotnoma', icon: FileBadge2 };
   const jarimaNav = { name: 'Jarimalar', path: '/admin/jarimalar', icon: Receipt };
   const txMyNav = { name: 'Tushuntirish xatim', path: '/tushuntirish-xatim', icon: FileSignature };
   const abetNav = { name: 'Abet', path: '/abet', icon: UtensilsCrossed };
@@ -1187,12 +1191,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         const at = reportIdx >= 0 ? reportIdx + 1 : next.length;
         next = [...next.slice(0, at), dorixonaOchilishNav, ...next.slice(at)];
       }
-      if (canViewDavomatXatoliklar(role) && !next.some((i) => i.path === '/davomat/xatoliklar')) {
+      if (canViewUlanganlar(role) && !next.some((i) => i.path === '/davomat/ulanganlar')) {
         const baseIdx = next.findIndex(
           (i) => i.path === '/davomat/analytics' || i.path === '/davomat',
         );
         const insertAt = baseIdx >= 0 ? baseIdx + 1 : next.length;
-        next = [...next.slice(0, insertAt), davomatXatoliklarNav, ...next.slice(insertAt)];
+        next = [...next.slice(0, insertAt), davomatUlanganlarNav, ...next.slice(insertAt)];
       }
       if (canViewDistribyutsiya(role) && !next.some((i) => i.path === '/distribyutsiya')) {
         next = [...next, distribNav];
@@ -1354,6 +1358,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Skaner', path: '/admin/scanner', icon: ScanLine },
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       txNav,
+      malumotnomaNav,
       jarimaNav,
       davomatFaceNav,
       smenaNav,
@@ -1372,6 +1377,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     orgNav,
     oylikNav,
     txNav,
+    malumotnomaNav,
     jarimaNav,
     hisobNav,
     reviziyaNav,
@@ -1384,7 +1390,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Nomzodlar', path: '/candidates', icon: Users },
     { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
     davomatAnalyticsNav,
-    davomatXatoliklarNav,
+    davomatUlanganlarNav,
     davomatFaceNav,
     { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
     smenaNav,
@@ -1414,13 +1420,14 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Xodimlar', path: '/employees', icon: Users },
       oylikNav,
       txNav,
+      malumotnomaNav,
       jarimaNav,
       hisobNav,
       itNav,
       reviziyaNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatAnalyticsNav,
-    davomatXatoliklarNav,
+    davomatUlanganlarNav,
       davomatFaceNav,
       smenaNav,
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
@@ -1466,13 +1473,14 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Xodimlar', path: '/employees', icon: Users },
       oylikNav,
       txNav,
+      malumotnomaNav,
       jarimaNav,
       hisobNav,
       itNav,
       reviziyaNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatAnalyticsNav,
-    davomatXatoliklarNav,
+    davomatUlanganlarNav,
       davomatFaceNav,
       smenaNav,
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
@@ -1506,7 +1514,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatAnalyticsNav,
-    davomatXatoliklarNav,
+    davomatUlanganlarNav,
       davomatFaceNav,
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
       { name: 'Arizalar', path: '/requests', icon: FileText },
@@ -1528,10 +1536,11 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Xodimlar', path: '/employees', icon: Users },
       hisobNav,
       txNav,
+      malumotnomaNav,
       jarimaNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatAnalyticsNav,
-    davomatXatoliklarNav,
+    davomatUlanganlarNav,
       smenaNav,
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
       davomatFaceNav,
@@ -1729,7 +1738,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     direktor_yordamchisi: [
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
-      davomatFaceNav,
+    ],
+    broker: [
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
     ],
     gpp: [
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
@@ -1892,7 +1904,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       davomatAnalyticsNav,
-    davomatXatoliklarNav,
+    davomatUlanganlarNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatFaceNav,
     ],
@@ -1903,7 +1915,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       davomatAnalyticsNav,
-    davomatXatoliklarNav,
+    davomatUlanganlarNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatFaceNav,
     ],
@@ -1966,7 +1978,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     .filter((item) => item.path !== '/distribyutsiya' || canViewDistribyutsiya(userRole))
     .filter((item) => item.path !== '/omborxona-ish' || canViewOmborxona(userRole))
     .filter((item) => item.path !== '/davomat/analytics')
-    .filter((item) => item.path !== '/davomat/xatoliklar' || canViewDavomatXatoliklar(userRole))
+    .filter((item) => item.path !== '/davomat/ulanganlar' || canViewUlanganlar(userRole))
     .filter((item) => item.path !== '/davomat-kochma')
     // Arizalar — faqat HR rollari; qolganlarga Xodim kerak alohida bo‘lim
     .filter((item) => item.path !== '/requests' || isHrRole(userRole))
@@ -2698,6 +2710,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         </header>
 
         <DavomatAttendanceBanner />
+        <TelegramLinkBanner />
         <BoglanishMissingBanner />
 
         <main
@@ -2724,7 +2737,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 location === '/davomat' ||
                 location.startsWith('/davomat/dorixona-ochilishi') ||
                 location.startsWith('/davomat/analytics') ||
-                location.startsWith('/davomat/xatoliklar') ||
+                location.startsWith('/davomat/ulanganlar') ||
                 (location === '/dashboard' && davomatDashHome) ||
                 location === '/oylik' ||
                 location === '/hisobkitob' ||

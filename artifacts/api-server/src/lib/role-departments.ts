@@ -49,6 +49,8 @@ export const ROLE_DEPARTMENT_NAME: Record<string, string> = {
   it_rahbar: "AyTi",
   it_dasturchi: "AyTi",
   it_tarmoq: "AyTi",
+  qurulish_rahbar: "Qurulish",
+  qurulish: "Qurulish",
   revizor: "Reviziya",
   reviziya_rahbar: "Reviziya",
   sb: "Xavfsizlik",
@@ -57,6 +59,7 @@ export const ROLE_DEPARTMENT_NAME: Record<string, string> = {
   distrib_rahbar: "Distribyutsiya",
   distrib_hr: "Distribyutsiya",
   distrib: "Distribyutsiya",
+  broker: "Distribyutsiya",
   tamojni_rahbar: "Tamojni sklad",
   tamojni: "Tamojni sklad",
 };
@@ -70,7 +73,17 @@ function normalizeDeptName(name: string): string {
   return String(name || "")
     .trim()
     .replace(/\s+/g, " ")
-    .toLocaleLowerCase("uz");
+    .toLocaleLowerCase("uz")
+    .replace(/[\u2018\u2019\u02BB\u02BC'`]/g, "'");
+}
+
+/** «QURULISH I/B» ↔ «Qurulish» */
+function deptBaseKey(name: string): string {
+  return normalizeDeptName(name)
+    .replace(/\s*i\s*\/\s*b\s*$/i, "")
+    .replace(/\s*\(.*\)$/u, "")
+    .trim()
+    .replace(/qurilish/g, "qurulish");
 }
 
 async function reassignDepartmentRefs(fromId: number, toId: number) {
@@ -159,14 +172,19 @@ export async function ensureDepartmentByName(name: string): Promise<number> {
     .from(departmentsTable)
     .where(sql`lower(trim(name)) = ${normalizeDeptName(trimmed)}`)
     .limit(1);
-  if (existing) {
-    if (existing.name !== trimmed) {
-      await db
-        .update(departmentsTable)
-        .set({ name: trimmed })
-        .where(eq(departmentsTable.id, existing.id));
-    }
-    return existing.id;
+  if (existing) return existing.id;
+
+  // Mavjud «QURULISH I/B» kabi nomlarni yangi dublikat yaratmasdan topamiz
+  const want = deptBaseKey(trimmed);
+  if (want) {
+    const all = await db
+      .select({ id: departmentsTable.id, name: departmentsTable.name })
+      .from(departmentsTable);
+    const fuzzy = all.find((d) => {
+      const base = deptBaseKey(d.name);
+      return base === want || (base.length >= 4 && want.length >= 4 && (base.includes(want) || want.includes(base)));
+    });
+    if (fuzzy) return fuzzy.id;
   }
 
   const [created] = await db

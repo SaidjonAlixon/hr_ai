@@ -71,8 +71,10 @@ const AdminScannerPage = lazyPage('/admin/scanner', () => import('./pages/admin/
 const YordamchiAiPage = lazyPage('/admin/yordamchi-ai', () => import('./pages/admin/yordamchi-ai'));
 const YordamPage = lazyPage('/yordam', () => import('./pages/yordam'));
 const AdminTushuntirishXatlariPage = lazyPage('/admin/tushuntirish-xatlari', () => import('./pages/admin/tushuntirish-xatlari'));
+const AdminMalumotnomaPage = lazyPage('/admin/malumotnoma', () => import('./pages/admin/malumotnoma'));
 const AdminJarimalarPage = lazyPage('/admin/jarimalar', () => import('./pages/admin/jarimalar'));
 const TushuntirishXatimPage = lazyPage('/tushuntirish-xatim', () => import('./pages/tushuntirish-xatim'));
+const MlVerifyPage = lazyPage([], () => import('./pages/ml-verify'));
 const AbetPage = lazyPage('/abet', () => import('./pages/abet'));
 const AdminQurilmalarPage = lazyPage('/admin/qurilmalar', () => import('./pages/admin/qurilmalar'));
 const AdminKochmaDavomatPage = lazyPage('/admin/kochma-davomat', () => import('./pages/admin/kochma-davomat'));
@@ -87,7 +89,7 @@ const EmployeesPage = lazyPage('/employees', () => import('./pages/employees/ind
 const EmployeesOtherPage = lazyPage('/employees/other', () => import('./pages/employees/other'));
 const EmployeeDuplicatesPage = lazyPage('/employees/duplicates', () => import('./pages/employees/duplicates'));
 const DavomatPage = lazyPage('/davomat', () => import('./pages/davomat/index'));
-const DavomatXatoliklarPage = lazyPage('/davomat/xatoliklar', () => import('./pages/davomat/xatoliklar'));
+const DavomatUlanganlarPage = lazyPage('/davomat/ulanganlar', () => import('./pages/davomat/ulanganlar'));
 const DavomatBloklashPage = lazyPage('/davomat/bloklash', () => import('./pages/davomat/bloklash'));
 const DorixonaOchilishiPage = lazyPage('/davomat/dorixona-ochilishi', () => import('./pages/davomat/dorixona-ochilishi'));
 const DavomatFacePage = lazyPage([], () => import('./pages/davomat/face'));
@@ -214,6 +216,11 @@ function Router() {
           <TxVerifyPage />
         </Suspense>
       </Route>
+      <Route path="/ml/:token">
+        <Suspense fallback={<PageFallback />}>
+          <MlVerifyPage />
+        </Suspense>
+      </Route>
       <Route path="/davomat-face">
         <Suspense fallback={<PageFallback />}>
           <DavomatFacePage />
@@ -310,7 +317,7 @@ function Router() {
       <ProtectedRoute path="/employees/other" component={EmployeesOtherPage} />
       <ProtectedRoute path="/employees" component={EmployeesPage} />
       <ProtectedRoute path="/davomat/analytics" component={DavomatPage} />
-      <ProtectedRoute path="/davomat/xatoliklar" component={DavomatXatoliklarPage} />
+      <ProtectedRoute path="/davomat/ulanganlar" component={DavomatUlanganlarPage} />
       <ProtectedRoute path="/davomat/bloklash" component={DavomatBloklashPage} />
       <ProtectedRoute path="/davomat/dorixona-ochilishi" component={DorixonaOchilishiPage} />
       <ProtectedRoute path="/davomat/ofisda" component={DavomatOfisdaPage} />
@@ -350,6 +357,7 @@ function Router() {
       <ProtectedRoute path="/admin/scanner" component={AdminScannerPage} />
       <ProtectedRoute path="/admin/yordamchi-ai" component={YordamchiAiPage} />
       <ProtectedRoute path="/admin/tushuntirish-xatlari" component={AdminTushuntirishXatlariPage} />
+      <ProtectedRoute path="/admin/malumotnoma" component={AdminMalumotnomaPage} />
       <ProtectedRoute path="/admin/jarimalar" component={AdminJarimalarPage} />
       <ProtectedRoute path="/tushuntirish-xatim" component={TushuntirishXatimPage} />
       <ProtectedRoute path="/abet" component={AbetPage} />

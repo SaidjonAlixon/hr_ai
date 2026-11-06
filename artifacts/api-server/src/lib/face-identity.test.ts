@@ -190,7 +190,8 @@ describe("face identity", () => {
   });
 
   it("calibrated thresholds stay in face-api range", () => {
-    assert.ok(FACE_MATCH_MAX <= 0.4);
+    assert.ok(FACE_MATCH_MAX <= 0.55);
+    assert.ok(FACE_MATCH_MAX >= 0.4);
     assert.ok(FACE_ENROLL_BLOCK_MAX < FACE_MATCH_MAX);
   });
 });

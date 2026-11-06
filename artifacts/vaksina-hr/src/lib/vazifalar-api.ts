@@ -93,6 +93,7 @@ export type TaskMeta = {
   basedOnTaskId?: number | null;
   basedOnTitle?: string | null;
   basedOnAssigneeName?: string | null;
+  basedOnCreatedByName?: string | null;
   basedOnStatus?: string | null;
   basedOnCompletedAt?: string | null;
   basedOnResultNote?: string | null;
@@ -211,6 +212,11 @@ export function useGetTasks(
   });
 }
 
+/** Asosiy topshiriqni ochish — ro‘yxatda bo‘lmasa ham */
+export function fetchTaskById(id: number): Promise<Vazifa> {
+  return apiFetch<Vazifa>(`/tasks/${id}`);
+}
+
 export function useCreateTask() {
   const qc = useQueryClient();
   return useMutation({
@@ -326,6 +332,28 @@ export function useAcceptTask() {
   return useMutation({
     mutationFn: (id: number) =>
       apiFetch<Vazifa>(`/tasks/${id}/accept`, { method: "POST" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+}
+
+export type CloseTasksResult = {
+  ok: boolean;
+  closed: number;
+  closedIds: number[];
+  skipped: Array<{ id: number; reason: string }>;
+};
+
+/** Belgilovchi — bir yoki ko‘p vazifani yopish → «Bajarildi» */
+export function useCloseTasks() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ids, note }: { ids: number[]; note?: string }) =>
+      apiFetch<CloseTasksResult>(`/tasks/close`, {
+        method: "POST",
+        body: JSON.stringify({ ids, note: note || undefined }),
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tasks"] });
     },

@@ -363,11 +363,11 @@ export default function PublicCustomerRatePage() {
     <div className="min-h-[100dvh] bg-[#f7f4fb] text-slate-900">
       {/* Oq navbar + katta logo */}
       <header className="sticky top-0 z-20 border-b-4 border-[#f5c518] bg-white shadow-sm">
-        <div className="mx-auto flex max-w-lg items-center justify-between gap-3 px-4 py-3.5 sm:max-w-xl sm:px-6">
+        <div className="mx-auto flex max-w-lg items-center justify-between gap-3 px-4 py-4 sm:max-w-xl sm:px-6">
           <img
             src={LOGO}
             alt="Vaksina Med"
-            className="h-14 w-auto max-w-[min(72vw,280px)] object-contain object-left sm:h-16"
+            className="h-[4.25rem] w-auto max-w-[min(78vw,320px)] object-contain object-left sm:h-20"
           />
           <button
             type="button"

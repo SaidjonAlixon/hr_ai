@@ -86,12 +86,17 @@ export function pickOnDutyShiftForEmployee(opts: {
   yesterday: string;
   nowMs: number;
   defs: Record<ShiftKey, ShiftDefinition>;
+  /** Slot filial id mos kelmasa ham, xodim shu dorixonaga biriktirilgan bo‘lsa — faol smenani olish */
+  relaxBranchMatch?: boolean;
 }): { shiftKey: string; workDate: string } | null {
-  const { branchId, slots, today, yesterday, nowMs, defs } = opts;
+  const { branchId, slots, today, yesterday, nowMs, defs, relaxBranchMatch } = opts;
   if (!slots.length) return null;
   for (const workDate of [today, yesterday]) {
     const day = resolveSlotsForDay(workDate, slots);
-    const active = activePunchSlotsAt(workDate, day, nowMs, defs, "in").filter((s) => s.branchId === branchId);
+    const allActive = activePunchSlotsAt(workDate, day, nowMs, defs, "in");
+    let active = allActive.filter((s) => s.branchId === branchId);
+    // Ba’zi slotlar boshqa branch_id bilan yozilgan — xodim allaqachon filial bo‘yicha filtrl proq
+    if (!active.length && relaxBranchMatch) active = allActive;
     const running = active.filter((s) => nowMs >= s.startMs && nowMs <= s.endMs);
     const pick = running[0] || active[0];
     if (!pick) continue;

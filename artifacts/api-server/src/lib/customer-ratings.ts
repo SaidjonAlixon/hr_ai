@@ -2,13 +2,14 @@
  * Mijozlar baholashi — filial QR, faol smena xodimlari, anonim (admin uchun ism/tel).
  */
 import { createHash, randomBytes } from "node:crypto";
-import { and, eq, inArray, ne, or } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, ne, or } from "drizzle-orm";
 import {
   db,
   pool,
   employeesTable,
   usersTable,
   employeeWorkSlotsTable,
+  attendanceRecordsTable,
   customerRatingQrTable,
   customerRatingsTable,
   customerRatingTargetsTable,
@@ -493,10 +494,10 @@ export async function onDutyStaffAtBranch(branchId: number, nowMs = Date.now()):
 
   const out: OnDutyStaff[] = [];
   const seen = new Set<number>();
+  const byId = new Map(candidates.map((c) => [c.id, c]));
 
   for (const emp of candidates) {
     const slots = slotsByEmp.get(emp.id) || [];
-    // Spec: faqat faol smena. Slot yo‘q bo‘lsa — ko‘rsatilmasin (qat’iy).
     if (!slots.length) continue;
 
     const pick = pickOnDutyShiftForEmployee({
@@ -506,6 +507,7 @@ export async function onDutyStaffAtBranch(branchId: number, nowMs = Date.now()):
       yesterday,
       nowMs,
       defs,
+      relaxBranchMatch: true,
     });
     if (!pick || seen.has(emp.id)) continue;
     seen.add(emp.id);
@@ -517,6 +519,58 @@ export async function onDutyStaffAtBranch(branchId: number, nowMs = Date.now()):
       shiftKey: pick.shiftKey,
       workDate: pick.workDate,
     });
+  }
+
+  /**
+   * Fallback: work_slots yo‘q yoki mos kelmasa — bugun/kecha shu filialda
+   * «Keldim» bosilgan, hali «Ketdim» yo‘q xodimlar (2-smena va h.k.).
+   */
+  try {
+    const candIds = candidates.map((c) => c.id);
+    if (candIds.length) {
+      const open = await db
+        .select({
+          employeeId: attendanceRecordsTable.employeeId,
+          workDate: attendanceRecordsTable.workDate,
+          shiftPlan: attendanceRecordsTable.shiftPlan,
+          resolvedBranchId: attendanceRecordsTable.resolvedBranchId,
+          checkInAt: attendanceRecordsTable.checkInAt,
+        })
+        .from(attendanceRecordsTable)
+        .where(
+          and(
+            inArray(attendanceRecordsTable.employeeId, candIds),
+            inArray(attendanceRecordsTable.workDate, [today, yesterday]),
+            isNotNull(attendanceRecordsTable.checkInAt),
+            isNull(attendanceRecordsTable.checkOutAt),
+            or(
+              eq(attendanceRecordsTable.resolvedBranchId, branchId),
+              // resolved_branch bo‘sh bo‘lsa ham filial xodimi ochiq punch
+              isNull(attendanceRecordsTable.resolvedBranchId),
+            ),
+          ),
+        );
+
+      for (const row of open) {
+        if (seen.has(row.employeeId)) continue;
+        // resolvedBranch boshqa filial bo‘lsa — o‘tkazib yubor
+        if (row.resolvedBranchId != null && row.resolvedBranchId !== branchId) continue;
+        const emp = byId.get(row.employeeId);
+        if (!emp) continue;
+        seen.add(row.employeeId);
+        const sk = String(row.shiftPlan || "").trim() || "two";
+        out.push({
+          employeeId: emp.id,
+          fullName: emp.fullName,
+          position: emp.position || roleTitle(emp.role || emp.orgRole),
+          role: String(emp.role || emp.orgRole || ""),
+          shiftKey: sk,
+          workDate: row.workDate || today,
+        });
+      }
+    }
+  } catch (err) {
+    logger.warn({ err, branchId }, "onDutyStaffAtBranch attendance fallback");
   }
 
   return out.sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"));

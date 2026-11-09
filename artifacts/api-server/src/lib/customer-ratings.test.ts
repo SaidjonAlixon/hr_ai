@@ -165,6 +165,38 @@ describe("customer-ratings on-duty branch + overnight", () => {
     });
     assert.equal(pick, null);
   });
+
+  it("2-smena: slot branch boshqa id bo‘lsa relax bilan topiladi", () => {
+    const slots = [
+      slot({
+        branchId: branchB,
+        shiftKey: "two",
+        mode: "permanent",
+        validFrom: "2026-01-01",
+      }),
+    ];
+    const evening = atTashkent(today, "18:30").getTime();
+    const strict = pickOnDutyShiftForEmployee({
+      branchId: branchA,
+      slots,
+      today,
+      yesterday,
+      nowMs: evening,
+      defs: DEFAULT_SHIFT_DEFS,
+    });
+    assert.equal(strict, null);
+    const relaxed = pickOnDutyShiftForEmployee({
+      branchId: branchA,
+      slots,
+      today,
+      yesterday,
+      nowMs: evening,
+      defs: DEFAULT_SHIFT_DEFS,
+      relaxBranchMatch: true,
+    });
+    assert.ok(relaxed);
+    assert.equal(relaxed!.shiftKey, "two");
+  });
 });
 
 describe("customer-ratings enums", () => {

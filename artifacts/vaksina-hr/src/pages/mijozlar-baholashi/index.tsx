@@ -333,7 +333,6 @@ export default function MijozlarBaholashiPage() {
     <div className="mx-auto w-full max-w-[1400px] space-y-5 px-3 py-5 sm:px-6 lg:px-8">
       <header className="flex flex-wrap items-end justify-between gap-4 overflow-hidden rounded-3xl border border-[#5c2d91]/15 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900">
         <div className="min-w-0">
-          <img src="/logo_vaksina.png" alt="Vaksina" className="mb-3 h-11 w-auto object-contain" />
           <h1 className="text-2xl font-black tracking-tight text-[#5c2d91] dark:text-white sm:text-3xl">
             Mijozlar baholashi
           </h1>

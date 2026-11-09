@@ -122,14 +122,101 @@ function renderUnicodeTextPng(
   };
 }
 
-/** Chiroyli QR: navy + yumshoq oq fon + tashqi ramka canvas ichida */
+const ICON_URL = "/vaksina-syringe-icon.png";
+let iconCache: HTMLCanvasElement | null = null;
+
+/** Qora fondagi brend ikonni shaffof qilib olish */
+async function loadBrandIcon(): Promise<HTMLCanvasElement> {
+  if (iconCache) return iconCache;
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.crossOrigin = "anonymous";
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error("Brend ikon yuklanmadi"));
+    el.src = ICON_URL;
+  });
+
+  const c = document.createElement("canvas");
+  c.width = img.naturalWidth || img.width;
+  c.height = img.naturalHeight || img.height;
+  const ctx = c.getContext("2d");
+  if (!ctx) throw new Error("Canvas ishlamaydi");
+  ctx.drawImage(img, 0, 0);
+  const data = ctx.getImageData(0, 0, c.width, c.height);
+  const px = data.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const r = px[i];
+    const g = px[i + 1];
+    const b = px[i + 2];
+    // Qora / juda qorong‘i pixel → shaffof
+    if (r < 28 && g < 28 && b < 28) {
+      px[i + 3] = 0;
+    }
+  }
+  ctx.putImageData(data, 0, 0);
+  iconCache = c;
+  return c;
+}
+
+/** Fallback: canvasda chiroyli shprits (ikon yuklanmasa) */
+function drawFallbackSyringe(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  size: number,
+) {
+  const s = size;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(-Math.PI / 4);
+
+  // Halqa
+  ctx.strokeStyle = "#6b3fa0";
+  ctx.lineWidth = s * 0.055;
+  ctx.beginPath();
+  ctx.arc(0, 0, s * 0.42, 0.35, Math.PI * 2 - 0.35);
+  ctx.stroke();
+  ctx.lineWidth = s * 0.028;
+  ctx.beginPath();
+  ctx.arc(0, 0, s * 0.33, 0.45, Math.PI * 2 - 0.45);
+  ctx.stroke();
+
+  // Barrel
+  const bw = s * 0.22;
+  const bh = s * 0.55;
+  roundRect(ctx, -bw / 2, -bh * 0.35, bw, bh * 0.7, bw * 0.18);
+  ctx.fillStyle = "#f5c518";
+  ctx.fill();
+  ctx.strokeStyle = "#6b3fa0";
+  ctx.lineWidth = s * 0.035;
+  ctx.stroke();
+
+  // Plunger
+  ctx.fillStyle = "#6b3fa0";
+  roundRect(ctx, -bw * 0.28, -bh * 0.52, bw * 0.56, bh * 0.14, bw * 0.12);
+  ctx.fill();
+  ctx.fillRect(-bw * 0.08, -bh * 0.48, bw * 0.16, bh * 0.16);
+
+  // Needle
+  ctx.strokeStyle = "#6b3fa0";
+  ctx.lineWidth = s * 0.04;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(0, bh * 0.32);
+  ctx.lineTo(0, bh * 0.52);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+/** Zamonaviy QR: oq kartochka, oltin burchaklar, markazda oq fon + shprits ikon */
 async function styledQrPng(url: string, size = 900): Promise<string> {
-  const pad = Math.round(size * 0.08);
+  const pad = Math.round(size * 0.075);
   const qrSize = size - pad * 2;
   const qrCanvas = document.createElement("canvas");
   await QRCode.toCanvas(qrCanvas, url, {
     width: qrSize,
-    margin: 1,
+    margin: 2,
     errorCorrectionLevel: "H",
     color: { dark: BRAND, light: "#ffffff" },
   });
@@ -140,67 +227,74 @@ async function styledQrPng(url: string, size = 900): Promise<string> {
   const ctx = out.getContext("2d");
   if (!ctx) throw new Error("Canvas ishlamaydi");
 
-  // Soft card background
+  // Oq yumshoq kartochka
   ctx.fillStyle = "#ffffff";
-  roundRect(ctx, 0, 0, size, size, size * 0.04);
+  roundRect(ctx, 0, 0, size, size, size * 0.045);
   ctx.fill();
 
-  // Outer decorative frame
-  ctx.strokeStyle = LIGHT;
-  ctx.lineWidth = size * 0.018;
-  roundRect(ctx, size * 0.02, size * 0.02, size * 0.96, size * 0.96, size * 0.035);
+  // Yengil ichki soyali ramka
+  ctx.strokeStyle = "#eef2f7";
+  ctx.lineWidth = size * 0.014;
+  roundRect(ctx, size * 0.018, size * 0.018, size * 0.964, size * 0.964, size * 0.038);
   ctx.stroke();
 
-  // Accent corner ticks
-  const tick = size * 0.07;
-  const inset = size * 0.035;
+  // Oltin L-burchaklar
+  const tick = size * 0.078;
+  const inset = size * 0.032;
   ctx.strokeStyle = ACCENT;
-  ctx.lineWidth = size * 0.012;
+  ctx.lineWidth = size * 0.013;
   ctx.lineCap = "round";
-  // TL
-  ctx.beginPath();
-  ctx.moveTo(inset, inset + tick);
-  ctx.lineTo(inset, inset);
-  ctx.lineTo(inset + tick, inset);
-  ctx.stroke();
-  // TR
-  ctx.beginPath();
-  ctx.moveTo(size - inset - tick, inset);
-  ctx.lineTo(size - inset, inset);
-  ctx.lineTo(size - inset, inset + tick);
-  ctx.stroke();
-  // BL
-  ctx.beginPath();
-  ctx.moveTo(inset, size - inset - tick);
-  ctx.lineTo(inset, size - inset);
-  ctx.lineTo(inset + tick, size - inset);
-  ctx.stroke();
-  // BR
-  ctx.beginPath();
-  ctx.moveTo(size - inset - tick, size - inset);
-  ctx.lineTo(size - inset, size - inset);
-  ctx.lineTo(size - inset, size - inset - tick);
-  ctx.stroke();
+  ctx.lineJoin = "round";
+  const corners: Array<[number, number, number, number, number, number]> = [
+    [inset, inset + tick, inset, inset, inset + tick, inset],
+    [size - inset - tick, inset, size - inset, inset, size - inset, inset + tick],
+    [inset, size - inset - tick, inset, size - inset, inset + tick, size - inset],
+    [size - inset - tick, size - inset, size - inset, size - inset, size - inset, size - inset - tick],
+  ];
+  for (const [x1, y1, x2, y2, x3, y3] of corners) {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.lineTo(x3, y3);
+    ctx.stroke();
+  }
 
   ctx.drawImage(qrCanvas, pad, pad, qrSize, qrSize);
 
-  // Center brand disc (errorCorrection H allows overlay)
+  // Markaz: katta oq disk + ikon (H daraja — skan ishlaydi)
   const cx = size / 2;
   const cy = size / 2;
-  const r = size * 0.085;
+  const padR = size * 0.145;
+
+  // Yumshoq oq “halo”
   ctx.beginPath();
-  ctx.arc(cx, cy, r + size * 0.012, 0, Math.PI * 2);
+  ctx.arc(cx, cy, padR + size * 0.018, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.fill();
+
+  // Asosiy oq fon (aniq ko‘rinadi)
+  ctx.beginPath();
+  ctx.arc(cx, cy, padR, 0, Math.PI * 2);
   ctx.fillStyle = "#ffffff";
   ctx.fill();
+  ctx.strokeStyle = "#f0f4f8";
+  ctx.lineWidth = size * 0.008;
+  ctx.stroke();
+
+  // Yupqa oltin halqa
   ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fillStyle = BRAND;
-  ctx.fill();
-  ctx.fillStyle = "#ffffff";
-  ctx.font = `800 ${Math.round(size * 0.038)}px ${UNICODE_FONT}`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("V", cx, cy + 1);
+  ctx.arc(cx, cy, padR - size * 0.01, 0, Math.PI * 2);
+  ctx.strokeStyle = "rgba(201,162,39,0.55)";
+  ctx.lineWidth = size * 0.006;
+  ctx.stroke();
+
+  const iconBox = padR * 1.55;
+  try {
+    const icon = await loadBrandIcon();
+    ctx.drawImage(icon, cx - iconBox / 2, cy - iconBox / 2, iconBox, iconBox);
+  } catch {
+    drawFallbackSyringe(ctx, cx, cy, iconBox * 0.72);
+  }
 
   return out.toDataURL("image/png");
 }

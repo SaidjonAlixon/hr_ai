@@ -69,6 +69,12 @@ export function normalizePhone(raw: string): string {
   return d.length === 9 ? `998${d}` : d;
 }
 
+/** Mijoz bahosi: faqat +998 9X… mobil */
+export function isValidUzMobilePhone(raw: string): boolean {
+  const n = normalizePhone(raw);
+  return /^9989\d{8}$/.test(n);
+}
+
 /**
  * Pure: filial + smena oynasi (tungi/overnight: kecha ish kuni ham tekshiriladi).
  * Boshqa filial slotlari va oynadan tashqari smenalar chiqarilmaydi.

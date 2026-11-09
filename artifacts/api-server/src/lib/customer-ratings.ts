@@ -587,7 +587,9 @@ export async function submitRating(input: {
   const name = String(input.customerName || "").trim().replace(/\s+/g, " ");
   if (name.length < 2) throw Object.assign(new Error("Ismingizni yozing"), { status: 400 });
   const phone = normalizePhone(input.customerPhone);
-  if (phone.length < 12) throw Object.assign(new Error("Telefon raqamini to‘g‘ri kiriting"), { status: 400 });
+  if (!/^9989\d{8}$/.test(phone)) {
+    throw Object.assign(new Error("Telefon +9989 dan boshlanishi kerak"), { status: 400 });
+  }
 
   const day = todayYmd();
   let targets: OnDutyStaff[] = [];
@@ -918,7 +920,9 @@ export async function adminCreateRating(input: {
   const name = String(input.customerName || "").trim().replace(/\s+/g, " ");
   if (name.length < 2) throw Object.assign(new Error("Mijoz ismini yozing"), { status: 400 });
   const phone = normalizePhone(input.customerPhone);
-  if (phone.length < 12) throw Object.assign(new Error("Telefon noto‘g‘ri"), { status: 400 });
+  if (!/^9989\d{8}$/.test(phone)) {
+    throw Object.assign(new Error("Telefon +9989 dan boshlanishi kerak"), { status: 400 });
+  }
 
   let targets: Array<{ employeeId: number; fullName: string; position: string; shiftKey: string | null }> = [];
   if (input.rateType === "staff") {

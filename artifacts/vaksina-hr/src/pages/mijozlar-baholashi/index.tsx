@@ -673,7 +673,8 @@ export default function MijozlarBaholashiPage() {
             <img
               src="/logo_vaksina.png"
               alt="Vaksina"
-              className="mx-auto h-12 w-auto rounded-lg object-contain bg-black px-3 py-1.5"
+              className="mx-auto h-12 w-auto object-contain mix-blend-lighten"
+              style={{ filter: "contrast(1.05)" }}
             />
             <p className="mt-3 text-xl font-extrabold text-[#5c2d91] dark:text-white">Xizmatni baholang</p>
             <img src={preview.dataUrl} alt="QR" className="mx-auto mt-4 h-72 w-72 rounded-2xl border border-violet-100 shadow-sm" />

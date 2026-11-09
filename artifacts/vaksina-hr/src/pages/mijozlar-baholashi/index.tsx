@@ -670,9 +670,13 @@ export default function MijozlarBaholashiPage() {
             className="w-full max-w-md rounded-3xl bg-white p-6 text-center shadow-2xl dark:bg-slate-900"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-600">VAKSINA MED</p>
-            <p className="mt-1 text-xl font-extrabold text-[#0b3a5c] dark:text-white">Xizmatni baholang</p>
-            <img src={preview.dataUrl} alt="QR" className="mx-auto mt-4 h-72 w-72 rounded-2xl border border-slate-100 shadow-sm" />
+            <img
+              src="/vaksinahr_logo.png"
+              alt="Vaksina"
+              className="mx-auto h-10 w-auto object-contain"
+            />
+            <p className="mt-3 text-xl font-extrabold text-[#5c2d91] dark:text-white">Xizmatni baholang</p>
+            <img src={preview.dataUrl} alt="QR" className="mx-auto mt-4 h-72 w-72 rounded-2xl border border-violet-100 shadow-sm" />
             <p className="mt-3 text-base font-bold text-slate-800 dark:text-slate-100">{preview.label}</p>
             <p className="mt-1 break-all text-[10px] text-slate-400">{preview.url}</p>
             <div className="mt-5 flex gap-2">

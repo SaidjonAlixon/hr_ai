@@ -51,6 +51,7 @@ const paths = [
   "artifacts/vaksina-hr/src/i18n/locales/uz.ts",
   "artifacts/vaksina-hr/src/lib/customer-rating-qr-pdf.ts",
   "artifacts/vaksina-hr/public/vaksina-syringe-icon.png",
+  "artifacts/vaksina-hr/public/vaksinahr_logo.png",
   "artifacts/vaksina-hr/src/lib/discipline-api.ts",
   "artifacts/vaksina-hr/src/lib/explanation-letters-api.ts",
   "artifacts/vaksina-hr/src/pages/baho/public-rate.tsx",

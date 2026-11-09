@@ -361,18 +361,18 @@ export default function PublicCustomerRatePage() {
 
   return (
     <div className="min-h-[100dvh] bg-[#f7f4fb] text-slate-900">
-      {/* Brend header — logo qora fonda chiroyli */}
-      <header className="sticky top-0 z-20 border-b-4 border-[#f5c518] bg-black shadow-lg">
-        <div className="mx-auto flex max-w-lg items-center justify-between gap-3 px-4 py-3 sm:max-w-xl sm:px-6">
+      {/* Oq navbar + katta logo */}
+      <header className="sticky top-0 z-20 border-b-4 border-[#f5c518] bg-white shadow-sm">
+        <div className="mx-auto flex max-w-lg items-center justify-between gap-3 px-4 py-3.5 sm:max-w-xl sm:px-6">
           <img
             src={LOGO}
             alt="Vaksina Med"
-            className="h-11 w-auto max-w-[min(70vw,240px)] object-contain object-left sm:h-12"
+            className="h-14 w-auto max-w-[min(72vw,280px)] object-contain object-left sm:h-16"
           />
           <button
             type="button"
             onClick={() => setLang((l) => (l === "uz" ? "ru" : "uz"))}
-            className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 text-xs font-bold text-white"
+            className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-[#5c2d91]/20 bg-[#5c2d91]/5 px-3 text-xs font-bold text-[#5c2d91]"
           >
             <Languages className="h-3.5 w-3.5" />
             {lang === "uz" ? "RU" : "UZ"}
@@ -405,9 +405,11 @@ export default function PublicCustomerRatePage() {
           </div>
         ) : step === "done" ? (
           <div className="flex flex-1 flex-col items-center justify-center text-center">
-            <div className="mb-6 rounded-2xl bg-black px-5 py-3 shadow-lg">
-              <img src={LOGO} alt="" className="mx-auto h-12 w-auto object-contain" />
-            </div>
+            <img
+              src={LOGO}
+              alt="Vaksina Med"
+              className="mb-7 h-16 w-auto max-w-[280px] object-contain sm:h-[4.5rem]"
+            />
             <span className="flex h-[4.75rem] w-[4.75rem] items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-[0_12px_40px_rgba(16,185,129,0.4)]">
               <Check className="h-9 w-9" strokeWidth={3} />
             </span>

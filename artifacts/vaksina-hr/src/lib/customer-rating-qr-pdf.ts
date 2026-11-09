@@ -146,10 +146,10 @@ function roundRect(
   ctx.closePath();
 }
 
-let logoCache: HTMLCanvasElement | null = null;
+let logoCache: HTMLImageElement | null = null;
 
-/** logo_vaksina.png — qora fonni olib, oq PDF uchun toza logo */
-async function loadHeaderLogo(): Promise<HTMLCanvasElement> {
+/** Aynan logo_vaksina.png — rasmga tegilmaydi */
+async function loadHeaderLogo(): Promise<HTMLImageElement> {
   if (logoCache) return logoCache;
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
     const el = new Image();
@@ -158,56 +158,8 @@ async function loadHeaderLogo(): Promise<HTMLCanvasElement> {
     el.onerror = () => reject(new Error("Logo yuklanmadi"));
     el.src = LOGO_URL;
   });
-
-  const w = img.naturalWidth || img.width;
-  const h = img.naturalHeight || img.height;
-  const src = document.createElement("canvas");
-  src.width = w;
-  src.height = h;
-  const sctx = src.getContext("2d");
-  if (!sctx) throw new Error("Canvas ishlamaydi");
-  sctx.drawImage(img, 0, 0);
-  const data = sctx.getImageData(0, 0, w, h);
-  const px = data.data;
-
-  // Qora fon → shaffof; qirqish uchun chegarani topish
-  let minX = w;
-  let minY = h;
-  let maxX = 0;
-  let maxY = 0;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const i = (y * w + x) * 4;
-      const r = px[i];
-      const g = px[i + 1];
-      const b = px[i + 2];
-      // deyarli qora pixel
-      if (r < 35 && g < 35 && b < 35) {
-        px[i + 3] = 0;
-        continue;
-      }
-      if (x < minX) minX = x;
-      if (y < minY) minY = y;
-      if (x > maxX) maxX = x;
-      if (y > maxY) maxY = y;
-    }
-  }
-  sctx.putImageData(data, 0, 0);
-
-  const pad = Math.round(Math.max(w, h) * 0.02);
-  const cw = Math.max(1, maxX - minX + 1 + pad * 2);
-  const ch = Math.max(1, maxY - minY + 1 + pad * 2);
-  const out = document.createElement("canvas");
-  out.width = cw;
-  out.height = ch;
-  const octx = out.getContext("2d");
-  if (!octx) throw new Error("Canvas ishlamaydi");
-  // Oq fon — PDF da qora quti bo‘lmasin
-  octx.fillStyle = "#ffffff";
-  octx.fillRect(0, 0, cw, ch);
-  octx.drawImage(src, minX - pad, minY - pad, cw, ch, 0, 0, cw, ch);
-  logoCache = out;
-  return out;
+  logoCache = img;
+  return img;
 }
 
 function isFinderCell(row: number, col: number, n: number): boolean {
@@ -368,17 +320,17 @@ async function drawBahoQrPage(doc: jsPDF, png: string, item: BahoQrPage, pageMet
     y = placeText(doc, meta, cx, y) + 2;
   }
 
-  // Yuqori: logo_vaksina.png (qora fon olib tashlangan, oq PDF)
+  // Yuqori: logo_vaksina.png (o‘zgartirilmagan)
   try {
     const logo = await loadHeaderLogo();
-    const maxW = 128;
-    const maxH = 40;
-    const iw = logo.width;
-    const ih = logo.height;
+    const maxW = 140;
+    const maxH = 46;
+    const iw = logo.naturalWidth || logo.width;
+    const ih = logo.naturalHeight || logo.height;
     const scale = Math.min(maxW / iw, maxH / ih);
     const wMm = iw * scale;
     const hMm = ih * scale;
-    doc.addImage(logo.toDataURL("image/png"), "PNG", cx - wMm / 2, y, wMm, hMm);
+    doc.addImage(logo, "PNG", cx - wMm / 2, y, wMm, hMm);
     y += hMm + 10;
   } catch {
     const brand = renderUnicodeTextPng("VAKSINA MED", {

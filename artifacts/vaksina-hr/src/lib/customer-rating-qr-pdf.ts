@@ -17,7 +17,7 @@ const YELLOW = "#f5c518";
 const YELLOW_RGB: [number, number, number] = [245, 197, 24];
 const CYAN = "#22c5e0";
 const MUTED = "#64748b";
-const LOGO_URL = "/vaksinahr_logo.png";
+const LOGO_URL = "/logo_vaksina.png";
 
 const UNICODE_FONT =
   '"Segoe UI", "Noto Sans", "DejaVu Sans", Arial, "Helvetica Neue", sans-serif';
@@ -319,18 +319,21 @@ async function drawBahoQrPage(doc: jsPDF, png: string, item: BahoQrPage, pageMet
     y = placeText(doc, meta, cx, y) + 2;
   }
 
-  // Yuqori logo (matn o‘rniga)
+  // Yuqori: aynan logo_vaksina.png
   try {
     const logo = await loadHeaderLogo();
-    const maxW = 118;
-    const maxH = 28;
+    const maxW = 132;
+    const maxH = 36;
     const iw = logo.naturalWidth || logo.width;
     const ih = logo.naturalHeight || logo.height;
     const scale = Math.min(maxW / iw, maxH / ih);
     const wMm = iw * scale;
     const hMm = ih * scale;
+    // Qora fonli logo — yumaloq “plate”
+    doc.setFillColor(0, 0, 0);
+    doc.roundedRect(cx - wMm / 2 - 3, y - 2, wMm + 6, hMm + 4, 3, 3, "F");
     doc.addImage(logo, "PNG", cx - wMm / 2, y, wMm, hMm);
-    y += hMm + 6;
+    y += hMm + 8;
   } catch {
     const brand = renderUnicodeTextPng("VAKSINA MED", {
       fontSizePx: 14,

@@ -2,17 +2,20 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Ban,
+  CheckCircle2,
   Download,
   FileDown,
   Loader2,
   Plus,
   QrCode,
   RefreshCw,
+  Search,
   Star,
   Store,
   MessageSquareWarning,
   Trash2,
   Users,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -27,6 +30,8 @@ import {
 type QrItem = {
   branchId: number;
   branchLabel: string;
+  branchNo?: number | null;
+  mudirName?: string;
   token: string | null;
   status: string;
   version: number;
@@ -58,7 +63,7 @@ type FeedItem = {
   createdAt: string;
 };
 
-type Tab = "stats" | "staff" | "pharmacy" | "qr";
+type Tab = "qr" | "staff" | "pharmacy" | "stats";
 
 async function readErr(res: Response, fb: string) {
   const b = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -80,13 +85,22 @@ function fmtWhen(iso: string) {
   }
 }
 
+function statusMeta(status: string) {
+  if (status === "active") return { label: "Faol", cls: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200" };
+  if (status === "blocked") return { label: "Bloklangan", cls: "bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-200" };
+  if (status === "revoked") return { label: "Eskirgan", cls: "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-100" };
+  return { label: "QR yo‘q", cls: "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-300" };
+}
+
 export default function MijozlarBaholashiPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const { user } = useAuth();
-  const [tab, setTab] = useState<Tab>("staff");
+  const [tab, setTab] = useState<Tab>("qr");
   const [branchId, setBranchId] = useState<string>("");
   const [complaints, setComplaints] = useState(false);
+  const [qrSearch, setQrSearch] = useState("");
+  const [qrFilter, setQrFilter] = useState<"all" | "missing" | "active" | "blocked">("all");
   const [preview, setPreview] = useState<{ url: string; label: string; dataUrl: string } | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -96,7 +110,7 @@ export default function MijozlarBaholashiPage() {
     queryFn: async () => {
       const res = await fetch("/api/customer-ratings/meta", { credentials: "include" });
       if (!res.ok) throw await readErr(res, "Ruxsat tekshirilmadi");
-      return res.json() as Promise<{ canManage: boolean; canSeeIdentity: boolean }>;
+      return res.json() as Promise<{ canManage: boolean; canSeeIdentity: boolean; role?: string }>;
     },
   });
 
@@ -105,7 +119,7 @@ export default function MijozlarBaholashiPage() {
     queryFn: async () => {
       const res = await fetch("/api/customer-ratings/branches", { credentials: "include" });
       if (!res.ok) throw await readErr(res, "Filiallar yuklanmadi");
-      return res.json() as Promise<{ branches: Array<{ id: number; label: string }> }>;
+      return res.json() as Promise<{ branches: Array<{ id: number; label: string; branchNo?: number | null }> }>;
     },
   });
 
@@ -118,9 +132,6 @@ export default function MijozlarBaholashiPage() {
     },
   });
 
-  const rateType: "staff" | "pharmacy" | "all" =
-    tab === "staff" ? "staff" : tab === "pharmacy" ? "pharmacy" : "all";
-
   const feedQs = useMemo(() => {
     const p = new URLSearchParams();
     if (branchId) p.set("branchId", branchId);
@@ -131,6 +142,7 @@ export default function MijozlarBaholashiPage() {
 
   const feed = useQuery({
     queryKey: ["customer-ratings-feed", feedQs],
+    enabled: tab !== "qr",
     queryFn: async () => {
       const res = await fetch(`/api/customer-ratings/feed?${feedQs}`, { credentials: "include" });
       if (!res.ok) throw await readErr(res, "Baholar yuklanmadi");
@@ -147,6 +159,41 @@ export default function MijozlarBaholashiPage() {
     },
   });
 
+  const canManage = meta.data?.canManage ?? qr.data?.canManage ?? false;
+  const canSee = meta.data?.canSeeIdentity ?? false;
+
+  const qrItems = useMemo(() => {
+    const list = [...(qr.data?.items || [])];
+    const q = qrSearch.trim().toLowerCase();
+    return list
+      .filter((it) => {
+        if (qrFilter === "missing") return it.status === "missing" || !it.token;
+        if (qrFilter === "active") return it.status === "active";
+        if (qrFilter === "blocked") return it.status === "blocked";
+        return true;
+      })
+      .filter((it) => {
+        if (!q) return true;
+        return (
+          it.branchLabel.toLowerCase().includes(q) ||
+          String(it.branchNo ?? "").includes(q) ||
+          (it.mudirName || "").toLowerCase().includes(q)
+        );
+      });
+  }, [qr.data?.items, qrSearch, qrFilter]);
+
+  const qrStats = useMemo(() => {
+    const items = qr.data?.items || [];
+    return {
+      total: items.length,
+      active: items.filter((i) => i.status === "active").length,
+      missing: items.filter((i) => i.status === "missing" || !i.token).length,
+      blocked: items.filter((i) => i.status === "blocked").length,
+    };
+  }, [qr.data?.items]);
+
+  const invalidateQr = () => void qc.invalidateQueries({ queryKey: ["customer-ratings-qr"] });
+
   const createQr = useMutation({
     mutationFn: async (id: number) => {
       const res = await fetch("/api/customer-ratings/qr", {
@@ -159,8 +206,26 @@ export default function MijozlarBaholashiPage() {
       return res.json();
     },
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["customer-ratings-qr"] });
-      toast({ title: "QR tayyor" });
+      invalidateQr();
+      toast({ title: "QR yaratildi" });
+    },
+    onError: (e) => toast({ title: "Xato", description: (e as Error).message, variant: "destructive" }),
+  });
+
+  const createAllQr = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/customer-ratings/qr", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ createAll: true }),
+      });
+      if (!res.ok) throw await readErr(res, "Yaratilmadi");
+      return res.json() as Promise<{ created: number; total: number }>;
+    },
+    onSuccess: (data) => {
+      invalidateQr();
+      toast({ title: data.created ? `${data.created} ta QR yaratildi` : "Hammasi allaqachon bor" });
     },
     onError: (e) => toast({ title: "Xato", description: (e as Error).message, variant: "destructive" }),
   });
@@ -172,8 +237,8 @@ export default function MijozlarBaholashiPage() {
       return res.json();
     },
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["customer-ratings-qr"] });
-      toast({ title: "QR yangilandi" });
+      invalidateQr();
+      toast({ title: "QR almashtirildi" });
     },
     onError: (e) => toast({ title: "Xato", description: (e as Error).message, variant: "destructive" }),
   });
@@ -190,7 +255,7 @@ export default function MijozlarBaholashiPage() {
       return res.json();
     },
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["customer-ratings-qr"] });
+      invalidateQr();
       toast({ title: "Holat yangilandi" });
     },
     onError: (e) => toast({ title: "Xato", description: (e as Error).message, variant: "destructive" }),
@@ -219,7 +284,11 @@ export default function MijozlarBaholashiPage() {
     if (!item.publicUrl || !canManage) return;
     setPdfBusy(true);
     try {
-      await downloadBahoQrPdf({ branchLabel: item.branchLabel, publicUrl: item.publicUrl });
+      await downloadBahoQrPdf({
+        branchLabel: item.branchLabel,
+        publicUrl: item.publicUrl,
+        branchNo: item.branchNo,
+      });
       toast({ title: "A4 PDF tayyor" });
     } catch (e) {
       toast({ title: "PDF xato", description: (e as Error).message, variant: "destructive" });
@@ -232,9 +301,9 @@ export default function MijozlarBaholashiPage() {
     if (!canManage) return;
     const list = (qr.data?.items || [])
       .filter((i) => i.publicUrl && i.status === "active")
-      .map((i) => ({ branchLabel: i.branchLabel, publicUrl: i.publicUrl! }));
+      .map((i) => ({ branchLabel: i.branchLabel, publicUrl: i.publicUrl!, branchNo: i.branchNo }));
     if (!list.length) {
-      toast({ title: "Faol QR yo‘q", variant: "destructive" });
+      toast({ title: "Faol QR yo‘q — avval yarating", variant: "destructive" });
       return;
     }
     setPdfBusy(true);
@@ -256,46 +325,83 @@ export default function MijozlarBaholashiPage() {
     window.open(`/api/customer-ratings/export.xlsx?${p}`, "_blank");
   };
 
-  const canManage = meta.data?.canManage ?? false;
-  const canSee = meta.data?.canSeeIdentity ?? false;
   const stats = feed.data?.stats;
   const items = feed.data?.items || [];
+  const busyQr = createQr.isPending || createAllQr.isPending || rotateQr.isPending || blockQr.isPending;
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 px-3 py-4 sm:px-5 sm:py-6">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">Mijozlar baholashi</h1>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Xodim va dorixona baholari alohida · filial / mudir / koordinator ·{" "}
-            {canSee ? "mijoz ma’lumoti ochiq" : "mijozlar anonim"}
+    <div className="mx-auto w-full max-w-[1400px] space-y-5 px-3 py-5 sm:px-6 lg:px-8">
+      <header className="flex flex-wrap items-end justify-between gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900">
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#0b3a5c]/70 dark:text-cyan-200/80">
+            Vaksina · Mijoz
+          </p>
+          <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+            Mijozlar baholashi
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm text-slate-500">
+            Har filial uchun QR · xodim va dorixona baholari alohida · mudir/koordinator · mijoz ma’lumoti{" "}
+            {canSee ? "admin uchun ochiq" : "anonim"}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {canManage ? (
-            <Button type="button" size="sm" className="h-9 gap-1.5 rounded-xl" onClick={() => setAddOpen(true)}>
-              <Plus className="h-3.5 w-3.5" /> Qo‘shish
+          {canManage && tab === "qr" ? (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                className="h-10 gap-1.5 rounded-xl px-4"
+                disabled={busyQr || qrStats.missing === 0}
+                onClick={() => createAllQr.mutate()}
+              >
+                {createAllQr.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                Hammaga QR yaratish
+                {qrStats.missing ? ` (${qrStats.missing})` : ""}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-10 gap-1.5 rounded-xl px-4"
+                disabled={pdfBusy || qrStats.active === 0}
+                onClick={() => void downloadAllPdf()}
+              >
+                {pdfBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+                Barchasi A4 PDF
+              </Button>
+            </>
+          ) : null}
+          {canManage && (tab === "staff" || tab === "pharmacy") ? (
+            <Button type="button" size="sm" className="h-10 gap-1.5 rounded-xl" onClick={() => setAddOpen(true)}>
+              <Plus className="h-4 w-4" /> Baho qo‘shish
             </Button>
           ) : null}
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="h-9 gap-1.5 rounded-xl"
+            className="h-10 gap-1.5 rounded-xl"
             onClick={() => exportXlsx(tab === "staff" || tab === "pharmacy" ? tab : "all")}
           >
-            <Download className="h-3.5 w-3.5" /> Excel
+            <Download className="h-4 w-4" /> Excel
           </Button>
         </div>
       </header>
 
-      <div className="flex flex-wrap gap-1.5 rounded-2xl bg-slate-100 p-1 dark:bg-white/5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <MiniStat label="Filiallar" value={String(qrStats.total || branches.data?.branches?.length || "…")} />
+        <MiniStat label="Faol QR" value={String(qrStats.active)} tone="ok" />
+        <MiniStat label="QR yo‘q" value={String(qrStats.missing)} tone={qrStats.missing ? "warn" : undefined} />
+        <MiniStat label="Bloklangan" value={String(qrStats.blocked)} tone={qrStats.blocked ? "bad" : undefined} />
+      </div>
+
+      <div className="flex flex-wrap gap-1.5 rounded-2xl bg-slate-100 p-1.5 dark:bg-white/5">
         {(
           [
+            ["qr", "QR kodlar", QrCode],
             ["staff", "Xodim baholari", Users],
             ["pharmacy", "Dorixona baholari", Store],
             ["stats", "Statistika", Star],
-            ["qr", "QR kodlar", QrCode],
           ] as const
         ).map(([k, label, Icon]) => (
           <button
@@ -303,56 +409,243 @@ export default function MijozlarBaholashiPage() {
             type="button"
             onClick={() => setTab(k)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition",
-              tab === k ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white" : "text-slate-500",
+              "inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-bold transition sm:flex-none sm:px-5",
+              tab === k ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white" : "text-slate-500 hover:text-slate-800",
             )}
           >
-            <Icon className="h-3.5 w-3.5" />
+            <Icon className="h-4 w-4" />
             {label}
           </button>
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <select
-          value={branchId}
-          onChange={(e) => setBranchId(e.target.value)}
-          className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold dark:border-white/10 dark:bg-slate-900"
-        >
-          <option value="">Barcha filiallar</option>
-          {(branches.data?.branches || []).map((b) => (
-            <option key={b.id} value={String(b.id)}>
-              {b.label}
-            </option>
-          ))}
-        </select>
-        <label className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold dark:border-white/10 dark:bg-slate-900">
-          <input type="checkbox" checked={complaints} onChange={(e) => setComplaints(e.target.checked)} />
-          Faqat shikoyatlar
-        </label>
-      </div>
+      {(tab === "staff" || tab === "pharmacy" || tab === "stats") && (
+        <div className="flex flex-wrap gap-2">
+          <select
+            value={branchId}
+            onChange={(e) => setBranchId(e.target.value)}
+            className="h-11 min-w-[220px] rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-white/10 dark:bg-slate-900"
+          >
+            <option value="">Barcha filiallar</option>
+            {(branches.data?.branches || []).map((b) => (
+              <option key={b.id} value={String(b.id)}>
+                {b.label}
+              </option>
+            ))}
+          </select>
+          <label className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-white/10 dark:bg-slate-900">
+            <input type="checkbox" checked={complaints} onChange={(e) => setComplaints(e.target.checked)} />
+            Faqat shikoyatlar
+          </label>
+        </div>
+      )}
+
+      {tab === "qr" ? (
+        <section className="space-y-4">
+          {!canManage ? (
+            <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+              QR yaratish / almashtirish / o‘chirish / A4 PDF — faqat admin va HR. Siz filial QR larini ko‘ra olasiz.
+            </p>
+          ) : (
+            <p className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+              Har bir qator — bitta filial. «Yaratish» yoki yuqoridagi «Hammaga QR yaratish». A4 PDF chop etish uchun.
+            </p>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            <div className="relative min-w-[240px] flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                value={qrSearch}
+                onChange={(e) => setQrSearch(e.target.value)}
+                placeholder="Filial nomi, № yoki mudir…"
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm font-medium outline-none focus:border-[#0b3a5c]/40 dark:border-white/10 dark:bg-slate-900"
+              />
+            </div>
+            {(
+              [
+                ["all", "Hammasi"],
+                ["missing", "QR yo‘q"],
+                ["active", "Faol"],
+                ["blocked", "Blok"],
+              ] as const
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setQrFilter(k)}
+                className={cn(
+                  "h-11 rounded-xl px-4 text-sm font-bold",
+                  qrFilter === k
+                    ? "bg-[#0b3a5c] text-white"
+                    : "border border-slate-200 bg-white text-slate-600 dark:border-white/10 dark:bg-slate-900",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {qr.isLoading ? (
+            <p className="flex items-center gap-2 py-12 text-sm text-slate-500">
+              <Loader2 className="h-5 w-5 animate-spin" /> Filiallar yuklanmoqda…
+            </p>
+          ) : qr.isError ? (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-6 text-center dark:border-rose-500/30 dark:bg-rose-500/10">
+              <AlertCircle className="mx-auto h-8 w-8 text-rose-500" />
+              <p className="mt-2 text-sm font-bold text-rose-800 dark:text-rose-100">{(qr.error as Error).message}</p>
+              <Button className="mt-3 rounded-xl" variant="outline" onClick={() => void qr.refetch()}>
+                Qayta urinish
+              </Button>
+            </div>
+          ) : !qrItems.length ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-14 text-center dark:border-white/10">
+              <Store className="mx-auto h-10 w-10 text-slate-300" />
+              <p className="mt-3 text-base font-bold text-slate-700 dark:text-slate-200">Filial topilmadi</p>
+              <p className="mt-1 text-sm text-slate-500">
+                {qrStats.total === 0
+                  ? "Tizimda faol mudir-filiallar yo‘q yoki ro‘yxat bo‘sh."
+                  : "Qidiruv/filtr bo‘yicha natija yo‘q."}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
+              <div className="overflow-x-auto">
+                <table className="min-w-[1100px] w-full text-left text-sm">
+                  <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 dark:bg-white/5">
+                    <tr>
+                      <th className="px-4 py-3.5 font-bold">№</th>
+                      <th className="px-4 py-3.5 font-bold">Filial</th>
+                      <th className="px-4 py-3.5 font-bold">Mudir</th>
+                      <th className="px-4 py-3.5 font-bold">Holat</th>
+                      <th className="px-4 py-3.5 font-bold">Versiya</th>
+                      <th className="px-4 py-3.5 font-bold text-right">Amallar</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {qrItems.map((item) => {
+                      const st = statusMeta(item.status);
+                      const needCreate = item.status === "missing" || item.status === "revoked" || !item.token;
+                      return (
+                        <tr key={item.branchId} className="border-t border-slate-100 dark:border-white/5">
+                          <td className="px-4 py-3.5 font-black tabular-nums text-slate-700 dark:text-slate-200">
+                            {item.branchNo != null ? item.branchNo : "—"}
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <p className="font-bold text-slate-900 dark:text-white">{item.branchLabel}</p>
+                            <p className="text-[11px] text-slate-400">ID {item.branchId}</p>
+                          </td>
+                          <td className="px-4 py-3.5 font-semibold text-slate-700 dark:text-slate-200">
+                            {item.mudirName || "—"}
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <span className={cn("inline-flex rounded-lg px-2.5 py-1 text-[11px] font-bold", st.cls)}>
+                              {st.label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3.5 tabular-nums text-slate-500">
+                            {item.version ? `v${item.version}` : "—"}
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <div className="flex flex-wrap justify-end gap-1.5">
+                              {canManage && needCreate ? (
+                                <Button
+                                  size="sm"
+                                  className="h-9 rounded-lg"
+                                  disabled={busyQr}
+                                  onClick={() => createQr.mutate(item.branchId)}
+                                >
+                                  <QrCode className="h-3.5 w-3.5" /> Yaratish
+                                </Button>
+                              ) : null}
+                              {item.publicUrl && item.status === "active" ? (
+                                <>
+                                  <Button size="sm" variant="outline" className="h-9 rounded-lg" onClick={() => void showQr(item)}>
+                                    Ko‘rish
+                                  </Button>
+                                  {canManage ? (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-9 rounded-lg"
+                                      disabled={pdfBusy}
+                                      onClick={() => void downloadOnePdf(item)}
+                                    >
+                                      <FileDown className="h-3.5 w-3.5" /> A4 PDF
+                                    </Button>
+                                  ) : null}
+                                </>
+                              ) : null}
+                              {canManage && item.token ? (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-9 rounded-lg"
+                                    disabled={busyQr}
+                                    onClick={() => rotateQr.mutate(item.branchId)}
+                                  >
+                                    <RefreshCw className="h-3.5 w-3.5" /> Almashtirish
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-9 rounded-lg text-rose-700"
+                                    disabled={busyQr}
+                                    onClick={() =>
+                                      blockQr.mutate({ id: item.branchId, blocked: item.status !== "blocked" })
+                                    }
+                                  >
+                                    <Ban className="h-3.5 w-3.5" />
+                                    {item.status === "blocked" ? "Ochish" : "O‘chirish"}
+                                  </Button>
+                                </>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="border-t border-slate-100 px-4 py-3 text-xs text-slate-500 dark:border-white/10">
+                Ko‘rsatilmoqda: <b>{qrItems.length}</b> / {qrStats.total} filial
+              </div>
+            </div>
+          )}
+        </section>
+      ) : null}
 
       {tab === "stats" ? (
-        <section className="space-y-3">
-          <div className="grid grid-cols-3 gap-2">
-            <Stat label="Jami baho" value={String(stats?.total ?? "…")} />
-            <Stat label="O‘rtacha" value={stats ? stats.avgStars.toFixed(2) : "…"} icon />
-            <Stat label="Shikoyat" value={String(stats?.complaints ?? "…")} warn />
-          </div>
-          <div className="grid gap-3 lg:grid-cols-2">
-            <Card title="Filiallar reytingi">
-              {(stats?.byBranch || []).slice(0, 12).map((b) => (
-                <Row key={b.branchId} left={b.label} right={`${b.avg.toFixed(2)} ★ · ${b.count}`} />
-              ))}
-              {!stats?.byBranch?.length ? <Empty /> : null}
-            </Card>
-            <Card title="Xodimlar (eng pastlardan)">
-              {(stats?.byEmployee || []).slice(0, 12).map((e) => (
-                <Row key={e.employeeId} left={e.name} right={`${e.avg.toFixed(2)} ★ · ${e.count}`} />
-              ))}
-              {!stats?.byEmployee?.length ? <Empty /> : null}
-            </Card>
-          </div>
+        <section className="space-y-4">
+          {feed.isLoading ? (
+            <p className="flex items-center gap-2 text-sm text-slate-500">
+              <Loader2 className="h-4 w-4 animate-spin" /> Yuklanmoqda…
+            </p>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-3">
+                <Stat label="Jami baho" value={String(stats?.total ?? "0")} />
+                <Stat label="O‘rtacha" value={stats ? stats.avgStars.toFixed(2) : "0"} icon />
+                <Stat label="Shikoyat" value={String(stats?.complaints ?? "0")} warn />
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <Card title="Filiallar reytingi">
+                  {(stats?.byBranch || []).slice(0, 20).map((b) => (
+                    <Row key={b.branchId} left={b.label} right={`${b.avg.toFixed(2)} ★ · ${b.count}`} />
+                  ))}
+                  {!stats?.byBranch?.length ? <Empty /> : null}
+                </Card>
+                <Card title="Xodimlar (pastlardan)">
+                  {(stats?.byEmployee || []).slice(0, 20).map((e) => (
+                    <Row key={e.employeeId} left={e.name} right={`${e.avg.toFixed(2)} ★ · ${e.count}`} />
+                  ))}
+                  {!stats?.byEmployee?.length ? <Empty /> : null}
+                </Card>
+              </div>
+            </>
+          )}
         </section>
       ) : null}
 
@@ -361,6 +654,7 @@ export default function MijozlarBaholashiPage() {
           kind={tab}
           items={items}
           loading={feed.isLoading}
+          error={feed.isError ? (feed.error as Error).message : null}
           canSee={canSee}
           canManage={canManage}
           onDelete={(id) => {
@@ -370,107 +664,21 @@ export default function MijozlarBaholashiPage() {
         />
       ) : null}
 
-      {tab === "qr" ? (
-        <section className="space-y-3">
-          {!canManage ? (
-            <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-100">
-              QR yaratish, almashtirish, o‘chirish va A4 PDF faqat admin/HR uchun.
-            </p>
-          ) : (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 dark:border-white/10 dark:bg-slate-900">
-              <p className="text-xs text-slate-500">
-                A4 bo‘yi · yuqorida «Xizmatni baholang» · pastda filial · chop etishga tayyor
-              </p>
-              <Button
-                type="button"
-                size="sm"
-                className="h-9 gap-1.5 rounded-xl"
-                disabled={pdfBusy}
-                onClick={() => void downloadAllPdf()}
-              >
-                {pdfBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
-                Barchasi 1 PDF
-              </Button>
-            </div>
-          )}
-          {(qr.data?.items || []).map((item) => (
-            <div
-              key={item.branchId}
-              className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-slate-900"
-            >
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0b3a5c] text-white">
-                <Store className="h-4 w-4" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold">{item.branchLabel}</p>
-                <p className="text-[11px] text-slate-500">
-                  {item.status === "missing" ? "QR yo‘q" : `${item.status} · v${item.version}`}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {canManage && (item.status === "missing" || item.status === "blocked" || item.status === "revoked") ? (
-                  <Button size="sm" className="h-8 rounded-lg" onClick={() => createQr.mutate(item.branchId)}>
-                    <QrCode className="h-3.5 w-3.5" /> Yaratish
-                  </Button>
-                ) : null}
-                {item.publicUrl && item.status === "active" ? (
-                  <>
-                    <Button size="sm" variant="outline" className="h-8 rounded-lg" onClick={() => void showQr(item)}>
-                      <QrCode className="h-3.5 w-3.5" /> Ko‘rish
-                    </Button>
-                    {canManage ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8 rounded-lg"
-                        disabled={pdfBusy}
-                        onClick={() => void downloadOnePdf(item)}
-                      >
-                        <FileDown className="h-3.5 w-3.5" /> A4 PDF
-                      </Button>
-                    ) : null}
-                  </>
-                ) : null}
-                {canManage && item.publicUrl ? (
-                  <>
-                    <Button size="sm" variant="outline" className="h-8 rounded-lg" onClick={() => rotateQr.mutate(item.branchId)}>
-                      <RefreshCw className="h-3.5 w-3.5" /> Almashtirish
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 rounded-lg text-rose-700"
-                      onClick={() => blockQr.mutate({ id: item.branchId, blocked: item.status !== "blocked" })}
-                    >
-                      <Ban className="h-3.5 w-3.5" /> {item.status === "blocked" ? "Ochish" : "O‘chirish"}
-                    </Button>
-                  </>
-                ) : null}
-              </div>
-            </div>
-          ))}
-        </section>
-      ) : null}
-
       {preview ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setPreview(null)}>
           <div
-            className="w-full max-w-md rounded-3xl bg-white p-5 text-center shadow-2xl dark:bg-slate-900"
+            className="w-full max-w-md rounded-3xl bg-white p-6 text-center shadow-2xl dark:bg-slate-900"
             onClick={(e) => e.stopPropagation()}
           >
             <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-600">VAKSINA MED</p>
-            <p className="mt-1 text-lg font-extrabold text-[#0b3a5c] dark:text-white">Xizmatni baholang</p>
-            <img
-              src={preview.dataUrl}
-              alt="QR"
-              className="mx-auto mt-4 h-64 w-64 rounded-2xl border border-slate-100 shadow-sm"
-            />
-            <p className="mt-3 text-sm font-bold text-slate-800 dark:text-slate-100">{preview.label}</p>
+            <p className="mt-1 text-xl font-extrabold text-[#0b3a5c] dark:text-white">Xizmatni baholang</p>
+            <img src={preview.dataUrl} alt="QR" className="mx-auto mt-4 h-72 w-72 rounded-2xl border border-slate-100 shadow-sm" />
+            <p className="mt-3 text-base font-bold text-slate-800 dark:text-slate-100">{preview.label}</p>
             <p className="mt-1 break-all text-[10px] text-slate-400">{preview.url}</p>
-            <div className="mt-4 flex gap-2">
+            <div className="mt-5 flex gap-2">
               {canManage ? (
                 <Button
-                  className="h-10 flex-1 rounded-xl"
+                  className="h-11 flex-1 rounded-xl"
                   disabled={pdfBusy}
                   onClick={() =>
                     void downloadBahoQrPdf({ branchLabel: preview.label, publicUrl: preview.url }).then(
@@ -479,10 +687,10 @@ export default function MijozlarBaholashiPage() {
                     )
                   }
                 >
-                  <FileDown className="h-3.5 w-3.5" /> A4 PDF
+                  <FileDown className="h-4 w-4" /> A4 PDF
                 </Button>
               ) : null}
-              <Button variant="outline" className="h-10 flex-1 rounded-xl" onClick={() => setPreview(null)}>
+              <Button variant="outline" className="h-11 flex-1 rounded-xl" onClick={() => setPreview(null)}>
                 Yopish
               </Button>
             </div>
@@ -502,9 +710,33 @@ export default function MijozlarBaholashiPage() {
         />
       ) : null}
 
-      <p className="text-[10px] text-slate-400">
-        Kirgan: {user?.fullName || user?.login} · faol: {rateType}
+      <p className="pb-2 text-[11px] text-slate-400">
+        {user?.fullName || user?.login} · rol: {meta.data?.role || user?.role || "—"} ·{" "}
+        {canManage ? (
+          <span className="inline-flex items-center gap-1 text-emerald-600">
+            <CheckCircle2 className="h-3 w-3" /> boshqaruv ochiq
+          </span>
+        ) : (
+          "faqat ko‘rish"
+        )}
       </p>
+    </div>
+  );
+}
+
+function MiniStat({ label, value, tone }: { label: string; value: string; tone?: "ok" | "warn" | "bad" }) {
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border px-4 py-3.5",
+        tone === "ok" && "border-emerald-200 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-500/10",
+        tone === "warn" && "border-amber-200 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10",
+        tone === "bad" && "border-rose-200 bg-rose-50 dark:border-rose-500/30 dark:bg-rose-500/10",
+        !tone && "border-slate-200 bg-white dark:border-white/10 dark:bg-slate-900",
+      )}
+    >
+      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 text-2xl font-black tabular-nums text-slate-900 dark:text-white">{value}</p>
     </div>
   );
 }
@@ -513,6 +745,7 @@ function RatingsTable({
   kind,
   items,
   loading,
+  error,
   canSee,
   canManage,
   onDelete,
@@ -521,6 +754,7 @@ function RatingsTable({
   kind: "staff" | "pharmacy";
   items: FeedItem[];
   loading: boolean;
+  error: string | null;
   canSee: boolean;
   canManage: boolean;
   onDelete: (id: number) => void;
@@ -528,23 +762,30 @@ function RatingsTable({
 }) {
   if (loading) {
     return (
-      <p className="flex items-center gap-2 text-sm text-slate-500">
+      <p className="flex items-center gap-2 py-10 text-sm text-slate-500">
         <Loader2 className="h-4 w-4 animate-spin" /> Yuklanmoqda…
       </p>
+    );
+  }
+  if (error) {
+    return (
+      <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-6 text-center text-sm text-rose-800">
+        {error}
+      </div>
     );
   }
   if (!items.length) return <Empty />;
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
-      <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-3 py-2.5 dark:border-white/10">
-        <p className="text-xs font-extrabold text-slate-800 dark:text-slate-100">
+    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
+      <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3 dark:border-white/10">
+        <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100">
           {kind === "staff" ? "Xodim ustidan baholar" : "Dorixona baholari"}
           <span className="ml-2 font-semibold text-slate-400">{items.length} ta</span>
         </p>
         <span
           className={cn(
-            "rounded-md px-2 py-0.5 text-[10px] font-bold",
+            "rounded-md px-2.5 py-1 text-[11px] font-bold",
             kind === "staff" ? "bg-amber-100 text-amber-900" : "bg-sky-100 text-sky-900",
           )}
         >
@@ -552,75 +793,71 @@ function RatingsTable({
         </span>
       </div>
       <div className="overflow-x-auto">
-        <table className="min-w-[980px] w-full text-left text-xs">
-          <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500 dark:bg-white/5">
+        <table className="min-w-[1100px] w-full text-left text-sm">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 dark:bg-white/5">
             <tr>
-              <th className="px-3 py-2.5 font-bold">Sana</th>
-              <th className="px-3 py-2.5 font-bold">Filial</th>
-              <th className="px-3 py-2.5 font-bold">Mudir</th>
-              <th className="px-3 py-2.5 font-bold">Koordinator</th>
-              {kind === "staff" ? <th className="px-3 py-2.5 font-bold">Xodim(lar)</th> : null}
-              <th className="px-3 py-2.5 font-bold">Baho</th>
-              <th className="px-3 py-2.5 font-bold">{kind === "staff" ? "Xizmat / Muomala" : "Tozalik / Tanlov"}</th>
-              <th className="px-3 py-2.5 font-bold">Izoh</th>
-              {canSee ? <th className="px-3 py-2.5 font-bold">Mijoz</th> : null}
-              {canManage ? <th className="px-3 py-2.5 font-bold" /> : null}
+              <th className="px-4 py-3 font-bold">Sana</th>
+              <th className="px-4 py-3 font-bold">Filial</th>
+              <th className="px-4 py-3 font-bold">Mudir</th>
+              <th className="px-4 py-3 font-bold">Koordinator</th>
+              {kind === "staff" ? <th className="px-4 py-3 font-bold">Xodim(lar)</th> : null}
+              <th className="px-4 py-3 font-bold">Baho</th>
+              <th className="px-4 py-3 font-bold">{kind === "staff" ? "Xizmat / Muomala" : "Tozalik / Tanlov"}</th>
+              <th className="px-4 py-3 font-bold">Izoh</th>
+              {canSee ? <th className="px-4 py-3 font-bold">Mijoz</th> : null}
+              {canManage ? <th className="px-4 py-3 font-bold" /> : null}
             </tr>
           </thead>
           <tbody>
             {items.map((it) => (
               <tr key={it.id} className="border-t border-slate-100 align-top dark:border-white/5">
-                <td className="px-3 py-2.5 whitespace-nowrap">
-                  <p className="font-semibold text-slate-800 dark:text-slate-100">{it.workDate}</p>
-                  <p className="text-[10px] text-slate-400">{fmtWhen(it.createdAt)}</p>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <p className="font-semibold">{it.workDate}</p>
+                  <p className="text-[11px] text-slate-400">{fmtWhen(it.createdAt)}</p>
                 </td>
-                <td className="px-3 py-2.5">
-                  <p className="font-bold text-slate-900 dark:text-white">
+                <td className="px-4 py-3">
+                  <p className="font-bold">
                     {it.branchNo != null ? `№${it.branchNo} · ` : ""}
                     {it.branchName || it.branchLabel}
                   </p>
-                  {it.branchPhone ? <p className="text-[10px] text-slate-500">{it.branchPhone}</p> : null}
+                  {it.branchPhone ? <p className="text-[11px] text-slate-500">{it.branchPhone}</p> : null}
                 </td>
-                <td className="px-3 py-2.5">
+                <td className="px-4 py-3">
                   <p className="font-semibold">{it.mudirName || "—"}</p>
-                  {it.mudirPhone ? <p className="text-[10px] text-slate-500">{it.mudirPhone}</p> : null}
+                  {it.mudirPhone ? <p className="text-[11px] text-slate-500">{it.mudirPhone}</p> : null}
                 </td>
-                <td className="px-3 py-2.5">
+                <td className="px-4 py-3">
                   <p className="font-semibold">{it.coordinatorName || "—"}</p>
-                  {it.coordinatorPhone ? <p className="text-[10px] text-slate-500">{it.coordinatorPhone}</p> : null}
+                  {it.coordinatorPhone ? <p className="text-[11px] text-slate-500">{it.coordinatorPhone}</p> : null}
                 </td>
                 {kind === "staff" ? (
-                  <td className="px-3 py-2.5 font-semibold text-slate-800 dark:text-slate-100">
-                    {it.targets.map((t) => t.employeeName).join(", ") || "—"}
-                  </td>
+                  <td className="px-4 py-3 font-semibold">{it.targets.map((t) => t.employeeName).join(", ") || "—"}</td>
                 ) : null}
-                <td className="px-3 py-2.5">
+                <td className="px-4 py-3">
                   <Stars n={it.stars} />
                 </td>
-                <td className="px-3 py-2.5 text-slate-600 dark:text-slate-300">
+                <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                   <b>{it.serviceQuality}</b>
                   <span className="text-slate-300"> · </span>
                   <b>{it.demeanor}</b>
                 </td>
-                <td className="max-w-[180px] px-3 py-2.5 text-slate-600 dark:text-slate-300">
-                  {it.comment || "—"}
-                </td>
+                <td className="max-w-[200px] px-4 py-3 text-slate-600">{it.comment || "—"}</td>
                 {canSee ? (
-                  <td className="px-3 py-2.5">
+                  <td className="px-4 py-3">
                     <p className="font-bold text-sky-800 dark:text-sky-300">{it.customerName || "—"}</p>
-                    <p className="text-[10px] text-slate-500">{it.customerPhone || ""}</p>
+                    <p className="text-[11px] text-slate-500">{it.customerPhone || ""}</p>
                   </td>
                 ) : null}
                 {canManage ? (
-                  <td className="px-3 py-2.5">
+                  <td className="px-4 py-3">
                     <button
                       type="button"
                       disabled={deleting}
                       onClick={() => onDelete(it.id)}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50"
                       title="O‘chirish"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   </td>
                 ) : null}
@@ -666,8 +903,7 @@ function AddRatingModal({
 
   useEffect(() => {
     setEmployeeIds([]);
-    if (rateType === "pharmacy") setDemeanor("alo");
-    else setDemeanor("xushmuomala");
+    setDemeanor(rateType === "pharmacy" ? "alo" : "xushmuomala");
   }, [rateType, branchId]);
 
   const save = useMutation({
@@ -705,15 +941,13 @@ function AddRatingModal({
         className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl dark:bg-slate-900"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-base font-extrabold">Baho qo‘shish</h2>
-        <p className="mt-0.5 text-xs text-slate-500">Admin/HR qo‘lda kiritish · auditga yoziladi</p>
-
+        <h2 className="text-lg font-extrabold">Baho qo‘shish</h2>
         <div className="mt-4 grid grid-cols-2 gap-2">
           <button
             type="button"
             onClick={() => setRateType("staff")}
             className={cn(
-              "rounded-xl border px-3 py-2.5 text-left text-xs font-bold",
+              "rounded-xl border px-3 py-3 text-left text-sm font-bold",
               rateType === "staff" ? "border-amber-400 bg-amber-50" : "border-slate-200",
             )}
           >
@@ -723,7 +957,7 @@ function AddRatingModal({
             type="button"
             onClick={() => setRateType("pharmacy")}
             className={cn(
-              "rounded-xl border px-3 py-2.5 text-left text-xs font-bold",
+              "rounded-xl border px-3 py-3 text-left text-sm font-bold",
               rateType === "pharmacy" ? "border-sky-400 bg-sky-50" : "border-slate-200",
             )}
           >
@@ -733,11 +967,7 @@ function AddRatingModal({
 
         <label className="mt-3 block text-xs font-bold">
           Filial
-          <select
-            value={branchId}
-            onChange={(e) => setBranchId(e.target.value)}
-            className="mt-1 h-10 w-full rounded-xl border px-3 text-sm"
-          >
+          <select value={branchId} onChange={(e) => setBranchId(e.target.value)} className="mt-1 h-11 w-full rounded-xl border px-3 text-sm">
             <option value="">Tanlang</option>
             {branches.map((b) => (
               <option key={b.id} value={String(b.id)}>
@@ -750,27 +980,24 @@ function AddRatingModal({
         {rateType === "staff" ? (
           <div className="mt-3">
             <p className="text-xs font-bold">Xodimlar</p>
-            <div className="mt-1 max-h-36 space-y-1 overflow-y-auto rounded-xl border p-2">
+            <div className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded-xl border p-2">
               {(staffQ.data?.staff || []).map((s) => {
                 const on = employeeIds.includes(s.employeeId);
                 return (
-                  <label key={s.employeeId} className="flex items-center gap-2 text-xs">
+                  <label key={s.employeeId} className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
                       checked={on}
                       onChange={() =>
-                        setEmployeeIds((prev) =>
-                          on ? prev.filter((x) => x !== s.employeeId) : [...prev, s.employeeId],
-                        )
+                        setEmployeeIds((prev) => (on ? prev.filter((x) => x !== s.employeeId) : [...prev, s.employeeId]))
                       }
                     />
                     <span className="font-semibold">{s.fullName}</span>
-                    <span className="text-slate-400">{s.position}</span>
                   </label>
                 );
               })}
               {!staffQ.isLoading && !staffQ.data?.staff?.length ? (
-                <p className="text-[11px] text-slate-400">Filial tanlang yoki xodim topilmadi</p>
+                <p className="text-xs text-slate-400">Filial tanlang</p>
               ) : null}
             </div>
           </div>
@@ -779,7 +1006,7 @@ function AddRatingModal({
         <div className="mt-3 grid grid-cols-2 gap-2">
           <label className="text-xs font-bold">
             Yulduz
-            <select value={stars} onChange={(e) => setStars(Number(e.target.value))} className="mt-1 h-10 w-full rounded-xl border px-3 text-sm">
+            <select value={stars} onChange={(e) => setStars(Number(e.target.value))} className="mt-1 h-11 w-full rounded-xl border px-3 text-sm">
               {[5, 4, 3, 2, 1].map((n) => (
                 <option key={n} value={n}>
                   {n}
@@ -789,14 +1016,14 @@ function AddRatingModal({
           </label>
           <label className="text-xs font-bold">
             Sana
-            <input type="date" value={workDate} onChange={(e) => setWorkDate(e.target.value)} className="mt-1 h-10 w-full rounded-xl border px-3 text-sm" />
+            <input type="date" value={workDate} onChange={(e) => setWorkDate(e.target.value)} className="mt-1 h-11 w-full rounded-xl border px-3 text-sm" />
           </label>
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-2">
           <label className="text-xs font-bold">
             {rateType === "pharmacy" ? "Tozalik" : "Xizmat"}
-            <select value={serviceQuality} onChange={(e) => setServiceQuality(e.target.value)} className="mt-1 h-10 w-full rounded-xl border px-3 text-sm">
+            <select value={serviceQuality} onChange={(e) => setServiceQuality(e.target.value)} className="mt-1 h-11 w-full rounded-xl border px-3 text-sm">
               {qualityOpts.map((k) => (
                 <option key={k} value={k}>
                   {k}
@@ -806,7 +1033,7 @@ function AddRatingModal({
           </label>
           <label className="text-xs font-bold">
             {rateType === "pharmacy" ? "Tanlov" : "Muomala"}
-            <select value={demeanor} onChange={(e) => setDemeanor(e.target.value)} className="mt-1 h-10 w-full rounded-xl border px-3 text-sm">
+            <select value={demeanor} onChange={(e) => setDemeanor(e.target.value)} className="mt-1 h-11 w-full rounded-xl border px-3 text-sm">
               {demeanorOpts.map((k) => (
                 <option key={k} value={k}>
                   {k}
@@ -824,20 +1051,20 @@ function AddRatingModal({
         <div className="mt-3 grid grid-cols-2 gap-2">
           <label className="text-xs font-bold">
             Mijoz ismi
-            <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="mt-1 h-10 w-full rounded-xl border px-3 text-sm" />
+            <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="mt-1 h-11 w-full rounded-xl border px-3 text-sm" />
           </label>
           <label className="text-xs font-bold">
             Telefon
-            <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} className="mt-1 h-10 w-full rounded-xl border px-3 text-sm" />
+            <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} className="mt-1 h-11 w-full rounded-xl border px-3 text-sm" />
           </label>
         </div>
 
         <div className="mt-4 flex gap-2">
-          <Button className="h-10 flex-1 rounded-xl" disabled={save.isPending} onClick={() => save.mutate()}>
+          <Button className="h-11 flex-1 rounded-xl" disabled={save.isPending} onClick={() => save.mutate()}>
             {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Saqlash
           </Button>
-          <Button variant="outline" className="h-10 flex-1 rounded-xl" onClick={onClose}>
+          <Button variant="outline" className="h-11 flex-1 rounded-xl" onClick={onClose}>
             Bekor
           </Button>
         </div>
@@ -850,16 +1077,16 @@ function Stat({ label, value, icon, warn }: { label: string; value: string; icon
   return (
     <div
       className={cn(
-        "rounded-2xl border px-3 py-3",
+        "rounded-2xl border px-4 py-4",
         warn
           ? "border-rose-200 bg-rose-50 dark:border-rose-500/30 dark:bg-rose-500/10"
           : "border-slate-200 bg-white dark:border-white/10 dark:bg-slate-900",
       )}
     >
-      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 flex items-center gap-1 text-xl font-extrabold tabular-nums">
-        {icon ? <Star className="h-4 w-4 fill-amber-400 text-amber-400" /> : null}
-        {warn ? <MessageSquareWarning className="h-4 w-4 text-rose-500" /> : null}
+      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 flex items-center gap-1 text-2xl font-extrabold tabular-nums">
+        {icon ? <Star className="h-5 w-5 fill-amber-400 text-amber-400" /> : null}
+        {warn ? <MessageSquareWarning className="h-5 w-5 text-rose-500" /> : null}
         {value}
       </p>
     </div>
@@ -868,8 +1095,8 @@ function Stat({ label, value, icon, warn }: { label: string; value: string; icon
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-slate-900">
-      <p className="mb-2 text-xs font-extrabold text-slate-800 dark:text-slate-100">{title}</p>
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900">
+      <p className="mb-3 text-sm font-extrabold text-slate-800 dark:text-slate-100">{title}</p>
       <div className="space-y-1.5">{children}</div>
     </div>
   );
@@ -877,8 +1104,8 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 
 function Row({ left, right }: { left: string; right: string }) {
   return (
-    <div className="flex items-center justify-between gap-2 rounded-xl bg-slate-50 px-2.5 py-2 text-xs dark:bg-white/5">
-      <span className="min-w-0 truncate font-semibold text-slate-800 dark:text-slate-100">{left}</span>
+    <div className="flex items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2.5 text-sm dark:bg-white/5">
+      <span className="min-w-0 truncate font-semibold">{left}</span>
       <span className="shrink-0 tabular-nums text-slate-500">{right}</span>
     </div>
   );
@@ -895,5 +1122,5 @@ function Stars({ n }: { n: number }) {
 }
 
 function Empty() {
-  return <p className="py-6 text-center text-xs text-slate-400">Hozircha ma’lumot yo‘q</p>;
+  return <p className="py-10 text-center text-sm text-slate-400">Hozircha ma’lumot yo‘q</p>;
 }

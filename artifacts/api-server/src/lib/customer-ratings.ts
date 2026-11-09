@@ -211,24 +211,34 @@ export async function scopedBranchIds(userId: number, role: string): Promise<num
   return [];
 }
 
-export async function listPharmacyBranches(): Promise<Array<{ id: number; label: string; location: string }>> {
+export async function listPharmacyBranches(): Promise<
+  Array<{ id: number; label: string; location: string; branchNo: number | null; mudirName: string }>
+> {
   const rows = await db
     .select({
       id: employeesTable.id,
       location: employeesTable.location,
       fullName: employeesTable.fullName,
       status: employeesTable.employmentStatus,
+      branchNo: employeesTable.branchNo,
     })
     .from(employeesTable)
     .where(eq(employeesTable.orgRole, "manager"));
   return rows
-    .filter((r) => !["dismissed", "closed", "need_hire"].includes(String(r.status || "").toLowerCase()))
+    .filter((r) => !["dismissed", "closed", "need_hire", "searching"].includes(String(r.status || "").toLowerCase()))
     .map((r) => ({
       id: r.id,
       location: r.location || "",
+      branchNo: r.branchNo != null ? Number(r.branchNo) : null,
+      mudirName: r.fullName || "",
       label: displayBranchName(r.location) || r.location || r.fullName || `Filial #${r.id}`,
     }))
-    .sort((a, b) => a.label.localeCompare(b.label, "uz"));
+    .sort((a, b) => {
+      const an = a.branchNo ?? 9999;
+      const bn = b.branchNo ?? 9999;
+      if (an !== bn) return an - bn;
+      return a.label.localeCompare(b.label, "uz");
+    });
 }
 
 async function audit(input: {
@@ -370,18 +380,44 @@ export async function listQrCodes(scope: number[] | null) {
   const origin = publicAppUrl().replace(/\/$/, "");
   return filtered.map((b) => {
     const q = byBranch.get(b.id);
+    const status = q?.status ?? "missing";
     return {
       branchId: b.id,
       branchLabel: b.label,
+      branchNo: b.branchNo ?? null,
+      mudirName: b.mudirName || "",
       qrId: q?.id ?? null,
       token: q?.token ?? null,
-      status: q?.status ?? "missing",
+      status,
       version: q?.version ?? 0,
-      publicUrl: q?.token ? `${origin}/baho/${q.token}` : null,
+      publicUrl: q?.token && status === "active" ? `${origin}/baho/${q.token}` : q?.token ? `${origin}/baho/${q.token}` : null,
       updatedAt: q?.updatedAt ?? null,
       blockedAt: q?.blockedAt ?? null,
     };
   });
+}
+
+/** Barcha filiallarda yo‘q/revoked QR larni yaratish */
+export async function createAllMissingQr(actor: { id: number; name: string }) {
+  await ensureCustomerRatingsSchema();
+  const items = await listQrCodes(null);
+  const need = items.filter((i) => i.status === "missing" || i.status === "revoked" || !i.token);
+  const created: Array<{ branchId: number; branchLabel: string; publicUrl: string }> = [];
+  for (const it of need) {
+    const qr = await createOrGetQr(it.branchId, actor);
+    created.push({
+      branchId: it.branchId,
+      branchLabel: it.branchLabel,
+      publicUrl: qr.publicUrl,
+    });
+  }
+  await audit({
+    action: "qr_create_all",
+    actorUserId: actor.id,
+    actorName: actor.name,
+    meta: { count: created.length },
+  });
+  return { ok: true, created: created.length, total: items.length, items: created };
 }
 
 export async function qrByToken(token: string) {

@@ -9,6 +9,7 @@ import {
   canViewCustomerRatings,
   canViewCustomerLeaderboard,
   createOrGetQr,
+  createAllMissingQr,
   listQrCodes,
   listPharmacyBranches,
   publicSession,
@@ -164,6 +165,12 @@ router.post("/customer-ratings/qr", requireAuth, async (req: AuthRequest, res): 
     const role = await roleOf(req);
     if (!canManageCustomerRatings(role)) {
       res.status(403).json({ error: "Faqat admin/HR QR yaratadi" });
+      return;
+    }
+    // Barcha filiallarga birga
+    if (req.body?.all === true || req.body?.createAll === true) {
+      const result = await createAllMissingQr(await actorOf(req));
+      res.json(result);
       return;
     }
     const branchId = Number(req.body?.branchId);

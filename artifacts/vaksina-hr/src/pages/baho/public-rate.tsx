@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRoute } from "wouter";
-import { Check, Languages, Loader2, Star, Store, Users, AlertCircle } from "lucide-react";
+import { Check, Languages, Loader2, Star, Store, Users, AlertCircle, ChevronLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Staff = {
@@ -26,10 +26,12 @@ type RateType = "staff" | "pharmacy";
 type Step = "choose" | "staff" | "form" | "done";
 
 const LOGO = "/logo_vaksina.png";
+const PURPLE = "#5c2d91";
+const YELLOW = "#f5c518";
 
 const T: Record<Lang, Record<string, string>> = {
   uz: {
-    title: "Xizmatni baholang",
+    title: "XIZMATNI BAHOLANG",
     thanks: "Dorixonamizga tashrifingiz uchun rahmat!",
     chooseTitle: "Nimani baholaysiz?",
     chooseSub: "Bitta yo‘nalishni tanlang",
@@ -39,7 +41,7 @@ const T: Record<Lang, Record<string, string>> = {
     choosePharmacySub: "Filial, tozalik va mahsulotlar",
     pickStaff: "Kimni baholaysiz?",
     allShift: "Shu smenadagi barchasi",
-    next: "Davom etish",
+    next: "DAVOM ETISH",
     back: "Orqaga",
     q1Staff: "1. Umumiy xizmat sifati",
     q2Staff: "2. Xodim sizga qanchalik tushunarli maslahat berdi?",
@@ -53,15 +55,14 @@ const T: Record<Lang, Record<string, string>> = {
     yourPhone: "Telefon raqamingiz",
     namePh: "Ism Familiya",
     phonePh: "+998 9X XXX XX XX",
-    required: "Majburiy",
     nameReq: "Ism majburiy — yozing",
     phoneReq: "Telefon majburiy",
-    phoneFmt: "Raqam +9989 dan boshlanishi kerak (+998 9X XXX XX XX)",
+    phoneFmt: "Raqam +9989 dan boshlanishi kerak",
     starsReq: "Yulduz bahosini tanlang",
     qualityReq: "Xizmat sifatini tanlang",
     demeanorReq: "Muomala / bahoni tanlang",
-    submit: "Bahoni yuborish",
-    done: "Rahmat!",
+    submit: "BAHONI YUBORISH",
+    done: "RAHMAT!",
     doneSub: "Fikringiz qabul qilindi. Yaxshi kun tilaymiz!",
     emptyStaff: "Hozir smenada xodim yo‘q — dorixonani baholashingiz mumkin.",
     blocked: "Bu QR vaqtincha o‘chirilgan.",
@@ -69,6 +70,7 @@ const T: Record<Lang, Record<string, string>> = {
     loading: "Yuklanmoqda…",
     selectOne: "Kamida bitta xodimni tanlang",
     sendError: "Yuborilmadi",
+    fillRed: "Qizil bilan belgilangan joylarni to‘ldiring",
     alo: "A'lo",
     yaxshi: "Yaxshi",
     qoniqarli: "Qoniqarli",
@@ -81,7 +83,7 @@ const T: Record<Lang, Record<string, string>> = {
     branch: "Filial",
   },
   ru: {
-    title: "Оцените сервис",
+    title: "ОЦЕНИТЕ СЕРВИС",
     thanks: "Спасибо за визит в нашу аптеку!",
     chooseTitle: "Что оцениваете?",
     chooseSub: "Выберите один вариант",
@@ -91,7 +93,7 @@ const T: Record<Lang, Record<string, string>> = {
     choosePharmacySub: "Филиал, чистота и ассортимент",
     pickStaff: "Кого оцениваете?",
     allShift: "Вся смена",
-    next: "Далее",
+    next: "ДАЛЕЕ",
     back: "Назад",
     q1Staff: "1. Общее качество сервиса",
     q2Staff: "2. Насколько понятно сотрудник дал консультацию?",
@@ -105,15 +107,14 @@ const T: Record<Lang, Record<string, string>> = {
     yourPhone: "Номер телефона",
     namePh: "Имя Фамилия",
     phonePh: "+998 9X XXX XX XX",
-    required: "Обязательно",
     nameReq: "Имя обязательно",
     phoneReq: "Телефон обязателен",
-    phoneFmt: "Номер должен начинаться с +9989 (+998 9X XXX XX XX)",
+    phoneFmt: "Номер должен начинаться с +9989",
     starsReq: "Выберите оценку звёздами",
     qualityReq: "Выберите качество сервиса",
     demeanorReq: "Выберите оценку общения",
-    submit: "Отправить оценку",
-    done: "Спасибо!",
+    submit: "ОТПРАВИТЬ ОЦЕНКУ",
+    done: "СПАСИБО!",
     doneSub: "Ваш отзыв принят. Хорошего дня!",
     emptyStaff: "Сейчас на смене нет сотрудников — можно оценить аптеку.",
     blocked: "Этот QR временно отключён.",
@@ -121,6 +122,7 @@ const T: Record<Lang, Record<string, string>> = {
     loading: "Загрузка…",
     selectOne: "Выберите хотя бы одного сотрудника",
     sendError: "Не удалось отправить",
+    fillRed: "Заполните поля, отмеченные красным",
     alo: "Отлично",
     yaxshi: "Хорошо",
     qoniqarli: "Удовл.",
@@ -137,7 +139,6 @@ const T: Record<Lang, Record<string, string>> = {
 const QUALITY = ["alo", "yaxshi", "qoniqarli", "yomon", "juda_yomon"] as const;
 const DEMEANOR = ["xushmuomala", "yaxshi", "oddiy", "qopol", "juda_qopol"] as const;
 
-/** Faqat raqamlar: 9989XXXXXXXX (12 ta) */
 function digitsPhone(raw: string): string {
   let d = String(raw || "").replace(/\D+/g, "");
   if (d.startsWith("998")) d = d.slice(3);
@@ -149,7 +150,6 @@ function isValidUzMobile(raw: string): boolean {
   return /^9989\d{8}$/.test(digitsPhone(raw));
 }
 
-/** +998 9X XXX XX XX */
 function formatPhoneDisplay(raw: string): string {
   let local = String(raw || "").replace(/\D+/g, "");
   if (local.startsWith("998")) local = local.slice(3);
@@ -182,8 +182,7 @@ function fp() {
 
 function loadLang(): Lang {
   try {
-    const v = localStorage.getItem("vhr_baho_lang");
-    return v === "ru" ? "ru" : "uz";
+    return localStorage.getItem("vhr_baho_lang") === "ru" ? "ru" : "uz";
   } catch {
     return "uz";
   }
@@ -204,7 +203,7 @@ export default function PublicCustomerRatePage() {
   const [allShift, setAllShift] = useState(false);
   const [stars, setStars] = useState(0);
   const [quality, setQuality] = useState<(typeof QUALITY)[number] | "">("");
-  const [demeanor, setDemeanor] = useState<string>("");
+  const [demeanor, setDemeanor] = useState("");
   const [comment, setComment] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("+998");
@@ -294,7 +293,6 @@ export default function PublicCustomerRatePage() {
   };
 
   const canForm = allShift || selected.length > 0;
-
   const selectedNames = useMemo(() => {
     const ids = new Set(selected);
     return staff.filter((s) => ids.has(s.employeeId)).map((s) => s.fullName);
@@ -318,7 +316,7 @@ export default function PublicCustomerRatePage() {
     setTried(true);
     if (!rateType) return;
     if (!validateForm()) {
-      setErr(lang === "ru" ? "Красным отмечено — заполните" : "Qizil bilan belgilangan joylarni to‘ldiring");
+      setErr(t("fillRed"));
       return;
     }
     setBusy(true);
@@ -361,100 +359,81 @@ export default function PublicCustomerRatePage() {
     }
   };
 
-  const onPhoneChange = (v: string) => {
-    setPhone(formatPhoneDisplay(v));
-    if (tried) {
-      setFieldErr((prev) => {
-        const next = { ...prev };
-        if (!isValidUzMobile(v)) next.phone = t("phoneFmt");
-        else delete next.phone;
-        return next;
-      });
-    }
-  };
-
   return (
-    <div className="min-h-[100dvh] bg-[#0a0612] text-white">
-      {/* Brend fon */}
-      <div
-        className="pointer-events-none fixed inset-0 opacity-90"
-        style={{
-          background:
-            "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(92,45,145,0.45), transparent 60%), radial-gradient(ellipse 60% 40% at 100% 20%, rgba(245,197,24,0.12), transparent 50%), radial-gradient(ellipse 50% 30% at 0% 80%, rgba(34,197,224,0.1), transparent 50%)",
-        }}
-      />
-
-      <div className="relative mx-auto flex min-h-[100dvh] w-full max-w-lg flex-col px-4 pb-10 pt-4 sm:max-w-xl sm:px-6">
-        {/* Header: logo + til */}
-        <header className="mb-5 flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <img
-              src={LOGO}
-              alt="Vaksina Med"
-              className="h-11 w-auto max-w-[220px] rounded-xl object-contain object-left sm:h-12 sm:max-w-[260px]"
-            />
-            {session?.branchLabel ? (
-              <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#f5c518]/90">
-                {t("branch")} · {session.branchLabel}
-              </p>
-            ) : null}
-            <h1 className="mt-1.5 text-[1.65rem] font-extrabold leading-tight tracking-tight sm:text-3xl">
-              {t("title")}
-            </h1>
-            <p className="mt-1 text-sm text-white/55">{t("thanks")}</p>
-          </div>
+    <div className="min-h-[100dvh] bg-[#f7f4fb] text-slate-900">
+      {/* Brend header — logo qora fonda chiroyli */}
+      <header className="sticky top-0 z-20 border-b-4 border-[#f5c518] bg-black shadow-lg">
+        <div className="mx-auto flex max-w-lg items-center justify-between gap-3 px-4 py-3 sm:max-w-xl sm:px-6">
+          <img
+            src={LOGO}
+            alt="Vaksina Med"
+            className="h-11 w-auto max-w-[min(70vw,240px)] object-contain object-left sm:h-12"
+          />
           <button
             type="button"
             onClick={() => setLang((l) => (l === "uz" ? "ru" : "uz"))}
-            className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 text-xs font-bold text-white/90 backdrop-blur"
+            className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 text-xs font-bold text-white"
           >
             <Languages className="h-3.5 w-3.5" />
             {lang === "uz" ? "RU" : "UZ"}
           </button>
-        </header>
+        </div>
+      </header>
+
+      <div className="mx-auto flex min-h-[calc(100dvh-4.5rem)] w-full max-w-lg flex-col px-4 pb-10 pt-5 sm:max-w-xl sm:px-6">
+        {session?.branchLabel ? (
+          <p className="text-center text-[11px] font-bold uppercase tracking-[0.16em] text-[#5c2d91]/80">
+            {t("branch")} · {session.branchLabel}
+          </p>
+        ) : null}
+        <h1
+          className="mt-2 text-center text-[1.55rem] font-black tracking-[0.06em] sm:text-[1.85rem]"
+          style={{ color: PURPLE }}
+        >
+          {t("title")}
+        </h1>
+        <p className="mt-1.5 text-center text-sm text-slate-500">{t("thanks")}</p>
 
         {loading ? (
-          <div className="flex flex-1 items-center justify-center gap-2 text-sm text-white/50">
-            <Loader2 className="h-5 w-5 animate-spin text-[#f5c518]" /> {t("loading")}
+          <div className="flex flex-1 items-center justify-center gap-2 text-sm text-slate-500">
+            <Loader2 className="h-5 w-5 animate-spin" style={{ color: YELLOW }} /> {t("loading")}
           </div>
         ) : loadErr && !session ? (
-          <div className="mt-8 rounded-3xl border border-rose-500/40 bg-rose-500/10 px-4 py-8 text-center">
-            <AlertCircle className="mx-auto h-10 w-10 text-rose-400" />
-            <p className="mt-3 text-sm font-bold text-rose-200">{loadErr}</p>
+          <div className="mt-8 rounded-3xl border-2 border-rose-400 bg-rose-50 px-4 py-8 text-center">
+            <AlertCircle className="mx-auto h-10 w-10 text-rose-500" />
+            <p className="mt-3 text-sm font-bold text-rose-700">{loadErr}</p>
           </div>
         ) : step === "done" ? (
-          <div className="flex flex-1 flex-col items-center justify-center px-2 text-center">
-            <img src={LOGO} alt="" className="mb-8 h-12 w-auto rounded-xl object-contain opacity-95" />
-            <span className="relative flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-[0_0_40px_rgba(16,185,129,0.45)]">
+          <div className="flex flex-1 flex-col items-center justify-center text-center">
+            <div className="mb-6 rounded-2xl bg-black px-5 py-3 shadow-lg">
+              <img src={LOGO} alt="" className="mx-auto h-12 w-auto object-contain" />
+            </div>
+            <span className="flex h-[4.75rem] w-[4.75rem] items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-[0_12px_40px_rgba(16,185,129,0.4)]">
               <Check className="h-9 w-9" strokeWidth={3} />
             </span>
-            <h2 className="mt-6 text-3xl font-extrabold tracking-tight">{t("done")}</h2>
-            <p className="mt-2 max-w-xs text-sm leading-relaxed text-white/60">{t("doneSub")}</p>
-            {session?.branchLabel ? (
-              <p className="mt-6 rounded-full border border-[#f5c518]/30 bg-[#f5c518]/10 px-4 py-1.5 text-xs font-bold text-[#f5c518]">
-                {session.branchLabel}
-              </p>
-            ) : null}
+            <h2 className="mt-6 text-3xl font-black tracking-[0.08em]" style={{ color: PURPLE }}>
+              {t("done")}
+            </h2>
+            <p className="mt-2 max-w-xs text-sm leading-relaxed text-slate-500">{t("doneSub")}</p>
           </div>
         ) : step === "choose" ? (
-          <div className="flex flex-1 flex-col">
-            <h2 className="text-lg font-extrabold">{t("chooseTitle")}</h2>
-            <p className="mt-1 text-sm text-white/50">{t("chooseSub")}</p>
-
+          <div className="mt-6 flex flex-1 flex-col">
+            <h2 className="text-lg font-extrabold text-slate-900">{t("chooseTitle")}</h2>
+            <p className="mt-1 text-sm text-slate-500">{t("chooseSub")}</p>
             <div className="mt-5 grid gap-3.5">
               <ChoiceCard
                 disabled={!hasStaff}
+                warn={!hasStaff}
                 onClick={openStaff}
                 icon={<Users className="h-6 w-6" />}
-                iconClass="bg-[#f5c518]/15 text-[#f5c518]"
+                tone="yellow"
                 title={t("chooseStaff")}
                 sub={hasStaff ? t("chooseStaffSub") : t("emptyStaff")}
-                warn={!hasStaff}
               />
               <ChoiceCard
                 onClick={openPharmacy}
                 icon={<Store className="h-6 w-6" />}
-                iconClass="bg-[#22c5e0]/15 text-[#22c5e0]"
+                tone="cyan"
                 title={t("choosePharmacy")}
                 sub={t("choosePharmacySub")}
               />
@@ -462,7 +441,7 @@ export default function PublicCustomerRatePage() {
             {err ? <RedBanner>{err}</RedBanner> : null}
           </div>
         ) : step === "staff" ? (
-          <div className="flex flex-1 flex-col">
+          <div className="mt-4 flex flex-1 flex-col">
             <BackBtn
               label={t("back")}
               onClick={() => {
@@ -476,22 +455,21 @@ export default function PublicCustomerRatePage() {
               type="button"
               onClick={pickAll}
               className={cn(
-                "mt-4 flex items-center gap-3 rounded-2xl border px-4 py-3.5 text-left transition active:scale-[0.99]",
+                "mt-4 flex items-center gap-3 rounded-2xl border-2 px-4 py-3.5 text-left transition active:scale-[0.99]",
                 allShift
-                  ? "border-[#f5c518] bg-[#f5c518]/15 shadow-[0_0_24px_rgba(245,197,24,0.15)]"
-                  : "border-white/10 bg-white/[0.04] hover:border-white/25",
+                  ? "border-[#f5c518] bg-[#fff8db] shadow-md shadow-[#f5c518]/20"
+                  : "border-slate-200 bg-white hover:border-[#5c2d91]/30",
               )}
             >
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10">
-                <Users className="h-5 w-5 text-[#f5c518]" />
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#5c2d91]/10 text-[#5c2d91]">
+                <Users className="h-5 w-5" />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-bold">{t("allShift")}</span>
-                <span className="text-xs text-white/50">{staff.length} ta</span>
+                <span className="text-xs text-slate-500">{staff.length} ta</span>
               </span>
-              {allShift ? <Check className="h-5 w-5 text-[#f5c518]" /> : null}
+              {allShift ? <Check className="h-5 w-5 text-[#5c2d91]" /> : null}
             </button>
-
             <ul className="mt-3 space-y-2">
               {staff.map((s) => {
                 const on = selected.includes(s.employeeId);
@@ -501,10 +479,10 @@ export default function PublicCustomerRatePage() {
                       type="button"
                       onClick={() => toggle(s.employeeId)}
                       className={cn(
-                        "flex w-full items-center gap-3 rounded-2xl border px-4 py-3.5 text-left transition active:scale-[0.99]",
+                        "flex w-full items-center gap-3 rounded-2xl border-2 px-4 py-3.5 text-left transition active:scale-[0.99]",
                         on
-                          ? "border-[#f5c518] bg-[#f5c518]/15"
-                          : "border-white/10 bg-white/[0.04] hover:border-white/25",
+                          ? "border-[#f5c518] bg-[#fff8db]"
+                          : "border-slate-200 bg-white hover:border-[#5c2d91]/30",
                       )}
                     >
                       <span className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-[#f5c518] to-[#c9a227] text-sm font-extrabold text-black">
@@ -517,12 +495,12 @@ export default function PublicCustomerRatePage() {
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-bold">{s.fullName}</span>
-                        <span className="text-xs text-white/50">{s.position}</span>
+                        <span className="text-xs text-slate-500">{s.position}</span>
                       </span>
                       <span
                         className={cn(
-                          "flex h-6 w-6 items-center justify-center rounded-full border",
-                          on ? "border-[#f5c518] bg-[#f5c518] text-black" : "border-white/30",
+                          "flex h-6 w-6 items-center justify-center rounded-full border-2",
+                          on ? "border-[#f5c518] bg-[#f5c518] text-black" : "border-slate-300",
                         )}
                       >
                         {on ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : null}
@@ -532,7 +510,6 @@ export default function PublicCustomerRatePage() {
                 );
               })}
             </ul>
-
             <div className="mt-auto pt-6">
               <PremiumBtn
                 disabled={!canForm}
@@ -552,27 +529,22 @@ export default function PublicCustomerRatePage() {
             </div>
           </div>
         ) : (
-          <div className="flex flex-1 flex-col space-y-5">
+          <div className="mt-3 flex flex-1 flex-col space-y-4">
             <BackBtn
               label={
                 rateType === "staff" && selectedNames.length
-                  ? `← ${t("back")} · ${selectedNames.slice(0, 2).join(", ")}${selectedNames.length > 2 ? "…" : ""}`
+                  ? `${t("back")} · ${selectedNames.slice(0, 2).join(", ")}${selectedNames.length > 2 ? "…" : ""}`
                   : rateType === "pharmacy"
-                    ? `← ${t("back")} · ${session?.branchLabel || ""}`
-                    : `← ${t("back")}`
+                    ? `${t("back")} · ${session?.branchLabel || ""}`
+                    : t("back")
               }
               onClick={formBack}
             />
 
-            <section
-              className={cn(
-                "rounded-2xl border p-3.5",
-                tried && fieldErr.stars ? "border-rose-500 bg-rose-500/10" : "border-transparent",
-              )}
-            >
-              <h3 className="text-sm font-bold">
+            <Card invalid={tried && !!fieldErr.stars}>
+              <h3 className="text-sm font-bold text-slate-900">
                 {rateType === "pharmacy" ? t("q1Pharmacy") : t("q1Staff")}
-                <ReqMark />
+                <Req />
               </h3>
               <div className="mt-3 flex justify-between gap-1">
                 {[1, 2, 3, 4, 5].map((n) => (
@@ -583,21 +555,21 @@ export default function PublicCustomerRatePage() {
                       setStars(n);
                       if (tried) setFieldErr((p) => ({ ...p, stars: "" }));
                     }}
-                    className="flex flex-1 flex-col items-center gap-1"
+                    className="flex flex-1 flex-col items-center gap-1 py-1"
                   >
                     <Star
                       className={cn(
-                        "h-9 w-9 sm:h-10 sm:w-10 transition",
-                        stars >= n ? "fill-[#f5c518] text-[#f5c518]" : "text-[#f5c518]/30",
+                        "h-9 w-9 sm:h-10 sm:w-10",
+                        stars >= n ? "fill-[#f5c518] text-[#f5c518]" : "text-slate-300",
                       )}
                       strokeWidth={1.5}
                     />
-                    <span className="text-[11px] text-white/45">{n}</span>
+                    <span className="text-[11px] font-semibold text-slate-400">{n}</span>
                   </button>
                 ))}
               </div>
               {tried && fieldErr.stars ? <FieldRed>{fieldErr.stars}</FieldRed> : null}
-            </section>
+            </Card>
 
             <RadioBlock
               title={rateType === "pharmacy" ? t("q2Pharmacy") : t("q2Staff")}
@@ -609,7 +581,6 @@ export default function PublicCustomerRatePage() {
                 if (tried) setFieldErr((p) => ({ ...p, quality: "" }));
               }}
               options={QUALITY.map((k) => ({ k, label: t(k) }))}
-              required
             />
             <RadioBlock
               title={rateType === "pharmacy" ? t("q3Pharmacy") : t("q3Staff")}
@@ -625,65 +596,74 @@ export default function PublicCustomerRatePage() {
                   ? QUALITY.map((k) => ({ k, label: t(k) }))
                   : DEMEANOR.map((k) => ({ k, label: t(k) }))
               }
-              required
             />
 
-            <label className="block">
+            <label className="block rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm">
               <span className="text-sm font-bold">{t("comment")}</span>
               <textarea
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 rows={3}
                 placeholder={t("commentPh")}
-                className="mt-2 w-full resize-none rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-base text-white placeholder:text-white/30 outline-none focus:border-[#f5c518]/50"
+                className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-[#fafafa] px-3 py-2.5 text-base outline-none focus:border-[#5c2d91]/40"
               />
             </label>
 
-            <div className="grid gap-3">
-              <label className="block">
-                <span className="text-sm font-bold">
-                  {t("yourName")}
-                  <ReqMark />
-                </span>
-                <input
-                  value={name}
-                  onChange={(e) => {
-                    setName(e.target.value);
-                    if (tried && e.target.value.trim().length >= 2) {
-                      setFieldErr((p) => ({ ...p, name: "" }));
-                    }
-                  }}
-                  placeholder={t("namePh")}
-                  autoComplete="name"
-                  className={cn(
-                    "mt-2 h-12 w-full rounded-2xl border bg-white/[0.05] px-4 text-base outline-none focus:border-[#f5c518]/50",
-                    tried && fieldErr.name ? "border-rose-500 bg-rose-500/10" : "border-white/10",
-                  )}
-                />
-                {tried && fieldErr.name ? <FieldRed>{fieldErr.name}</FieldRed> : null}
-              </label>
-              <label className="block">
-                <span className="text-sm font-bold">
-                  {t("yourPhone")}
-                  <ReqMark />
-                </span>
-                <input
-                  value={phone}
-                  onChange={(e) => onPhoneChange(e.target.value)}
-                  placeholder={t("phonePh")}
-                  inputMode="tel"
-                  autoComplete="tel"
-                  className={cn(
-                    "mt-2 h-12 w-full rounded-2xl border bg-white/[0.05] px-4 text-base tabular-nums outline-none focus:border-[#f5c518]/50",
-                    tried && fieldErr.phone ? "border-rose-500 bg-rose-500/10" : "border-white/10",
-                  )}
-                />
-                {tried && fieldErr.phone ? <FieldRed>{fieldErr.phone}</FieldRed> : null}
-                <p className="mt-1.5 text-[11px] text-white/40">+998 9X XXX XX XX · mobil</p>
-              </label>
-            </div>
+            <label
+              className={cn(
+                "block rounded-2xl border-2 bg-white p-3.5 shadow-sm",
+                tried && fieldErr.name ? "border-rose-500 bg-rose-50" : "border-slate-200",
+              )}
+            >
+              <span className="text-sm font-bold">
+                {t("yourName")}
+                <Req />
+              </span>
+              <input
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  if (tried && e.target.value.trim().length >= 2) setFieldErr((p) => ({ ...p, name: "" }));
+                }}
+                placeholder={t("namePh")}
+                autoComplete="name"
+                className="mt-2 h-12 w-full rounded-xl border border-slate-200 bg-[#fafafa] px-3 text-base outline-none focus:border-[#5c2d91]/40"
+              />
+              {tried && fieldErr.name ? <FieldRed>{fieldErr.name}</FieldRed> : null}
+            </label>
 
-            <div className="pt-1">
+            <label
+              className={cn(
+                "block rounded-2xl border-2 bg-white p-3.5 shadow-sm",
+                tried && fieldErr.phone ? "border-rose-500 bg-rose-50" : "border-slate-200",
+              )}
+            >
+              <span className="text-sm font-bold">
+                {t("yourPhone")}
+                <Req />
+              </span>
+              <input
+                value={phone}
+                onChange={(e) => {
+                  const next = formatPhoneDisplay(e.target.value);
+                  setPhone(next);
+                  if (tried) {
+                    setFieldErr((p) => ({
+                      ...p,
+                      phone: isValidUzMobile(next) ? "" : t("phoneFmt"),
+                    }));
+                  }
+                }}
+                placeholder={t("phonePh")}
+                inputMode="tel"
+                autoComplete="tel"
+                className="mt-2 h-12 w-full rounded-xl border border-slate-200 bg-[#fafafa] px-3 text-base tabular-nums outline-none focus:border-[#5c2d91]/40"
+              />
+              {tried && fieldErr.phone ? <FieldRed>{fieldErr.phone}</FieldRed> : null}
+              <p className="mt-1.5 text-[11px] font-medium text-slate-400">+998 9X XXX XX XX</p>
+            </label>
+
+            <div className="pt-2">
               <PremiumBtn disabled={busy} onClick={() => void submit()} glow>
                 {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
                 {t("submit")}
@@ -697,13 +677,13 @@ export default function PublicCustomerRatePage() {
   );
 }
 
-function ReqMark() {
-  return <span className="ml-1 text-rose-400">*</span>;
+function Req() {
+  return <span className="ml-1 font-black text-rose-500">*</span>;
 }
 
 function FieldRed({ children }: { children: string }) {
   return (
-    <p className="mt-1.5 flex items-start gap-1 text-xs font-bold text-rose-400">
+    <p className="mt-1.5 flex items-start gap-1 text-xs font-bold text-rose-600">
       <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       {children}
     </p>
@@ -712,7 +692,7 @@ function FieldRed({ children }: { children: string }) {
 
 function RedBanner({ children }: { children: React.ReactNode }) {
   return (
-    <p className="mt-3 flex items-center justify-center gap-1.5 rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-2.5 text-center text-xs font-bold text-rose-300">
+    <p className="mt-3 flex items-center justify-center gap-1.5 rounded-xl border-2 border-rose-400 bg-rose-50 px-3 py-2.5 text-center text-xs font-bold text-rose-700">
       <AlertCircle className="h-3.5 w-3.5 shrink-0" />
       {children}
     </p>
@@ -724,10 +704,24 @@ function BackBtn({ label, onClick }: { label: string; onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="mb-3 self-start text-xs font-semibold text-white/50 hover:text-white/80"
+      className="mb-2 inline-flex items-center gap-1 self-start text-xs font-bold text-slate-500 hover:text-[#5c2d91]"
     >
+      <ChevronLeft className="h-4 w-4" />
       {label}
     </button>
+  );
+}
+
+function Card({ children, invalid }: { children: React.ReactNode; invalid?: boolean }) {
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border-2 bg-white p-3.5 shadow-sm",
+        invalid ? "border-rose-500 bg-rose-50" : "border-slate-200",
+      )}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -748,9 +742,9 @@ function PremiumBtn({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "flex h-14 w-full items-center justify-center gap-2 rounded-2xl text-[15px] font-extrabold tracking-wide text-black transition active:scale-[0.98] disabled:opacity-40",
+        "flex h-14 w-full items-center justify-center gap-2 rounded-2xl text-[15px] font-black tracking-[0.08em] text-black transition active:scale-[0.98] disabled:opacity-40",
         "bg-gradient-to-r from-[#f5c518] via-[#ffe066] to-[#f5c518]",
-        glow && "shadow-[0_8px_32px_rgba(245,197,24,0.35)]",
+        glow && "shadow-[0_10px_36px_rgba(245,197,24,0.45)]",
       )}
     >
       {children}
@@ -762,7 +756,7 @@ function ChoiceCard({
   title,
   sub,
   icon,
-  iconClass,
+  tone,
   onClick,
   disabled,
   warn,
@@ -770,7 +764,7 @@ function ChoiceCard({
   title: string;
   sub: string;
   icon: React.ReactNode;
-  iconClass: string;
+  tone: "yellow" | "cyan";
   onClick: () => void;
   disabled?: boolean;
   warn?: boolean;
@@ -781,17 +775,22 @@ function ChoiceCard({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "flex flex-col items-start gap-3 rounded-3xl border px-4 py-5 text-left transition active:scale-[0.99]",
-        disabled
-          ? "cursor-not-allowed border-white/5 bg-white/[0.02] opacity-55"
-          : "border-white/12 bg-white/[0.05] hover:border-[#f5c518]/50 hover:bg-[#f5c518]/8",
-        warn && "border-rose-500/30",
+        "flex flex-col items-start gap-3 rounded-3xl border-2 bg-white px-4 py-5 text-left shadow-sm transition active:scale-[0.99]",
+        disabled && "cursor-not-allowed opacity-60",
+        warn ? "border-rose-300" : "border-slate-200 hover:border-[#5c2d91]/40 hover:shadow-md",
       )}
     >
-      <span className={cn("flex h-12 w-12 items-center justify-center rounded-2xl", iconClass)}>{icon}</span>
+      <span
+        className={cn(
+          "flex h-12 w-12 items-center justify-center rounded-2xl",
+          tone === "yellow" ? "bg-[#f5c518]/20 text-[#b8860b]" : "bg-[#22c5e0]/15 text-[#0891b2]",
+        )}
+      >
+        {icon}
+      </span>
       <span>
-        <span className="block text-base font-extrabold">{title}</span>
-        <span className={cn("mt-1 block text-xs leading-relaxed", warn ? "font-semibold text-rose-300" : "text-white/50")}>
+        <span className="block text-base font-extrabold text-slate-900">{title}</span>
+        <span className={cn("mt-1 block text-xs leading-relaxed", warn ? "font-bold text-rose-600" : "text-slate-500")}>
           {sub}
         </span>
       </span>
@@ -804,7 +803,6 @@ function RadioBlock({
   value,
   onChange,
   options,
-  required,
   invalid,
   error,
 }: {
@@ -812,22 +810,16 @@ function RadioBlock({
   value: string;
   onChange: (v: string) => void;
   options: Array<{ k: string; label: string }>;
-  required?: boolean;
   invalid?: boolean;
   error?: string;
 }) {
   return (
-    <section
-      className={cn(
-        "rounded-2xl border p-3.5",
-        invalid ? "border-rose-500 bg-rose-500/10" : "border-transparent",
-      )}
-    >
-      <h3 className="text-sm font-bold">
+    <Card invalid={invalid}>
+      <h3 className="text-sm font-bold text-slate-900">
         {title}
-        {required ? <ReqMark /> : null}
+        <Req />
       </h3>
-      <ul className="mt-2 space-y-1">
+      <ul className="mt-2 space-y-0.5">
         {options.map((o) => {
           const on = value === o.k;
           return (
@@ -840,18 +832,18 @@ function RadioBlock({
                 <span
                   className={cn(
                     "flex h-5 w-5 items-center justify-center rounded-full border-2",
-                    on ? "border-[#f5c518]" : "border-white/35",
+                    on ? "border-[#5c2d91]" : "border-slate-300",
                   )}
                 >
-                  {on ? <span className="h-2.5 w-2.5 rounded-full bg-[#f5c518]" /> : null}
+                  {on ? <span className="h-2.5 w-2.5 rounded-full bg-[#5c2d91]" /> : null}
                 </span>
-                <span className="text-sm font-medium text-white/90">{o.label}</span>
+                <span className="text-sm font-semibold text-slate-800">{o.label}</span>
               </button>
             </li>
           );
         })}
       </ul>
       {invalid && error ? <FieldRed>{error}</FieldRed> : null}
-    </section>
+    </Card>
   );
 }

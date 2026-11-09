@@ -331,12 +331,12 @@ export default function MijozlarBaholashiPage() {
 
   return (
     <div className="mx-auto w-full max-w-[1400px] space-y-5 px-3 py-5 sm:px-6 lg:px-8">
-      <header className="flex flex-wrap items-end justify-between gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900">
+      <header className="flex flex-wrap items-end justify-between gap-4 overflow-hidden rounded-3xl border border-[#5c2d91]/15 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900">
         <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#0b3a5c]/70 dark:text-cyan-200/80">
-            Vaksina · Mijoz
-          </p>
-          <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+          <div className="mb-3 inline-flex rounded-xl bg-black px-3 py-1.5">
+            <img src="/logo_vaksina.png" alt="Vaksina" className="h-8 w-auto object-contain" />
+          </div>
+          <h1 className="text-2xl font-black tracking-tight text-[#5c2d91] dark:text-white sm:text-3xl">
             Mijozlar baholashi
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-slate-500">

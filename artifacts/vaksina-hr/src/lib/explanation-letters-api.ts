@@ -33,33 +33,23 @@ export type LetterContent = {
   status: LetterStatus;
 };
 
-export const FINAL_STRIKE = 6;
+export const FINAL_STRIKE = 3;
 export const REASON_MIN = 40;
 export const REASON_MAX = 800;
 export const REASON_MIN_WORDS = 6;
 
-/** Bosqichlar — PDF va oylik sahifasi bilan bir xil */
+/** Bosqichlar — foizsiz, faqat 3 holat */
 export const LETTER_STAGES: Array<LetterStage & { penalty: string; detail: string }> = [
-  { n: 1, label: "Ogohlantirish", penalty: "Jarimasiz", detail: "Rasmiy ogohlantirish va tushuntirish xati" },
-  { n: 2, label: "Kunlikning 30%", penalty: "−30% kunlik", detail: "1 kunlik ish haqining 30% jarima" },
-  { n: 3, label: "Kunlikning 30%", penalty: "−30% kunlik", detail: "Yana 1 kunlik ish haqining 30% jarima" },
-  { n: 4, label: "Kunlikning 100%", penalty: "−100% kunlik", detail: "1 kunlik ish haqining 100% jarima" },
-  { n: 5, label: "Oylikning 50% · blok", penalty: "−50% oylik", detail: "Oylikning 50% jarima va o‘sha kuni platforma bloki" },
-  {
-    n: 6,
-    label: "Oxirgi ogohlantirish",
-    penalty: "−50% oylik",
-    detail: "Yana oylikning 50% jarima, oxirgi tushuntirish xati va ishdan bo‘shatishga rozilik",
-  },
+  { n: 1, label: "Tushuntirish xati", penalty: "Xat", detail: "Rasmiy tushuntirish xati" },
+  { n: 2, label: "Oylikdan jarima", penalty: "Jarima", detail: "Oylikdan jarima ushlab qolinadi" },
+  { n: 3, label: "Ishdan ozod etish", penalty: "Ozod etish", detail: "Ishdan ozod etilish uchun tushuntirish xati" },
 ];
 
-/** Bosqich rangi (tailwind sinflari): ko‘k → sariq → to‘q sariq → qizil → to‘q qizil */
+/** Bosqich rangi: 1 ko‘k → 2 sariq → 3 qizil */
 export function stageTone(n: number) {
   if (n <= 1) return { solid: "bg-blue-600 text-white", soft: "bg-blue-50 text-blue-800 border-blue-200", text: "text-blue-700", ring: "ring-blue-400" };
-  if (n <= 3) return { solid: "bg-amber-500 text-white", soft: "bg-amber-50 text-amber-800 border-amber-200", text: "text-amber-700", ring: "ring-amber-400" };
-  if (n === 4) return { solid: "bg-orange-600 text-white", soft: "bg-orange-50 text-orange-800 border-orange-200", text: "text-orange-700", ring: "ring-orange-400" };
-  if (n === 5) return { solid: "bg-red-600 text-white", soft: "bg-red-50 text-red-800 border-red-200", text: "text-red-700", ring: "ring-red-400" };
-  return { solid: "bg-rose-900 text-white", soft: "bg-rose-50 text-rose-900 border-rose-300", text: "text-rose-800", ring: "ring-rose-500" };
+  if (n === 2) return { solid: "bg-amber-500 text-white", soft: "bg-amber-50 text-amber-800 border-amber-200", text: "text-amber-700", ring: "ring-amber-400" };
+  return { solid: "bg-rose-800 text-white", soft: "bg-rose-50 text-rose-900 border-rose-300", text: "text-rose-800", ring: "ring-rose-500" };
 }
 
 function tashkentMonth() {

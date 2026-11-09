@@ -12,11 +12,11 @@ type Props = {
   className?: string;
 };
 
-/** 6 bosqich: 1 — ogohlantirish … 6 — oxirgi ogohlantirish */
+/** 3 bosqich: tushuntirish xati → oylikdan jarima → ishdan ozod etish */
 export function StageLadder({ counts, value, onChange, current, className }: Props) {
   const interactive = !!onChange;
   return (
-    <div className={cn("grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-6", className)}>
+    <div className={cn("grid grid-cols-1 gap-1.5 sm:grid-cols-3", className)}>
       {LETTER_STAGES.map((s) => {
         const t = stageTone(s.n);
         const selected = value === s.n;

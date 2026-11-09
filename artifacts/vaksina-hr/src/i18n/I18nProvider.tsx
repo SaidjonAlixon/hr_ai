@@ -126,6 +126,7 @@ export const NAV_PATH_KEYS: Record<string, string> = {
   "/kirish": "nav.kirish",
   "/checklist": "nav.checklist",
   "/notifications": "nav.notifications",
+  "/mijozlar-baholashi": "nav.mijozlarBaholashi",
 };
 
 export function navLabelForPath(path: string, t: (key: string, fallback?: string) => string, fallbackName?: string) {

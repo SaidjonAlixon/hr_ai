@@ -78,7 +78,8 @@ export async function getJarimaSwitch(): Promise<JarimaSwitch> {
 }
 
 export async function isJarimaEnabled(): Promise<boolean> {
-  return (await getJarimaSwitch()).enabled;
+  // Egasi: tushuntirish xati / avto-jarima dorixona + ofis uchun to‘liq o‘chiq
+  return false;
 }
 
 /** O‘chirilgan kun hisobga kirmaydi; qayta yoqilgan kundan boshlab yana hisoblanadi */

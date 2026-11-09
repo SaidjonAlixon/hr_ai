@@ -100,7 +100,7 @@ export default function TushuntirishXatimPage() {
             {stage >= FINAL_STRIKE ? (
               <div className="flex gap-2 rounded-xl border border-rose-300 bg-rose-50 px-3 py-2.5 text-xs font-semibold text-rose-900 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-100">
                 <AlertTriangle className="h-4 w-4 shrink-0" />
-                Siz oxirgi ogohlantirish bosqichidasiz. Holat yana takrorlansa — ishdan bo‘shatish uchun asos bo‘ladi.
+                Siz ishdan ozod etilish bosqichidasiz. Holat yana takrorlansa — ishdan bo‘shatish uchun asos bo‘ladi.
               </div>
             ) : (
               <p className={cn("rounded-xl border px-3 py-2 text-xs font-semibold", stage ? stageTone(stage + 1).soft : "border-emerald-200 bg-emerald-50 text-emerald-900")}>

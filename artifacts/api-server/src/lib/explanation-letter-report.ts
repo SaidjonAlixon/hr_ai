@@ -367,26 +367,6 @@ export async function reportSchedule(): Promise<{ lastSentOn: string | null; nex
 
 /** Har daqiqada: soat 10:00–10:59 oralig‘ida, oxirgi yuborilgandan 3 kun o‘tgan bo‘lsa — yuboradi */
 export async function explanationReportTick(): Promise<void> {
-  if (!isTelegramConfigured()) return;
-  const { ymd, hour } = tashkentNow();
-  await ensureExplanationSchema();
-  const { rows } = await pool.query(`SELECT sent_on FROM explanation_report_log ORDER BY sent_on DESC LIMIT 1`);
-  const last = rows[0]?.sent_on ? String(rows[0].sent_on) : null;
-  // Hech qachon yuborilmagan bo‘lsa — darhol (bugungi to‘liq hisobot), keyin har 3 kunda 10:00 da
-  if (last && (hour !== REPORT_HOUR || daysBetween(last, ymd) < REPORT_EVERY_DAYS)) return;
-  const claim = await pool.query(
-    `INSERT INTO explanation_report_log (sent_on, chat_id) VALUES ($1, $2) ON CONFLICT (sent_on) DO NOTHING`,
-    [ymd, REPORT_CHAT_ID],
-  );
-  if (!claim.rowCount) return;
-  try {
-    const totals = await sendExplanationReport();
-    await pool.query(`UPDATE explanation_report_log SET total = $2, sent_at = NOW() WHERE sent_on = $1`, [ymd, totals.all]);
-    logger.info({ totals }, "Tushuntirish xatlari hisoboti yuborildi");
-  } catch (err) {
-    await pool.query(`DELETE FROM explanation_report_log WHERE sent_on = $1`, [ymd]).catch(() => undefined);
-    throw err;
-  }
-  const files = await sendOriginalLetterPdfs();
-  logger.info({ files }, "Asl tushuntirish xatlari PDF yuborildi");
+  // Egasi: tushuntirish xatlari guruhga yuborish TO‘LIQ o‘chirilgan
+  return;
 }

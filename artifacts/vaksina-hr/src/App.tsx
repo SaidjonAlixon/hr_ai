@@ -76,6 +76,8 @@ const AdminJarimalarPage = lazyPage('/admin/jarimalar', () => import('./pages/ad
 const TushuntirishXatimPage = lazyPage('/tushuntirish-xatim', () => import('./pages/tushuntirish-xatim'));
 const MlVerifyPage = lazyPage([], () => import('./pages/ml-verify'));
 const AbetPage = lazyPage('/abet', () => import('./pages/abet'));
+const MijozlarBaholashiPage = lazyPage('/mijozlar-baholashi', () => import('./pages/mijozlar-baholashi/index'));
+const PublicCustomerRatePage = lazyPage([], () => import('./pages/baho/public-rate'));
 const AdminQurilmalarPage = lazyPage('/admin/qurilmalar', () => import('./pages/admin/qurilmalar'));
 const AdminKochmaDavomatPage = lazyPage('/admin/kochma-davomat', () => import('./pages/admin/kochma-davomat'));
 const AdminKochmaXaritaPage = lazyPage('/admin/kochma-xarita', () => import('./pages/admin/kochma-xarita'));
@@ -221,6 +223,11 @@ function Router() {
           <MlVerifyPage />
         </Suspense>
       </Route>
+      <Route path="/baho/:token">
+        <Suspense fallback={<PageFallback />}>
+          <PublicCustomerRatePage />
+        </Suspense>
+      </Route>
       <Route path="/davomat-face">
         <Suspense fallback={<PageFallback />}>
           <DavomatFacePage />
@@ -361,6 +368,7 @@ function Router() {
       <ProtectedRoute path="/admin/jarimalar" component={AdminJarimalarPage} />
       <ProtectedRoute path="/tushuntirish-xatim" component={TushuntirishXatimPage} />
       <ProtectedRoute path="/abet" component={AbetPage} />
+      <ProtectedRoute path="/mijozlar-baholashi" component={MijozlarBaholashiPage} />
       <ProtectedRoute path="/admin/qurilmalar" component={AdminQurilmalarPage} />
       <ProtectedRoute path="/admin/kochma-davomat" component={AdminKochmaDavomatPage} />
       <ProtectedRoute path="/admin/kochma-xarita" component={AdminKochmaXaritaPage} />

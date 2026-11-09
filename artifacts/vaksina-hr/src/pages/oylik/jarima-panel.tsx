@@ -9,12 +9,9 @@ import { StaffGroupTabs, staffGroupOf, type StaffGroup } from "@/components/expl
 import { jarimaNoteParts } from "./pay-table";
 
 const JARIMA_RULES = [
-  { n: 1, body: "Ogohlantirish va tushuntirish xati" },
-  { n: 2, body: "1 kunlik ish haqining 30%" },
-  { n: 3, body: "Yana 1 kunlikning 30%" },
-  { n: 4, body: "1 kunlik ish haqining 100%" },
-  { n: 5, body: "Oylikning 50% va platforma bloki" },
-  { n: 6, body: "Yana 50%, oxirgi xat, bo‘shatishga rozilik" },
+  { n: 1, body: "Tushuntirish xati" },
+  { n: 2, body: "Oylikdan jarima" },
+  { n: 3, body: "Ishdan ozod etilish uchun tushuntirish xati" },
 ];
 
 const GROUP_META: Record<StaffGroup, { title: string; who: string; start: string }> = {
@@ -386,11 +383,9 @@ function jarimaInitials(name: string) {
 }
 
 function strikeNote(n: number) {
-  if (n <= 1) return "Bu oyda birinchi marta. Ogohlantirish — tushuntirish xati yoziladi.";
-  if (n === 2) return "Bu oyda ikkinchi marta. 1 kunlik ish haqining 30% jarima.";
-  if (n === 3) return "Bu oyda uchinchi marta. Yana 1 kunlik ish haqining 30% jarima.";
-  if (n === 4) return "Bu oyda to‘rtinchi marta. 1 kunlik ish haqining 100% jarima.";
-  return `Bu oyda ${n}-marta. 1 oylik ish haqining 50% jarima.`;
+  if (n <= 1) return "Bu oyda birinchi marta. Tushuntirish xati.";
+  if (n === 2) return "Bu oyda ikkinchi marta. Oylikdan jarima.";
+  return `Bu oyda ${n}-marta. Ishdan ozod etilish uchun tushuntirish xati.`;
 }
 
 function jarimaPeople(rows: JarimaSelf[]) {

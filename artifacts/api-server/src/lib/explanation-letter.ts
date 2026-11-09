@@ -11,8 +11,8 @@ import type { JarimaPerson } from "./attendance-jarima";
 import { isJarimaEnabled } from "./jarima-switch";
 import { isHiddenFromDavomat } from "./roles";
 
-/** Oxirgi ogohlantirish (ishdan bo‘shatishga rozilik) xati shu martadan */
-export const FINAL_STRIKE = 6;
+/** Ishdan ozod etilish uchun tushuntirish xati shu martadan */
+export const FINAL_STRIKE = 3;
 
 export type JarimaGroup = "pharmacy" | "office";
 
@@ -315,6 +315,11 @@ export async function issuedLetterNo(no: string): Promise<{ issuedAt: string | n
 
 /** Jarima hodisalaridan xat yaratish / yangilash. Imzolangan xat o‘zgarmaydi. */
 export async function syncExplanationLetters(month: string, people: JarimaPerson[], today: string): Promise<void> {
+  // Egasi: tushuntirish xati dorixona + ofis uchun to‘liq o‘chiq — yangi xat yaratilmaydi.
+  void month;
+  void people;
+  void today;
+  return;
   await ensureExplanationSchema();
   const keep: string[] = [];
   const recentFrom = shiftYmd(today, -2);
@@ -445,6 +450,9 @@ export async function pendingLetterFor(userId: number): Promise<ExplanationLette
 }
 
 export async function explanationPunchBlock(userId: number | null | undefined): Promise<Record<string, unknown> | null> {
+  // Tushuntirish xati o‘chiq — davomat bloklanmaydi
+  void userId;
+  return null;
   if (!userId || !(await isJarimaEnabled())) return null;
   // Dorixona / asoschi / direktor yordamchisi — xat sababli davomat bloklanmaydi
   const { rows: roleRows } = await pool.query(`SELECT role FROM users WHERE id = $1`, [userId]).catch(() => ({ rows: [] as Array<{ role: string }> }));
@@ -825,32 +833,23 @@ function minutesText(mins: number): string {
 }
 
 export function penaltyText(n: number): string {
-  if (n <= 1) return "rasmiy ogohlantirish";
-  if (n <= 3) return "1 kunlik ish haqining 30% miqdorida jarima";
-  if (n === 4) return "1 kunlik ish haqining 100% miqdorida jarima";
-  if (n < FINAL_STRIKE) return "1 oylik ish haqining 50% miqdorida jarima hamda o‘sha kuni platformaga kirish cheklovi";
-  return "1 oylik ish haqining 50% miqdorida jarima va oxirgi (yakuniy) ogohlantirish";
+  if (n <= 1) return "tushuntirish xati";
+  if (n === 2) return "oylikdan jarima";
+  return "ishdan ozod etilish uchun tushuntirish xati";
 }
 
 export type LetterStage = { n: number; label: string };
 
-/** Xatdagi rangli bosqichlar jadvali — oylik sahifasi bilan bir xil */
+/** Xatdagi bosqichlar — foizsiz, 3 holat */
 export const LETTER_STAGES: LetterStage[] = [
-  { n: 1, label: "Ogohlantirish" },
-  { n: 2, label: "Kunlikning 30%" },
-  { n: 3, label: "Kunlikning 30%" },
-  { n: 4, label: "Kunlikning 100%" },
-  { n: 5, label: "Oylikning 50% · blok" },
-  { n: 6, label: "Oxirgi ogohlantirish" },
+  { n: 1, label: "Tushuntirish xati" },
+  { n: 2, label: "Oylikdan jarima" },
+  { n: 3, label: "Ishdan ozod etish" },
 ];
 
 export function nextStepText(n: number): string {
-  if (n <= 1) return "Keyingi (2-) holatda: 1 kunlik ish haqining 30% miqdorida jarima.";
-  if (n === 2) return "Keyingi (3-) holatda: yana 1 kunlik ish haqining 30% miqdorida jarima.";
-  if (n === 3) return "Keyingi (4-) holatda: 1 kunlik ish haqining 100% miqdorida jarima.";
-  if (n === 4) return "Keyingi (5-) holatda: 1 oylik ish haqining 50% miqdorida jarima va o‘sha kuni platformaga kirish cheklovi.";
-  if (n === 5)
-    return "Keyingi (6-) holatda: yana 1 oylik ish haqining 50% jarima, oxirgi ogohlantirish va ishdan bo‘shatishga rozilik to‘g‘risidagi tushuntirish xati.";
+  if (n <= 1) return "Keyingi (2-) holatda: oylikdan jarima.";
+  if (n === 2) return "Keyingi (3-) holatda: ishdan ozod etilish uchun tushuntirish xati.";
   return "Bu oxirgi tushuntirish xati. Holat yana takrorlansa — mehnat shartnomasi bekor qilinadi (ishdan bo‘shatish).";
 }
 
@@ -879,7 +878,7 @@ export type LetterContent = {
   title: string;
   /** Sarlavha ostidagi qisqa satr: holat turi, sana, nechanchi marta */
   subtitle: string;
-  /** 6-martadan — oxirgi ogohlantirish va ishdan bo‘shatishga rozilik */
+  /** 3-martadan — ishdan ozod etilish uchun tushuntirish xati */
   final: boolean;
   intro: string;
   facts: string;
@@ -969,11 +968,11 @@ export function letterContent(
       : `bundan buyon ish jadvalimga to‘liq amal qilishga, uzrli sabab bilan ishga chiqa olmaydigan bo‘lsam, bu haqda ish boshlanishidan oldin ${bosses} hamda HR bo‘limini xabardor qilishga hamda tasdiqlovchi hujjatni o‘z vaqtida taqdim etishga majburiyat olaman.`;
 
   const commitment = final
-    ? `Ushbu tushuntirish xati joriy oy davomida ${n}-marta sodir etilgan qoidabuzarlik bo‘yicha OXIRGI tushuntirish xatim ekanligi, menga nisbatan oxirgi (yakuniy) ogohlantirish berilgani hamda 1 oylik ish haqimning 50% miqdorida${amountText ? ` — ${amountText}` : ""} jarima ushlab qolinishi bilan tanishdim. Shuningdek, ${duty}`
+    ? `Ushbu tushuntirish xati joriy oy davomida ${n}-marta sodir etilgan qoidabuzarlik bo‘yicha OXIRGI (ishdan ozod etilish uchun) tushuntirish xatim ekanligi bilan tanishdim. Shuningdek, ${duty}`
     : `Ushbu holat uchun belgilangan intizomiy chora — ${penalty} — bilan tanishdim. Shuningdek, ${duty}`;
 
   const finalConsent = final
-    ? "Agar ushbu holat bundan keyin yana takrorlansa, bu men bilan tuzilgan mehnat shartnomasini bekor qilish (ishdan bo‘shatish) uchun asos bo‘lishini to‘liq tushunaman va bunga oldindan o‘z roziligimni bildiraman. Bu holatda hech qanday e’tiroz va da’vo bildirmayman."
+    ? "Agar ushbu holat bundan keyin yana takrorlansa, bu men bilan tuzilgan mehnat shartnomasini bekor qilish (ishdan ozod etish) uchun asos bo‘lishini to‘liq tushunaman va bunga oldindan o‘z roziligimni bildiraman. Bu holatda hech qanday e’tiroz va da’vo bildirmayman."
     : null;
 
   return {
@@ -990,7 +989,7 @@ export function letterContent(
     },
     title: "TUSHUNTIRISH XATI",
     subtitle: final
-      ? `OXIRGI OGOHLANTIRISH · ishdan bo‘shatishga rozilik · ${n}-qoidabuzarlik`
+      ? `ISHDAN OZOD ETISH · tushuntirish xati · ${n}-qoidabuzarlik`
       : `${l.kind === "late" ? "Ishga kechikish" : "Ishga kelmaslik"} · ${fmtDmy(l.eventDate)} · joriy oydagi ${n}-qoidabuzarlik`,
     final,
     intro,
@@ -1001,8 +1000,8 @@ export function letterContent(
     finalConsent,
     closing: [
       final
-        ? "Menga nisbatan kompaniyaning ichki tartib qoidalarida belgilangan jarimalar hamda rahbariyat tomonidan tayinlanadigan intizomiy jazolar qo‘llanilishiga roziman va e’tirozim yo‘q."
-        : "Ushbu holat qayta takrorlansa, menga nisbatan quyidagi bosqichlarda ko‘rsatilgan jarimalar hamda rahbariyat tomonidan tayinlanadigan intizomiy jazo (hayfsan, jarima, mehnat shartnomasini bekor qilish) qo‘llanilishiga roziman va e’tirozim yo‘q.",
+        ? "Menga nisbatan kompaniyaning ichki tartib qoidalari va rahbariyat tomonidan tayinlanadigan intizomiy jazolar qo‘llanilishiga roziman va e’tirozim yo‘q."
+        : "Ushbu holat qayta takrorlansa, menga nisbatan quyidagi bosqichlarda ko‘rsatilgan choralar (tushuntirish xati, oylikdan jarima, ishdan ozod etish) qo‘llanilishiga roziman va e’tirozim yo‘q.",
       "Ushbu tushuntirish xatini VAKSINA HR platformasida to‘liq o‘qib, mazmuni bilan tanishib chiqdim va rozilik bildirgan holda o‘z imzom bilan tasdiqlayman. Undagi barcha ma’lumotlar to‘g‘ri.",
     ],
     stages: LETTER_STAGES,

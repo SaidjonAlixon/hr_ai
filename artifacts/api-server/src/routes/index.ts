@@ -72,6 +72,7 @@ import explanationLettersRouter from "./explanation-letters";
 import malumotnomaRouter from "./malumotnoma";
 import scannerDocsRouter from "./scanner-docs";
 import abetRouter from "./abet";
+import customerRatingsRouter from "./customer-ratings";
 import aiAssistantRouter from "./ai-assistant";
 import hikvisionRouter from "./hikvision";
 
@@ -83,6 +84,7 @@ router.use(explanationLettersRouter);
 router.use(malumotnomaRouter);
 router.use(scannerDocsRouter);
 router.use(abetRouter);
+router.use(customerRatingsRouter);
 router.use(publicFilialMapRouter);
 router.use(uploadsRouter);
 router.use(pharmacyNetworkRouter);

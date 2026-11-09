@@ -62,6 +62,7 @@ import {
   UtensilsCrossed,
   Receipt,
   Sparkles,
+  Star,
 } from 'lucide-react';
 import {
   useLogout,
@@ -1368,6 +1369,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Xodim kerak', path: '/xodim-kerak', icon: UserPlus },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
+      { name: 'Mijozlar baholashi', path: '/mijozlar-baholashi', icon: Star },
     ];
 
   const hrOversightNav: NavItem[] = [
@@ -1403,6 +1405,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
     { name: 'Preboarding', path: '/admin/preboarding', icon: GraduationCap },
     { name: 'Face ID', path: '/admin/faces', icon: ScanFace },
+    { name: 'Mijozlar baholashi', path: '/mijozlar-baholashi', icon: Star },
   ];
 
   const roleNavigation: Record<string, NavItem[]> = {
@@ -1450,6 +1453,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Test', path: '/admin/test', icon: Bell },
       { name: 'Skaner', path: '/admin/scanner', icon: ScanLine },
       { name: 'Yordamchi AI', path: '/admin/yordamchi-ai', icon: Sparkles },
+      { name: 'Mijozlar baholashi', path: '/mijozlar-baholashi', icon: Star },
       { name: 'Hisobot', path: '/admin/holat', icon: BarChart3 },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
@@ -1496,6 +1500,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Test', path: '/admin/test', icon: Bell },
       { name: 'Skaner', path: '/admin/scanner', icon: ScanLine },
       { name: 'Yordamchi AI', path: '/admin/yordamchi-ai', icon: Sparkles },
+      { name: 'Mijozlar baholashi', path: '/mijozlar-baholashi', icon: Star },
       { name: 'Hisobot', path: '/admin/holat', icon: BarChart3 },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
@@ -1559,6 +1564,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Test', path: '/admin/test', icon: Bell },
       { name: 'Skaner', path: '/admin/scanner', icon: ScanLine },
       { name: 'Yordamchi AI', path: '/admin/yordamchi-ai', icon: Sparkles },
+      { name: 'Mijozlar baholashi', path: '/mijozlar-baholashi', icon: Star },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
     hr: hrMenejerNav,
@@ -1597,6 +1603,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Bog'lanish", path: '/boglanish', icon: Phone },
       { name: 'Xodim kerak', path: '/xodim-kerak', icon: UserPlus },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
+      reytingNav,
+      { name: 'Mijozlar baholashi', path: '/mijozlar-baholashi', icon: Star },
     ],
     koordinator: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
@@ -1619,6 +1627,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Cheklist', path: '/checklist', icon: ClipboardCheck },
       { name: 'Reyting', path: '/checklist-holati', icon: Trophy },
       smenaNav,
+      { name: 'Mijozlar baholashi', path: '/mijozlar-baholashi', icon: Star },
     ],
     regional_menejer: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
@@ -1642,6 +1651,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Cheklist', path: '/checklist', icon: ClipboardCheck },
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
       smenaNav,
+      { name: 'Mijozlar baholashi', path: '/mijozlar-baholashi', icon: Star },
     ],
     it: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },

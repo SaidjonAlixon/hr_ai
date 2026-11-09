@@ -120,6 +120,7 @@ export const ru: Messages = {
   "nav.kirish": "Онбординг",
   "nav.checklist": "Чек-лист",
   "nav.notifications": "Уведомления",
+  "nav.mijozlarBaholashi": "Оценки клиентов",
 
   "login.title": "Вход в систему",
   "login.subtitle": "Введите данные для входа в свой профиль.",

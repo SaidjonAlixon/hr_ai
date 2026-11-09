@@ -17,8 +17,8 @@ import { activeLockFor, invalidateLockCache, LOCK_MESSAGE, todayTashkent, type D
 import { isJarimaEnabled } from "./jarima-switch";
 
 export { activeLockFor, LOCK_MESSAGE, todayTashkent };
-export const ESCALATE_FROM = 3;
-export const LOCK_FROM = 5;
+export const ESCALATE_FROM = 2;
+export const LOCK_FROM = 3;
 
 function shiftYmd(ymd: string, days: number): string {
   const d = new Date(`${ymd}T12:00:00Z`);
@@ -36,11 +36,9 @@ export function kindLabel(kind: string): string {
 }
 
 export function strikeRule(n: number): string {
-  if (n <= 1) return "Ogohlantirish (tushuntirish xati)";
-  if (n <= 3) return "1 kunlik ish haqining 30%";
-  if (n === 4) return "1 kunlik ish haqining 100%";
-  if (n < FINAL_STRIKE) return "1 oylik ish haqining 50% · platforma bloki";
-  return "1 oylik ish haqining 50% · oxirgi ogohlantirish, ishdan bo‘shatishga rozilik";
+  if (n <= 1) return "Tushuntirish xati";
+  if (n === 2) return "Oylikdan jarima";
+  return "Ishdan ozod etilish uchun tushuntirish xati";
 }
 
 export async function listTodayLocks() {
@@ -201,8 +199,7 @@ async function detailsOfLock(lock: DisciplineLock) {
     events,
     rules: [
       ...JARIMA_RULE,
-      "Har bir buzilish bo‘yicha tushuntirish xati yozib imzolanmaguncha keyingi davomat belgilanmaydi",
-      `${LOCK_FROM}-marta va undan keyin — buzilish qayd etilgan kuni platforma to‘liq yopiladi`,
+      "Hozir tushuntirish xati va avto-jarima o‘chiq (dorixona + ofis)",
     ],
   };
 }
@@ -541,8 +538,8 @@ async function digestOnce(): Promise<void> {
 }
 
 function consequence(n: number, lockedToday: boolean): string {
-  if (n >= FINAL_STRIKE) return `1 oylikning 50% jarima, oxirgi ogohlantirish${lockedToday ? ", bugun tizim bloklandi" : ""}`;
-  if (n >= LOCK_FROM) return `1 oylikning 50% jarima${lockedToday ? ", bugun tizim bloklandi" : ""}`;
+  if (n >= FINAL_STRIKE) return `ishdan ozod etilish uchun tushuntirish xati${lockedToday ? ", bugun tizim bloklandi" : ""}`;
+  if (n >= LOCK_FROM) return `oylikdan jarima${lockedToday ? ", bugun tizim bloklandi" : ""}`;
   return strikePenalty(n);
 }
 

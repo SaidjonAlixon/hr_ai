@@ -9,12 +9,9 @@ import { getJarimaSwitch, isJarimaOffDay } from "./jarima-switch";
 export const JARIMA_START = "2026-10-12";
 
 export const JARIMA_RULE = [
-  "1-marta — ogohlantirish va tushuntirish xati",
-  "2-marta — 1 kunlik ish haqining 30%",
-  "3-marta — 1 kunlik ish haqining 30%",
-  "4-marta — 1 kunlik ish haqining 100%",
-  "5-marta — 1 oylik ish haqining 50% va o‘sha kuni platforma bloki",
-  "6-marta — 1 oylik ish haqining 50%, oxirgi ogohlantirish va ishdan bo‘shatishga rozilik xati",
+  "1-marta — tushuntirish xati",
+  "2-marta — oylikdan jarima",
+  "3-marta — ishdan ozod etilish uchun tushuntirish xati",
   "Undan keyin yana takrorlansa — mehnat shartnomasini bekor qilish (ishdan bo‘shatish) uchun asos",
 ] as const;
 
@@ -22,11 +19,9 @@ export { FINAL_STRIKE };
 
 /** n-buzilish uchun chora — barcha matnlar shu yerdan olinadi */
 export function strikePenalty(n: number): string {
-  if (n <= 1) return "ogohlantirish (tushuntirish xati)";
-  if (n <= 3) return "1 kunlik ish haqining 30% jarima";
-  if (n === 4) return "1 kunlik ish haqining 100% jarima";
-  if (n < FINAL_STRIKE) return "1 oylik ish haqining 50% jarima";
-  return "1 oylik ish haqining 50% jarima va oxirgi ogohlantirish";
+  if (n <= 1) return "tushuntirish xati";
+  if (n === 2) return "oylikdan jarima";
+  return "ishdan ozod etilish uchun tushuntirish xati";
 }
 
 /** Ofis xodimlari uchun jarima shu kundan boshlanadi */
@@ -137,18 +132,16 @@ export function salaryShareOnDates(monthly: number, month: string, dates: string
   return sum;
 }
 
-/** Kunlik = oylik / shu oyning kunlari. Har bir marta alohida qo‘shiladi. */
+/**
+ * Foizsiz hisob: 1 — 0; 2 — 1 kunlik oylik ulushi; 3+ — qo‘shimcha avto-summa yo‘q
+ * (ishdan ozod etish xati). Hozir tizim o‘chiq — summalar faqat qoida uchun.
+ */
 export function jarimaAmount(monthly: number, monthDays: number, strikes: number): number {
   const salary = Math.max(0, Math.round(monthly));
-  if (salary <= 0 || strikes <= 0) return 0;
-  const daily = salary / Math.max(1, monthDays);
-  let total = 0;
-  for (let n = 2; n <= strikes; n += 1) {
-    if (n <= 3) total += Math.round(daily * 0.3);
-    else if (n === 4) total += Math.round(daily);
-    else total += Math.round(salary * 0.5);
-  }
-  return total;
+  if (salary <= 0 || strikes < 2) return 0;
+  const daily = Math.round(salary / Math.max(1, monthDays));
+  // Faqat 2-holatda bir kunlik jarima (foizsiz)
+  return daily;
 }
 
 function reasonLine(late: number, absent: number): string {
@@ -160,12 +153,9 @@ function reasonLine(late: number, absent: number): string {
 }
 
 function warningLine(strikes: number): string {
-  if (strikes <= 1) return "Ogohlantirish: keyingi safar 1 kunlik ish haqingizning 30% jarima.";
-  if (strikes === 2) return "Ogohlantirish: 3-martada yana 1 kunlik ish haqingizning 30% jarima.";
-  if (strikes === 3) return "Ogohlantirish: 4-martada 1 kunlik ish haqingizning 100% jarima.";
-  if (strikes === 4) return "Ogohlantirish: 5-martada 1 oylik ish haqingizning 50% jarima va platforma bloki.";
-  if (strikes === 5) return "Ogohlantirish: 6-martada yana 50% jarima, oxirgi ogohlantirish va ishdan bo‘shatishga rozilik xati.";
-  return "Oxirgi ogohlantirish berilgan: yana takrorlansa — ishdan bo‘shatish uchun asos.";
+  if (strikes <= 1) return "Keyingi holatda: oylikdan jarima.";
+  if (strikes === 2) return "Keyingi holatda: ishdan ozod etilish uchun tushuntirish xati.";
+  return "Oxirgi bosqich: yana takrorlansa — ishdan bo‘shatish uchun asos.";
 }
 
 function autoNote(late: number, absent: number, strikes: number): string | null {
@@ -237,11 +227,13 @@ export async function applyAttendanceJarima(
     );
     for (const r of rows) activeOffice.add(Number(r.employee_id));
   }
-  // DORIXONA xodimlari (mudir, farmasevt, stajyor) — egasi talabiga ko‘ra jarima va
-  // tushuntirish xati tizimidan TO‘LIQ chiqarilgan: jarima hisoblanmaydi, xat yaratilmaydi,
-  // blok qo‘yilmaydi. Funksiya kodda qoladi — faqat ofis xodimlari uchun ishlaydi.
-  const people = candidates.filter((row) => jarimaGroupForRole(row.role) !== "pharmacy" && activeOffice.has(row.employeeId));
-  if (!people.length) return { month, active: true, people: [] };
+  // Egasi talabi: tushuntirish xati + avto-jarima dorixona VA ofis uchun TO‘LIQ o‘chiq.
+  // 3 bosqichli qoida UI/matnda saqlanadi; hisoblash/xat yaratish ishlamaydi.
+  const AUTO_JARIMA_AND_LETTERS = false;
+  const people = AUTO_JARIMA_AND_LETTERS
+    ? candidates.filter((row) => jarimaGroupForRole(row.role) !== "pharmacy" && activeOffice.has(row.employeeId))
+    : [];
+  if (!people.length) return { month, active: false, people: [] };
 
   const userIds = people.map((row) => row.userId as number);
   const savedRows = await db

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { ClipboardCheck, Info, MapPin, Trophy } from "lucide-react";
+import { ClipboardCheck, Info, MapPin, Star, Trophy } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -20,6 +20,7 @@ import {
 import { useBranchAuditsList, type BranchAudit } from "@/lib/branch-audits-api";
 import { displayBranchName } from "@/lib/pharmacy-staff-api";
 import { CoordinatorRankingBoard } from "@/pages/checklist-holati/ranking-panel";
+import { CustomerRatingBoard } from "./customer-board";
 
 function scoreTone(pct: number) {
   if (pct >= 85) return "text-emerald-600";
@@ -48,13 +49,14 @@ function formatWhen(visitDate: string, createdAt?: string) {
 
 export default function ReytingPage() {
   const { user } = useAuth();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const role = user?.role;
   const pharmacyView = canViewPharmacyReyting(role);
   const coordView = canViewCoordinatorRanking(role);
   const [viewing, setViewing] = useState<BranchAudit | null>(null);
+  const [tab, setTab] = useState<"mijoz" | "cheklist">("mijoz");
 
-  const { data: audits = [], isLoading } = useBranchAuditsList({}, pharmacyView);
+  const { data: audits = [], isLoading } = useBranchAuditsList({}, pharmacyView && tab === "cheklist");
 
   const stats = useMemo(() => {
     if (!audits.length) {
@@ -71,10 +73,7 @@ export default function ReytingPage() {
   if (coordView && !isPharmacyBranchRole(role)) {
     return (
       <div className="mx-auto max-w-3xl space-y-4 pb-10">
-        <Header
-          title={t("reyting.title")}
-          subtitle={t("reyting.subtitle")}
-        />
+        <Header title={t("reyting.title")} subtitle={t("reyting.subtitle")} />
         <CoordinatorRankingBoard enabled={coordView} />
         <p className="text-center text-xs text-muted-foreground">
           Batafsil:{" "}
@@ -99,62 +98,96 @@ export default function ReytingPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5 pb-10">
+    <div className="mx-auto max-w-3xl space-y-5 px-1 pb-10 sm:px-0">
       <Header
-        title={t("reyting.branchTitle")}
-        subtitle={t("reyting.subtitle")}
+        title={locale === "ru" ? "Рейтинг сотрудников" : "Xodimlar reytingi"}
+        subtitle={
+          locale === "ru"
+            ? "По оценкам клиентов · анонимно"
+            : "Mijoz baholari asosida · anonim"
+        }
       />
 
-      <div className="grid grid-cols-3 gap-3">
-        <div className="rounded-xl border bg-card p-3 shadow-sm">
-          <p className="text-[11px] text-muted-foreground">{t("ui.branch")}</p>
-          <p className="mt-1 truncate text-sm font-semibold">{stats.branch || "—"}</p>
-        </div>
-        <div className="rounded-xl border bg-card p-3 shadow-sm">
-          <p className="text-[11px] text-muted-foreground">{t("reyting.visits")}</p>
-          <p className="mt-1 text-2xl font-bold tabular-nums">{stats.visits}</p>
-        </div>
-        <div className="rounded-xl border bg-card p-3 shadow-sm">
-          <p className="text-[11px] text-muted-foreground">{t("reyting.avgScore")}</p>
-          <p className={cn("mt-1 text-2xl font-bold tabular-nums", scoreTone(stats.avg))}>
-            {stats.avg}%
-          </p>
-        </div>
+      <div className="flex gap-1.5 rounded-2xl bg-slate-100 p-1 dark:bg-white/5">
+        {(
+          [
+            ["mijoz", locale === "ru" ? "Клиенты" : "Mijozlar", Star],
+            ["cheklist", locale === "ru" ? "Чек-лист" : "Cheklist", ClipboardCheck],
+          ] as const
+        ).map(([k, label, Icon]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setTab(k)}
+            className={cn(
+              "flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-xs font-bold transition",
+              tab === k
+                ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white"
+                : "text-slate-500",
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            {label}
+          </button>
+        ))}
       </div>
 
-      {isLoading ? (
-        <Skeleton className="h-48 w-full rounded-xl" />
-      ) : audits.length ? (
-        <div className="space-y-2">
-          {audits.map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              onClick={() => setViewing(a)}
-              className="flex w-full items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 text-left transition hover:border-[#0b3a5c]/30 hover:shadow-sm"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold">{a.visitName || "Cheklist tashrifi"}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {formatWhen(a.visitDate, a.createdAt)}
-                  {a.coordinatorName ? ` · ${a.coordinatorName}` : ""}
-                </p>
-              </div>
-              <Badge className={cn("shrink-0 tabular-nums", scoreBadge(a.scorePercent))}>
-                {a.scorePercent}%
-              </Badge>
-            </button>
-          ))}
-        </div>
-      ) : (
-        <div className="rounded-xl border border-dashed bg-muted p-8 text-center">
-          <ClipboardCheck className="mx-auto h-8 w-8 text-muted-foreground" />
-          <p className="mt-2 text-sm font-medium text-foreground">Hali tashrif natijasi yo‘q</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Koordinator filialga cheklist topshirgach, ball shu yerda ko‘rinadi.
-          </p>
-        </div>
-      )}
+      {tab === "mijoz" ? <CustomerRatingBoard enabled={pharmacyView} /> : null}
+
+      {tab === "cheklist" ? (
+        <>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-xl border bg-card p-3 shadow-sm">
+              <p className="text-[11px] text-muted-foreground">{t("ui.branch")}</p>
+              <p className="mt-1 truncate text-sm font-semibold">{stats.branch || "—"}</p>
+            </div>
+            <div className="rounded-xl border bg-card p-3 shadow-sm">
+              <p className="text-[11px] text-muted-foreground">{t("reyting.visits")}</p>
+              <p className="mt-1 text-2xl font-bold tabular-nums">{stats.visits}</p>
+            </div>
+            <div className="rounded-xl border bg-card p-3 shadow-sm">
+              <p className="text-[11px] text-muted-foreground">{t("reyting.avgScore")}</p>
+              <p className={cn("mt-1 text-2xl font-bold tabular-nums", scoreTone(stats.avg))}>
+                {stats.avg}%
+              </p>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <Skeleton className="h-48 w-full rounded-xl" />
+          ) : audits.length ? (
+            <div className="space-y-2">
+              {audits.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => setViewing(a)}
+                  className="flex w-full items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 text-left transition hover:border-[#0b3a5c]/30 hover:shadow-sm"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">{a.visitName || "Cheklist tashrifi"}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {formatWhen(a.visitDate, a.createdAt)}
+                      {a.coordinatorName ? ` · ${a.coordinatorName}` : ""}
+                    </p>
+                  </div>
+                  <Badge className={cn("shrink-0 tabular-nums", scoreBadge(a.scorePercent))}>
+                    {a.scorePercent}%
+                  </Badge>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed bg-muted p-8 text-center">
+              <ClipboardCheck className="mx-auto h-8 w-8 text-muted-foreground" />
+              <p className="mt-2 text-sm font-medium text-foreground">Hali tashrif natijasi yo‘q</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Koordinator filialga cheklist topshirgach, ball shu yerda ko‘rinadi.
+              </p>
+            </div>
+          )}
+        </>
+      ) : null}
 
       <Dialog open={!!viewing} onOpenChange={(v) => !v && setViewing(null)}>
         <DialogContent className="max-w-lg">

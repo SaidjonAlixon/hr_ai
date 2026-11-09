@@ -120,6 +120,7 @@ export const uz: Messages = {
   "nav.kirish": "Kirish",
   "nav.checklist": "Cheklist",
   "nav.notifications": "Bildirishnomalar",
+  "nav.mijozlarBaholashi": "Mijozlar baholashi",
 
   "login.title": "Tizimga kirish",
   "login.subtitle": "O‘z profilingizga kirish uchun ma’lumotlarni kiriting.",

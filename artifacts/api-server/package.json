@@ -9,7 +9,7 @@
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:face": "node --experimental-strip-types --test src/lib/face-identity.test.ts src/lib/face-ai-verify.test.ts",
-    "test:attendance": "node --experimental-strip-types --test src/lib/attendance-engine.test.ts src/lib/branch-attendance-qr.test.ts src/lib/work-slots.test.ts"
+    "test:attendance": "node --experimental-strip-types --test src/lib/attendance-engine.test.ts src/lib/branch-attendance-qr.test.ts src/lib/work-slots.test.ts src/lib/customer-ratings.test.ts"
   },
   "dependencies": {
     "@pdf-lib/fontkit": "^1.1.1",

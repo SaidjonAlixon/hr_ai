@@ -1,6 +1,7 @@
 /**
- * Mijoz baholash QR — A4 bo‘yi (portrait), kitobcha emas.
- * Yuqori: «Xizmatni baholang» · Markaz: katta QR · Past: filial nomi.
+ * Mijoz baholash QR — A4 portrait.
+ * Yuqori: Vaksina logo · Markaz: zamonaviy (nuqta) QR · Past: filial.
+ * Markazda logo/dumaloq YO‘Q.
  */
 import QRCode from "qrcode";
 import { jsPDF } from "jspdf";
@@ -8,10 +9,15 @@ import { jsPDF } from "jspdf";
 const PAGE_W = 210;
 const PAGE_H = 297;
 const MARGIN = 16;
-const BRAND = "#0b3a5c";
-const ACCENT = "#c9a227";
+
+/** Brend (vaksinahr_logo) */
+const PURPLE = "#5c2d91";
+const PURPLE_RGB: [number, number, number] = [92, 45, 145];
+const YELLOW = "#f5c518";
+const YELLOW_RGB: [number, number, number] = [245, 197, 24];
+const CYAN = "#22c5e0";
 const MUTED = "#64748b";
-const LIGHT = "#e8eef5";
+const LOGO_URL = "/vaksinahr_logo.png";
 
 const UNICODE_FONT =
   '"Segoe UI", "Noto Sans", "DejaVu Sans", Arial, "Helvetica Neue", sans-serif';
@@ -122,183 +128,6 @@ function renderUnicodeTextPng(
   };
 }
 
-const ICON_URL = "/vaksina-syringe-icon.png";
-let iconCache: HTMLCanvasElement | null = null;
-
-/** Qora fondagi brend ikonni shaffof qilib olish */
-async function loadBrandIcon(): Promise<HTMLCanvasElement> {
-  if (iconCache) return iconCache;
-  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const el = new Image();
-    el.crossOrigin = "anonymous";
-    el.onload = () => resolve(el);
-    el.onerror = () => reject(new Error("Brend ikon yuklanmadi"));
-    el.src = ICON_URL;
-  });
-
-  const c = document.createElement("canvas");
-  c.width = img.naturalWidth || img.width;
-  c.height = img.naturalHeight || img.height;
-  const ctx = c.getContext("2d");
-  if (!ctx) throw new Error("Canvas ishlamaydi");
-  ctx.drawImage(img, 0, 0);
-  const data = ctx.getImageData(0, 0, c.width, c.height);
-  const px = data.data;
-  for (let i = 0; i < px.length; i += 4) {
-    const r = px[i];
-    const g = px[i + 1];
-    const b = px[i + 2];
-    // Qora / juda qorong‘i pixel → shaffof
-    if (r < 28 && g < 28 && b < 28) {
-      px[i + 3] = 0;
-    }
-  }
-  ctx.putImageData(data, 0, 0);
-  iconCache = c;
-  return c;
-}
-
-/** Fallback: canvasda chiroyli shprits (ikon yuklanmasa) */
-function drawFallbackSyringe(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  size: number,
-) {
-  const s = size;
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate(-Math.PI / 4);
-
-  // Halqa
-  ctx.strokeStyle = "#6b3fa0";
-  ctx.lineWidth = s * 0.055;
-  ctx.beginPath();
-  ctx.arc(0, 0, s * 0.42, 0.35, Math.PI * 2 - 0.35);
-  ctx.stroke();
-  ctx.lineWidth = s * 0.028;
-  ctx.beginPath();
-  ctx.arc(0, 0, s * 0.33, 0.45, Math.PI * 2 - 0.45);
-  ctx.stroke();
-
-  // Barrel
-  const bw = s * 0.22;
-  const bh = s * 0.55;
-  roundRect(ctx, -bw / 2, -bh * 0.35, bw, bh * 0.7, bw * 0.18);
-  ctx.fillStyle = "#f5c518";
-  ctx.fill();
-  ctx.strokeStyle = "#6b3fa0";
-  ctx.lineWidth = s * 0.035;
-  ctx.stroke();
-
-  // Plunger
-  ctx.fillStyle = "#6b3fa0";
-  roundRect(ctx, -bw * 0.28, -bh * 0.52, bw * 0.56, bh * 0.14, bw * 0.12);
-  ctx.fill();
-  ctx.fillRect(-bw * 0.08, -bh * 0.48, bw * 0.16, bh * 0.16);
-
-  // Needle
-  ctx.strokeStyle = "#6b3fa0";
-  ctx.lineWidth = s * 0.04;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(0, bh * 0.32);
-  ctx.lineTo(0, bh * 0.52);
-  ctx.stroke();
-
-  ctx.restore();
-}
-
-/** Zamonaviy QR: oq kartochka, oltin burchaklar, markazda oq fon + shprits ikon */
-async function styledQrPng(url: string, size = 900): Promise<string> {
-  const pad = Math.round(size * 0.075);
-  const qrSize = size - pad * 2;
-  const qrCanvas = document.createElement("canvas");
-  await QRCode.toCanvas(qrCanvas, url, {
-    width: qrSize,
-    margin: 2,
-    errorCorrectionLevel: "H",
-    color: { dark: BRAND, light: "#ffffff" },
-  });
-
-  const out = document.createElement("canvas");
-  out.width = size;
-  out.height = size;
-  const ctx = out.getContext("2d");
-  if (!ctx) throw new Error("Canvas ishlamaydi");
-
-  // Oq yumshoq kartochka
-  ctx.fillStyle = "#ffffff";
-  roundRect(ctx, 0, 0, size, size, size * 0.045);
-  ctx.fill();
-
-  // Yengil ichki soyali ramka
-  ctx.strokeStyle = "#eef2f7";
-  ctx.lineWidth = size * 0.014;
-  roundRect(ctx, size * 0.018, size * 0.018, size * 0.964, size * 0.964, size * 0.038);
-  ctx.stroke();
-
-  // Oltin L-burchaklar
-  const tick = size * 0.078;
-  const inset = size * 0.032;
-  ctx.strokeStyle = ACCENT;
-  ctx.lineWidth = size * 0.013;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  const corners: Array<[number, number, number, number, number, number]> = [
-    [inset, inset + tick, inset, inset, inset + tick, inset],
-    [size - inset - tick, inset, size - inset, inset, size - inset, inset + tick],
-    [inset, size - inset - tick, inset, size - inset, inset + tick, size - inset],
-    [size - inset - tick, size - inset, size - inset, size - inset, size - inset, size - inset - tick],
-  ];
-  for (const [x1, y1, x2, y2, x3, y3] of corners) {
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.lineTo(x3, y3);
-    ctx.stroke();
-  }
-
-  ctx.drawImage(qrCanvas, pad, pad, qrSize, qrSize);
-
-  // Markaz: katta oq disk + ikon (H daraja — skan ishlaydi)
-  const cx = size / 2;
-  const cy = size / 2;
-  const padR = size * 0.145;
-
-  // Yumshoq oq “halo”
-  ctx.beginPath();
-  ctx.arc(cx, cy, padR + size * 0.018, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.fill();
-
-  // Asosiy oq fon (aniq ko‘rinadi)
-  ctx.beginPath();
-  ctx.arc(cx, cy, padR, 0, Math.PI * 2);
-  ctx.fillStyle = "#ffffff";
-  ctx.fill();
-  ctx.strokeStyle = "#f0f4f8";
-  ctx.lineWidth = size * 0.008;
-  ctx.stroke();
-
-  // Yupqa oltin halqa
-  ctx.beginPath();
-  ctx.arc(cx, cy, padR - size * 0.01, 0, Math.PI * 2);
-  ctx.strokeStyle = "rgba(201,162,39,0.55)";
-  ctx.lineWidth = size * 0.006;
-  ctx.stroke();
-
-  const iconBox = padR * 1.55;
-  try {
-    const icon = await loadBrandIcon();
-    ctx.drawImage(icon, cx - iconBox / 2, cy - iconBox / 2, iconBox, iconBox);
-  } catch {
-    drawFallbackSyringe(ctx, cx, cy, iconBox * 0.72);
-  }
-
-  return out.toDataURL("image/png");
-}
-
 function roundRect(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -317,24 +146,149 @@ function roundRect(
   ctx.closePath();
 }
 
-function drawPageDecor(doc: jsPDF) {
-  // Top brand bar
-  doc.setFillColor(11, 58, 92);
-  doc.rect(0, 0, PAGE_W, 8, "F");
-  // Thin accent line under bar
-  doc.setFillColor(201, 162, 39);
-  doc.rect(0, 8, PAGE_W, 1.2, "F");
-  // Bottom bar
-  doc.setFillColor(11, 58, 92);
-  doc.rect(0, PAGE_H - 8, PAGE_W, 8, "F");
-  doc.setFillColor(201, 162, 39);
-  doc.rect(0, PAGE_H - 9.2, PAGE_W, 1.2, "F");
+let logoCache: HTMLImageElement | null = null;
 
-  // Side soft guides (wide feel)
-  doc.setDrawColor(232, 238, 245);
-  doc.setLineWidth(0.6);
-  doc.line(MARGIN * 0.55, 22, MARGIN * 0.55, PAGE_H - 22);
-  doc.line(PAGE_W - MARGIN * 0.55, 22, PAGE_W - MARGIN * 0.55, PAGE_H - 22);
+async function loadHeaderLogo(): Promise<HTMLImageElement> {
+  if (logoCache) return logoCache;
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.crossOrigin = "anonymous";
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error("Logo yuklanmadi"));
+    el.src = LOGO_URL;
+  });
+  logoCache = img;
+  return img;
+}
+
+function isFinderCell(row: number, col: number, n: number): boolean {
+  const inTL = row < 7 && col < 7;
+  const inTR = row < 7 && col >= n - 7;
+  const inBL = row >= n - 7 && col < 7;
+  return inTL || inTR || inBL;
+}
+
+function isTiming(row: number, col: number): boolean {
+  return row === 6 || col === 6;
+}
+
+/** Zamonaviy QR: yumaloq nuqtalar + yumaloq finder, markazda hech narsa yo‘q */
+async function styledQrPng(url: string, size = 1000): Promise<string> {
+  const qr = QRCode.create(url, { errorCorrectionLevel: "H" });
+  const modules = qr.modules;
+  const n = modules.size;
+
+  const out = document.createElement("canvas");
+  out.width = size;
+  out.height = size;
+  const ctx = out.getContext("2d");
+  if (!ctx) throw new Error("Canvas ishlamaydi");
+
+  // Kartochka
+  ctx.fillStyle = "#ffffff";
+  roundRect(ctx, 0, 0, size, size, size * 0.05);
+  ctx.fill();
+
+  // Yengil gradient frame
+  const g = ctx.createLinearGradient(0, 0, size, size);
+  g.addColorStop(0, "rgba(92,45,145,0.12)");
+  g.addColorStop(0.5, "rgba(245,197,24,0.14)");
+  g.addColorStop(1, "rgba(34,197,224,0.12)");
+  ctx.strokeStyle = g;
+  ctx.lineWidth = size * 0.012;
+  roundRect(ctx, size * 0.02, size * 0.02, size * 0.96, size * 0.96, size * 0.042);
+  ctx.stroke();
+
+  // Oltin/sariq L-burchaklar
+  const tick = size * 0.07;
+  const inset = size * 0.03;
+  ctx.strokeStyle = YELLOW;
+  ctx.lineWidth = size * 0.011;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  const corners: Array<[number, number, number, number, number, number]> = [
+    [inset, inset + tick, inset, inset, inset + tick, inset],
+    [size - inset - tick, inset, size - inset, inset, size - inset, inset + tick],
+    [inset, size - inset - tick, inset, size - inset, inset + tick, size - inset],
+    [size - inset - tick, size - inset, size - inset, size - inset, size - inset, size - inset - tick],
+  ];
+  for (const [x1, y1, x2, y2, x3, y3] of corners) {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.lineTo(x3, y3);
+    ctx.stroke();
+  }
+
+  const margin = size * 0.09;
+  const grid = size - margin * 2;
+  const cell = grid / n;
+
+  const drawFinder = (originRow: number, originCol: number) => {
+    const x = margin + originCol * cell;
+    const y = margin + originRow * cell;
+    const s = cell * 7;
+    const r = cell * 1.15;
+
+    // Tashqi yumaloq kvadrat (binafsha)
+    roundRect(ctx, x, y, s, s, r);
+    ctx.fillStyle = PURPLE;
+    ctx.fill();
+
+    // Oq ichki
+    roundRect(ctx, x + cell, y + cell, cell * 5, cell * 5, r * 0.75);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+
+    // Markaziy “ko‘z” — sariq yumaloq kvadrat
+    roundRect(ctx, x + cell * 2, y + cell * 2, cell * 3, cell * 3, r * 0.55);
+    ctx.fillStyle = YELLOW;
+    ctx.fill();
+
+    // Ichki binafsha nuqta
+    const cx = x + cell * 3.5;
+    const cy = y + cell * 3.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, cell * 0.85, 0, Math.PI * 2);
+    ctx.fillStyle = PURPLE;
+    ctx.fill();
+  };
+
+  drawFinder(0, 0);
+  drawFinder(0, n - 7);
+  drawFinder(n - 7, 0);
+
+  // Ma’lumot + timing — yumaloq nuqtalar
+  for (let row = 0; row < n; row++) {
+    for (let col = 0; col < n; col++) {
+      if (!modules.get(row, col)) continue;
+      if (isFinderCell(row, col, n)) continue;
+
+      const x = margin + col * cell + cell / 2;
+      const y = margin + row * cell + cell / 2;
+      const radius = isTiming(row, col) ? cell * 0.32 : cell * 0.38;
+
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      // Timing biroz cyan — brend aksenti
+      ctx.fillStyle = isTiming(row, col) ? CYAN : PURPLE;
+      ctx.fill();
+    }
+  }
+
+  return out.toDataURL("image/png");
+}
+
+function drawPageDecor(doc: jsPDF) {
+  doc.setFillColor(...PURPLE_RGB);
+  doc.rect(0, 0, PAGE_W, 7, "F");
+  doc.setFillColor(...YELLOW_RGB);
+  doc.rect(0, 7, PAGE_W, 1.4, "F");
+
+  doc.setFillColor(...PURPLE_RGB);
+  doc.rect(0, PAGE_H - 7, PAGE_W, 7, "F");
+  doc.setFillColor(...YELLOW_RGB);
+  doc.rect(0, PAGE_H - 8.4, PAGE_W, 1.4, "F");
 }
 
 function placeText(doc: jsPDF, block: TextBlock, cx: number, y: number) {
@@ -348,11 +302,11 @@ export type BahoQrPage = {
   branchNo?: number | null;
 };
 
-function drawBahoQrPage(doc: jsPDF, png: string, item: BahoQrPage, pageMeta?: string) {
+async function drawBahoQrPage(doc: jsPDF, png: string, item: BahoQrPage, pageMeta?: string) {
   drawPageDecor(doc);
   const cx = PAGE_W / 2;
   const contentW = PAGE_W - MARGIN * 2;
-  let y = 22;
+  let y = 18;
 
   if (pageMeta) {
     const meta = renderUnicodeTextPng(pageMeta, {
@@ -362,43 +316,56 @@ function drawBahoQrPage(doc: jsPDF, png: string, item: BahoQrPage, pageMeta?: st
       align: "center",
       letterSpacingPx: 0.4,
     });
-    y = placeText(doc, meta, cx, y) + 4;
+    y = placeText(doc, meta, cx, y) + 2;
   }
 
-  const brand = renderUnicodeTextPng("VAKSINA MED", {
-    fontSizePx: 12,
-    fontWeight: "bold",
-    color: ACCENT,
-    maxWidthMm: contentW,
-    align: "center",
-    letterSpacingPx: 2.2,
-  });
-  y = placeText(doc, brand, cx, y) + 6;
+  // Yuqori logo (matn o‘rniga)
+  try {
+    const logo = await loadHeaderLogo();
+    const maxW = 118;
+    const maxH = 28;
+    const iw = logo.naturalWidth || logo.width;
+    const ih = logo.naturalHeight || logo.height;
+    const scale = Math.min(maxW / iw, maxH / ih);
+    const wMm = iw * scale;
+    const hMm = ih * scale;
+    doc.addImage(logo, "PNG", cx - wMm / 2, y, wMm, hMm);
+    y += hMm + 6;
+  } catch {
+    const brand = renderUnicodeTextPng("VAKSINA MED", {
+      fontSizePx: 14,
+      fontWeight: "bold",
+      color: PURPLE,
+      maxWidthMm: contentW,
+      align: "center",
+      letterSpacingPx: 2,
+    });
+    y = placeText(doc, brand, cx, y) + 6;
+  }
 
   const title = renderUnicodeTextPng("Xizmatni baholang", {
-    fontSizePx: 28,
+    fontSizePx: 26,
     fontWeight: "800",
-    color: BRAND,
+    color: PURPLE,
     maxWidthMm: contentW,
     align: "center",
   });
-  y = placeText(doc, title, cx, y) + 4;
+  y = placeText(doc, title, cx, y) + 3;
 
   const sub = renderUnicodeTextPng("Dorixonamizga tashrifingiz uchun rahmat!", {
-    fontSizePx: 13,
+    fontSizePx: 12,
     color: MUTED,
     maxWidthMm: contentW,
     align: "center",
   });
-  y = placeText(doc, sub, cx, y) + 10;
+  y = placeText(doc, sub, cx, y) + 8;
 
-  // Wide QR — A4 ichida maksimal aniq
-  const qrMm = 152;
+  const qrMm = 148;
   const qrX = (PAGE_W - qrMm) / 2;
-  doc.setFillColor(248, 250, 252);
-  doc.roundedRect(qrX - 6, y - 6, qrMm + 12, qrMm + 12, 4, 4, "F");
+  doc.setFillColor(250, 248, 255);
+  doc.roundedRect(qrX - 5, y - 5, qrMm + 10, qrMm + 10, 5, 5, "F");
   doc.addImage(png, "PNG", qrX, y, qrMm, qrMm, undefined, "FAST");
-  y += qrMm + 14;
+  y += qrMm + 12;
 
   const hint = renderUnicodeTextPng("Kamerani QR-kodga qarating", {
     fontSizePx: 11,
@@ -408,14 +375,13 @@ function drawBahoQrPage(doc: jsPDF, png: string, item: BahoQrPage, pageMeta?: st
   });
   y = placeText(doc, hint, cx, y) + 8;
 
-  // Branch plate
   const plateW = contentW;
-  const plateH = 28;
+  const plateH = 26;
   const plateX = MARGIN;
-  if (y + plateH > PAGE_H - 18) y = PAGE_H - 18 - plateH;
-  doc.setFillColor(11, 58, 92);
-  doc.roundedRect(plateX, y, plateW, plateH, 3, 3, "F");
-  doc.setFillColor(201, 162, 39);
+  if (y + plateH > PAGE_H - 16) y = PAGE_H - 16 - plateH;
+  doc.setFillColor(...PURPLE_RGB);
+  doc.roundedRect(plateX, y, plateW, plateH, 3.5, 3.5, "F");
+  doc.setFillColor(...YELLOW_RGB);
   doc.rect(plateX, y, 3.2, plateH, "F");
 
   const branchLine =
@@ -424,7 +390,7 @@ function drawBahoQrPage(doc: jsPDF, png: string, item: BahoQrPage, pageMeta?: st
       : item.branchLabel;
 
   const branchTitle = renderUnicodeTextPng(branchLine, {
-    fontSizePx: 16,
+    fontSizePx: 15,
     fontWeight: "bold",
     color: "#ffffff",
     maxWidthMm: plateW - 16,
@@ -435,9 +401,9 @@ function drawBahoQrPage(doc: jsPDF, png: string, item: BahoQrPage, pageMeta?: st
 
 export async function downloadBahoQrPdf(item: BahoQrPage) {
   if (!item.publicUrl?.trim()) throw new Error("QR havola yo‘q");
-  const png = await styledQrPng(item.publicUrl, 1000);
+  const png = await styledQrPng(item.publicUrl, 1100);
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-  drawBahoQrPage(doc, png, item);
+  await drawBahoQrPage(doc, png, item);
   downloadBlob(doc.output("blob"), `${safeFileBase(`baho-${item.branchLabel}`)}.pdf`);
 }
 
@@ -448,19 +414,20 @@ export async function downloadAllBahoQrPdf(items: BahoQrPage[]) {
   const pngs = await Promise.all(
     list.map(async (it) => ({
       item: it,
-      png: await styledQrPng(it.publicUrl, 1000),
+      png: await styledQrPng(it.publicUrl, 1100),
     })),
   );
 
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-  pngs.forEach((row, idx) => {
+  for (let idx = 0; idx < pngs.length; idx++) {
     if (idx > 0) doc.addPage();
-    drawBahoQrPage(doc, row.png, row.item, `Mijoz baholash QR · ${idx + 1} / ${pngs.length}`);
-  });
+    const row = pngs[idx];
+    await drawBahoQrPage(doc, row.png, row.item, `Mijoz baholash QR · ${idx + 1} / ${pngs.length}`);
+  }
   downloadBlob(doc.output("blob"), "baho-qr-barcha-filiallar.pdf");
 }
 
-/** Preview PNG (modal uchun) — A4 emas, faqat stylized QR */
+/** Preview PNG (modal) */
 export async function bahoQrPreviewPng(url: string): Promise<string> {
-  return styledQrPng(url, 640);
+  return styledQrPng(url, 720);
 }

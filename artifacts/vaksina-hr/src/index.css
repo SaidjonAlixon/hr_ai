@@ -682,6 +682,18 @@
   box-shadow: 8px 0 28px -20px rgba(15, 23, 42, 0.4);
 }
 
+/* Mobil: yon panel drawer bo‘lishi shart (fixed), oqimda joy egallamasin.
+   .app-sidebar dagi position:relative Tailwind "fixed" ni bosib qo‘yardi — shu sabab
+   kontent ~312px o‘ngga surilib qolardi. md+ ekranda o‘zgarmaydi. */
+@media (max-width: 767.98px) {
+  .app-sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+  }
+}
+
 .app-sidebar::before {
   display: none;
 }

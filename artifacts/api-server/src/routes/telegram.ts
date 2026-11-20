@@ -42,6 +42,7 @@ import {
   messageHasImage,
 } from "../lib/telegram-support";
 import { handleAiAssistantMessage, handleAiGroupGate, registerBusinessConnection } from "../lib/ai-assistant";
+import { handleGeminiHrSupport } from "../lib/gemini-hr-support";
 import { isReportChat, observeGroupMessage } from "../lib/telegram-report-group";
 import { isOfisStaffEmp } from "../lib/ofis-weekend";
 import { logger } from "../lib/logger";
@@ -731,6 +732,15 @@ async function handleUpdate(update: TelegramUpdate) {
     const chatId = cq.message?.chat.id;
     const fromId = cq.from.id;
     const data = cq.data || "";
+
+    // AI escalation «Bajarildi» — answerCallbackQuery ichida
+    try {
+      const { handleEscalationCallback } = await import("../lib/bot-escalation");
+      if (await handleEscalationCallback(cq)) return;
+    } catch (err) {
+      console.error("escalation callback:", err);
+    }
+
     try {
       await answerCallbackQuery(cq.id);
     } catch {
@@ -780,37 +790,76 @@ async function handleUpdate(update: TelegramUpdate) {
   if (isGroupChat(msg.chat)) {
     await observeGroupMessage(msg);
     if (await isReportChat(msg.chat)) return;
+
+    // AI+admin ish guruhida: «bajardim #id»
+    try {
+      const { handleEscalationGroupText, AI_OWNER_GROUP_ID } = await import("../lib/bot-escalation");
+      if (Number(msg.chat.id) === AI_OWNER_GROUP_ID) {
+        const handled = await handleEscalationGroupText(
+          msg.chat.id,
+          msg.text || msg.caption || "",
+          [msg.from.first_name, msg.from.last_name].filter(Boolean).join(" ") || "admin",
+        );
+        if (handled) return;
+        // Bu guruhda bot xodimlarga javob bermaydi — faqat ticket
+        return;
+      }
+    } catch (err) {
+      console.error("escalation group text:", err);
+    }
+
     // Yordamchi AI guruh darvozasi: adminga javob yo‘q, /bot_on|/bot_off faqat adminda, o‘chirilgan guruhda jim
     const gated = await handleAiGroupGate(msg).catch((err) => {
       console.error("ai-group-gate:", err);
       return false;
     });
     if (gated) return;
-    const gText = (msg.text ?? msg.caption ?? "").toLowerCase();
-    const directToBot =
-      gText.includes("@vaksinahrbot") || msg.reply_to_message?.from?.username === "vaksinahrbot";
-    if (directToBot) {
-      await runSupportTask(() => handleAiAssistantMessage(msg, { businessConnectionId }));
-      return;
-    }
-    await runSupportTask(() => handleGroupSupportMessage(msg));
+    // Hammaga: nima yozsa — javobsiz qoldirma
+    await runSupportTask(async () => {
+      const ok = await handleGeminiHrSupport(msg, { businessConnectionId }).catch((err) => {
+        console.error("gemini-hr group:", err);
+        return false;
+      });
+      if (ok) return;
+      const gText = (msg.text ?? msg.caption ?? "").toLowerCase();
+      const directToBot =
+        gText.includes("@vaksinahrbot") || msg.reply_to_message?.from?.username === "vaksinahrbot";
+      if (directToBot) {
+        await handleAiAssistantMessage(msg, { businessConnectionId });
+        return;
+      }
+      await handleGroupSupportMessage(msg);
+    });
     return;
   }
 
-  // Ovoz / video xabar — AI yordamchi yozib yuborishni so‘raydi
-  if (msg.voice || msg.video_note || msg.audio) {
-    await runSupportTask(() => handleAiAssistantMessage(msg, { businessConnectionId }));
+  // Ovoz / video / audio — Gemini eshitadi va ovozli javob yuboradi
+  if (msg.voice || msg.video_note || msg.audio || msg.video) {
+    await runSupportTask(async () => {
+      const geminiOk = await handleGeminiHrSupport(msg, { businessConnectionId }).catch((err) => {
+        console.error("gemini-hr voice/video:", err);
+        return false;
+      });
+      if (geminiOk) return;
+      await handleAiAssistantMessage(msg, { businessConnectionId });
+    });
     return;
   }
 
   if (!msg.text) {
     if (messageHasImage(msg)) {
       await runSupportTask(async () => {
+        // Skrinshot — Gemini HR tahlil qiladi; aks holda FAQ
+        const geminiOk = await handleGeminiHrSupport(msg, { businessConnectionId }).catch((err) => {
+          console.error("gemini-hr photo:", err);
+          return false;
+        });
+        if (geminiOk) return;
         const handled = await handlePrivateSupportMessage(msg);
         if (!handled) {
           await sendMessage(
             msg.chat.id,
-            "Muammoni qisqa matn bilan yozing (masalan: «kirmadi», «smena», «javob olish», «Face ID», «joylashuv») yoki /yordam.",
+            "Skrinshotni oldim. Muammoni qisqa yozing (masalan: «Face ID ochilmayapti», «smena saqlanmadi») — batafsil yordam beraman.\n/yordam",
             businessConnectionId ? { business_connection_id: businessConnectionId } : undefined,
           );
         }
@@ -870,25 +919,33 @@ async function handleUpdate(update: TelegramUpdate) {
     if (await handleLinkStart(chatId, fromId, { code: maybeCode })) return;
   }
 
+  // Faqat haqiqiy login+parol (suhbat/savol endi login deb o‘qilmaydi)
   const creds = parseLoginPassword(text);
   if (creds) {
     await handleCredentials(chatId, fromId, creds.login, creds.password);
     return;
   }
 
-  // Yordamchi AI: bazani o‘qib suhbatlashadi, amal kerak bo‘lsa adminga taklif tayyorlaydi
+  // Har bir so‘z/savol — Gemini o‘qib javob beradi
   if (!text.startsWith("/")) {
+    const geminiOk = await handleGeminiHrSupport(msg, { businessConnectionId }).catch((err) => {
+      console.error("gemini-hr:", err);
+      return false;
+    });
+    if (geminiOk) return;
+
+    if (await handlePrivateSupportMessage(msg)) return;
+
     const handled = await handleAiAssistantMessage(msg, { businessConnectionId }).catch((err) => {
       console.error("ai-assistant:", err);
       return false;
     });
     if (handled) return;
-    if (await handlePrivateSupportMessage(msg)) return;
   }
 
   await sendMessage(
     chatId,
-    `Tushunmadim.\n\nLogin va parolni shu tartibda yuboring:\n<code>login parol</code>\n\nYordam: /yordam`,
+    `Yozganingizni oldim.\n\nDavomat, vazifa, kirish yoki platforma — nima kerakligini qisqa yozing.\nLogin: <code>login parol</code>\nYordam: /yordam\n\nMen AI Saydman.`,
     businessConnectionId ? { business_connection_id: businessConnectionId } : undefined,
   );
 }

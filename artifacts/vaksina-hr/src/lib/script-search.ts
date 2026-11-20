@@ -35,3 +35,75 @@ export function scriptIncludes(haystack: string, query: string): boolean {
   const hay = foldScript(haystack);
   return words.every((w) => hay.includes(w));
 }
+
+/**
+ * Ko‘rinadigan tarjima: kirill → o‘zbek lotin (PDF va chop etish uchun).
+ * «Аския» → «Askiya», «ЮНУСОБОД-7» → «Yunusobod-7», «ДАРХОН» → «Darxon».
+ */
+const CYR_TO_UZ_LATIN: Record<string, string> = {
+  а: "a",
+  б: "b",
+  в: "v",
+  г: "g",
+  д: "d",
+  е: "e",
+  ё: "yo",
+  ж: "j",
+  з: "z",
+  и: "i",
+  й: "y",
+  к: "k",
+  л: "l",
+  м: "m",
+  н: "n",
+  о: "o",
+  п: "p",
+  р: "r",
+  с: "s",
+  т: "t",
+  у: "u",
+  ф: "f",
+  х: "x",
+  ц: "ts",
+  ч: "ch",
+  ш: "sh",
+  щ: "sh",
+  ъ: "",
+  ы: "i",
+  ь: "",
+  э: "e",
+  ю: "yu",
+  я: "ya",
+  ў: "oʻ",
+  ғ: "gʻ",
+  қ: "q",
+  ҳ: "h",
+};
+
+export function toUzbekLatin(input: string): string {
+  const raw = String(input || "").trim();
+  if (!raw) return "";
+  let out = "";
+  for (const ch of raw) {
+    const lower = ch.toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(CYR_TO_UZ_LATIN, lower)) {
+      out += CYR_TO_UZ_LATIN[lower];
+    } else {
+      out += ch;
+    }
+  }
+  // Allaqachon lotin bo‘lsa: o'/g' → oʻ/gʻ
+  out = out.replace(/[oO][''`ʹʻʼ]/g, "oʻ").replace(/[gG][''`ʹʻʼ]/g, "gʻ");
+  return out;
+}
+
+/** PDF uchun: to‘liq o‘zbek lotin + BOSH HARFLAR */
+export function toUzbekLatinUpper(input: string): string {
+  const latin = toUzbekLatin(input);
+  return latin
+    .replace(/oʻ/g, "\u0001")
+    .replace(/gʻ/g, "\u0002")
+    .toLocaleUpperCase("en-US")
+    .replace(/\u0001/g, "Oʻ")
+    .replace(/\u0002/g, "Gʻ");
+}

@@ -42,7 +42,7 @@ import {
 } from "@/components/davomat/DavomatCoachFinger";
 import { useToast } from "@/hooks/use-toast";
 import { compressFaceSnapshotAsync, enrollFace, fetchFaceIdStatus, isFaceIdSupported, preloadFaceModels } from "@/lib/face-id";
-import { warmCamera } from "@/lib/camera-fast";
+import { prefetchCamera, warmCamera } from "@/lib/camera-fast";
 import { deviceHeadingFromOrientation } from "@/lib/device-compass";
 import {
   DAVOMAT_GEOFENCE_METERS,
@@ -74,7 +74,12 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import type { User } from "@workspace/api-client-react";
-import { canViewDavomat, isReviziyaRole, requiresMandatoryFaceEnroll } from "@/lib/roles";
+import {
+  canViewDavomat,
+  isRegionalManager,
+  isReviziyaRole,
+  requiresMandatoryFaceEnroll,
+} from "@/lib/roles";
 import { roleLabel } from "@/lib/candidate-access";
 import { formatPersonName } from "@/lib/person-name";
 import { ensureMobileTrack, endMobileAttendance } from "@/lib/mobile-attendance-api";
@@ -1031,7 +1036,7 @@ export default function DavomatFacePage() {
     }
     try {
       const useField =
-        isReviziyaRole(user?.role) &&
+        (isReviziyaRole(user?.role) || isRegionalManager(user?.role)) &&
         coords &&
         Number.isFinite(coords.lat) &&
         Number.isFinite(coords.lng);
@@ -1071,10 +1076,11 @@ export default function DavomatFacePage() {
     // ~7 MB model: sahifa, xarita va API birinchi yuklansin; Face ID bosilsa darhol yuklanadi
     const idle = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number })
       .requestIdleCallback;
+    // Model + WebGL isitish sahifa bo‘sh turganda oldindan — Face ID bosilganda kutish bo‘lmasin
     const preloadTimer = window.setTimeout(() => {
-      if (idle) idle(() => preloadFaceModels(), { timeout: 3000 });
+      if (idle) idle(() => preloadFaceModels(), { timeout: 1500 });
       else preloadFaceModels();
-    }, 2500);
+    }, 900);
     void queryCameraPermission().then((state) => {
       if (state === "granted") setCameraGranted(true);
     });
@@ -1106,9 +1112,9 @@ export default function DavomatFacePage() {
     void loadWorkplace(null);
   }, [loadWorkplace]);
 
-  /** Reviziya: GPS bo‘yicha eng yaqin filial/ofis zonasini yangilash (debounce) */
+  /** Reviziya / regional menejer: GPS bo‘yicha eng yaqin filial/ofis zonasini yangilash */
   useEffect(() => {
-    if (!isReviziyaRole(user?.role)) return;
+    if (!isReviziyaRole(user?.role) && !isRegionalManager(user?.role)) return;
     if (!gps || !Number.isFinite(gps.lat) || !Number.isFinite(gps.lng)) return;
     const t = window.setTimeout(() => {
       void loadWorkplace({ lat: gps.lat, lng: gps.lng });
@@ -1518,11 +1524,26 @@ export default function DavomatFacePage() {
               })
             : t("davomat.permsAllOk"),
         });
+        // Ruxsatdan keyin Face ID — kamera to‘liq bo‘shaguncha kutamiz (qora ekran oldini olish)
+        if (selectedMethod === "FACE_ID" && isFaceIdSupported()) {
+          window.setTimeout(() => {
+            setQrOpen(false);
+            if (faceRegistered === false) setEnrollOpen(true);
+            else setScanOpen(true);
+          }, 900);
+        }
       } else if (result.camera && !gpsOk && adminQrAnywhere) {
         toast({
           title: t("davomat.gpsGrantedTitle"),
           description: t("davomat.permsAllOk"),
         });
+        if (selectedMethod === "FACE_ID" && isFaceIdSupported()) {
+          window.setTimeout(() => {
+            setQrOpen(false);
+            if (faceRegistered === false) setEnrollOpen(true);
+            else setScanOpen(true);
+          }, 900);
+        }
       } else if (gpsOk && !result.camera) {
         toast({
           title: t("davomat.permsCamBlockedTitle"),
@@ -1739,26 +1760,24 @@ export default function DavomatFacePage() {
     requiresMandatoryFaceEnroll(user?.role) && faceRegistered === false;
   const zoneLocked = workplace?.zonePresence?.status === "blocked";
   const zoneDue = workplace?.zonePresence?.status === "due";
+  /** Kamera ruxsati dialog ichida getUserMedia bilan so‘raladi — tugmani oldindan yopmaymiz */
+  /** Admin (Vaksina / bosh admin): Face ID va QR doim ochiq — GPS/zona/kamera oldindan yopmaydi */
   const canOpenFace =
-    !zoneLocked &&
     faceMethodAllowed &&
     methodsReady &&
-    cameraGranted &&
-    Boolean(gps) &&
-    !gpsError &&
     isFaceIdSupported() &&
-    geoOk &&
-    !done;
+    (adminQrAnywhere ||
+      (!zoneLocked && Boolean(gps) && !gpsError && geoOk && !done));
 
   /** QR: koordinator uchun o‘chirilgan; ofis — avval Face ID enroll */
   const canOpenQr =
-    !mustEnrollFace &&
-    !zoneLocked &&
     qrMethodAllowed &&
     methodsReady &&
-    cameraGranted &&
-    !done &&
-    (adminQrAnywhere || mobileAnywhere || (Boolean(gps) && !gpsError && inside));
+    (adminQrAnywhere ||
+      (!mustEnrollFace &&
+        !zoneLocked &&
+        !done &&
+        (mobileAnywhere || (Boolean(gps) && !gpsError && inside))));
 
   /** Barmoq izi: ofis uchun ham avval Face ID enroll */
   const canOpenFinger =
@@ -1881,35 +1900,30 @@ export default function DavomatFacePage() {
     preloadFaceModels();
     setMethodHint(null);
     setQrOpen(false);
+    // Bosish paytida (user gesture) kamerani darhol ochamiz — dialog chizilishini kutmaymiz
+    prefetchCamera("user");
+    // Dialog darhol — kamera ichida ochiladi (ketma-ket getUserMedia kutmasin)
     if (faceRegistered === false) setEnrollOpen(true);
     else setScanOpen(true);
   }, [canOpenFace, busy, faceRegistered, qrVerifiedReady, fingerVerifiedReady]);
 
   const openQrMethod = useCallback(() => {
-    if (busy || faceVerifiedReady) {
-      if (!cameraGranted && !faceVerifiedReady) {
-        toast({
-          title: t("davomat.permsCamBlockedTitle"),
-          description: t("davomat.permsNeedBtn"),
-          variant: "destructive",
-        });
-      }
-      return;
-    }
+    if (busy || faceVerifiedReady) return;
     if (!canOpenQr) return;
     setMethodHint(null);
     setScanOpen(false);
     setEnrollOpen(false);
+    // Bosish paytida (user gesture) orqa kamerani darhol ochamiz — dialog chizilishini kutmaymiz
+    prefetchCamera("environment");
     // Dialog darhol — kamera ichida ochiladi (ketma-ket getUserMedia kutmasin)
     setQrStream(null);
     setQrOpen(true);
-  }, [canOpenQr, busy, faceVerifiedReady, cameraGranted, toast, t]);
+  }, [canOpenQr, busy, faceVerifiedReady]);
 
   const guideStep = useMemo((): GuideStep => {
     if (done) return "done";
     if (mustEnrollFace || (!showDualMethods && faceRegistered === false)) return "enroll";
-    // Face/QR uchun kamera majburiy (admin ham)
-    if (showDualMethods && !cameraGranted) return "permission";
+    // GPS majburiy; Face ID kamerani dialog ichida so‘raydi
     if (!adminQrAnywhere && (!gps || gpsError)) return "permission";
     if (!adminQrAnywhere && !mobileAnywhere && !geoInside) return "zone";
     if (showDualMethods) {
@@ -1937,6 +1951,7 @@ export default function DavomatFacePage() {
     adminQrAnywhere,
     methodReady,
     cameraGranted,
+    selectedMethod,
   ]);
 
   /** Mobil: doim aktiv qadamni ko‘rsat; desktopda ham panel ochiq */
@@ -2780,11 +2795,13 @@ export default function DavomatFacePage() {
           .map((s) => `${s.shiftLabel} → ${s.branchLabel || `#${s.branchId}`}${s.activeNow ? " ●" : ""}`)
           .join(" · ")
       : null;
-  /** Faqat barmoq izi tanlangan bo‘lsa kamera so‘ralmaydi */
-  const cameraNeeded =
-    selectedMethod === "FINGERPRINT" && fingerAllowed ? false : faceMethodAllowed || qrMethodAllowed || !fingerAllowed;
-  const needsPerms =
-    (cameraNeeded && !cameraGranted) || (!adminQrAnywhere && (!gps || Boolean(gpsError)));
+  /**
+   * Face ID va QR kamerani dialog ichida (bosish paytida) o‘zlari so‘raydi —
+   * iPhone/Android'da «kamera ruxsati» oldindan tekshirilmaydi, shuning uchun usul tugmalari qotib qolmaydi.
+   * Faqat GPS yetishmasa ruxsat oynasi chiqadi.
+   */
+  const needsGpsPerms = !adminQrAnywhere && (!gps || Boolean(gpsError));
+  const needsPerms = needsGpsPerms;
   /** Ruxsat rad etilgan — GPS xizmati o‘chiqligidan ajraladi */
   const gpsPermissionDenied =
     Boolean(gpsError) &&
@@ -2931,7 +2948,7 @@ export default function DavomatFacePage() {
     }
     if (needsPerms) {
       const needGps = !adminQrAnywhere && (!gps || Boolean(gpsError));
-      const needCam = cameraNeeded && !cameraGranted;
+      const needCam = false;
       return {
         label: gpsSharing
           ? needGps
@@ -3035,12 +3052,6 @@ export default function DavomatFacePage() {
     }
     if (done) return { title: t("davomat.closedToday") };
     if (!methodsReady) return { title: "Yuklanmoqda…", description: "Bir soniyadan keyin qayta bosing." };
-    if (m !== "FINGERPRINT" && !cameraGranted) {
-      return {
-        title: t("davomat.permsCamBlockedTitle"),
-        description: "Brauzer sozlamalarida shu saytga kamera ruxsatini bering va qayta bosing.",
-      };
-    }
     if (!adminQrAnywhere && (!gps || gpsError)) {
       return { title: "Joylashuv aniqlanmadi", description: gpsError || "GPS yoqing va bir necha soniya kuting." };
     }
@@ -3067,7 +3078,13 @@ export default function DavomatFacePage() {
     }
     if (m === "FINGERPRINT" && !fingerAllowed) return;
     if (busy || fingerScanning) return;
-    if (!done && !zoneLocked && !methodReady && (needsPerms || gpsTurnOff)) {
+    // Face ID: GPS kerak bo‘lsa ruxsat; kamera dialog ichida ochiladi
+    if (m === "FACE_ID" && !done && !zoneLocked && !methodReady && (needsGpsPerms || gpsTurnOff)) {
+      setSelectedMethod(m);
+      void requestLocationPermission();
+      return;
+    }
+    if (m !== "FACE_ID" && !done && !zoneLocked && !methodReady && (needsPerms || gpsTurnOff)) {
       setSelectedMethod(m);
       void requestLocationPermission();
       return;
@@ -3095,7 +3112,7 @@ export default function DavomatFacePage() {
       void openFingerMethod();
       return;
     }
-    if (needsPerms) {
+    if (m === "QR" && needsPerms) {
       void requestLocationPermission();
       return;
     }
@@ -3340,6 +3357,7 @@ export default function DavomatFacePage() {
         title={t("davomat.enrollTitle")}
         description={t("davomat.frontCamHint")}
         onCaptured={onEnrollCaptured}
+        onStreamReady={() => setCameraGranted(true)}
       />
 
       <FaceScanDialog
@@ -3352,6 +3370,7 @@ export default function DavomatFacePage() {
         title={t("davomat.faceTitle")}
         description={t("davomat.frontCamHint")}
         onCaptured={onCaptured}
+        onStreamReady={() => setCameraGranted(true)}
       />
 
       {fingerAllowed ? (

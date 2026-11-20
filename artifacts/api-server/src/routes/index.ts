@@ -75,6 +75,7 @@ import abetRouter from "./abet";
 import customerRatingsRouter from "./customer-ratings";
 import aiAssistantRouter from "./ai-assistant";
 import hikvisionRouter from "./hikvision";
+import adminAiCallsRouter from "./admin-ai-calls";
 
 const router: IRouter = Router();
 
@@ -134,6 +135,7 @@ router.use(notifTestRouter);
 router.use(testOfficeCoordinatorRouter);
 router.use(pushRouter);
 router.use(hikvisionRouter);
+router.use(adminAiCallsRouter);
 router.use(departmentsRouter);
 router.use(usersRouter);
 router.use(staffingRouter);

@@ -454,10 +454,14 @@ function classify(
     if (!checkInHm) return "present";
     // Dam kuni kelgan — qo‘shimcha ish, kechikish hisoblanmaydi
     if (staff && isReportRestDay(ymd, staff)) return "present";
+    // Omborxona erkin — kechikish yo‘q
+    if (schedule.warehouseFlexible || schedule.noPenalty) return "present";
     return cameStatus(checkInHm, schedule);
   }
   if (ymd > today) return "planned";
   if (staff && isReportRestDay(ymd, staff)) return "rest";
+  // Omborxona — Kelmagan emas (kechgi smena / erkin grafik)
+  if (schedule.warehouseFlexible || schedule.warehouse || schedule.noPenalty) return "planned";
   return "absent";
 }
 

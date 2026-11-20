@@ -1,4 +1,4 @@
-import { Router, type IRouter, type Response } from "express";
+import express, { Router, type IRouter, type Response } from "express";
 import { pool } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { logger } from "../lib/logger";
@@ -25,6 +25,9 @@ import {
 } from "../lib/calls";
 import { createReadStream } from "node:fs";
 import { deleteAdminRecording, getAdminRecordingFile, listAdminRecordings } from "../lib/conference-recording";
+import { deleteP2pRecording, getP2pRecordingFile, listP2pRecordings, saveP2pRecording } from "../lib/p2p-recording";
+
+const P2P_RECORDING_MAX_BYTES = 95 * 1024 * 1024;
 
 const router: IRouter = Router();
 
@@ -404,6 +407,110 @@ router.get("/calls/recordings/:id/file", requireAuth, async (req: AuthRequest, r
   } catch (err) {
     console.error("GET /calls/recordings/:id/file", err);
     res.status(503).json({ error: "Yuklab bo‘lmadi" });
+  }
+});
+
+/** Admin Live studio: 1:1 yozuvlar */
+router.get("/calls/p2p-recordings", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (denyUnlessAdmin(req, res)) return;
+  try {
+    const items = await listP2pRecordings(150);
+    res.json({ items });
+  } catch (err) {
+    console.error("GET /calls/p2p-recordings", err);
+    res.status(503).json({ error: "Zapislar yuklanmadi" });
+  }
+});
+
+router.post(
+  "/calls/p2p-recordings/upload",
+  requireAuth,
+  express.raw({ type: () => true, limit: P2P_RECORDING_MAX_BYTES }),
+  async (req: AuthRequest, res): Promise<void> => {
+    if (denyUnlessAdmin(req, res)) return;
+    try {
+      const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? []);
+      if (!buffer.length) {
+        res.status(400).json({ error: "Yozuv fayli bo‘sh" });
+        return;
+      }
+      if (buffer.length > P2P_RECORDING_MAX_BYTES) {
+        res.status(413).json({ error: "Yozuv juda katta (max ~95 MB)" });
+        return;
+      }
+      const fileName = decodeURIComponent(String(req.headers["x-file-name"] || `p2p-${Date.now()}.webm`)).slice(0, 160);
+      const mimeType = String(req.headers["content-type"] || "video/webm").split(";")[0]!.trim();
+      const callId = String(req.headers["x-call-id"] || "").slice(0, 64) || null;
+      const peerIdRaw = Number(req.headers["x-peer-id"]);
+      const peerId = Number.isInteger(peerIdRaw) && peerIdRaw > 0 ? peerIdRaw : null;
+      let peerName: string | null = null;
+      try {
+        peerName = decodeURIComponent(String(req.headers["x-peer-name"] || "")).slice(0, 120) || null;
+      } catch {
+        peerName = String(req.headers["x-peer-name"] || "").slice(0, 120) || null;
+      }
+      const durationRaw = Number(req.headers["x-duration-sec"]);
+      const durationSec = Number.isFinite(durationRaw) && durationRaw > 0 ? Math.round(durationRaw) : null;
+      const me = await loadCallUser(req.userId!);
+      const saved = await saveP2pRecording({
+        buffer,
+        filename: fileName,
+        mimeType,
+        callId,
+        callerId: me?.id ?? req.userId ?? null,
+        calleeId: peerId,
+        callerName: me?.fullName || null,
+        calleeName: peerName,
+        durationSec,
+        uploadedBy: req.userId ?? null,
+      });
+      res.json({ ok: true, id: saved.id, bytes: saved.bytes });
+    } catch (err) {
+      console.error("POST /calls/p2p-recordings/upload", err);
+      res.status(503).json({ error: "Yozuv saqlanmadi" });
+    }
+  },
+);
+
+router.get("/calls/p2p-recordings/:id/file", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (denyUnlessAdmin(req, res)) return;
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Noto‘g‘ri id" });
+    return;
+  }
+  try {
+    const out = await getP2pRecordingFile(id);
+    if (!out.ok) {
+      res.status(404).json({ error: out.error });
+      return;
+    }
+    res.setHeader("Content-Type", out.mimeType);
+    res.setHeader("Content-Disposition", `attachment; filename="${out.filename.replace(/"/g, "")}"`);
+    createReadStream(out.path).pipe(res);
+  } catch (err) {
+    console.error("GET /calls/p2p-recordings/:id/file", err);
+    res.status(503).json({ error: "Yuklab bo‘lmadi" });
+  }
+});
+
+router.delete("/calls/p2p-recordings/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (denyUnlessAdmin(req, res)) return;
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Noto‘g‘ri id" });
+    return;
+  }
+  try {
+    const out = await deleteP2pRecording(id);
+    if (!out.ok) {
+      res.status(404).json({ error: out.error || "Topilmadi" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("DELETE /calls/p2p-recordings", err);
+    res.status(503).json({ error: "O‘chirilmadi" });
   }
 });
 

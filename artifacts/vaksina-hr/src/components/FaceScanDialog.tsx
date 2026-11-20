@@ -1,5 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Loader2, ScanFace, SwitchCamera, X } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  Loader2,
+  RefreshCw,
+  ScanFace,
+  SwitchCamera,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,7 +35,13 @@ import {
   type FaceOvalFrame,
   type FacePose,
 } from "@/lib/face-id";
-import { openCameraFast, cameraErrorCode, type CameraFacing } from "@/lib/camera-fast";
+import {
+  openCameraFast,
+  prefetchCamera,
+  cameraErrorCode,
+  clearCameraDeviceCache,
+  type CameraFacing,
+} from "@/lib/camera-fast";
 import { cn } from "@/lib/utils";
 
 type CaptureResult = { fullName?: string } | void;
@@ -58,6 +75,8 @@ type Props = {
     snapshot?: string,
     liveness?: FaceLivenessProof,
   ) => Promise<CaptureResult>;
+  /** Kamera oqimi muvaffaqiyatli ulanganda (ruxsat + preview) */
+  onStreamReady?: () => void;
   title?: string;
   description?: string;
 };
@@ -135,7 +154,7 @@ function PoseArrow({ pose }: { pose: FacePose }) {
   );
 }
 
-export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, description }: Props) {
+export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, onStreamReady, title, description }: Props) {
   const { t } = useI18n();
   const tRef = useRef(t);
   tRef.current = t;
@@ -148,6 +167,8 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
   // Parent may pass an inline callback; the camera effect must not restart on every parent render.
   const onOpenChangeRef = useRef(onOpenChange);
   onOpenChangeRef.current = onOpenChange;
+  const onStreamReadyRef = useRef(onStreamReady);
+  onStreamReadyRef.current = onStreamReady;
 
   const [hint, setHint] = useState(() => t("davomat.scanCamOpening"));
   const [busy, setBusy] = useState(false);
@@ -159,6 +180,8 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
   /** Default: old (selfie) kamera — almashtirish mumkin */
   const [facing, setFacing] = useState<CameraFacing>("user");
   const [switching, setSwitching] = useState(false);
+  /** Preview haqiqatan kadr bera boshlaganda true */
+  const [camReady, setCamReady] = useState(false);
   const [camRetryKey, setCamRetryKey] = useState(0);
   /** Kadr kelmasa (qora ekran) avtomatik qayta ochishlar soni */
   const autoReopenRef = useRef(0);
@@ -180,6 +203,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
       setFacing("user");
       facingRef.current = "user";
       setSwitching(false);
+      setCamReady(false);
       setCamRetryKey(0);
       autoReopenRef.current = 0;
       return;
@@ -251,6 +275,14 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         window.clearTimeout(frameWatch);
         frameWatch = null;
       }
+      const video = videoRef.current;
+      if (video) {
+        try {
+          video.srcObject = null;
+        } catch {
+          /* ignore */
+        }
+      }
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
@@ -275,6 +307,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
       const setAligned = smoothAligned;
       setError(null);
       setBusy(false);
+      setCamReady(false);
       alignMisses = ALIGN_MISS_FRAMES;
       setAlignedState(false);
       lastDesc = null;
@@ -289,7 +322,20 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         const modelsP = ensureFaceModels();
         const challengeP = fetchFaceChallenge(mode).catch(() => null);
         setHint(tRef.current("davomat.scanCamOpening"));
-        const stream = await openCameraFast(facingRef.current);
+        let stream: MediaStream;
+        try {
+          stream = await openCameraFast(facingRef.current);
+        } catch (openErr) {
+          const code = cameraErrorCode(openErr);
+          // Ruxsat yo‘q / kamera yo‘q — qayta urinish befoyda; boshqa holatda keshni tozalab yana bir marta
+          if (code === "camera_denied" || code === "camera_not_found" || code === "secure_context" || code === "camera_unsupported") {
+            throw openErr;
+          }
+          clearCameraDeviceCache(facingRef.current);
+          await new Promise((r) => window.setTimeout(r, 250));
+          if (cancelled) return;
+          stream = await openCameraFast(facingRef.current);
+        }
         if (cancelled) {
           stream.getTracks().forEach((track) => track.stop());
           return;
@@ -317,15 +363,56 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         video.muted = true;
         video.playsInline = true;
         video.setAttribute("playsinline", "true");
-        void Promise.race([
-          video.play().catch(() => undefined),
-          new Promise((resolve) => window.setTimeout(resolve, 900)),
-        ]);
+        video.setAttribute("webkit-playsinline", "true");
+        video.setAttribute("autoplay", "true");
+        // Metadata/kadr kelguncha play — iOS qora ekranni kamaytiradi
+        const waitPlay = async () => {
+          if (video.readyState < 1) {
+            await Promise.race([
+              new Promise<void>((resolve) => {
+                const onMeta = () => {
+                  video.removeEventListener("loadedmetadata", onMeta);
+                  resolve();
+                };
+                video.addEventListener("loadedmetadata", onMeta);
+              }),
+              new Promise<void>((resolve) => window.setTimeout(resolve, 2500)),
+            ]);
+          }
+          try {
+            await video.play();
+          } catch {
+            /* ignore — keyinroq qayta */
+          }
+          if (typeof (video as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number }).requestVideoFrameCallback === "function") {
+            await Promise.race([
+              new Promise<void>((resolve) => {
+                (video as HTMLVideoElement & { requestVideoFrameCallback: (cb: () => void) => number }).requestVideoFrameCallback(
+                  () => resolve(),
+                );
+              }),
+              new Promise<void>((resolve) => window.setTimeout(resolve, 2000)),
+            ]);
+          }
+        };
+        await waitPlay();
+        // Ba’zi telefonlarda birinchi play ishlamaydi — darhol qayta
+        if (!cancelled && (video.paused || video.readyState < 2)) {
+          try {
+            video.srcObject = stream;
+            await video.play();
+          } catch {
+            /* keyin frame check */
+          }
+        }
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
         video.onloadedmetadata = () => {
           if (video.paused) void video.play().catch(() => undefined);
         };
-        // iOS: track «muted» bo‘lib qolsa yoki kadr kelmasa — preview qora.
-        // Avval oqimni videoga qayta ulaymiz (tez), yordam bermasa kamerani qayta ochamiz.
+        // iOS/Android/Telegram: track.muted tez-tez true — o‘lik emas. Kadr kelmasa qayta ulaymiz.
         let reattached = false;
         const scheduleFrameCheck = (ms: number) => {
           if (frameWatch != null) window.clearTimeout(frameWatch);
@@ -333,30 +420,53 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
             frameWatch = null;
             if (cancelled || !running || streamRef.current !== stream) return;
             const track = stream.getVideoTracks()[0];
-            const noFrames = video.readyState < 2 || video.videoWidth < 8;
-            const dead = !track || track.readyState !== "live" || track.muted;
-            if (!noFrames && !dead) return;
-            if (!dead && !reattached) {
-              reattached = true;
-              video.srcObject = null;
-              video.srcObject = stream;
-              void video.play().catch(() => undefined);
-              scheduleFrameCheck(1500);
+            const hasFrames = video.readyState >= 2 && video.videoWidth >= 8;
+            const trackDead = !track || track.readyState === "ended" || track.readyState !== "live";
+            if (hasFrames && !trackDead) {
+              autoReopenRef.current = 0;
               return;
             }
-            if (video.paused && !dead) void video.play().catch(() => undefined);
-            if (autoReopenRef.current < 2) {
+            if (video.paused && !trackDead) {
+              void video.play().catch(() => undefined);
+            }
+            if (!trackDead && !hasFrames && !reattached) {
+              reattached = true;
+              try {
+                video.srcObject = null;
+                video.srcObject = stream;
+                video.muted = true;
+                video.playsInline = true;
+                void video.play().catch(() => undefined);
+              } catch {
+                /* ignore */
+              }
+              scheduleFrameCheck(2200);
+              return;
+            }
+            if (autoReopenRef.current < 3) {
               autoReopenRef.current += 1;
+              clearCameraDeviceCache(facingRef.current);
+              stream.getTracks().forEach((t) => t.stop());
+              streamRef.current = null;
+              setHint(tRef.current("davomat.scanCamOpening"), true);
               setCamRetryKey((k) => k + 1);
             } else {
               setError(tRef.current("davomat.scanCamFailed"));
             }
           }, ms);
         };
-        scheduleFrameCheck(1200);
+        scheduleFrameCheck(2200);
         stream.getVideoTracks().forEach((track) => {
-          track.addEventListener("mute", () => scheduleFrameCheck(1200));
+          track.addEventListener("unmute", () => {
+            if (video.paused) void video.play().catch(() => undefined);
+          });
+          track.addEventListener("mute", () => {
+            // Faqat uzoq muted + kadr yo‘q bo‘lsa tekshiramiz
+            scheduleFrameCheck(2500);
+          });
         });
+        onStreamReadyRef.current?.();
+        setCamReady(true);
         setSwitching(false);
         setHint(
           isFaceModelsReady()
@@ -481,7 +591,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
               const result = await detectFaceDescriptor(videoEl, readFrame(), true, {
                 allowTurn: Boolean(want.pose && want.pose !== "center"),
                 allowBlink: Boolean(want.blink),
-                fit: "contain",
+                fit: "cover",
               });
               const alignStatus: FaceAlignStatus = result.status;
               const wantPose = want.pose ?? "center";
@@ -657,17 +767,31 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
     if (busy || switching) return;
     setError(null);
     setHint(t("davomat.scanCamOpening"));
+    clearCameraDeviceCache();
+    // Eski oqim yopiladi, so‘ng bosish paytida kamerani darhol boshlaymiz (iOS/Android ishonchli)
+    streamRef.current?.getTracks().forEach((tr) => tr.stop());
+    prefetchCamera("user");
     setFacing("user");
     facingRef.current = "user";
     autoReopenRef.current = 0;
     setCamRetryKey((k) => k + 1);
   };
 
+  const totalSteps = Math.max(1, steps.length);
+  const stepProgress = Math.min(
+    100,
+    ((poseIndex + (currentStep.need ? Math.min(1, poseFill / currentStep.need) : 0)) / totalSteps) * 100,
+  );
+  const hasError = Boolean(error);
+  const statusText = error || hint;
+  const camLabel = facing === "environment" ? "Orqa kamera" : "Old kamera";
+  const ringPath = "M 50 1.5 A 48.5 48.5 0 1 1 49.99 1.5";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
-        className="w-[calc(100%-0.75rem)] max-w-sm gap-0 overflow-hidden rounded-[28px] border-0 bg-zinc-950 p-0 text-white !max-h-[100dvh] !overflow-hidden z-[110]"
+        className="flex h-[100dvh] w-full max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 bg-zinc-950 p-0 text-white !max-h-[100dvh] !overflow-hidden z-[110] sm:h-[min(94dvh,780px)] sm:max-w-[26rem] sm:rounded-[32px] sm:border sm:border-white/10"
       >
         <DialogHeader className="sr-only">
           <DialogTitle>
@@ -677,71 +801,137 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
           <DialogDescription>{description || stepHint(t, currentStep)}</DialogDescription>
         </DialogHeader>
 
-        <div className="relative aspect-[4/5] w-full overflow-hidden bg-black">
+        {/* Kamera maydoni */}
+        <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
           <video
             ref={videoRef}
             className={cn(
-              "absolute inset-0 h-full w-full bg-black object-contain",
+              "absolute inset-0 h-full w-full bg-black object-cover transition-opacity duration-300",
+              camReady ? "opacity-100" : "opacity-0",
               mirrorPreview && "-scale-x-100",
             )}
             playsInline
             muted
             autoPlay
           />
-          <div
-            className="pointer-events-none absolute inset-0 bg-black/50"
-            style={{
-              WebkitMaskImage:
-                "radial-gradient(ellipse 36% 40% at 50% 50%, transparent 97%, #000 100%)",
-              maskImage: "radial-gradient(ellipse 36% 40% at 50% 50%, transparent 97%, #000 100%)",
-            }}
-          />
+
+          {/* Oval ramka: tashqarisi qoraytirilgan, ichi ochiq */}
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div
               ref={ovalRef}
-              className={cn(
-                "aspect-[3/4] w-[72%] max-w-[280px] rounded-full border-[2.5px] bg-transparent",
-                aligned ? "border-emerald-400" : "border-white",
-              )}
-            />
-          </div>
-          <p className="absolute left-0 right-0 top-5 z-10 text-center text-[15px] font-semibold drop-shadow">
-            {stepHint(t, currentStep)}
-          </p>
-          {currentStep.pose && currentStep.pose !== "center" ? (
-            <div className="absolute left-1/2 top-[18%] z-10 -translate-x-1/2">
-              <PoseArrow pose={currentStep.pose} />
+              className="relative aspect-[3/4] h-[62%] max-h-[430px] max-w-[84%] rounded-[50%] shadow-[0_0_0_9999px_rgba(0,0,0,0.62)]"
+            >
+              <svg
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                className="absolute -inset-[5px] h-[calc(100%+10px)] w-[calc(100%+10px)] overflow-visible"
+                aria-hidden
+              >
+                <path
+                  d={ringPath}
+                  fill="none"
+                  stroke={aligned ? "rgb(52 211 153 / 0.55)" : "rgb(255 255 255 / 0.4)"}
+                  strokeWidth={3}
+                  vectorEffect="non-scaling-stroke"
+                  pathLength={100}
+                />
+                <path
+                  d={ringPath}
+                  fill="none"
+                  stroke="rgb(52 211 153)"
+                  strokeWidth={5}
+                  strokeLinecap="round"
+                  vectorEffect="non-scaling-stroke"
+                  pathLength={100}
+                  strokeDasharray={`${stepProgress} 100`}
+                  style={{ transition: "stroke-dasharray 0.25s ease-out" }}
+                />
+              </svg>
             </div>
-          ) : null}
-
-          <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
-            <button
-              type="button"
-              aria-label={facing === "environment" ? "Old kamera" : "Orqa kamera"}
-              disabled={busy || switching}
-              onClick={switchCamera}
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-black/60 text-white ring-1 ring-white/35 active:scale-95 disabled:opacity-50"
-            >
-              {switching ? <Loader2 className="h-5 w-5 animate-spin" /> : <SwitchCamera className="h-5 w-5" />}
-            </button>
-            <button
-              type="button"
-              aria-label="Yopish"
-              onClick={() => onOpenChange(false)}
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-black/60 text-white ring-1 ring-white/35 active:scale-95"
-            >
-              <X className="h-6 w-6" />
-            </button>
           </div>
+
+          {/* Yuqori panel */}
+          <div className="absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/80 via-black/40 to-transparent pb-10 pt-[max(0.75rem,env(safe-area-inset-top))]">
+            <div className="flex items-center justify-between gap-3 px-4">
+              <button
+                type="button"
+                aria-label="Yopish"
+                onClick={() => onOpenChange(false)}
+                className="cam-glass flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white active:scale-95"
+              >
+                <X className="h-5 w-5" />
+              </button>
+              <div className="cam-glass flex min-w-0 items-center gap-2 rounded-full px-3.5 py-2">
+                <ScanFace className="h-4 w-4 shrink-0 text-emerald-300" />
+                <p className="truncate text-sm font-semibold">{stepHint(t, currentStep)}</p>
+              </div>
+              <button
+                type="button"
+                aria-label={facing === "environment" ? "Old kamera" : "Orqa kamera"}
+                disabled={busy || switching}
+                onClick={switchCamera}
+                className="cam-glass flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white active:scale-95 disabled:opacity-50"
+              >
+                {switching ? <Loader2 className="h-5 w-5 animate-spin" /> : <SwitchCamera className="h-5 w-5" />}
+              </button>
+            </div>
+            {currentStep.pose && currentStep.pose !== "center" ? (
+              <div className="mt-3 flex justify-center">
+                <PoseArrow pose={currentStep.pose} />
+              </div>
+            ) : null}
+          </div>
+
+          {/* Kamera ochilmoqda / xato */}
+          {!camReady ? (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-gradient-to-b from-zinc-950 via-zinc-900 to-black px-6 text-center">
+              <span className="relative flex h-24 w-24 items-center justify-center rounded-full bg-white/10 ring-1 ring-white/20">
+                {!hasError ? <span className="cam-pulse-ring absolute inset-0 rounded-full ring-2 ring-emerald-400/50" /> : null}
+                {hasError ? (
+                  <AlertCircle className="h-10 w-10 text-rose-300" />
+                ) : (
+                  <Loader2 className="h-10 w-10 animate-spin text-white" />
+                )}
+              </span>
+              <p className="max-w-[17rem] text-[15px] font-semibold leading-snug text-white">
+                {hasError ? error : t("davomat.scanCamOpening")}
+              </p>
+            </div>
+          ) : (
+            <div className="absolute inset-x-0 bottom-5 z-20 flex justify-center px-4">
+              <div
+                className={cn(
+                  "cam-glass flex max-w-full items-center gap-2 rounded-full px-4 py-2.5 text-[13px] font-semibold shadow-lg",
+                  hasError
+                    ? "!border-rose-400/40 !bg-rose-600/80 text-white"
+                    : aligned
+                      ? "!border-emerald-400/50 !bg-emerald-600/70 text-white"
+                      : "text-white",
+                )}
+              >
+                {busy ? (
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                ) : hasError ? (
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                ) : (
+                  <span
+                    className={cn("h-2 w-2 shrink-0 rounded-full", aligned ? "bg-emerald-300" : "animate-pulse bg-white/80")}
+                  />
+                )}
+                <span className="truncate">{statusText}</span>
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="space-y-3 bg-zinc-950 px-5 pb-5 pt-4">
+        {/* Pastki panel */}
+        <div className="space-y-3 bg-zinc-950 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4">
           <div className="flex justify-center gap-1.5">
             {steps.map((p, i) => (
               <span
                 key={p.key}
                 className={cn(
-                  "h-1.5 w-6 rounded-full",
+                  "h-1.5 w-8 rounded-full transition-colors",
                   i < poseIndex ? "bg-emerald-400" : i === poseIndex ? "bg-white" : "bg-white/20",
                 )}
                 style={
@@ -754,34 +944,33 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
               />
             ))}
           </div>
-          <p className={cn("min-h-5 text-center text-sm", error ? "text-red-300" : "text-white/80")}>
-            {busy ? <Loader2 className="mr-1 inline h-4 w-4 animate-spin" /> : null}
-            {error || hint}
-          </p>
-          {error ? (
+
+          {hasError ? (
             <Button
               type="button"
-              variant="secondary"
-              className="w-full rounded-full"
+              className="h-12 w-full rounded-2xl bg-white text-[15px] font-bold text-zinc-900 hover:bg-white/90"
               disabled={busy || switching}
               onClick={retryCamera}
             >
-              <SwitchCamera className="mr-1.5 h-4 w-4" />
+              <RefreshCw className="mr-2 h-4 w-4" />
               {t("davomat.scanCamRetry")}
             </Button>
           ) : null}
-          <p className="text-center text-[11px] text-white/45">
-            {facing === "environment" ? "Orqa kamera" : "Old kamera"} · Face ID uchun old kamera tavsiya etiladi
-          </p>
-          <Button
-            type="button"
-            variant="ghost"
-            className="w-full rounded-full text-white hover:bg-white/10 hover:text-white"
-            onClick={() => onOpenChange(false)}
-          >
-            <X className="mr-1.5 h-4 w-4" />
-            {t("davomat.scanCancel")}
-          </Button>
+
+          <div className="flex items-center justify-between gap-3">
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-white/50">
+              <SwitchCamera className="h-3.5 w-3.5" />
+              {camLabel} · Face ID uchun old kamera tavsiya etiladi
+            </span>
+            <button
+              type="button"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-white/80 hover:bg-white/10 hover:text-white"
+              onClick={() => onOpenChange(false)}
+            >
+              <X className="h-4 w-4" />
+              {t("davomat.scanCancel")}
+            </button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

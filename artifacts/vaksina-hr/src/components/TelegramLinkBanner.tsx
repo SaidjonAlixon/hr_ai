@@ -157,13 +157,7 @@ export function TelegramLinkBanner() {
 
   return (
     <>
-      <div
-        className={cn(
-          "border-b border-sky-500/25 bg-gradient-to-r from-sky-50 via-white to-sky-50 px-3 py-2.5",
-          "dark:border-sky-400/20 dark:from-sky-500/10 dark:via-transparent dark:to-sky-500/10",
-          "sm:px-4",
-        )}
-      >
+      <div className={cn("app-autumn-chrome px-3 py-2.5 sm:px-4")}>
         <div className="mx-auto flex max-w-6xl flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-start gap-3">
             <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#229ED9] text-white shadow-sm">

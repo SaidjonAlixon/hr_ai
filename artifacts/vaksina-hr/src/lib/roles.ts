@@ -26,6 +26,55 @@ export function isHrDirektor(role?: string | null): boolean {
   return normalizeUserRole(role) === "hr_direktor";
 }
 
+/**
+ * HR direktor uchun yashiriladigan / yopiladigan yo‘llar:
+ * Logistika, Apteka tarmog‘i, Tizim + Davomat QR / Smena / Cheklist / TX / Ma'lumotnoma /
+ * Jarimalar / Qabulxona / Javob olish.
+ */
+const HR_DIREKTOR_BLOCKED_PREFIXES = [
+  "/logistika",
+  "/pharmacy-network",
+  "/mijozlar-baholashi",
+  "/boglanish",
+  "/checklist",
+  "/ehtiyoj",
+  "/resepsion",
+  "/javob-olish",
+  "/davomat-qr",
+  "/smena-filial",
+  "/admin/tushuntirish-xatlari",
+  "/admin/malumotnoma",
+  "/admin/jarimalar",
+  "/davomat/dorixona-ochilishi",
+  "/admin/users",
+  "/admin/boshatilganlar",
+  "/admin/holat",
+  "/admin/departments",
+  "/admin/kirish-videolar",
+  "/admin/preboarding",
+  "/admin/darsliklar",
+  "/admin/atestatsiya",
+  "/admin/faces",
+  "/admin/smena-sozlamalar",
+  "/admin/davomat-qr",
+  "/admin/test",
+  "/admin/scanner",
+  "/admin/yordamchi-ai",
+  "/admin/ai-telefon",
+  "/admin/qurilmalar",
+  "/admin/kochma-davomat",
+  "/admin/kochma-xarita",
+  "/admin/kochma-live",
+] as const;
+
+export function isBlockedForHrDirektor(pathname?: string | null): boolean {
+  const path = String(pathname || "").split("?")[0] || "";
+  if (!path) return false;
+  return HR_DIREKTOR_BLOCKED_PREFIXES.some(
+    (p) => path === p || path.startsWith(`${p}/`),
+  );
+}
+
 export function isHrKadrRahbar(role?: string | null): boolean {
   return normalizeUserRole(role) === "hr_kadr_rahbar";
 }
@@ -150,7 +199,7 @@ export function isAsoschiRole(role?: string | null): boolean {
 }
 
 /** Davomat doskasi / hisobotlarda ko‘rinmaydi (sonlarda ham); tizimda ishlayveradi */
-export const DAVOMAT_HIDDEN_ROLES = ["asoschi", "direktor_yordamchisi", "broker"] as const;
+export const DAVOMAT_HIDDEN_ROLES = ["asoschi", "direktor_yordamchisi", "broker", "mexanik"] as const;
 
 export function isHiddenFromDavomat(role?: string | null): boolean {
   const r = normalizeUserRole(role);
@@ -190,7 +239,7 @@ export function canManageSettings(role?: string | null): boolean {
 /** Hujjat skaneri (Tizim → Skaner) — barcha xodimlar; o‘quvchi emas */
 export function canUseDocumentScanner(role?: string | null): boolean {
   const r = normalizeUserRole(role);
-  if (!r || isStudentRole(r)) return false;
+  if (!r || isStudentRole(r) || isHrDirektor(r)) return false;
   return true;
 }
 
@@ -459,11 +508,13 @@ export function canViewLeadershipModules(role?: string | null): boolean {
  * VaksinaMed Logistika (GPS) — admin + rahbariyat + HR.
  */
 export function canViewLogistika(role?: string | null): boolean {
+  if (isHrDirektor(role)) return false;
   return canViewLeadershipModules(role);
 }
 
 /** Qurilmalar + Ko‘chma — ko‘rish (admin + rahbariyat + HR) */
 export function canViewKochmaAdmin(role?: string | null): boolean {
+  if (isHrDirektor(role)) return false;
   return canViewLeadershipModules(role);
 }
 
@@ -545,6 +596,7 @@ export function canAddDeptStaff(role?: string | null): boolean {
 /** Cheklist holati (dashboard, tashriflar, qamrov): admin, direktor, HR, rekruter, auditor */
 export function canViewChecklistStatus(role?: string | null): boolean {
   const r = normalizeUserRole(role);
+  if (isHrDirektor(r)) return false;
   return (
     r === "admin" ||
     isDirectorRole(r) ||
@@ -627,6 +679,7 @@ export function isStajyor(role?: string | null): boolean {
 /** Tarmoq Holat (koordinator→stajyor + bo‘limlar) */
 export function canViewHolat(role?: string | null): boolean {
   const r = normalizeUserRole(role);
+  if (isHrDirektor(r)) return false;
   return (
     canViewLeadershipModules(r) ||
     r === "koordinator" ||
@@ -776,6 +829,7 @@ export function userRoleLabel(role?: string | null): string {
 /** Smena va filial rotatsiyasi boshqaruvi — faqat HR menejer va Admin */
 export function canManageSmenaFilial(role?: string | null): boolean {
   const r = normalizeUserRole(role);
+  if (isHrDirektor(r)) return false;
   return hasFullPlatformAccess(r) || isHrRole(r);
 }
 

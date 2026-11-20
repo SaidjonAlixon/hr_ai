@@ -21,6 +21,7 @@ import {
   hmToMinutes,
   warehouseCheckoutDeadlineHm,
 } from "./shift-hours";
+import { resolveWarehouseDavomatStatus } from "./warehouse-davomat-status";
 
 const HM_RE = /^([01]?\d|2[0-3]):([0-5]\d)$/;
 
@@ -367,17 +368,29 @@ export async function warehouseHolatForDate(workDate: string, departmentId?: num
           position: m.position,
           checkInAt: rec?.checkInAt?.toISOString() ?? null,
           checkOutAt: rec?.checkOutAt?.toISOString() ?? null,
-          status: rec?.status ?? "kutilmoqda",
+          status: (() => {
+            if (String(rec?.status || "").toLowerCase() === "leave") return "leave";
+            const hm = rec?.checkInAt
+              ? new Intl.DateTimeFormat("en-GB", {
+                  timeZone: "Asia/Tashkent",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false,
+                }).format(rec.checkInAt)
+              : null;
+            return resolveWarehouseDavomatStatus(hm).status;
+          })(),
           statusLabel: (() => {
-            const st = String(rec?.status || "").toLowerCase();
-            if (rec?.checkInAt && !rec?.checkOutAt) return "Ishda";
-            // Erkin grafikda kechikish yo‘q — late bo‘lsa ham «Kelgan»
-            if (rec?.checkInAt && rec?.checkOutAt) return st === "absent" ? "Kelmagan" : "Kelgan";
-            if (st === "present") return "Kelgan";
-            if (st === "absent") return "Kelmagan";
-            if (st === "incomplete") return "Ketish yo‘q";
-            if (st === "late") return "Kelgan";
-            return "Kutilmoqda";
+            if (String(rec?.status || "").toLowerCase() === "leave") return "Ta’tilda";
+            const hm = rec?.checkInAt
+              ? new Intl.DateTimeFormat("en-GB", {
+                  timeZone: "Asia/Tashkent",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false,
+                }).format(rec.checkInAt)
+              : null;
+            return resolveWarehouseDavomatStatus(hm).label;
           })(),
         };
       }),

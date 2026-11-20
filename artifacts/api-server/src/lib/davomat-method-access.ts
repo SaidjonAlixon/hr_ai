@@ -11,7 +11,8 @@ export function effectiveDavomatAccess(
 ) {
   const faceOn = face !== false;
   const qrOn = qr === true ? true : qr === false ? false : role !== "koordinator";
-  const fingerOn = finger === true;
+  // Barmoq izi hamma uchun sukut bo‘yicha YONIQ; admin faqat aniq o‘chirsa (false) yopiladi.
+  const fingerOn = finger !== false;
   const methods: DavomatMethod[] = [];
   if (faceOn) methods.push("FACE_ID");
   if (qrOn) methods.push("QR");

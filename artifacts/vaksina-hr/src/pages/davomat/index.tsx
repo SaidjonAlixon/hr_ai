@@ -308,6 +308,9 @@ const STATUS_KEYS: Record<string, string> = {
   absent: "davomat.absent",
   leave: "davomat.leave",
   rest: "davomat.rest",
+  wh_morning: "davomat.whMorning",
+  wh_evening: "davomat.whEvening",
+  wh_onduty: "davomat.whOnduty",
 };
 
 const STATUS_STYLE: Record<string, string> = {
@@ -319,6 +322,9 @@ const STATUS_STYLE: Record<string, string> = {
   rest: "border-slate-400 bg-slate-500/15 text-slate-700 dark:border-slate-500/50 dark:bg-slate-500/20 dark:text-slate-300",
   prehire: "border-rose-500 bg-rose-600/20 text-rose-800 dark:border-rose-500/60 dark:bg-rose-500/25 dark:text-rose-200",
   outside: "border-transparent bg-transparent text-transparent",
+  wh_morning: "border-emerald-400 bg-emerald-500/15 text-emerald-800 dark:border-emerald-500/50 dark:bg-emerald-500/20 dark:text-emerald-300",
+  wh_evening: "border-indigo-400 bg-indigo-500/15 text-indigo-900 dark:border-indigo-500/50 dark:bg-indigo-500/20 dark:text-indigo-300",
+  wh_onduty: "border-sky-400 bg-sky-500/15 text-sky-900 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-300",
 };
 
 const STATUS_DOT: Record<string, string> = {
@@ -328,6 +334,9 @@ const STATUS_DOT: Record<string, string> = {
   absent: "bg-rose-500",
   leave: "bg-violet-500",
   rest: "bg-slate-400",
+  wh_morning: "bg-emerald-500",
+  wh_evening: "bg-indigo-500",
+  wh_onduty: "bg-sky-500",
 };
 
 /** Haftalik jadval kataklari — qisqa matn */
@@ -338,7 +347,12 @@ const WEEK_CELL_STATUS_KEYS: Record<string, string> = {
   absent: "davomat.absent",
   leave: "davomat.leaveShort",
   rest: "davomat.restShort",
+  wh_morning: "davomat.whMorning",
+  wh_evening: "davomat.whEvening",
+  wh_onduty: "davomat.whOnduty",
 };
+
+const WAREHOUSE_NON_ABSENT = new Set(["wh_morning", "wh_evening", "wh_onduty"]);
 
 function compactDuration(label: string): string {
   return label
@@ -376,14 +390,17 @@ function weekCellSublineParts(day: DavomatDayMetrics): {
 }
 
 const STATUS_ROW: Record<string, string> = {
-  present: "bg-emerald-50/40 dark:bg-emerald-500/10",
-  late: "bg-amber-50/50 dark:bg-amber-500/10",
-  incomplete: "bg-sky-50/40 dark:bg-sky-500/10",
-  absent: "bg-rose-50/30 dark:bg-rose-500/10",
-  leave: "bg-violet-50/40 dark:bg-violet-500/10",
+  present: "bg-emerald-50/25 dark:bg-emerald-500/10",
+  late: "bg-amber-50/30 dark:bg-amber-500/10",
+  incomplete: "bg-sky-50/25 dark:bg-sky-500/10",
+  absent: "bg-rose-50/20 dark:bg-rose-500/10",
+  leave: "bg-violet-50/25 dark:bg-violet-500/10",
+  wh_morning: "bg-emerald-50/25 dark:bg-emerald-500/10",
+  wh_evening: "bg-indigo-50/25 dark:bg-indigo-500/10",
+  wh_onduty: "bg-sky-50/25 dark:bg-sky-500/10",
 };
 
-const EXCUSED_ROW = "bg-teal-50/80 dark:bg-teal-500/10";
+const EXCUSED_ROW = "bg-teal-50/40 dark:bg-teal-500/10";
 const EXCUSED_STYLE =
   "border-teal-400 bg-teal-500/15 text-teal-950 dark:border-teal-400/60 dark:bg-teal-500/20 dark:text-teal-200";
 
@@ -490,7 +507,9 @@ function matchesDayStatusFilter(
   const st = day?.status || "absent";
   if (st === "prehire" || st === "outside") return false;
   const came = dayHasCheckIn(day);
-  if (filter === "absent") return !came && st !== "leave" && st !== "rest";
+  if (filter === "absent") {
+    return !came && st !== "leave" && st !== "rest" && !WAREHOUSE_NON_ABSENT.has(st);
+  }
   if (filter === "late") return came && st === "late";
   if (filter === "leave") return st === "leave" && !came;
   if (filter === "rest") return st === "rest" && !came;
@@ -1097,6 +1116,8 @@ export default function DavomatPage() {
       } else if (!came && day.status === "rest") {
         rest += 1;
         restNames.push(emp.fullName);
+      } else if (!came && WAREHOUSE_NON_ABSENT.has(day.status)) {
+        // Omborxona kechgi smena — Kelmagan emas
       } else if (!came) {
         absent += 1;
       } else {
@@ -1655,11 +1676,11 @@ export default function DavomatPage() {
   }
 
   const fieldClass =
-    "h-11 rounded-xl border-slate-200 bg-white text-sm font-medium text-[#0f2744] shadow-[0_1px_2px_rgba(15,39,68,0.05)] transition-colors hover:border-slate-300 dark:border-white/10 dark:bg-[#152238] dark:text-slate-100 dark:hover:border-white/20";
+    "h-11 rounded-xl border-white/50 bg-white/55 text-sm font-medium text-[#0f2744] shadow-none backdrop-blur-sm transition-colors hover:border-slate-300 hover:bg-white/75 dark:border-white/10 dark:bg-[#152238] dark:text-slate-100 dark:hover:border-white/20";
   const labelClass =
     "mb-1.5 flex h-4 items-center text-[10.5px] font-bold uppercase leading-none tracking-[0.08em] text-slate-500 dark:text-slate-400";
   const navBtnClass =
-    "h-11 w-11 shrink-0 rounded-xl border-slate-200 bg-white text-slate-600 shadow-[0_1px_2px_rgba(15,39,68,0.05)] hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-[#152238] dark:text-slate-300 dark:hover:bg-sky-400/10";
+    "h-11 w-11 shrink-0 rounded-xl border-white/50 bg-white/55 text-slate-600 shadow-none backdrop-blur-sm hover:border-sky-300 hover:bg-sky-50/80 hover:text-sky-700 dark:border-white/10 dark:bg-[#152238] dark:text-slate-300 dark:hover:bg-sky-400/10";
 
   const activeFilterCount =
     (deptFilter !== "all" ? 1 : 0) +
@@ -2176,7 +2197,7 @@ export default function DavomatPage() {
       )}
       {viewFilter === "office" ? (
         <div className="sm:col-span-2 xl:col-span-4">
-          <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-b from-slate-50 to-white p-3 dark:border-white/10 dark:from-white/[0.04] dark:to-transparent">
+          <div className="app-glass-card rounded-2xl border p-3">
             <div className="mb-2.5 flex items-center justify-between gap-2 px-0.5">
               <div className="flex items-center gap-2">
                 <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#0f2744] text-white dark:bg-sky-500/20 dark:text-sky-300">
@@ -2412,7 +2433,7 @@ export default function DavomatPage() {
 
   return (
     <div className="w-full space-y-4 pb-10">
-      <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-sky-50/80 p-4 shadow-[0_1px_2px_rgba(15,39,68,0.04),0_18px_40px_-28px_rgba(15,39,68,0.35)] sm:p-5 dark:border-white/10 dark:from-[#101a2e] dark:via-[#101a2e] dark:to-[#0f2a4a]">
+      <div className="app-glass-card relative overflow-hidden rounded-3xl border p-4 sm:p-5">
         <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-sky-400/15 blur-3xl dark:bg-sky-400/10" />
         <div className="pointer-events-none absolute -bottom-28 left-1/3 h-56 w-56 rounded-full bg-indigo-400/10 blur-3xl" />
         <div className="relative flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -2458,7 +2479,8 @@ export default function DavomatPage() {
                 <div className="mt-1 truncate text-[13px] font-bold text-[#0f2744] dark:text-slate-100">{formatLongDate(selectedDay, locale)}</div>
               </div>
             </div>
-            {canSyncFaceId ? (
+            {/* Vaqtincha yashirilgan — qayta ochish: canSyncFaceId && false → canSyncFaceId */}
+            {false && canSyncFaceId ? (
               <Button
                 type="button"
                 variant="outline"
@@ -2551,7 +2573,7 @@ export default function DavomatPage() {
               aria-pressed={active}
               onClick={() => toggleDayStatusFilter(card.key)}
               className={cn(
-                "group relative overflow-hidden rounded-2xl border bg-white p-4 text-left shadow-[0_1px_2px_rgba(15,39,68,0.05)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_32px_-20px_rgba(15,39,68,0.4)]",
+                "app-glass-card group relative overflow-hidden rounded-2xl border p-4 text-left transition-all duration-200 hover:-translate-y-0.5",
                 card.surface,
                 active ? "border-transparent" : "border-slate-200/90 dark:border-white/10",
               )}
@@ -2628,7 +2650,7 @@ export default function DavomatPage() {
       >
         <div
           className={cn(
-            "grid grid-cols-1 gap-1.5 rounded-2xl border border-slate-200/80 bg-white/90 p-1.5 shadow-[0_1px_2px_rgba(15,39,68,0.05),0_10px_28px_-22px_rgba(15,39,68,0.4)] backdrop-blur dark:border-white/10 dark:bg-[#101a2e]",
+            "app-glass-card grid grid-cols-1 gap-1.5 rounded-2xl border p-1.5",
             canChecklist ? "sm:grid-cols-2 xl:grid-cols-6" : "sm:grid-cols-2 xl:grid-cols-5",
           )}
         >
@@ -2712,8 +2734,8 @@ export default function DavomatPage() {
         </div>
 
         <TabsContent value="schedule" className="mt-4 space-y-4">
-          <Card className="overflow-hidden rounded-3xl border-slate-200/80 shadow-[0_1px_2px_rgba(15,39,68,0.04),0_18px_40px_-30px_rgba(15,39,68,0.35)] dark:border-white/10 dark:bg-[#101a2e]">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-gradient-to-r from-slate-50/80 to-white px-4 py-3 sm:px-6 dark:border-white/5 dark:from-white/[0.03] dark:to-transparent">
+          <Card className="app-glass-card overflow-hidden rounded-3xl border shadow-none">
+            <div className="app-glass-card-head flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-6">
               <div className="flex items-center gap-2.5">
                 <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#0f2744] text-white shadow-sm dark:bg-sky-500/20 dark:text-sky-300">
                   <SlidersHorizontal className="h-4 w-4" />
@@ -2834,7 +2856,7 @@ export default function DavomatPage() {
           ) : report ? (
             calMode === "day" ? (
               <>
-              <Card className="border-border shadow-sm overflow-hidden">
+              <Card className="app-glass-card overflow-hidden border shadow-none">
                 <CardHeader className="space-y-3 pb-3">
                   <CardTitle className="flex flex-wrap items-center gap-2 text-lg font-extrabold tracking-tight">
                     Kunlik davomat
@@ -2972,6 +2994,12 @@ export default function DavomatPage() {
                                 const kind = classifyDavomatStaff(emp);
                                 const bucket = pharmacyShiftBucket(emp);
                                 const assigned = pharmacyBucketLabel(bucket);
+                                const whShiftLabel =
+                                  day!.status === "wh_morning"
+                                    ? "Ertalabki smena"
+                                    : day!.status === "wh_evening" || day!.status === "wh_onduty"
+                                      ? "Kechgi smena"
+                                      : null;
                                 const base =
                                   day!.planCustom && shiftName
                                     ? `${shiftName} · ${h.start}–${h.end}`
@@ -2979,11 +3007,17 @@ export default function DavomatPage() {
                                       ? `${shiftName} · ${h.start}–${h.end}`
                                       : kind === "shift_one" || kind === "shift_two"
                                         ? `${assigned} · ${h.start}–${h.end}`
-                                        : kind === "warehouse" || kind === "security"
-                                          ? emp.shiftLabel
-                                            ? `${emp.shiftLabel} · ${h.start}–${h.end}`
-                                            : `${smenaLabelShort(emp)} · ${h.start}–${h.end}`
-                                          : `${h.start}–${h.end}`;
+                                        : kind === "warehouse"
+                                          ? whShiftLabel
+                                            ? `${whShiftLabel} · ${h.start}–${h.end}`
+                                            : emp.shiftLabel
+                                              ? `${emp.shiftLabel} · ${h.start}–${h.end}`
+                                              : `${smenaLabelShort(emp)} · ${h.start}–${h.end}`
+                                          : kind === "security"
+                                            ? emp.shiftLabel
+                                              ? `${emp.shiftLabel} · ${h.start}–${h.end}`
+                                              : `${smenaLabelShort(emp)} · ${h.start}–${h.end}`
+                                            : `${h.start}–${h.end}`;
                                 return day!.planCustom ? `${base} · o‘zgartirilgan` : base;
                               })()}
                             </td>
@@ -3127,7 +3161,7 @@ export default function DavomatPage() {
         </TabsContent>
 
         <TabsContent value="totals" className="mt-4 space-y-4">
-          <Card className="border-border shadow-sm">
+          <Card className="app-glass-card border shadow-none">
             <CardContent className="pt-5">{filters}</CardContent>
           </Card>
 
@@ -3164,7 +3198,7 @@ export default function DavomatPage() {
                 />
               </div>
 
-              <Card className="border-border shadow-sm overflow-hidden">
+              <Card className="app-glass-card overflow-hidden border shadow-none">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">
                     Xodimlar jami · {periodFrom} — {periodTo}
@@ -3219,7 +3253,7 @@ export default function DavomatPage() {
               </Card>
 
               {detailEmployee ? (
-                <Card className="border-border shadow-sm overflow-hidden">
+                <Card className="app-glass-card overflow-hidden border shadow-none">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base">{detailEmployee.fullName} — kunlar</CardTitle>
                   </CardHeader>
@@ -4022,8 +4056,8 @@ function PeriodAttendanceGrid({
   );
 
   return (
-    <Card className="overflow-hidden border-border shadow-sm">
-      <CardHeader className="border-b border-slate-100 bg-muted/60 pb-3 dark:border-slate-700/60 dark:bg-slate-800/50">
+    <Card className="app-glass-card overflow-hidden border shadow-none">
+      <CardHeader className="app-glass-card-head border-b pb-3">
         <CardTitle className="text-base text-[#0b3a5c] dark:text-sky-300">{title}</CardTitle>
         <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>
         <p className="mt-0.5 text-xs text-muted-foreground">
@@ -4097,11 +4131,14 @@ function PeriodAttendanceGrid({
               <tbody>
                 {rows.map(({ emp, daysByDate }, rowIdx) => {
                   const zebra = rowIdx % 2 === 0;
-                  const stickyBg = zebra ? "bg-card" : "bg-muted";
+                  const stickyBg = zebra ? "bg-white/35 dark:bg-transparent" : "bg-white/15 dark:bg-slate-800/20";
                   return (
                     <tr
                       key={emp.id}
-                      className={cn("border-b border-slate-100 dark:border-slate-700/60", zebra ? "bg-card" : "bg-muted/40 dark:bg-slate-800/30")}
+                      className={cn(
+                        "border-b border-slate-100/70 dark:border-slate-700/60",
+                        zebra ? "bg-white/30 dark:bg-transparent" : "bg-white/10 dark:bg-slate-800/20",
+                      )}
                     >
                       <td
                         className={cn(
@@ -4162,7 +4199,7 @@ function PeriodAttendanceGrid({
             </table>
           </div>
 
-          <div className="sticky bottom-0 z-30 border-t border-border bg-white/95 shadow-[0_-6px_16px_-8px_rgba(15,23,42,0.18)] backdrop-blur-sm">
+          <div className="sticky bottom-0 z-30 border-t border-white/40 bg-white/45 shadow-[0_-6px_16px_-8px_rgba(15,23,42,0.12)] backdrop-blur-md dark:border-white/10 dark:bg-[#101a2e]/70">
             <ScrollRail barRef={bottomBarRef} label="Sanalarni surish (past)" />
           </div>
         </div>
@@ -4389,9 +4426,9 @@ function Stat({
   sub?: string;
 }) {
   return (
-    <Card className="border-border shadow-sm">
+    <Card className="app-glass-card border shadow-none">
       <CardContent className="flex items-start gap-3 pt-5">
-        <div className="rounded-lg bg-slate-100 p-2 text-muted-foreground dark:bg-slate-700/50 dark:text-slate-300">
+        <div className="rounded-lg bg-slate-100/70 p-2 text-muted-foreground dark:bg-slate-700/50 dark:text-slate-300">
           {icon}
         </div>
         <div className="min-w-0 space-y-0.5">

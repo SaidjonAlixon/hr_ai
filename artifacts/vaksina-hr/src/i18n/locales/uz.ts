@@ -92,6 +92,7 @@ export const uz: Messages = {
   "nav.resepsion": "Qabulxona",
   "nav.checklistStatus": "Cheklist holati",
   "nav.pharmacy": "Aptekalar tarmog‘i",
+  "nav.majburiyat": "Majburiyat",
   "nav.boglanish": "Bog‘lanish",
   "nav.holat": "Hisobot",
   "nav.holatXodim": "Xodimlar hisoboti",

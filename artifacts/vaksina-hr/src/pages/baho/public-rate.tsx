@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRoute } from "wouter";
-import { Check, Languages, Loader2, Star, Store, Users, AlertCircle, ChevronLeft } from "lucide-react";
+import { Check, Languages, Loader2, Star, Store, Users, AlertCircle, ChevronLeft, MessageSquareWarning } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Staff = {
@@ -22,7 +22,7 @@ type Session = {
 };
 
 type Lang = "uz" | "ru";
-type RateType = "staff" | "pharmacy";
+type RateType = "staff" | "pharmacy" | "complaint";
 type Step = "choose" | "staff" | "form" | "done";
 
 const LOGO = "/logo_vaksina.png";
@@ -39,6 +39,14 @@ const T: Record<Lang, Record<string, string>> = {
     chooseStaffSub: "Smenadagi xodim(lar)ni tanlang",
     choosePharmacy: "Dorixonani baholash",
     choosePharmacySub: "Filial, tozalik va mahsulotlar",
+    chooseComplaint: "Shikoyat",
+    chooseComplaintSub: "Muammo yoki noroziligingizni yozing",
+    complaintTitle: "Shikoyatingiz",
+    complaintHint: "Iltimos, vaziyatni aniq va tushunarli yozing — admin ko‘rib chiqadi",
+    complaintPh: "Nima bo‘ldi? Qachon? Kim bilan?…",
+    complaintReq: "Shikoyat matnini yozing",
+    submitComplaint: "SHIKOYATNI YUBORISH",
+    doneComplaintSub: "Shikoyatingiz qabul qilindi. Tez orada ko‘rib chiqiladi.",
     pickStaff: "Kimni baholaysiz?",
     allShift: "Shu smenadagi barchasi",
     next: "DAVOM ETISH",
@@ -54,10 +62,10 @@ const T: Record<Lang, Record<string, string>> = {
     yourName: "Ismingiz",
     yourPhone: "Telefon raqamingiz",
     namePh: "Ism Familiya",
-    phonePh: "+998 9X XXX XX XX",
+    phonePh: "+998 XX XXX XX XX",
     nameReq: "Ism majburiy — yozing",
     phoneReq: "Telefon majburiy",
-    phoneFmt: "Raqam +9989 dan boshlanishi kerak",
+    phoneFmt: "Raqam +998 XX XXX XX XX formatida bo‘lishi kerak",
     starsReq: "Yulduz bahosini tanlang",
     qualityReq: "Xizmat sifatini tanlang",
     demeanorReq: "Muomala / bahoni tanlang",
@@ -67,6 +75,10 @@ const T: Record<Lang, Record<string, string>> = {
     emptyStaff: "Hozir smenada xodim yo‘q — dorixonani baholashingiz mumkin.",
     blocked: "Bu QR vaqtincha o‘chirilgan.",
     notFound: "QR topilmadi yoki eskirgan.",
+    staffBlocked:
+      "Bu forma faqat mijozlar (begonalar) uchun. Platformaga kirgan xodimlar QR orqali baholay olmaydi.",
+    selfRating:
+      "Bu telefon/ism platformadagi xodimga tegishli. O‘zingizni baholash mumkin emas — faqat mijozlar baholaydi.",
     loading: "Yuklanmoqda…",
     selectOne: "Kamida bitta xodimni tanlang",
     sendError: "Yuborilmadi",
@@ -91,6 +103,14 @@ const T: Record<Lang, Record<string, string>> = {
     chooseStaffSub: "Выберите сотрудника(ов) на смене",
     choosePharmacy: "Оценить аптеку",
     choosePharmacySub: "Филиал, чистота и ассортимент",
+    chooseComplaint: "Жалоба",
+    chooseComplaintSub: "Опишите проблему или недовольство",
+    complaintTitle: "Ваша жалоба",
+    complaintHint: "Опишите ситуацию ясно — администратор рассмотрит",
+    complaintPh: "Что случилось? Когда? С кем?…",
+    complaintReq: "Напишите текст жалобы",
+    submitComplaint: "ОТПРАВИТЬ ЖАЛОБУ",
+    doneComplaintSub: "Жалоба принята. Мы рассмотрим её в ближайшее время.",
     pickStaff: "Кого оцениваете?",
     allShift: "Вся смена",
     next: "ДАЛЕЕ",
@@ -106,10 +126,10 @@ const T: Record<Lang, Record<string, string>> = {
     yourName: "Ваше имя",
     yourPhone: "Номер телефона",
     namePh: "Имя Фамилия",
-    phonePh: "+998 9X XXX XX XX",
+    phonePh: "+998 XX XXX XX XX",
     nameReq: "Имя обязательно",
     phoneReq: "Телефон обязателен",
-    phoneFmt: "Номер должен начинаться с +9989",
+    phoneFmt: "Номер в формате +998 XX XXX XX XX",
     starsReq: "Выберите оценку звёздами",
     qualityReq: "Выберите качество сервиса",
     demeanorReq: "Выберите оценку общения",
@@ -119,6 +139,10 @@ const T: Record<Lang, Record<string, string>> = {
     emptyStaff: "Сейчас на смене нет сотрудников — можно оценить аптеку.",
     blocked: "Этот QR временно отключён.",
     notFound: "QR не найден или устарел.",
+    staffBlocked:
+      "Форма только для клиентов. Сотрудники, вошедшие в платформу, не могут оценивать через QR.",
+    selfRating:
+      "Этот телефон/имя принадлежит сотруднику. Оценивать себя нельзя — только клиенты.",
     loading: "Загрузка…",
     selectOne: "Выберите хотя бы одного сотрудника",
     sendError: "Не удалось отправить",
@@ -147,7 +171,7 @@ function digitsPhone(raw: string): string {
 }
 
 function isValidUzMobile(raw: string): boolean {
-  return /^9989\d{8}$/.test(digitsPhone(raw));
+  return /^998\d{9}$/.test(digitsPhone(raw));
 }
 
 function formatPhoneDisplay(raw: string): string {
@@ -227,11 +251,19 @@ export default function PublicCustomerRatePage() {
       setLoading(true);
       setLoadErr(null);
       try {
-        const res = await fetch(`/api/public/customer-ratings/${encodeURIComponent(token)}`);
-        const data = (await res.json()) as Session;
+        const res = await fetch(`/api/public/customer-ratings/${encodeURIComponent(token)}`, {
+          credentials: "include",
+        });
+        const data = (await res.json()) as Session & { code?: string; error?: string };
         if (cancelled) return;
         if (!res.ok) {
-          setLoadErr(data.code === "blocked" ? t("blocked") : data.error || t("notFound"));
+          setLoadErr(
+            data.code === "staff_blocked"
+              ? t("staffBlocked")
+              : data.code === "blocked"
+                ? t("blocked")
+                : data.error || t("notFound"),
+          );
           setSession(null);
         } else {
           setSession(data);
@@ -282,6 +314,14 @@ export default function PublicCustomerRatePage() {
     setStep("form");
   };
 
+  const openComplaint = () => {
+    setRateType("complaint");
+    setSelected([]);
+    setAllShift(false);
+    resetForm();
+    setStep("form");
+  };
+
   const toggle = (id: number) => {
     setAllShift(false);
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -300,9 +340,13 @@ export default function PublicCustomerRatePage() {
 
   const validateForm = () => {
     const fe: Record<string, string> = {};
-    if (!stars) fe.stars = t("starsReq");
-    if (!quality) fe.quality = t("qualityReq");
-    if (!demeanor) fe.demeanor = t("demeanorReq");
+    if (rateType === "complaint") {
+      if (comment.trim().length < 5) fe.comment = t("complaintReq");
+    } else {
+      if (!stars) fe.stars = t("starsReq");
+      if (!quality) fe.quality = t("qualityReq");
+      if (!demeanor) fe.demeanor = t("demeanorReq");
+    }
     if (name.trim().length < 2) fe.name = t("nameReq");
     const dig = digitsPhone(phone);
     if (!dig || dig.length < 12) fe.phone = t("phoneReq");
@@ -323,14 +367,15 @@ export default function PublicCustomerRatePage() {
     try {
       const res = await fetch(`/api/public/customer-ratings/${encodeURIComponent(token)}`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           rateType,
           employeeIds: rateType === "staff" ? selected : [],
           allShift: rateType === "staff" ? allShift : false,
-          stars,
-          serviceQuality: quality,
-          demeanor,
+          stars: rateType === "complaint" ? 1 : stars,
+          serviceQuality: rateType === "complaint" ? "shikoyat" : quality,
+          demeanor: rateType === "complaint" ? "shikoyat" : demeanor,
           comment,
           customerName: name.trim(),
           customerPhone: digitsPhone(phone),
@@ -338,8 +383,12 @@ export default function PublicCustomerRatePage() {
           lang,
         }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || t("sendError"));
+      const data = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+      if (!res.ok) {
+        if (data.code === "staff_blocked") throw new Error(t("staffBlocked"));
+        if (data.code === "self_rating") throw new Error(t("selfRating"));
+        throw new Error(data.error || t("sendError"));
+      }
       setStep("done");
     } catch (e) {
       setErr((e as Error).message);
@@ -416,7 +465,9 @@ export default function PublicCustomerRatePage() {
             <h2 className="mt-6 text-3xl font-black tracking-[0.08em]" style={{ color: PURPLE }}>
               {t("done")}
             </h2>
-            <p className="mt-2 max-w-xs text-sm leading-relaxed text-slate-500">{t("doneSub")}</p>
+            <p className="mt-2 max-w-xs text-sm leading-relaxed text-slate-500">
+              {rateType === "complaint" ? t("doneComplaintSub") : t("doneSub")}
+            </p>
           </div>
         ) : step === "choose" ? (
           <div className="mt-6 flex flex-1 flex-col">
@@ -438,6 +489,13 @@ export default function PublicCustomerRatePage() {
                 tone="cyan"
                 title={t("choosePharmacy")}
                 sub={t("choosePharmacySub")}
+              />
+              <ChoiceCard
+                onClick={openComplaint}
+                icon={<MessageSquareWarning className="h-6 w-6" />}
+                tone="rose"
+                title={t("chooseComplaint")}
+                sub={t("chooseComplaintSub")}
               />
             </div>
             {err ? <RedBanner>{err}</RedBanner> : null}
@@ -538,78 +596,109 @@ export default function PublicCustomerRatePage() {
                   ? `${t("back")} · ${selectedNames.slice(0, 2).join(", ")}${selectedNames.length > 2 ? "…" : ""}`
                   : rateType === "pharmacy"
                     ? `${t("back")} · ${session?.branchLabel || ""}`
-                    : t("back")
+                    : rateType === "complaint"
+                      ? `${t("back")} · ${t("chooseComplaint")}`
+                      : t("back")
               }
               onClick={formBack}
             />
 
-            <Card invalid={tried && !!fieldErr.stars}>
-              <h3 className="text-sm font-bold text-slate-900">
-                {rateType === "pharmacy" ? t("q1Pharmacy") : t("q1Staff")}
-                <Req />
-              </h3>
-              <div className="mt-3 flex justify-between gap-1">
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => {
-                      setStars(n);
-                      if (tried) setFieldErr((p) => ({ ...p, stars: "" }));
-                    }}
-                    className="flex flex-1 flex-col items-center gap-1 py-1"
-                  >
-                    <Star
-                      className={cn(
-                        "h-9 w-9 sm:h-10 sm:w-10",
-                        stars >= n ? "fill-[#f5c518] text-[#f5c518]" : "text-slate-300",
-                      )}
-                      strokeWidth={1.5}
-                    />
-                    <span className="text-[11px] font-semibold text-slate-400">{n}</span>
-                  </button>
-                ))}
-              </div>
-              {tried && fieldErr.stars ? <FieldRed>{fieldErr.stars}</FieldRed> : null}
-            </Card>
+            {rateType === "complaint" ? (
+              <label
+                className={cn(
+                  "block rounded-3xl border-2 bg-white p-4 shadow-sm",
+                  tried && fieldErr.comment ? "border-rose-500 bg-rose-50" : "border-rose-200",
+                )}
+              >
+                <span className="flex items-center gap-2 text-sm font-extrabold text-rose-800">
+                  <MessageSquareWarning className="h-4 w-4" />
+                  {t("complaintTitle")}
+                  <Req />
+                </span>
+                <p className="mt-1 text-xs leading-relaxed text-slate-500">{t("complaintHint")}</p>
+                <textarea
+                  value={comment}
+                  onChange={(e) => {
+                    setComment(e.target.value);
+                    if (tried && e.target.value.trim().length >= 5) setFieldErr((p) => ({ ...p, comment: "" }));
+                  }}
+                  rows={7}
+                  placeholder={t("complaintPh")}
+                  className="mt-3 w-full resize-none rounded-2xl border border-rose-100 bg-[#fffafa] px-3.5 py-3 text-base leading-relaxed outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+                />
+                {tried && fieldErr.comment ? <FieldRed>{fieldErr.comment}</FieldRed> : null}
+              </label>
+            ) : (
+              <>
+                <Card invalid={tried && !!fieldErr.stars}>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    {rateType === "pharmacy" ? t("q1Pharmacy") : t("q1Staff")}
+                    <Req />
+                  </h3>
+                  <div className="mt-3 flex justify-between gap-1">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => {
+                          setStars(n);
+                          if (tried) setFieldErr((p) => ({ ...p, stars: "" }));
+                        }}
+                        className="flex flex-1 flex-col items-center gap-1 py-1"
+                      >
+                        <Star
+                          className={cn(
+                            "h-9 w-9 sm:h-10 sm:w-10",
+                            stars >= n ? "fill-[#f5c518] text-[#f5c518]" : "text-slate-300",
+                          )}
+                          strokeWidth={1.5}
+                        />
+                        <span className="text-[11px] font-semibold text-slate-400">{n}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {tried && fieldErr.stars ? <FieldRed>{fieldErr.stars}</FieldRed> : null}
+                </Card>
 
-            <RadioBlock
-              title={rateType === "pharmacy" ? t("q2Pharmacy") : t("q2Staff")}
-              value={quality}
-              invalid={tried && !!fieldErr.quality}
-              error={fieldErr.quality}
-              onChange={(v) => {
-                setQuality(v as typeof quality);
-                if (tried) setFieldErr((p) => ({ ...p, quality: "" }));
-              }}
-              options={QUALITY.map((k) => ({ k, label: t(k) }))}
-            />
-            <RadioBlock
-              title={rateType === "pharmacy" ? t("q3Pharmacy") : t("q3Staff")}
-              value={demeanor}
-              invalid={tried && !!fieldErr.demeanor}
-              error={fieldErr.demeanor}
-              onChange={(v) => {
-                setDemeanor(v);
-                if (tried) setFieldErr((p) => ({ ...p, demeanor: "" }));
-              }}
-              options={
-                rateType === "pharmacy"
-                  ? QUALITY.map((k) => ({ k, label: t(k) }))
-                  : DEMEANOR.map((k) => ({ k, label: t(k) }))
-              }
-            />
+                <RadioBlock
+                  title={rateType === "pharmacy" ? t("q2Pharmacy") : t("q2Staff")}
+                  value={quality}
+                  invalid={tried && !!fieldErr.quality}
+                  error={fieldErr.quality}
+                  onChange={(v) => {
+                    setQuality(v as typeof quality);
+                    if (tried) setFieldErr((p) => ({ ...p, quality: "" }));
+                  }}
+                  options={QUALITY.map((k) => ({ k, label: t(k) }))}
+                />
+                <RadioBlock
+                  title={rateType === "pharmacy" ? t("q3Pharmacy") : t("q3Staff")}
+                  value={demeanor}
+                  invalid={tried && !!fieldErr.demeanor}
+                  error={fieldErr.demeanor}
+                  onChange={(v) => {
+                    setDemeanor(v);
+                    if (tried) setFieldErr((p) => ({ ...p, demeanor: "" }));
+                  }}
+                  options={
+                    rateType === "pharmacy"
+                      ? QUALITY.map((k) => ({ k, label: t(k) }))
+                      : DEMEANOR.map((k) => ({ k, label: t(k) }))
+                  }
+                />
 
-            <label className="block rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm">
-              <span className="text-sm font-bold">{t("comment")}</span>
-              <textarea
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                rows={3}
-                placeholder={t("commentPh")}
-                className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-[#fafafa] px-3 py-2.5 text-base outline-none focus:border-[#5c2d91]/40"
-              />
-            </label>
+                <label className="block rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm">
+                  <span className="text-sm font-bold">{t("comment")}</span>
+                  <textarea
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    rows={3}
+                    placeholder={t("commentPh")}
+                    className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-[#fafafa] px-3 py-2.5 text-base outline-none focus:border-[#5c2d91]/40"
+                  />
+                </label>
+              </>
+            )}
 
             <label
               className={cn(
@@ -662,13 +751,13 @@ export default function PublicCustomerRatePage() {
                 className="mt-2 h-12 w-full rounded-xl border border-slate-200 bg-[#fafafa] px-3 text-base tabular-nums outline-none focus:border-[#5c2d91]/40"
               />
               {tried && fieldErr.phone ? <FieldRed>{fieldErr.phone}</FieldRed> : null}
-              <p className="mt-1.5 text-[11px] font-medium text-slate-400">+998 9X XXX XX XX</p>
+              <p className="mt-1.5 text-[11px] font-medium text-slate-400">+998 XX XXX XX XX</p>
             </label>
 
             <div className="pt-2">
               <PremiumBtn disabled={busy} onClick={() => void submit()} glow>
                 {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
-                {t("submit")}
+                {rateType === "complaint" ? t("submitComplaint") : t("submit")}
               </PremiumBtn>
               {err ? <RedBanner>{err}</RedBanner> : null}
             </div>
@@ -766,7 +855,7 @@ function ChoiceCard({
   title: string;
   sub: string;
   icon: React.ReactNode;
-  tone: "yellow" | "cyan";
+  tone: "yellow" | "cyan" | "rose";
   onClick: () => void;
   disabled?: boolean;
   warn?: boolean;
@@ -780,12 +869,15 @@ function ChoiceCard({
         "flex flex-col items-start gap-3 rounded-3xl border-2 bg-white px-4 py-5 text-left shadow-sm transition active:scale-[0.99]",
         disabled && "cursor-not-allowed opacity-60",
         warn ? "border-rose-300" : "border-slate-200 hover:border-[#5c2d91]/40 hover:shadow-md",
+        tone === "rose" && !warn && "hover:border-rose-300",
       )}
     >
       <span
         className={cn(
           "flex h-12 w-12 items-center justify-center rounded-2xl",
-          tone === "yellow" ? "bg-[#f5c518]/20 text-[#b8860b]" : "bg-[#22c5e0]/15 text-[#0891b2]",
+          tone === "yellow" && "bg-[#f5c518]/20 text-[#b8860b]",
+          tone === "cyan" && "bg-[#22c5e0]/15 text-[#0891b2]",
+          tone === "rose" && "bg-rose-100 text-rose-700",
         )}
       >
         {icon}

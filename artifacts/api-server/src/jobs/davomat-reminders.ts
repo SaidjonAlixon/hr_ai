@@ -279,6 +279,7 @@ type OpenCheckoutRow = {
   empId: number;
   workDate: string;
   checkInAt: Date | null;
+  source: string | null;
   fullName: string | null;
   orgRole: string | null;
   shiftType: string | null;
@@ -293,6 +294,7 @@ async function loadOpenCheckouts(): Promise<OpenCheckoutRow[]> {
       empId: attendanceRecordsTable.employeeId,
       workDate: attendanceRecordsTable.workDate,
       checkInAt: attendanceRecordsTable.checkInAt,
+      source: attendanceRecordsTable.source,
       fullName: employeesTable.fullName,
       orgRole: employeesTable.orgRole,
       shiftType: employeesTable.shiftType,
@@ -327,6 +329,8 @@ export async function autoCloseMissedCheckoutSilent(): Promise<{ closed: number 
 
   for (const r of open) {
     if (!r.userId || !r.checkInAt) continue;
+    // VaksinaMed GPS sync — Ketdim bo‘lmasa ham auto-absent qilinmasin
+    if (String(r.source || "").toLowerCase() === "vaksinamed") continue;
     const role = roles.get(r.userId) || "";
     if (isHiddenFromDavomat(role)) continue;
     const planType = await dayPlanShiftType(r.empId, r.workDate);

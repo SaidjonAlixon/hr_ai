@@ -40,7 +40,18 @@ type EmpDay = {
   planStart?: string;
   planEnd?: string;
   planCustom?: boolean;
+  excused?: boolean;
 };
+
+/** Hisobotdagi kabi: dam / oldindan / tashqari / ombor kechgi — Kelmagan emas */
+const SKIP_ABSENT_STATUSES = new Set([
+  "rest",
+  "prehire",
+  "outside",
+  "wh_morning",
+  "wh_evening",
+  "wh_onduty",
+]);
 
 /** Xodimga shaxsiy vaqt qo‘yilgan kun — kechikish o‘sha vaqtdan hisoblanadi */
 function withDayPlan(schedule: WorkSchedule, day: EmpDay | undefined): WorkSchedule {
@@ -48,7 +59,7 @@ function withDayPlan(schedule: WorkSchedule, day: EmpDay | undefined): WorkSched
   return { ...schedule, start: day.planStart, end: day.planEnd };
 }
 
-type BranchStaffStatus = "on_time" | "late" | "absent" | "leave" | "incomplete";
+type BranchStaffStatus = "on_time" | "late" | "absent" | "leave" | "incomplete" | "skip";
 
 type BranchStaffRow = {
   id: number;
@@ -381,7 +392,10 @@ function filterReport(
       const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? e.orgRole, m?.shiftType, m?.shiftLabel);
       const day = e.days.find((x) => x.date === date);
       const st = classifyStaffDay(day, withDayPlan(schedule, day)).status;
-      if (st === "absent") {
+      if (st === "skip") {
+        // Dam / ombor kechgi / uzrli — hisobotdagi kabi hisobga olinmaydi
+        continue;
+      } else if (st === "absent") {
         absent += 1;
       } else if (st === "leave") {
         leave += 1;
@@ -481,15 +495,49 @@ function classifyStaffDay(
   checkOut: string | null;
   lateMinutes: number;
 } {
-  if (!day || day.status === "absent") {
+  if (!day) {
     return {
-      status: "absent",
-      statusLabel: "Kelmagan",
+      status: "skip",
+      statusLabel: "—",
       checkIn: null,
       checkOut: null,
       lateMinutes: 0,
     };
   }
+
+  const checkIn = day.checkIn && day.checkIn !== "—" ? day.checkIn : null;
+  const checkOut = day.checkOut && day.checkOut !== "—" ? day.checkOut : null;
+
+  // Uzrli — hisobotdagi kabi Kelmagan emas
+  if (day.excused) {
+    if (checkIn) {
+      const cls = classifyCheckIn(checkIn, schedule);
+      if (cls.status === "late") {
+        return {
+          status: "late",
+          statusLabel: "Kechikdi",
+          checkIn,
+          checkOut,
+          lateMinutes: cls.lateMinutes,
+        };
+      }
+      return {
+        status: "on_time",
+        statusLabel: "Vaqtida",
+        checkIn,
+        checkOut,
+        lateMinutes: 0,
+      };
+    }
+    return {
+      status: "skip",
+      statusLabel: "Uzrli",
+      checkIn: null,
+      checkOut,
+      lateMinutes: 0,
+    };
+  }
+
   if (day.status === "leave") {
     return {
       status: "leave",
@@ -500,9 +548,23 @@ function classifyStaffDay(
     };
   }
 
-  const checkIn = day.checkIn && day.checkIn !== "—" ? day.checkIn : null;
-  const checkOut = day.checkOut && day.checkOut !== "—" ? day.checkOut : null;
-  if (!checkIn) {
+  // Dam / prehire / outside / ombor kechgi — Kelmagan emas (hisobot bilan bir xil)
+  if (!checkIn && SKIP_ABSENT_STATUSES.has(day.status)) {
+    return {
+      status: "skip",
+      statusLabel:
+        day.status === "rest"
+          ? "Dam kuni"
+          : day.status === "wh_evening" || day.status === "wh_morning" || day.status === "wh_onduty"
+            ? "Kechgi smena"
+            : "Hisobga olinmaydi",
+      checkIn: null,
+      checkOut,
+      lateMinutes: 0,
+    };
+  }
+
+  if (day.status === "absent" || !checkIn) {
     return {
       status: "absent",
       statusLabel: "Kelmagan",
@@ -568,7 +630,12 @@ function buildBranchStaff(
       const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? emp.orgRole, m?.shiftType, m?.shiftLabel);
       const day = emp.days.find((x) => x.date === targetDate);
       const cls = classifyStaffDay(day, withDayPlan(schedule, day));
+      if (cls.status === "skip") return null;
       const roleKey = m?.userRole || emp.orgRole || "";
+      const status: BranchStaffRow["status"] =
+        cls.status === "incomplete" || cls.status === "on_time" || cls.status === "late" || cls.status === "absent" || cls.status === "leave"
+          ? cls.status
+          : "absent";
       return {
         id: emp.id,
         fullName: emp.fullName,
@@ -576,12 +643,13 @@ function buildBranchStaff(
         shiftLabel: schedule.label,
         checkIn: cls.checkIn,
         checkOut: cls.checkOut,
-        status: cls.status,
+        status,
         statusLabel: cls.statusLabel,
         lateMinutes: cls.lateMinutes,
         roleOrder: STAFF_ROLE_ORDER[roleKey] ?? 5,
       };
     })
+    .filter((row): row is NonNullable<typeof row> => row != null)
     .sort((a, b) => a.roleOrder - b.roleOrder || a.fullName.localeCompare(b.fullName, "uz"))
     .map(({ roleOrder: _roleOrder, ...row }) => row);
 }
@@ -602,6 +670,7 @@ function buildBranchOpenings(
     const grace = graceMinutesFor(schedule);
     const day = e.days.find((x) => x.date === targetDate);
     const mudirDay = classifyStaffDay(day, withDayPlan(schedule, day));
+    if (mudirDay.status === "skip") continue;
 
     let status: "on_time" | "late" | "absent" | "leave";
     let statusLabel: string;
@@ -611,7 +680,7 @@ function buildBranchOpenings(
     if (mudirDay.status === "leave") {
       status = "leave";
       statusLabel = "Ta'tilda";
-    } else if (mudirDay.status === "absent" || !checkIn) {
+    } else if (mudirDay.status === "absent") {
       status = "absent";
       statusLabel = "Ochilmagan";
       checkIn = null;
@@ -665,6 +734,8 @@ function buildOfficeDayBoard(
     const grace = graceMinutesFor(schedule);
     const day = e.days.find((x) => x.date === targetDate);
     const staffDay = classifyStaffDay(day, withDayPlan(schedule, day));
+    // Dam / ombor kechgi / uzrli — doskada Kelmagan deb chiqarilmasin
+    if (staffDay.status === "skip") continue;
 
     let status: "on_time" | "late" | "absent" | "leave";
     let statusLabel: string;
@@ -676,7 +747,7 @@ function buildOfficeDayBoard(
       statusLabel = "Ta'tilda";
       checkIn = null;
       lateMinutes = 0;
-    } else if (staffDay.status === "absent" || !checkIn) {
+    } else if (staffDay.status === "absent") {
       status = "absent";
       statusLabel = "Kelmagan";
       checkIn = null;

@@ -1,6 +1,7 @@
 /**
- * Kamera ochish — mobil brauzerlarda ruxsat dialogini bir marta so‘raydi.
- * Face ID: old (user) kamera; QR: orqa (environment).
+ * Kamera ochish — mobil brauzerlarda tez va ishonchli.
+ * Face ID: old (user); QR: orqa (environment).
+ * Parallel getUserMedia yo‘q — bitta navbat.
  */
 
 export type CameraFacing = "user" | "environment";
@@ -80,6 +81,21 @@ function clearDeviceId(facing: CameraFacing) {
   }
 }
 
+/** Qora preview / timeout — eski deviceId ni tozalash */
+export function clearCameraDeviceCache(facing?: CameraFacing) {
+  if (facing) {
+    clearDeviceId(facing);
+    return;
+  }
+  try {
+    localStorage.removeItem(DEVICE_KEY);
+  } catch {
+    /* ignore */
+  }
+  delete cache.user;
+  delete cache.environment;
+}
+
 export async function queryCameraPermission(): Promise<"granted" | "denied" | "prompt" | "unknown"> {
   try {
     const status = await navigator.permissions?.query({
@@ -104,12 +120,12 @@ function remember(facing: CameraFacing, stream: MediaStream, constraints: MediaS
   markGranted();
 }
 
-async function tryGet(constraints: MediaStreamConstraints, timeoutMs = 10000): Promise<MediaStream> {
+async function tryGet(constraints: MediaStreamConstraints, timeoutMs: number): Promise<MediaStream> {
   const request = navigator.mediaDevices.getUserMedia(constraints);
   try {
     return await withTimeout(request, timeoutMs);
   } catch (e) {
-    // Kech kelgan stream kamerani band qilib, keyingi preview’ni qora qilib qo‘ymasin (iOS)
+    // Kech kelgan stream kamerani band qilib qo‘ymasin
     if (e instanceof Error && e.message === "camera_timeout") {
       void request.then((s) => s.getTracks().forEach((t) => t.stop())).catch(() => undefined);
     }
@@ -117,11 +133,10 @@ async function tryGet(constraints: MediaStreamConstraints, timeoutMs = 10000): P
   }
 }
 
-/** Birinchi marta — eng oddiy so‘rov (dialog 1 marta). Denied bo‘lsa ham keyinroq qayta urinish mumkin. */
+/** Faqat ruxsat holatini tekshirish — stream ochib yopmaydi (skaner band bo‘lmasin) */
 async function ensurePermissionOnce(): Promise<void> {
   const state = await queryCameraPermission();
-  if (state === "granted") return;
-  // "denied" — brauzer yolg‘on aytishi mumkin; baribir getUserMedia urinib ko‘ramiz
+  if (state === "granted" || wasCameraGrantedBefore()) return;
 
   if (permissionInflight) {
     await permissionInflight;
@@ -130,7 +145,7 @@ async function ensurePermissionOnce(): Promise<void> {
 
   permissionInflight = (async () => {
     try {
-      const stream = await tryGet({ audio: false, video: true }, 12000);
+      const stream = await tryGet({ audio: false, video: true }, 10_000);
       stream.getTracks().forEach((t) => t.stop());
       markGranted();
       return true;
@@ -144,46 +159,95 @@ async function ensurePermissionOnce(): Promise<void> {
   await permissionInflight;
 }
 
-function preferredConstraints(facing: CameraFacing, deviceId?: string): MediaStreamConstraints[] {
-  const list: MediaStreamConstraints[] = [
-    // exact — telefonda aynan old/orqa kamera; kompyuter webkamerasida tez rad etiladi va keyingisiga o‘tadi
-    {
+/**
+ * Tez constraint zanjiri — avval facingMode (iOS/TG ishonchli),
+ * keyin keshdagi deviceId. Eski deviceId birinchi bo‘lsa ko‘p telefonda qora/timeout.
+ * `exact` ishlatilmaydi.
+ */
+function preferredAttempts(
+  facing: CameraFacing,
+  deviceId: string | undefined,
+  grantedBefore: boolean,
+): Array<{ constraints: MediaStreamConstraints; timeoutMs: number; usesStored: boolean }> {
+  const firstMs = grantedBefore ? 7_000 : 12_000;
+  const nextMs = 4_000;
+  // QR uchun yuqoriroq o‘lcham (kichik kodlar uzoqdan o‘qilsin); Face ID uchun yengil 640x480
+  const size =
+    facing === "environment"
+      ? { width: { ideal: 1280 }, height: { ideal: 720 } }
+      : { width: { ideal: 640 }, height: { ideal: 480 } };
+  const list: Array<{ constraints: MediaStreamConstraints; timeoutMs: number; usesStored: boolean }> =
+    [];
+
+  // 1) Eng sodda facingMode — Telegram WebView / Android uchun eng barqaror
+  list.push({
+    usesStored: false,
+    timeoutMs: firstMs,
+    constraints: {
       audio: false,
       video: {
-        facingMode: { exact: facing },
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
+        facingMode: facing,
+        ...size,
       },
     },
-    {
-      audio: false,
-      video: {
-        facingMode: { ideal: facing },
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-      },
-    },
-    { audio: false, video: { facingMode: { ideal: facing } } },
-  ];
+  });
+
+  // 2) Keshdagi deviceId — faqat zaxira (noto‘g‘ri bo‘lsa clear qilinadi)
   if (deviceId) {
     list.push({
-      audio: false,
-      video: { deviceId: { ideal: deviceId } },
+      usesStored: true,
+      timeoutMs: 3_500,
+      constraints: {
+        audio: false,
+        video: {
+          deviceId: { ideal: deviceId },
+          ...size,
+        },
+      },
     });
   }
-  if (facing === "user") list.push({ audio: false, video: true });
+
+  list.push({
+    usesStored: false,
+    timeoutMs: nextMs,
+    constraints: {
+      audio: false,
+      video: { facingMode: { ideal: facing } },
+    },
+  });
+
+  list.push({
+    usesStored: false,
+    timeoutMs: nextMs,
+    constraints: { audio: false, video: true },
+  });
+
   return list;
 }
 
 async function resetDigitalZoom(stream: MediaStream) {
   const track = stream.getVideoTracks()[0];
-  const caps = track?.getCapabilities?.() as { zoom?: { min?: number } } | undefined;
-  const min = caps?.zoom?.min;
-  if (!track || typeof min !== "number") return;
-  try {
-    await track.applyConstraints({ advanced: [{ zoom: min } as MediaTrackConstraintSet] });
-  } catch {
-    /* ba’zi telefonlar zoom bermaydi */
+  const caps = track?.getCapabilities?.() as
+    | { zoom?: { min?: number }; focusMode?: string[] }
+    | undefined;
+  if (!track || !caps) return;
+  const min = caps.zoom?.min;
+  if (typeof min === "number") {
+    try {
+      await track.applyConstraints({ advanced: [{ zoom: min } as MediaTrackConstraintSet] });
+    } catch {
+      /* zoom yo‘q */
+    }
+  }
+  // Doimiy avtofokus — QR/yuz aniq bo‘lsin
+  if (Array.isArray(caps.focusMode) && caps.focusMode.includes("continuous")) {
+    try {
+      await track.applyConstraints({
+        advanced: [{ focusMode: "continuous" } as unknown as MediaTrackConstraintSet],
+      });
+    } catch {
+      /* fokus boshqarilmaydi */
+    }
   }
 }
 
@@ -205,16 +269,6 @@ function isPermissionDenied(e: unknown): boolean {
   return false;
 }
 
-/** Face ID — standart old (selfie) kamera */
-export async function openFaceCamera(): Promise<MediaStream> {
-  return openCameraFast("user");
-}
-
-/** QR — orqa */
-export async function openScanCamera(): Promise<MediaStream> {
-  return openCameraFast("environment");
-}
-
 function isCameraBusy(e: unknown): boolean {
   return (
     e instanceof DOMException &&
@@ -226,16 +280,96 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-/** Bir vaqtda faqat bitta kamera so‘rovi — parallel getUserMedia telefonda «kamera band» yoki qora ekran beradi */
+/** Face ID — old (selfie) */
+export async function openFaceCamera(): Promise<MediaStream> {
+  return openCameraFast("user");
+}
+
+/** QR — orqa */
+export async function openScanCamera(): Promise<MediaStream> {
+  return openCameraFast("environment");
+}
+
+/** Bir vaqtda faqat bitta kamera so‘rovi */
 let openChain: Promise<unknown> = Promise.resolve();
 
-export function openCameraFast(facing: CameraFacing): Promise<MediaStream> {
+/** Bosish paytida (user gesture) boshlangan, dialog hali olmagan kamera */
+const pendingOpen: Partial<Record<CameraFacing, Promise<MediaStream>>> = {};
+
+/**
+ * Tugma bosilgan zahoti chaqiring: kamera dialog chizilguncha parallel ochila boshlaydi.
+ * Dialog `openCameraFast` chaqirganda tayyor (yoki yo‘ldagi) oqimni oladi.
+ * 10 soniyada olinmasa — avtomatik yopiladi (kamera band qolmasin).
+ */
+export function prefetchCamera(facing: CameraFacing): void {
+  if (typeof window === "undefined") return;
+  if (pendingOpen[facing]) return;
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) return;
+  const p = runOpen(facing);
+  pendingOpen[facing] = p;
+  const timer = window.setTimeout(() => {
+    if (pendingOpen[facing] !== p) return;
+    delete pendingOpen[facing];
+    void p.then((s) => s.getTracks().forEach((t) => t.stop())).catch(() => undefined);
+  }, 10_000);
+  p.catch(() => {
+    window.clearTimeout(timer);
+    if (pendingOpen[facing] === p) delete pendingOpen[facing];
+  });
+}
+
+function isHardFailure(e: unknown): boolean {
+  if (e instanceof DOMException) {
+    return (
+      e.name === "NotAllowedError" ||
+      e.name === "PermissionDeniedError" ||
+      e.name === "NotFoundError" ||
+      e.name === "DevicesNotFoundError" ||
+      e.name === "SecurityError"
+    );
+  }
+  return (
+    e instanceof Error &&
+    (e.message === "camera_denied" ||
+      e.message === "secure_context" ||
+      e.message === "camera_unsupported" ||
+      e.message === "camera_not_found")
+  );
+}
+
+function runOpen(facing: CameraFacing): Promise<MediaStream> {
   const run = openChain.then(
-    () => openCameraOnce(facing),
+    async () => {
+      try {
+        return await openCameraOnce(facing);
+      } catch (e) {
+        // Ruxsat yo‘q / kamera yo‘q — qayta urinish befoyda
+        if (isHardFailure(e)) throw e;
+        // Timeout / band / qora kesh — tozalab bitta qayta urinish
+        clearCameraDeviceCache(facing);
+        await sleep(isCameraBusy(e) ? 500 : 250);
+        return openCameraOnce(facing);
+      }
+    },
     () => openCameraOnce(facing),
   );
   openChain = run.catch(() => undefined);
   return run;
+}
+
+export async function openCameraFast(facing: CameraFacing): Promise<MediaStream> {
+  const pending = pendingOpen[facing];
+  if (pending) {
+    delete pendingOpen[facing];
+    try {
+      const s = await pending;
+      if (s.getVideoTracks().some((t) => t.readyState === "live")) return s;
+      s.getTracks().forEach((t) => t.stop());
+    } catch (e) {
+      if (isHardFailure(e)) throw e;
+    }
+  }
+  return runOpen(facing);
 }
 
 async function openCameraOnce(facing: CameraFacing): Promise<MediaStream> {
@@ -243,49 +377,63 @@ async function openCameraOnce(facing: CameraFacing): Promise<MediaStream> {
   if (!navigator.mediaDevices?.getUserMedia) throw new Error("camera_unsupported");
   if (permissionInflight) await permissionInflight.catch(() => undefined);
 
+  const grantedBefore = wasCameraGrantedBefore();
   const stored = loadDeviceCache()[facing] || cache[facing]?.deviceId;
   let lastErr: unknown;
   let denied = false;
   let busyRetried = false;
+  /** Noto‘g‘ri facing bilan ochilgan, lekin ishlayotgan stream — oxirgi zaxira */
+  let fallbackStream: MediaStream | null = null;
 
-  let attempt = 0;
-  for (const constraints of preferredConstraints(facing, stored)) {
-    const usesStored = Boolean(stored && JSON.stringify(constraints.video).includes(stored));
+  const accept = async (stream: MediaStream, constraints: MediaStreamConstraints, got: CameraFacing | null) => {
+    await resetDigitalZoom(stream);
+    if (got === facing) remember(facing, stream, constraints);
+    else markGranted();
+    return stream;
+  };
+
+  for (const attempt of preferredAttempts(facing, stored, grantedBefore)) {
+    const { constraints, timeoutMs, usesStored } = attempt;
     try {
-      // Ruxsat oynasi chiqishi mumkin — foydalanuvchiga vaqt beramiz
-      const firstTime = attempt++ === 0 || !wasCameraGrantedBefore();
       let stream: MediaStream;
       try {
-        stream = await tryGet(constraints, firstTime ? 20000 : 8000);
+        stream = await tryGet(constraints, timeoutMs);
       } catch (e) {
-        // Oldingi oqim hali bo‘shamagan — biroz kutib aynan shu so‘rovni qaytaramiz
+        if (e instanceof DOMException && e.name === "OverconstrainedError") {
+          lastErr = e;
+          if (usesStored) clearDeviceId(facing);
+          continue;
+        }
         if (!isCameraBusy(e) || busyRetried) throw e;
         busyRetried = true;
-        await sleep(600);
-        stream = await tryGet(constraints, 8000);
+        await sleep(450);
+        stream = await tryGet(constraints, Math.min(timeoutMs, 6_000));
       }
-      await resetDigitalZoom(stream);
+
       const got = reportedFacing(stream);
-      // Faqat aniq noto‘g‘ri kamerani rad etamiz; facing noma’lum bo‘lsa qabul (kompyuter webkamerasi)
+      // Ko‘p telefonda facingMode noto‘g‘ri/yo‘q — ishlayotgan streamni rad etmaymiz
       if (got && got !== facing) {
-        stream.getTracks().forEach((t) => t.stop());
+        if (!fallbackStream) fallbackStream = stream;
+        else stream.getTracks().forEach((t) => t.stop());
         if (usesStored) clearDeviceId(facing);
         continue;
       }
-      if (got === facing) remember(facing, stream, constraints);
-      else markGranted();
-      return stream;
+      if (fallbackStream && fallbackStream !== stream) {
+        fallbackStream.getTracks().forEach((t) => t.stop());
+        fallbackStream = null;
+      }
+      return await accept(stream, constraints, got);
     } catch (e) {
       lastErr = e;
       if (isPermissionDenied(e)) {
         denied = true;
         break;
       }
-      // Eski deviceId ishlamasa — cache tozalab davom etamiz
       if (usesStored) clearDeviceId(facing);
     }
   }
 
+  // EnumerateDevices — oxirgi urinish
   if (!denied) {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
@@ -299,17 +447,29 @@ async function openCameraOnce(facing: CameraFacing): Promise<MediaStream> {
       if (pick?.deviceId) {
         const constraints: MediaStreamConstraints = {
           audio: false,
-          video: { deviceId: { ideal: pick.deviceId } },
+          video: {
+            deviceId: { ideal: pick.deviceId },
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+          },
         };
-        const stream = await tryGet(constraints, 6000);
-        await resetDigitalZoom(stream);
-        remember(facing, stream, constraints);
-        return stream;
+        const stream = await tryGet(constraints, 5_000);
+        if (fallbackStream) {
+          fallbackStream.getTracks().forEach((t) => t.stop());
+          fallbackStream = null;
+        }
+        return await accept(stream, constraints, reportedFacing(stream));
       }
     } catch (e) {
       lastErr = e;
       if (isPermissionDenied(e)) denied = true;
     }
+  }
+
+  // Hech bo‘lmasa ishlayotgan (facing nomuvofiq) stream
+  if (fallbackStream) {
+    markGranted();
+    return fallbackStream;
   }
 
   if (denied || isPermissionDenied(lastErr)) {
@@ -322,8 +482,7 @@ async function openCameraOnce(facing: CameraFacing): Promise<MediaStream> {
 }
 
 /**
- * Ruxsatni fonida tekshirish — agar allaqachon granted bo‘lsa getUserMedia chaqirmaydi
- * (mobil’da qayta dialog chiqmasin).
+ * Ruxsatni fonida tekshirish — granted bo‘lsa getUserMedia chaqirmaydi.
  */
 export async function warmCamera(_facing: CameraFacing = "user"): Promise<boolean> {
   try {
@@ -341,7 +500,7 @@ export async function warmCamera(_facing: CameraFacing = "user"): Promise<boolea
   }
 }
 
-/** UI uchun xato kodini o‘qiladigan qilish */
+/** UI uchun xato kodi */
 export function cameraErrorCode(err: unknown): string {
   if (err instanceof DOMException) {
     if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") return "camera_denied";

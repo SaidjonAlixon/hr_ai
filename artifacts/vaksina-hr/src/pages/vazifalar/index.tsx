@@ -2122,7 +2122,7 @@ export default function VazifalarPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 bg-background">
+    <div className="flex h-full min-h-0 bg-transparent">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="shrink-0 border-b border-border/70 bg-card/90 px-3 pb-2.5 pt-2.5 backdrop-blur-md supports-[backdrop-filter]:bg-card/80 md:px-5 md:pb-3 md:pt-3">
         <div className="flex flex-col gap-2 md:gap-3 lg:flex-row lg:items-center lg:justify-between">

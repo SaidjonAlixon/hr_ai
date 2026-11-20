@@ -1223,7 +1223,8 @@ export function TaskFormDialog({
   const [addAssigneesBusy, setAddAssigneesBusy] = useState(false);
   const [batchDetailId, setBatchDetailId] = useState<number | null>(null);
   const [filterOfis, setFilterOfis] = useState(true);
-  const [filterDorixona, setFilterDorixona] = useState(true);
+  /** Standart: o‘chiq — faqat Ofis; kerak bo‘lsa qo‘lda yoqiladi */
+  const [filterDorixona, setFilterDorixona] = useState(false);
   const [branchOrDept, setBranchOrDept] = useState("");
   const [taskType, setTaskType] = useState("hisobot");
   const [tags, setTags] = useState<string[]>([]);
@@ -1303,7 +1304,27 @@ export function TaskFormDialog({
       setPriority(editing.priority);
       setDueDate(due.date);
       setDueTime(due.time);
-      const loadedKey = `${editing.assigneeKind}:${editing.assigneeId}`;
+      // employee:ID → agar akkaunt bo‘lsa user:ID (dropdown shu formatda)
+      let loadedKey = `${editing.assigneeKind}:${editing.assigneeId}`;
+      if (editing.assigneeKind === "employee") {
+        const linkedUid = Number((editing as { assigneeUserId?: number | null }).assigneeUserId);
+        const byUserId =
+          Number.isFinite(linkedUid) && linkedUid > 0
+            ? assigneeOptions.find((o) => o.kind === "user" && o.id === linkedUid)
+            : undefined;
+        const byEmp = assigneeOptions.find(
+          (o) => o.kind === "employee" && o.id === editing.assigneeId,
+        );
+        const wantName = String(
+          (editing as { assigneeName?: string | null }).assigneeName || "",
+        )
+          .trim()
+          .toLowerCase();
+        const byName = wantName
+          ? assigneeOptions.find((o) => o.name.trim().toLowerCase() === wantName)
+          : undefined;
+        loadedKey = (byUserId || byEmp || byName)?.key || loadedKey;
+      }
       const selfKey = currentUserId != null ? `user:${currentUserId}` : "";
       setAssigneeKey(selfKey && loadedKey === selfKey ? "" : loadedKey);
       setMultiAssigneeKeys([]);
@@ -1377,6 +1398,8 @@ export function TaskFormDialog({
     setSupervisorKey(canPickSupervisor ? readLastSupervisorKey() : "");
     setSupervisorOpen(false);
     setBatchDetailId(null);
+    setFilterOfis(true);
+    setFilterDorixona(false);
     setBranchOrDept("");
     setTaskType("hisobot");
     setTags([]);
@@ -1407,7 +1430,7 @@ export function TaskFormDialog({
     setViewerFile(null);
     setWorkNote("");
     setWorkFiles([]);
-    if (basedOnSource) {
+  if (basedOnSource) {
       const src = basedOnSource;
       const suffix = t("tasks.form.createFromTitleSuffix");
       const baseTitle = String(src.title || "").trim();
@@ -1466,7 +1489,7 @@ export function TaskFormDialog({
       setDueTime(d.time || "18:00");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: hydrate by id / basedOn
-  }, [open, editing?.id, defaultDueAt, basedOnSource?.id]);
+  }, [open, editing?.id, defaultDueAt, basedOnSource?.id, assigneeOptions, currentUserId]);
 
   // Rich-text editor HTML — ochilganda / vazifa almashtirilganda (mount dan keyin)
   useEffect(() => {
@@ -1946,7 +1969,7 @@ export function TaskFormDialog({
     setAssigneeKey(d.assigneeKey || "");
     setMultiAssigneeKeys(d.multiAssigneeKeys || []);
     setFilterOfis(d.filterOfis !== false);
-    setFilterDorixona(d.filterDorixona !== false);
+    setFilterDorixona(d.filterDorixona === true);
     setBranchOrDept(d.branchOrDept || "");
     setTaskType(d.taskType || "hisobot");
     setTags(d.tags || []);
@@ -2645,6 +2668,15 @@ export function TaskFormDialog({
               </DialogDescription>
             </div>
             <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
+              {!isReadOnly && !editing && (
+                <label className="mr-0.5 flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 sm:px-3">
+                  <Checkbox
+                    checked={filterDorixona}
+                    onCheckedChange={(v) => setFilterDorixona(v === true)}
+                  />
+                  {t("tasks.form.filterDorixona")}
+                </label>
+              )}
               {!isReadOnly && !editing && (
               <Popover
                 open={draftsOpen}
@@ -3353,14 +3385,6 @@ export function TaskFormDialog({
                         disabled={singleModeLocked}
                       />
                       {t("tasks.form.filterOfis")}
-                    </label>
-                    <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-semibold text-foreground">
-                      <Checkbox
-                        checked={filterDorixona}
-                        onCheckedChange={(v) => setFilterDorixona(v === true)}
-                        disabled={singleModeLocked}
-                      />
-                      {t("tasks.form.filterDorixona")}
                     </label>
                   </div>
                 </div>

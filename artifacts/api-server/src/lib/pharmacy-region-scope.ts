@@ -119,3 +119,36 @@ export async function managerIdsForRegionalManager(userId: number): Promise<Set<
   if (!viloyat) return new Set();
   return managerIdsInViloyat(viloyat);
 }
+
+export type RegionalBranchCoord = {
+  branchId: number;
+  lat: number;
+  lng: number;
+  label: string;
+};
+
+/** Regional menejer hududidagi filiallar GPS — davomat geofence uchun */
+export async function loadRegionalManagerBranchCoords(
+  userId: number,
+): Promise<RegionalBranchCoord[]> {
+  const ids = await managerIdsForRegionalManager(userId);
+  if (ids.size === 0) return [];
+  const rows = await loadEmployees();
+  const out: RegionalBranchCoord[] = [];
+  for (const r of rows) {
+    if (!ids.has(r.id)) continue;
+    if (String(r.orgRole || "") !== "manager") continue;
+    if (r.employmentStatus === "dismissed" || r.employmentStatus === "closed") continue;
+    if (r.latitude == null || r.longitude == null) continue;
+    const lat = Number(r.latitude);
+    const lng = Number(r.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    out.push({
+      branchId: r.id,
+      lat,
+      lng,
+      label: (r.location || "").split("|")[0]!.trim() || `Filial #${r.id}`,
+    });
+  }
+  return out;
+}

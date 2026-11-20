@@ -44,8 +44,13 @@ import {
   isReviziyaRole,
   isBoshAdmin,
   isHiddenFromDavomat,
+  isRegionalManager,
   NON_STAFF_ROLES,
 } from "../lib/roles";
+import {
+  loadRegionalManagerBranchCoords,
+  managerIdsForRegionalManager,
+} from "../lib/pharmacy-region-scope";
 import {
   accessEditors,
   auditActorStats,
@@ -77,6 +82,10 @@ import {
   staffFilterLabelUz,
   warehouseShiftKeyOf,
 } from "../lib/davomat-staff-filter";
+import {
+  resolveWarehouseDavomatStatus,
+  WH_STATUS_EVENING,
+} from "../lib/warehouse-davomat-status";
 import { scheduledRestInfo, isWeekendYmd, requiresMandatoryFaceEnroll } from "../lib/ofis-weekend";
 
 /** Ofis xodimi Face ID ro‘yxatdan o‘tmagan bo‘lsa davomat blok. */
@@ -487,10 +496,24 @@ function computeMetrics(
     workedMinutes = 0;
   }
 
+  const checkInHm = formatHm(checkInAt ?? null);
+  const checkOutHm = formatHm(checkOutAt ?? null);
+
+  // Omborxona: Kelmagan o‘rniga ertalabki/kechgi/ishda
+  if (
+    (hours?.warehouseFlexible || hours?.warehouse) &&
+    status !== "leave" &&
+    status !== "rest" &&
+    !(forcedStatus === "leave")
+  ) {
+    const wh = resolveWarehouseDavomatStatus(checkInAt ? checkInHm : null);
+    status = wh.status;
+  }
+
   return {
     status,
-    checkIn: formatHm(checkInAt ?? null),
-    checkOut: formatHm(checkOutAt ?? null),
+    checkIn: checkInHm,
+    checkOut: checkOutHm,
     workedMinutes,
     workedHours: fmtHours(workedMinutes),
     earlyArrivalMin,
@@ -539,6 +562,9 @@ function davomatStatusLine(status: string, restDayWork?: boolean): string {
   if (status === "present") return "O'z vaqtida keldi";
   if (status === "leave") return "Ta'tilda";
   if (status === "rest") return "Dam kuni";
+  if (status === "wh_morning") return "Ertalabki smena";
+  if (status === "wh_evening") return "Kechgi smena";
+  if (status === "wh_onduty") return "Ishda";
   return "Kelmagan";
 }
 
@@ -1402,10 +1428,31 @@ function buildReport(
   const staffHours = (e: (typeof employees)[0]) =>
     hoursForStaff(e.orgRole, e.shiftType, e.userRole, e.shiftLabel, defs);
 
+  const applyWarehouseDay = <T extends { status: string; checkIn?: string; checkOut?: string }>(
+    day: T,
+    hours: { warehouse?: boolean; warehouseFlexible?: boolean },
+    empIsWarehouse: boolean,
+  ): T => {
+    if (!empIsWarehouse && !hours.warehouse && !hours.warehouseFlexible) return day;
+    if (
+      day.status === "leave" ||
+      day.status === "rest" ||
+      day.status === "prehire" ||
+      day.status === "outside"
+    ) {
+      return day;
+    }
+    const checkIn = day.checkIn && day.checkIn !== "—" ? day.checkIn : null;
+    const wh = resolveWarehouseDavomatStatus(checkIn);
+    return { ...day, status: wh.status };
+  };
+
   // Bitta o'tishda employee kunlari — dayStats shundan (ikki marta computeMetrics yo'q)
   const employeeRows = employees
     .map((e) => {
       const baseHours = staffHours(e);
+      const empWarehouse =
+        isWarehouseDavomatStaff(e) || Boolean(baseHours.warehouse) || Boolean(baseHours.warehouseFlexible);
       const rules = scheduleOverrides.get(e.id) || [];
       const days = dates.map((date) => {
         const phase = employmentPhase(date, e.hiredAt, e.dismissedAt);
@@ -1466,29 +1513,37 @@ function buildReport(
           if (rec.checkInAt) {
             const raw = computeMetrics(date, rec.checkInAt, rec.checkOutAt, chosen, hours);
             const m = applyJavobExemptionToMetrics(raw, ex, hours?.graceMinutes ?? 15);
-            return {
-              date,
-              ...m,
-              status: chosen,
-              source: rec.source,
-              notes: rec.excuseNote || rec.notes,
-              recordId: rec.id,
-              restDayWork: !!(restDay && rec.checkInAt),
-              ...plan,
-              ...excuse,
-            };
+            return applyWarehouseDay(
+              {
+                date,
+                ...m,
+                status: chosen,
+                source: rec.source,
+                notes: rec.excuseNote || rec.notes,
+                recordId: rec.id,
+                restDayWork: !!(restDay && rec.checkInAt),
+                ...plan,
+                ...excuse,
+              },
+              hours,
+              empWarehouse,
+            );
           }
           const shell = chosen === "leave" || chosen === "rest" ? chosen : "absent";
-          return {
-            ...emptyDayMetrics(date, shell, {
-              source: rec.source,
-              notes: rec.excuseNote || rec.notes,
-              recordId: rec.id,
-            }),
-            status: chosen,
-            ...plan,
-            ...excuse,
-          };
+          return applyWarehouseDay(
+            {
+              ...emptyDayMetrics(date, shell, {
+                source: rec.source,
+                notes: rec.excuseNote || rec.notes,
+                recordId: rec.id,
+              }),
+              status: chosen,
+              ...plan,
+              ...excuse,
+            },
+            hours,
+            empWarehouse,
+          );
         }
         if (!rec || (!rec.checkInAt && (rec.status === "absent" || !rec.status))) {
           if (restDay) {
@@ -1503,7 +1558,11 @@ function buildReport(
               ...excuse,
             };
           }
-          return { ...emptyDayMetrics(date, "absent"), ...plan, ...excuse };
+          return applyWarehouseDay(
+            { ...emptyDayMetrics(date, "absent"), ...plan, ...excuse },
+            hours,
+            empWarehouse,
+          );
         }
         if (rec.status === "leave") {
           return {
@@ -1533,25 +1592,29 @@ function buildReport(
           restDay && rec.checkInAt && exempted.status === "late"
             ? { ...exempted, status: "present", lateArrivalMin: 0, lateArrivalLabel: "" }
             : exempted;
-        return {
-          date,
-          ...m,
-          source: rec.source,
-          notes:
-            restDay && rec.checkInAt
-              ? rec.notes
-                ? `${rec.notes} · Qo'shimcha ish (dam kuni, jarimasiz)`
-                : "Qo'shimcha ish (dam kuni, jarimasiz)"
-              : ex
+        return applyWarehouseDay(
+          {
+            date,
+            ...m,
+            source: rec.source,
+            notes:
+              restDay && rec.checkInAt
                 ? rec.notes
-                  ? `${rec.notes} · Javob olish (jarimasiz)`
-                  : "Javob olish (jarimasiz)"
-                : rec.notes,
-          recordId: rec.id,
-          restDayWork: !!(restDay && rec.checkInAt),
-          ...plan,
-          ...excuse,
-        };
+                  ? `${rec.notes} · Qo'shimcha ish (dam kuni, jarimasiz)`
+                  : "Qo'shimcha ish (dam kuni, jarimasiz)"
+                : ex
+                  ? rec.notes
+                    ? `${rec.notes} · Javob olish (jarimasiz)`
+                    : "Javob olish (jarimasiz)"
+                  : rec.notes,
+            recordId: rec.id,
+            restDayWork: !!(restDay && rec.checkInAt),
+            ...plan,
+            ...excuse,
+          },
+          hours,
+          empWarehouse,
+        );
       });
 
       const totals = {
@@ -1576,7 +1639,9 @@ function buildReport(
           continue;
         }
         if (d.status === "absent") totals.absent += 1;
-        else if (d.status === "leave") totals.leave += 1;
+        else if (d.status === WH_STATUS_EVENING && (!d.checkIn || d.checkIn === "—")) {
+          // Omborxona kechgi smena — kelmagan emas, hali kelishi mumkin
+        } else if (d.status === "leave") totals.leave += 1;
         else if (d.status === "rest") totals.rest += 1;
         else {
           totals.present += 1;
@@ -2607,7 +2672,10 @@ async function resolveDavomatPoint(emp: WorkplaceEmp, userRole: string): Promise
     };
   }
 
-  if (!usesBranchDavomat(userRole, emp.orgRole)) {
+  // Dorixona rollari yoki filial biriktirilgan xodim (masalan regional menejer)
+  // → Asosiy ofis emas, biriktirilgan filial GPS
+  const pharmacyStaff = usesBranchDavomat(userRole, emp.orgRole);
+  if (!pharmacyStaff && !emp.assignedBranchId) {
     return {
       ok: true,
       point: {
@@ -2623,7 +2691,7 @@ async function resolveDavomatPoint(emp: WorkplaceEmp, userRole: string): Promise
   let label = displayBranchName(emp.location) || emp.location || emp.fullName;
 
   const effective = await effectiveBranchIdForDay(emp);
-  const branchId = effective.branchId;
+  const branchId = effective.branchId || emp.assignedBranchId || null;
   if (effective.branchLabel) label = effective.branchLabel;
 
   if (branchId) {
@@ -3290,6 +3358,217 @@ async function resolveCoordinatorGeoGate(opts: {
  * Reviziya (rahbar + revizor): ofis yoki istalgan filial geofence ichida davomat.
  * preferredBranchId bo‘lsa — avvalo shu filial.
  */
+/**
+ * Regional menejer: asosiy ofis YOKI o‘z viloyatidagi istalgan filial (30 m).
+ */
+async function resolveRegionalManagerGeoGate(opts: {
+  emp: WorkplaceEmp;
+  userId: number;
+  latitude: number;
+  longitude: number;
+  mobileAnywhere: boolean;
+  preferredBranchId?: number | null;
+  strictPreferred?: boolean;
+}): Promise<GeoGateOk | { ok: false; status: number; body: Record<string, unknown> }> {
+  const { emp, userId, latitude, longitude, mobileAnywhere, preferredBranchId, strictPreferred } =
+    opts;
+  const GEOFENCE_SLACK_M = 8;
+  const branchR = geofenceMetersForKind("branch");
+  const officeR = geofenceMetersForKind("office");
+
+  const own = await loadRegionalManagerBranchCoords(userId);
+  const ownIds = new Set(own.map((b) => b.branchId));
+
+  const tryBranch = (
+    branchId: number,
+    lat: number,
+    lng: number,
+    label: string,
+  ): GeoGateOk | null => {
+    const distanceMeters = haversineMeters(latitude, longitude, lat, lng);
+    if (!mobileAnywhere && distanceMeters > branchR + GEOFENCE_SLACK_M) return null;
+    return {
+      ok: true,
+      distanceMeters,
+      effectiveRadius: mobileAnywhere
+        ? Math.max(branchR, Math.ceil(distanceMeters) || branchR)
+        : branchR,
+      point: {
+        latitude: lat,
+        longitude: lng,
+        label,
+        kind: "branch",
+      },
+      resolvedBranchId: branchId,
+      resolvedBranchLabel: label,
+      activeShiftKey: null,
+      daySlots: [],
+    };
+  };
+
+  const tryOffice = (): GeoGateOk | null => {
+    const distanceMeters = haversineMeters(
+      latitude,
+      longitude,
+      DAVOMAT_SITE_LAT,
+      DAVOMAT_SITE_LNG,
+    );
+    if (!mobileAnywhere && distanceMeters > officeR + GEOFENCE_SLACK_M) return null;
+    return {
+      ok: true,
+      distanceMeters,
+      effectiveRadius: mobileAnywhere
+        ? Math.max(officeR, Math.ceil(distanceMeters) || officeR)
+        : officeR,
+      point: {
+        latitude: DAVOMAT_SITE_LAT,
+        longitude: DAVOMAT_SITE_LNG,
+        label: `Asosiy ofis · ${DAVOMAT_SITE_LABEL}`,
+        kind: "office",
+      },
+      resolvedBranchId: null,
+      resolvedBranchLabel: COORD_OFFICE_LABEL,
+      activeShiftKey: null,
+      daySlots: [],
+    };
+  };
+
+  if (
+    preferredBranchId != null &&
+    Number.isFinite(preferredBranchId) &&
+    preferredBranchId > 0
+  ) {
+    if (!ownIds.has(preferredBranchId) && !mobileAnywhere) {
+      return {
+        ok: false,
+        status: 403,
+        body: {
+          error:
+            "Bu filial sizning hududingizga kirmaydi. Faqat o‘z viloyatingizdagi filiallarda yoki asosiy ofisda davomat qila olasiz.",
+          code: "not_own_branch",
+          fullName: emp.fullName,
+          regionalFieldPunch: true,
+        },
+      };
+    }
+    const coords = await branchCoordsById(preferredBranchId);
+    if (!coords) {
+      return {
+        ok: false,
+        status: 403,
+        body: {
+          error: "Filial GPS yo‘q. Filial lokatsiyasini kiriting.",
+          code: "branch_gps_missing",
+          fullName: emp.fullName,
+        },
+      };
+    }
+    const hit = tryBranch(preferredBranchId, coords.lat, coords.lng, coords.label);
+    if (hit) return hit;
+    if (strictPreferred || preferredBranchId) {
+      const distanceMeters = haversineMeters(latitude, longitude, coords.lat, coords.lng);
+      const remainMeters = Math.max(0, Math.round(distanceMeters - branchR));
+      return {
+        ok: false,
+        status: 403,
+        body: {
+          error: `«${coords.label}» filial hududida emassiz (${distanceMeters} m). Yana ${remainMeters} m yaqinlashib davomat qiling.`,
+          code: "outside_geofence",
+          distanceMeters,
+          remainMeters,
+          allowedMeters: branchR,
+          workplace: {
+            location: coords.label,
+            latitude: coords.lat,
+            longitude: coords.lng,
+            kind: "branch",
+          },
+          fullName: emp.fullName,
+          regionalFieldPunch: true,
+        },
+      };
+    }
+  }
+
+  let best: { branchId: number; lat: number; lng: number; label: string; d: number } | null =
+    null;
+  for (const b of own) {
+    const d = haversineMeters(latitude, longitude, b.lat, b.lng);
+    if (!best || d < best.d) best = { ...b, d };
+  }
+  if (best && best.d <= branchR + GEOFENCE_SLACK_M) {
+    const hit = tryBranch(best.branchId, best.lat, best.lng, best.label);
+    if (hit) return hit;
+  }
+
+  const officeHit = tryOffice();
+  if (officeHit) {
+    if (mobileAnywhere && best && best.d <= Math.max(branchR * 3, 200)) {
+      const hit = tryBranch(best.branchId, best.lat, best.lng, best.label);
+      if (hit) return hit;
+    }
+    return officeHit;
+  }
+
+  if (mobileAnywhere) {
+    if (best) {
+      const hit = tryBranch(best.branchId, best.lat, best.lng, best.label);
+      if (hit) return hit;
+    }
+    return (
+      tryOffice() || {
+        ok: true,
+        distanceMeters: 0,
+        effectiveRadius: officeR,
+        point: {
+          latitude: DAVOMAT_SITE_LAT,
+          longitude: DAVOMAT_SITE_LNG,
+          label: `Asosiy ofis · ${DAVOMAT_SITE_LABEL}`,
+          kind: "office",
+        },
+        resolvedBranchId: null,
+        resolvedBranchLabel: COORD_OFFICE_LABEL,
+        activeShiftKey: null,
+        daySlots: [],
+      }
+    );
+  }
+
+  const officeDist = haversineMeters(latitude, longitude, DAVOMAT_SITE_LAT, DAVOMAT_SITE_LNG);
+  const remainOffice = Math.max(0, officeDist - officeR);
+  const remainBranch = best ? Math.max(0, best.d - branchR) : null;
+  return {
+    ok: false,
+    status: 403,
+    body: {
+      error: best
+        ? `Regional menejer davomati: asosiy ofis (${remainOffice} m) yoki hududingizdagi filial «${best.label}» (${remainBranch} m) zonasiga kiring.`
+        : own.length === 0
+          ? `Hudud filiallari topilmadi — assigned_viloyat / filial GPS tekshirilsin. Ofis: ${officeDist} m (ruxsat ${officeR} m).`
+          : `Hududdan tashqaridasiz (asosiy ofis): ${officeDist} m. Ruxsat ${officeR} m.`,
+      code: "outside_geofence",
+      distanceMeters: best && best.d < officeDist ? best.d : officeDist,
+      remainMeters: best && best.d < officeDist ? remainBranch : remainOffice,
+      allowedMeters: best && best.d < officeDist ? branchR : officeR,
+      workplace: best
+        ? {
+            location: best.label,
+            latitude: best.lat,
+            longitude: best.lng,
+            kind: "branch",
+          }
+        : {
+            location: `Asosiy ofis · ${DAVOMAT_SITE_LABEL}`,
+            latitude: DAVOMAT_SITE_LAT,
+            longitude: DAVOMAT_SITE_LNG,
+            kind: "office",
+          },
+      fullName: emp.fullName,
+      regionalFieldPunch: true,
+    },
+  };
+}
+
 async function resolveReviziyaFieldGate(opts: {
   emp: WorkplaceEmp;
   latitude: number;
@@ -3551,6 +3830,19 @@ async function geoGate(
         mobileAnywhere,
         preferredBranchId,
         accuracyMeters: _accuracyMeters,
+      });
+    }
+
+    // Regional menejer: asosiy ofis + o‘z viloyatidagi istalgan filial
+    if (isRegionalManager(userRole) && emp.userId) {
+      return resolveRegionalManagerGeoGate({
+        emp,
+        userId: emp.userId,
+        latitude,
+        longitude,
+        mobileAnywhere,
+        preferredBranchId,
+        strictPreferred,
       });
     }
 
@@ -3865,7 +4157,7 @@ function punchMethodLabel(method: "FACE_ID" | "QR" | "FINGERPRINT") {
  * Fon job (5 daqiqa) kutilmaydi: muddatdan keyin Ketdim kechagi kunga yozilmaydi, Keldim bugungi yangi kunni ochadi.
  */
 async function closeExpiredOvernightRecord<
-  R extends { id: number; checkInAt: Date | null; checkOutAt: Date | null; status: string | null },
+  R extends { id: number; checkInAt: Date | null; checkOutAt: Date | null; status: string | null; source?: string | null },
 >(
   emp: { id: number; orgRole: string | null; shiftType: string | null; shiftLabel: string | null },
   userRole: string | null | undefined,
@@ -3873,6 +4165,8 @@ async function closeExpiredOvernightRecord<
   rec: R | undefined,
 ): Promise<R | undefined> {
   if (!rec?.checkInAt || rec.checkOutAt || rec.status === "absent" || rec.status === "leave") return rec;
+  // VaksinaMed GPS — auto-absent bilan buzilmasin
+  if (String(rec.source || "").toLowerCase() === "vaksinamed") return rec;
   const defs = await getEffectiveShiftDefs();
   const plan = await dayShiftTypeFor(emp.id, yesterday);
   const shiftType = plan || emp.shiftType;
@@ -4730,6 +5024,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
     let resolved = await resolveDavomatPoint(emp, user.role);
     let fieldBranchPunch = false;
     let coordinatorFieldPunch = false;
+    let regionalFieldPunch = false;
     const qLat = Number(req.query.lat);
     const qLng = Number(req.query.lng);
     if (
@@ -4819,6 +5114,51 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
       }
     } else if (user.role === "koordinator") {
       coordinatorFieldPunch = true;
+    } else if (
+      isRegionalManager(user.role) &&
+      Number.isFinite(qLat) &&
+      Number.isFinite(qLng) &&
+      emp.userId
+    ) {
+      regionalFieldPunch = true;
+      let mobileAnywherePreview = false;
+      try {
+        mobileAnywherePreview = await employeeHasMobileAnywhere(emp.id, emp.userId ?? user.id);
+      } catch {
+        mobileAnywherePreview = false;
+      }
+      const regionalGate = await resolveRegionalManagerGeoGate({
+        emp,
+        userId: emp.userId ?? user.id,
+        latitude: qLat,
+        longitude: qLng,
+        mobileAnywhere: mobileAnywherePreview,
+        preferredBranchId: Number(req.query.branchId) || null,
+      });
+      if (regionalGate.ok) {
+        resolved = { ok: true, point: regionalGate.point };
+      } else {
+        const wp = regionalGate.body.workplace as
+          | { location?: string; latitude?: number; longitude?: number; kind?: string }
+          | undefined;
+        if (
+          wp &&
+          typeof wp.latitude === "number" &&
+          typeof wp.longitude === "number"
+        ) {
+          resolved = {
+            ok: true,
+            point: {
+              latitude: wp.latitude,
+              longitude: wp.longitude,
+              label: wp.location || "Filial",
+              kind: wp.kind === "branch" ? "branch" : "office",
+            },
+          };
+        }
+      }
+    } else if (isRegionalManager(user.role)) {
+      regionalFieldPunch = true;
     }
     const distribSite = await distribSiteFor(
       { ...emp, departmentId: user.departmentId ?? emp.departmentId },
@@ -4826,11 +5166,12 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
     );
     const isTamojniOrDistrib = distribSite != null;
 
-    // Filial smena sloti — faqat dorixona xodimlari (koordinator/reviziya/tamojni/distribyutsiya o‘z joyiga ega)
+    // Filial smena sloti — faqat dorixona xodimlari (koordinator/reviziya/regional/tamojni o‘z joyiga ega)
     if (
       preferredSlot &&
       user.role !== "koordinator" &&
       !isReviziyaRole(user.role) &&
+      !isRegionalManager(user.role) &&
       !isTamojniOrDistrib
     ) {
       const coords = await branchCoordsById(preferredSlot.branchId);
@@ -4849,6 +5190,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
       activeNow[0] &&
       user.role !== "koordinator" &&
       !isReviziyaRole(user.role) &&
+      !isRegionalManager(user.role) &&
       !isTamojniOrDistrib
     ) {
       const coords = await branchCoordsById(activeNow[0].branchId);
@@ -4868,6 +5210,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
       daySlots[0] &&
       user.role !== "koordinator" &&
       !isReviziyaRole(user.role) &&
+      !isRegionalManager(user.role) &&
       !isTamojniOrDistrib
     ) {
       const coords = await branchCoordsById(daySlots[0].branchId);
@@ -5021,6 +5364,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
       mobileAnywhere,
       fieldBranchPunch: fieldBranchPunch || undefined,
       coordinatorFieldPunch: coordinatorFieldPunch || undefined,
+      regionalFieldPunch: regionalFieldPunch || undefined,
       site: {
         label: point.label,
         latitude: point.latitude,
@@ -7625,6 +7969,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
     }
     const pharmacy = usesBranchDavomat(user.role, emp.orgRole);
     const reviziyaField = isReviziyaRole(user.role);
+    const regionalField = isRegionalManager(user.role);
     if (!adminAnywhere && (await branchRequiresFaceOnly(emp))) {
       await writePunchAudit({
         employeeId: emp.id,
@@ -7650,8 +7995,9 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
 
     const branchQr = await verifyBranchQrPayload(payload);
     if (branchQr.ok) {
-      /** Filial QR: apteka, biriktirilgan filial, admin yoki reviziya (istalgan filial) */
-      const canUseBranchQr = pharmacy || adminAnywhere || reviziyaField || Boolean(myBranchId);
+      /** Filial QR: apteka, biriktirilgan filial, admin, reviziya yoki regional menejer hududi */
+      const canUseBranchQr =
+        pharmacy || adminAnywhere || reviziyaField || regionalField || Boolean(myBranchId);
       if (!canUseBranchQr) {
         await writePunchAudit({
           employeeId: emp.id,
@@ -7669,7 +8015,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
         });
         return;
       }
-      if (!adminAnywhere && !reviziyaField && !myBranchId) {
+      if (!adminAnywhere && !reviziyaField && !regionalField && !myBranchId) {
         res.status(400).json({
           error: "Filial biriktirilmagan — avval smena/filial belgilansin",
           code: "branch_unassigned",
@@ -7679,14 +8025,18 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       const slotRows = await loadActiveWorkSlots(emp.id);
       const todaySlots = resolveSlotsForDay(todayTashkent(), slotRows);
       const allowedBranchIds = new Set<number>();
-      if (todaySlots.length > 0) {
+      if (regionalField) {
+        // Regional menejer — o‘z viloyatidagi barcha filiallar
+        const regionIds = await managerIdsForRegionalManager(user.id);
+        for (const id of regionIds) allowedBranchIds.add(id);
+      } else if (todaySlots.length > 0) {
         // Bugungi reja (rotatsiya / slot) — faqat shu filiallar
         for (const s of todaySlots) allowedBranchIds.add(s.branchId);
       } else if (myBranchId) {
         // Standart doimiy filial: bugun alohida rotatsiya qo‘yilmagan bo‘lsa ham ishlayveradi
         allowedBranchIds.add(myBranchId);
       }
-      if (!adminAnywhere && !reviziyaField && allowedBranchIds.size === 0) {
+      if (!adminAnywhere && !reviziyaField && !regionalField && allowedBranchIds.size === 0) {
         await writePunchAudit({
           employeeId: emp.id,
           userId: user.id,
@@ -7711,7 +8061,11 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
         });
         return;
       }
-      if (!adminAnywhere && !reviziyaField && !allowedBranchIds.has(branchQr.row.branchId)) {
+      if (
+        !adminAnywhere &&
+        !reviziyaField &&
+        !allowedBranchIds.has(branchQr.row.branchId)
+      ) {
         await writePunchAudit({
           employeeId: emp.id,
           userId: user.id,
@@ -7737,13 +8091,16 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
           },
         });
         res.status(403).json({
-          error: "Bu QR bugungi smena/filial rejangizga mos emas. Faqat belgilangan filial QR i bilan davomat qiling.",
+          error: regionalField
+            ? "Bu QR sizning hududingizdagi filialga tegishli emas. O‘z viloyatingizdagi filial QR ini skanerlang."
+            : "Bu QR bugungi smena/filial rejangizga mos emas. Faqat belgilangan filial QR i bilan davomat qiling.",
           code: "qr_wrong_branch",
           myBranchId,
           qrBranchId: branchQr.row.branchId,
           allowedBranchIds: [...allowedBranchIds],
-          fixHint:
-            "O‘z filialingiz QR ini skanerlang. Boshqa filialga ishlash uchun mudir/koordinator kunlik rotatsiya qo‘shishi kerak.",
+          fixHint: regionalField
+            ? "Faqat o‘z viloyatingizdagi filial QR i bilan davomat qiling."
+            : "O‘z filialingiz QR ini skanerlang. Boshqa filialga ishlash uchun mudir/koordinator kunlik rotatsiya qo‘shishi kerak.",
         });
         return;
       }
@@ -8205,13 +8562,17 @@ router.get("/davomat/methods", requireAuth, async (req: AuthRequest, res): Promi
     const viewDept = canViewDeptQrRole(user.role);
     const editDept = canEditDeptQrRole(user.role);
     const [flags] = await db
-      .select({ face: usersTable.davomatFaceAllowed, qr: usersTable.davomatQrAllowed })
+      .select({
+        face: usersTable.davomatFaceAllowed,
+        qr: usersTable.davomatQrAllowed,
+        finger: usersTable.davomatFingerAllowed,
+      })
       .from(usersTable)
       .where(eq(usersTable.id, user.id))
       .limit(1);
-    const allowed = effectiveDavomatAccess(user.role, flags?.face, flags?.qr);
+    const allowed = effectiveDavomatAccess(user.role, flags?.face, flags?.qr, flags?.finger);
     const methods = allowed.methods;
-    const fingerOn = (await readDavomatAccess(user.id)).finger;
+    const fingerOn = allowed.finger;
     res.json({
       ...(fingerOn ? { finger: true } : {}),
       pharmacyStaff: pharmacy,

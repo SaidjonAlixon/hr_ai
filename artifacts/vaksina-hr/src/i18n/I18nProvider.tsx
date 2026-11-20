@@ -101,6 +101,7 @@ export const NAV_PATH_KEYS: Record<string, string> = {
   "/resepsion": "nav.resepsion",
   "/checklist-holati": "nav.checklistStatus",
   "/pharmacy-network": "nav.pharmacy",
+  "/majburiyat": "nav.majburiyat",
   "/boglanish": "nav.boglanish",
   "/admin/holat": "nav.holat",
   "/admin/holat/xodim": "nav.holatXodim",

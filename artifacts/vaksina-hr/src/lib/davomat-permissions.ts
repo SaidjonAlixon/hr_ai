@@ -133,17 +133,23 @@ export async function requestCameraPermission(
   }
 
   const state = await queryCameraPermission();
-  if (state === "denied") {
-    return { ok: false, error: "camera_denied", stream: null };
-  }
-  // Allaqachon ruxsat bor va stream kerak emas — qayta getUserMedia yo‘q
+  // Allaqachon ruxsat — skaner ochilishidan OLDIN stream ochib-yopmaymiz (band / qora ekran)
   if ((state === "granted" || wasCameraGrantedBefore()) && !keepStream) {
     return { ok: true, error: null, stream: null };
   }
 
+  // keepStream yo‘q: faqat ruxsat so‘rash kerak bo‘lsa ham — keyin FaceScanDialog o‘zi ochadi.
+  // Lekin birinchi marta (prompt) getUserMedia kerak.
+  if (!keepStream && state === "denied") {
+    // Ba’zi WebView yolg‘on "denied" aytadi — baribir urinamiz
+  }
+
   let stream: MediaStream | null = null;
   let settled = false;
-  const request = navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+  const request = navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+  });
   request.then(
     () => {
       settled = true;
@@ -155,8 +161,7 @@ export async function requestCameraPermission(
   try {
     stream = await Promise.race([
       request,
-      timeoutReject(hardTimeoutMs, 3).catch((err) => {
-        // Kech kelgan stream kamerani band qilib qolmasin
+      timeoutReject(Math.min(hardTimeoutMs, 8_000), 3).catch((err) => {
         if (!settled) void request.then(stopStream).catch(() => undefined);
         throw err;
       }),
@@ -164,11 +169,29 @@ export async function requestCameraPermission(
     markCameraGranted();
     if (!keepStream) {
       stopStream(stream);
+      // Qurilma to‘liq bo‘shashi — Telegram/Android da 120ms yetarli emas (qora preview)
+      await new Promise((r) => window.setTimeout(r, 450));
       stream = null;
     }
     return { ok: true, error: null, stream };
   } catch (e) {
     stopStream(stream);
+    // Oddiy video:true bilan zaxira
+    try {
+      const fallback = await Promise.race([
+        navigator.mediaDevices.getUserMedia({ audio: false, video: true }),
+        timeoutReject(5_000, 3),
+      ]);
+      markCameraGranted();
+      if (!keepStream) {
+        stopStream(fallback);
+        await new Promise((r) => window.setTimeout(r, 450));
+        return { ok: true, error: null, stream: null };
+      }
+      return { ok: true, error: null, stream: fallback };
+    } catch {
+      /* pastda xato */
+    }
     const name = e instanceof DOMException ? e.name : "";
     const code = typeof (e as { code?: number })?.code === "number" ? (e as { code: number }).code : 0;
     if (code === 3 || name === "TimeoutError") {

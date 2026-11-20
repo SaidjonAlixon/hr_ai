@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  Building2,
   CheckCircle2,
   Clock3,
   Fingerprint,
@@ -9,12 +10,18 @@ import {
   Loader2,
   LogIn,
   LogOut,
+  MapPin,
+  Navigation,
   QrCode,
   ScanFace,
+  ShieldCheck,
+  Timer,
+  TriangleAlert,
   Banknote,
   X,
 } from "lucide-react";
 import { Link } from "wouter";
+import { useTheme } from "next-themes";
 import { DavomatZoneMap } from "@/components/davomat/DavomatZoneMap";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -109,6 +116,12 @@ type Props = {
   t: (key: string) => string;
 };
 
+/** Toshkent soati bo‘yicha: 18:00–06:00 → kechki rasm va binafsha mavzu */
+function isNightClock(clockLabel: string): boolean {
+  const h = Number(String(clockLabel).split(":")[0]);
+  return Number.isFinite(h) && (h >= 18 || h < 6);
+}
+
 export function DavomatPremiumView(p: Props) {
   const { toast } = useToast();
   const [salaryOpen, setSalaryOpen] = useState(false);
@@ -121,11 +134,10 @@ export function DavomatPremiumView(p: Props) {
     p.showFinger ? "barmoq izi" : null,
   ].filter((n): n is string => Boolean(n));
   const methodCount = methodNames.length;
-  /** Joriy soat 19:00+ → kechasi.png (clockLabel Toshkent) */
-  const nightHero = (() => {
-    const h = Number(String(p.clockLabel).split(":")[0]);
-    return Number.isFinite(h) && h >= 19;
-  })();
+  const { resolvedTheme } = useTheme();
+  /** Tungi ko‘rinish: ilovada qorong‘u rejim tanlangan YOKI soat 18:00–06:00 */
+  const night = resolvedTheme === "dark" || isNightClock(p.clockLabel);
+  const methodLayout = methodCount >= 3 ? "is-col" : "is-row";
 
   const hintInfoOnly = () => {
     toast({
@@ -134,179 +146,240 @@ export function DavomatPremiumView(p: Props) {
     });
   };
 
+  /** Xarita kartasi sarlavhasidagi holat belgisi */
+  const zone: { tone: "ok" | "bad" | "warn"; label: string; Icon: typeof ShieldCheck } = (() => {
+    if (p.needsGps || p.gpsDenied) return { tone: "warn", label: "GPS kerak", Icon: Navigation };
+    if (p.gpsOff) return { tone: "warn", label: "GPS yoqing", Icon: Navigation };
+    if (p.mobileAnywhere) return { tone: "ok", label: "Ko‘chma ruxsat", Icon: ShieldCheck };
+    if (p.outsideZone) return { tone: "bad", label: "Hududdan tashqarida", Icon: TriangleAlert };
+    if (p.inside) return { tone: "ok", label: "Ruxsat etilgan hudud", Icon: ShieldCheck };
+    return { tone: "warn", label: "Aniqlanmoqda…", Icon: Navigation };
+  })();
+
+  const methodCard = (opts: {
+    id: string;
+    on: boolean;
+    locked: boolean;
+    tone: "t-face" | "t-qr" | "t-finger";
+    icon: ReactNode;
+    title: string;
+    sub: string;
+    onClick: () => void;
+  }) => (
+    <button
+      type="button"
+      id={opts.id}
+      disabled={p.busy}
+      onClick={opts.onClick}
+      className={cn(
+        "dvx-method",
+        methodLayout,
+        opts.on && !p.outsideZone && "is-on",
+        (p.outsideZone || opts.locked) && "is-locked",
+      )}
+    >
+      {opts.on && !p.outsideZone ? (
+        <span className="absolute right-2.5 top-2.5 text-white">
+          <CheckCircle2 className="h-4 w-4" />
+        </span>
+      ) : null}
+      <span className={cn("dvx-method-ico", opts.tone)}>{opts.icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="dvx-method-title block">{opts.title}</span>
+        <span className="dvx-method-sub block">{p.outsideZone ? "Hududga kiring" : opts.sub}</span>
+      </span>
+    </button>
+  );
+
   return (
-    <div className="davomat-face-page dv-premium">
+    <div className={cn("davomat-face-page dv-premium", night ? "dv-night" : "dv-day")}>
       <div className="mx-auto max-w-lg px-3 pb-28 pt-0 sm:px-4">
-        {/* Manzara / kechasi: header → soat → Keladi/Ketadi pastigacha */}
-        <div
-          className={cn(
-            "dv-hero-banner -mx-3 px-3 pb-3.5 pt-4 sm:-mx-4 sm:px-4",
-            nightHero && "dv-hero-banner-night",
-          )}
-        >
-          <header className="relative z-[1] flex items-start justify-between gap-3">
+        {/* Hero: kun/tun rasmi + salomlashuv + soat */}
+        <div className="dvx-hero -mx-3 sm:-mx-4">
+          <div className="dvx-hero-img dvx-hero-img-day" aria-hidden />
+          <div className="dvx-hero-img dvx-hero-img-night" aria-hidden />
+          <div className="dvx-hero-shade" aria-hidden />
+
+          <header className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <Link
-                href={p.backHref}
-                className="mb-3 inline-flex h-8 items-center gap-1.5 rounded-full border border-white/15 bg-black/35 px-2.5 text-[11px] font-semibold text-white/90 backdrop-blur-sm"
-              >
+              <Link href={p.backHref} className="dvx-back mb-2.5">
                 <ArrowLeft className="h-3.5 w-3.5" />
                 Orqaga
               </Link>
-              <p className="text-[15px] text-white/85 drop-shadow-sm">Assalomu alaykum</p>
-              {p.personName ? (
-                <h1 className="mt-0.5 text-xl font-bold leading-snug tracking-tight text-white drop-shadow-sm sm:text-2xl">
-                  {p.personName}
-                </h1>
-              ) : null}
-              {p.roleLine ? (
-                <p className="mt-0.5 truncate text-sm text-white/70">{p.roleLine}</p>
-              ) : null}
+              <div className="dvx-greet mt-7">
+                <p className="text-[13.5px] font-semibold dvx-t2">Assalomu alaykum,</p>
+                {p.personName ? (
+                  <h1 className="mt-1 text-[1.5rem] font-extrabold leading-tight tracking-tight dvx-t1 sm:text-[1.65rem]">
+                    {p.personName}
+                  </h1>
+                ) : null}
+                {p.roleLine ? (
+                  <p className="mt-1.5 flex items-center gap-1.5 truncate text-[13px] font-semibold dvx-t2">
+                    <Building2 className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{p.roleLine}</span>
+                  </p>
+                ) : null}
+              </div>
             </div>
-            <div className="dv-date-badge shrink-0">
+            <div className="dvx-date shrink-0">
               {p.dateWeekday ? (
                 <>
-                  <p className="dv-date-badge-week">{p.dateWeekday}</p>
-                  <p className="dv-date-badge-day">
+                  <p className="dvx-date-week">{p.dateWeekday}</p>
+                  <p className="dvx-date-day">
                     {p.dateDayMonth}
-                    {p.dateYear ? <span className="dv-date-badge-year"> {p.dateYear}</span> : null}
+                    {p.dateYear ? <span> {p.dateYear}</span> : null}
                   </p>
                 </>
               ) : (
-                <p className="dv-date-badge-week">{p.dateLabel}</p>
+                <p className="dvx-date-week">{p.dateLabel}</p>
               )}
             </div>
           </header>
 
-          {/* Clock — faqat ma'lumot */}
+          {/* Soat — faqat ma'lumot */}
           <button
             type="button"
-            className="dv-clock-card relative z-[1] mt-4 w-full cursor-default px-3 py-3 text-left sm:px-4 sm:py-4"
+            className="dvx-clock mt-6 w-full cursor-default text-left"
             onClick={hintInfoOnly}
           >
-            <div className="relative z-[1] flex items-center gap-2.5 sm:gap-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white shadow-inner sm:h-14 sm:w-14">
-                <Clock3 className="h-6 w-6 sm:h-7 sm:w-7" />
+            <div className="relative z-[1] flex items-center gap-3">
+              <div className="dvx-clock-icon">
+                <Clock3 className="h-6 w-6" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-medium text-white/70">Joriy vaqt</p>
-                <p className="font-mono text-[1.55rem] font-bold leading-none tracking-tight text-white tabular-nums sm:text-[1.85rem]">
+                <p className="text-[11px] font-medium text-white/80">Joriy vaqt</p>
+                <p className="font-mono text-[1.7rem] font-extrabold leading-none tracking-tight tabular-nums sm:text-[1.95rem]">
                   {p.clockLabel}
                 </p>
-                <p className="mt-1 text-[11px] text-white/65 sm:text-xs">Bugun ham ajoyib kun!</p>
+                <p className="mt-1 text-[11px] text-white/75">Bugun ham ajoyib kun!</p>
               </div>
-              <div className="dv-worked-card shrink-0 text-center">
-                <p className="text-[9px] font-semibold leading-tight tracking-wide text-white/70 sm:text-[10px]">
-                  Bugun ishlagan
-                  <br />
-                  vaqtingiz
+              <div className="dvx-clock-split" />
+              <div className="shrink-0 text-center">
+                <p className="flex items-center justify-center gap-1 text-[10px] font-semibold leading-tight text-white/80">
+                  <Timer className="h-3 w-3" />
+                  Bugun ishlagan vaqt
                 </p>
                 <p
                   className={cn(
-                    "mt-1.5 font-mono text-lg font-bold leading-none tabular-nums sm:text-xl",
-                    p.working || p.done ? "text-emerald-300" : "text-white",
+                    "mt-1.5 font-mono text-[1.35rem] font-extrabold leading-none tabular-nums",
+                    p.working || p.done ? "text-emerald-200" : "text-white",
                   )}
                 >
                   {p.elapsedLabel}
                 </p>
-                <p className="mt-1 text-[9px] font-medium text-white/55">
+                <span className={cn("dvx-pill mt-1.5", p.working && "is-live")}>
                   {p.workedCaption ??
                     (p.working ? "Davom etmoqda" : p.done ? "Yakunlandi" : "Hali boshlanmagan")}
-                </p>
+                </span>
               </div>
             </div>
           </button>
-
-          {/* Keldi / Ketadi — faqat ma'lumot */}
-          <section className="relative z-[1] mt-3 grid grid-cols-2 gap-2.5">
-            <button
-              type="button"
-              className="dv-status-in relative flex w-full cursor-default items-center gap-2 px-3 py-2 text-left"
-              onClick={hintInfoOnly}
-            >
-              <div className="min-w-0 flex-1">
-                <p className="flex items-center gap-1.5 text-[11px] font-medium leading-none text-white/80">
-                  {inDone ? "Keldi" : "Keladi"}
-                  {inDone ? (
-                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-200" />
-                  ) : (
-                    <Clock3 className="h-3.5 w-3.5 shrink-0 text-white/70" />
-                  )}
-                </p>
-                <p className="mt-1 font-mono text-lg font-bold leading-none tabular-nums text-white">
-                  {p.checkInLabel}
-                </p>
-                {p.planIn ? (
-                  <p className="mt-1 text-[10px] leading-none text-white/65">Rejada: {p.planIn}</p>
-                ) : null}
-              </div>
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-black/15 text-white">
-                <LogIn className="h-5 w-5" />
-              </div>
-            </button>
-            <button
-              type="button"
-              className="dv-status-out relative flex w-full cursor-default items-center gap-2 px-3 py-2 text-left"
-              onClick={hintInfoOnly}
-            >
-              <div className="min-w-0 flex-1">
-                <p className="flex items-center gap-1.5 text-[11px] font-medium leading-none text-white/80">
-                  {outDone ? "Ketdi" : "Ketadi"}
-                  {outDone ? (
-                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-rose-100" />
-                  ) : (
-                    <Clock3 className="h-3.5 w-3.5 shrink-0 text-white/70" />
-                  )}
-                </p>
-                <p className="mt-1 font-mono text-lg font-bold leading-none tabular-nums text-white">
-                  {p.checkOutLabel}
-                </p>
-                {p.planOut ? (
-                  <p className="mt-1 text-[10px] leading-none text-white/65">Rejada: {p.planOut}</p>
-                ) : null}
-              </div>
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-black/15 text-white">
-                <LogOut className="h-5 w-5" />
-              </div>
-            </button>
-          </section>
         </div>
 
-        {/* Map */}
-        <section className="mt-3">
-          <DavomatZoneMap
-            siteLat={p.siteLat}
-            siteLng={p.siteLng}
-            userLat={p.userLat}
-            userLng={p.userLng}
-            headingDeg={p.headingDeg}
-            accuracyMeters={p.accuracyMeters}
-            inside={p.inside}
-            mobileAnywhere={Boolean(p.mobileAnywhere)}
-            allowedMeters={p.allowedMeters}
-            label={p.workplaceTitle}
-            addressHint={p.addressHint}
-            distanceMeters={p.distance}
-            needsGps={p.needsGps}
-            gpsDenied={p.gpsDenied}
-            gpsFresh={p.gpsFresh !== false}
-            baseTag="Asos"
-            onEnableGps={p.onEnableGps}
-          />
+        {/* Keladi / Ketadi — faqat ma'lumot */}
+        <section className="mt-3 grid grid-cols-2 gap-2.5">
+          <button type="button" className="dvx-stat dvx-stat-in" onClick={hintInfoOnly}>
+            <span className="dvx-stat-icon">
+              <LogIn className="h-5 w-5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-1.5 text-[13px] font-bold leading-none">
+                {inDone ? "Keldi" : "Keladi"}
+                {inDone ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-100" />
+                ) : (
+                  <Clock3 className="h-3.5 w-3.5 shrink-0 text-white/75" />
+                )}
+              </span>
+              <span className="mt-1 block font-mono text-[1.05rem] font-extrabold leading-none tabular-nums">
+                {p.checkInLabel}
+              </span>
+              {p.planIn ? (
+                <span className="mt-1 block text-[10px] leading-none text-white/80">Rejada: {p.planIn}</span>
+              ) : null}
+            </span>
+          </button>
+          <button type="button" className="dvx-stat dvx-stat-out" onClick={hintInfoOnly}>
+            <span className="dvx-stat-icon">
+              <LogOut className="h-5 w-5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-1.5 text-[13px] font-bold leading-none">
+                {outDone ? "Ketdi" : "Ketadi"}
+                {outDone ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-rose-100" />
+                ) : (
+                  <Clock3 className="h-3.5 w-3.5 shrink-0 text-white/75" />
+                )}
+              </span>
+              <span className="mt-1 block font-mono text-[1.05rem] font-extrabold leading-none tabular-nums">
+                {p.checkOutLabel}
+              </span>
+              {p.planOut ? (
+                <span className="mt-1 block text-[10px] leading-none text-white/80">Rejada: {p.planOut}</span>
+              ) : null}
+            </span>
+          </button>
         </section>
 
-        {/* Methods */}
+        {/* Ish joyi hududi + xarita */}
+        <section className="dvx-card mt-3">
+          <div className="dvx-card-head">
+            <span className="dvx-ico">
+              <MapPin className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-[15px] font-extrabold leading-tight dvx-t1">Ish joyi hududi</h2>
+              <p className="truncate text-[11.5px] font-medium dvx-t3">{p.workplaceTitle}</p>
+            </div>
+            <span className={cn("dvx-zone", `is-${zone.tone}`)}>
+              <zone.Icon className="h-3.5 w-3.5" />
+              {zone.label}
+            </span>
+          </div>
+          <div className="px-2.5 pb-2.5">
+            <DavomatZoneMap
+              siteLat={p.siteLat}
+              siteLng={p.siteLng}
+              userLat={p.userLat}
+              userLng={p.userLng}
+              headingDeg={p.headingDeg}
+              accuracyMeters={p.accuracyMeters}
+              inside={p.inside}
+              mobileAnywhere={Boolean(p.mobileAnywhere)}
+              allowedMeters={p.allowedMeters}
+              label={p.workplaceTitle}
+              addressHint={p.addressHint}
+              distanceMeters={p.distance}
+              needsGps={p.needsGps}
+              gpsDenied={p.gpsDenied}
+              gpsFresh={p.gpsFresh !== false}
+              baseTag="Asos"
+              onEnableGps={p.onEnableGps}
+            />
+          </div>
+          {p.outsideZone && methodCount > 0 ? (
+            <p className="px-4 pb-3 text-center text-xs font-semibold leading-snug text-rose-500">
+              {p.outsideWarn || "Hududdan tashqaridasiz — davomat ochilmaydi"}
+            </p>
+          ) : null}
+        </section>
+
+        {/* Usullar */}
         {p.methodsReady && p.showMethodPicker ? (
           <section className="mt-4" id="dv-coach-methods">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <h2 className="text-base font-semibold text-white">Davomat usulini tanlang</h2>
-                <p className="mt-0.5 text-xs text-white/50">
+            <div className="flex items-center gap-3">
+              <span className="dvx-ico h-11 w-11">
+                <Fingerprint className="h-6 w-6" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-[15.5px] font-extrabold leading-tight dvx-t1">Davomat usulini tanlang</h2>
+                <p className="mt-0.5 text-xs dvx-t3">
                   {methodCount === 0
                     ? "Siz uchun davomat usullari yopilgan"
                     : methodCount === 1
                       ? `Davomat usuli — ${methodNames[0]}`
-                      : `Istaganingizni tanlang — ${methodNames.slice(0, -1).join(", ")} yoki ${methodNames[methodNames.length - 1]}`}
+                      : `Ish joyingizni tasdiqlang — ${methodNames.slice(0, -1).join(", ")} yoki ${methodNames[methodNames.length - 1]}`}
                 </p>
               </div>
               {p.onDismissMethods ? (
@@ -314,138 +387,75 @@ export function DavomatPremiumView(p: Props) {
                   type="button"
                   aria-label="Yopish"
                   onClick={p.onDismissMethods}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/20 active:scale-95 md:hidden"
+                  className="dvx-link-chip flex h-9 w-9 shrink-0 items-center justify-center rounded-full active:scale-95 md:hidden"
                 >
                   <X className="h-5 w-5" />
                 </button>
               ) : null}
             </div>
-            {p.outsideZone && methodCount > 0 ? (
-              <p className="mt-2 text-center text-xs font-semibold leading-snug text-rose-400">
-                {p.outsideWarn || "Hududdan tashqaridasiz — davomat ochilmaydi"}
-              </p>
-            ) : null}
+
             {methodCount === 0 ? (
-              <div className="mt-3 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-3 py-3 text-center text-xs font-semibold leading-snug text-rose-200">
+              <div className="mt-3 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-3 py-3 text-center text-xs font-semibold leading-snug text-rose-500">
                 Hozircha siz uchun davomat usuli ochilmagan. Rahbaringizga murojaat qiling.
               </div>
-            ) : null}
-            {methodCount > 0 ? (
-            <div
-              className={cn(
-                "mt-3 grid gap-2.5",
-                methodCount === 3 ? "grid-cols-3 gap-2" : methodCount === 2 ? "grid-cols-2" : "grid-cols-1",
-              )}
-            >
-              {p.showFace ? (
-              <button
-                type="button"
-                id="dv-coach-face"
-                disabled={p.outsideZone || p.busy || !p.canOpenFace}
-                onClick={() => p.onPickMethod("FACE_ID")}
+            ) : (
+              <div
                 className={cn(
-                  "dv-method-card relative px-3 py-2.5 text-left",
-                  p.selectedMethod === "FACE_ID" && !p.outsideZone && "dv-method-card-on",
-                  (p.outsideZone || !p.canOpenFace) && "dv-method-card-locked",
+                  "mt-3 grid gap-2.5",
+                  methodCount === 3 ? "grid-cols-3 gap-2" : methodCount === 2 ? "grid-cols-2" : "grid-cols-1",
                 )}
               >
-                {p.selectedMethod === "FACE_ID" && !p.outsideZone ? (
-                  <span className="absolute right-2 top-2 text-sky-300">
-                    <CheckCircle2 className="h-4 w-4" />
-                  </span>
-                ) : null}
-                <span className="mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-sky-500/20 text-sky-300">
-                  <ScanFace className="h-5 w-5" />
-                </span>
-                <p className="text-sm font-semibold leading-tight text-white">Face ID</p>
-                <p
-                  className={cn(
-                    "mt-0.5 text-[10px] leading-snug",
-                    p.outsideZone ? "font-semibold text-rose-400" : "text-white/50",
-                  )}
-                >
-                  {p.outsideZone
-                    ? "Hududga kiring"
-                    : p.faceRegistered === false
-                      ? "Avval yuzni ro‘yxatdan o‘tkazing"
-                      : "Rasmga olish orqali tasdiqlash"}
-                </p>
-              </button>
-              ) : null}
-              {p.showQr ? (
-              <button
-                type="button"
-                id="dv-coach-qr"
-                disabled={p.outsideZone || p.busy || !p.canOpenQr}
-                onClick={() => p.onPickMethod("QR")}
-                className={cn(
-                  "dv-method-card relative px-3 py-2.5 text-left",
-                  p.selectedMethod === "QR" && !p.outsideZone && "dv-method-card-on",
-                  (p.outsideZone || !p.canOpenQr) && "dv-method-card-locked",
-                )}
-              >
-                {p.selectedMethod === "QR" && !p.outsideZone ? (
-                  <span className="absolute right-2 top-2 text-sky-300">
-                    <CheckCircle2 className="h-4 w-4" />
-                  </span>
-                ) : null}
-                <span className="mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/20 text-violet-300">
-                  <QrCode className="h-5 w-5" />
-                </span>
-                <p className="text-sm font-semibold leading-tight text-white">QR Scanner</p>
-                <p
-                  className={cn(
-                    "mt-0.5 text-[10px] leading-snug",
-                    p.outsideZone ? "font-semibold text-rose-400" : "text-white/50",
-                  )}
-                >
-                  {p.outsideZone ? "Hududga kiring" : "QR kodni skaner qiling"}
-                </p>
-              </button>
-              ) : null}
-              {p.showFinger ? (
-                <button
-                  type="button"
-                  id="dv-coach-finger"
-                  disabled={p.outsideZone || p.busy || !p.canOpenFinger}
-                  onClick={() => p.onPickMethod("FINGERPRINT")}
-                  className={cn(
-                    "dv-method-card relative px-3 py-2.5 text-left",
-                    p.selectedMethod === "FINGERPRINT" && !p.outsideZone && "dv-method-card-on",
-                    (p.outsideZone || !p.canOpenFinger) && "dv-method-card-locked",
-                  )}
-                >
-                  {p.selectedMethod === "FINGERPRINT" && !p.outsideZone ? (
-                    <span className="absolute right-2 top-2 text-sky-300">
-                      <CheckCircle2 className="h-4 w-4" />
-                    </span>
-                  ) : null}
-                  <span className="mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300">
-                    <Fingerprint className="h-5 w-5" />
-                  </span>
-                  <p className="text-sm font-semibold leading-tight text-white">Barmoq izi</p>
-                  <p
-                    className={cn(
-                      "mt-0.5 text-[10px] leading-snug",
-                      p.outsideZone ? "font-semibold text-rose-400" : "text-white/50",
-                    )}
-                  >
-                    {p.outsideZone ? "Hududga kiring" : p.fingerHint || "Barmoqni skanerga qo‘ying"}
-                  </p>
-                </button>
-              ) : null}
-            </div>
-            ) : null}
+                {p.showFace
+                  ? methodCard({
+                      id: "dv-coach-face",
+                      on: p.selectedMethod === "FACE_ID",
+                      locked: !p.canOpenFace,
+                      tone: "t-face",
+                      icon: <ScanFace className="h-6 w-6" />,
+                      title: "Face ID",
+                      sub:
+                        p.faceRegistered === false
+                          ? "Avval yuzni ro‘yxatdan o‘tkazing"
+                          : "Yuz orqali tasdiqlash",
+                      onClick: () => p.onPickMethod("FACE_ID"),
+                    })
+                  : null}
+                {p.showQr
+                  ? methodCard({
+                      id: "dv-coach-qr",
+                      on: p.selectedMethod === "QR",
+                      locked: !p.canOpenQr,
+                      tone: "t-qr",
+                      icon: <QrCode className="h-6 w-6" />,
+                      title: "QR Scanner",
+                      sub: "QR kodni skaner qiling",
+                      onClick: () => p.onPickMethod("QR"),
+                    })
+                  : null}
+                {p.showFinger
+                  ? methodCard({
+                      id: "dv-coach-finger",
+                      on: p.selectedMethod === "FINGERPRINT",
+                      locked: !p.canOpenFinger,
+                      tone: "t-finger",
+                      icon: <Fingerprint className="h-6 w-6" />,
+                      title: "Barmoq izi",
+                      sub: p.fingerHint || "Barmoqni skanerga qo‘ying",
+                      onClick: () => p.onPickMethod("FINGERPRINT"),
+                    })
+                  : null}
+              </div>
+            )}
           </section>
         ) : null}
 
         {p.methodReady && !p.done ? (
           <div
             className={cn(
-              "mt-3 flex items-center gap-2 rounded-2xl border px-3 py-2.5 text-sm",
+              "mt-3 flex items-center gap-2 rounded-2xl border px-3 py-2.5 text-sm font-medium",
               p.gpsOff
-                ? "border-rose-400/30 bg-rose-500/10 text-rose-100"
-                : "border-emerald-400/25 bg-emerald-500/10 text-emerald-200",
+                ? "border-rose-400/30 bg-rose-500/10 text-rose-600"
+                : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
             )}
           >
             <CheckCircle2 className="h-4 w-4 shrink-0" />
@@ -504,7 +514,7 @@ export function DavomatPremiumView(p: Props) {
           </button>
         </div>
 
-        {/* History */}
+        {/* Tarix */}
         <section className="dv-panel mt-5">
           <div className="dv-panel-head">
             <div className="flex min-w-0 items-center gap-2.5">
@@ -512,8 +522,8 @@ export function DavomatPremiumView(p: Props) {
                 <History className="h-4 w-4" />
               </span>
               <div className="min-w-0">
-                <h2 className="truncate text-sm font-semibold text-white">{p.t("davomat.myToday")}</h2>
-                <p className="text-[10px] text-white/45">Davomat tarixi</p>
+                <h2 className="truncate text-sm font-bold dvx-t1">{p.t("davomat.myToday")}</h2>
+                <p className="text-[10px] dvx-t3">Davomat tarixi</p>
               </div>
             </div>
             <div className="dv-range-tabs shrink-0">
@@ -534,17 +544,21 @@ export function DavomatPremiumView(p: Props) {
 
         {p.isAuthenticated && p.salary ? (
           <section className="dv-panel dv-panel-salary mt-3">
-            <button type="button" className="dv-panel-head w-full border-0 bg-transparent text-left" onClick={() => setSalaryOpen((open) => !open)}>
+            <button
+              type="button"
+              className="dv-panel-head w-full border-0 bg-transparent text-left"
+              onClick={() => setSalaryOpen((open) => !open)}
+            >
               <div className="flex min-w-0 items-center gap-2.5">
                 <span className="dv-panel-icon dv-panel-icon-emerald">
                   <Banknote className="h-4 w-4" />
                 </span>
                 <div className="min-w-0">
-                  <h2 className="truncate text-sm font-semibold text-white">{p.t("davomat.mySalary")}</h2>
-                  <p className="text-[10px] text-white/45">{p.salary.periodLabel}</p>
+                  <h2 className="truncate text-sm font-bold dvx-t1">{p.t("davomat.mySalary")}</h2>
+                  <p className="text-[10px] dvx-t3">{p.salary.periodLabel}</p>
                 </div>
               </div>
-              <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-semibold text-sky-300">
+              <span className="dvx-link-chip shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold">
                 {salaryOpen ? "Yopish" : "Batafsil"}
               </span>
             </button>
@@ -556,25 +570,36 @@ export function DavomatPremiumView(p: Props) {
                 </div>
                 <div className="dv-salary-cell">
                   <p className="dv-salary-label">Jarima</p>
-                  <p className={cn("dv-salary-value", p.salary.periodJarima > 0 && "text-rose-300")}>{p.formatSom(p.salary.periodJarima)}</p>
+                  <p className={cn("dv-salary-value", p.salary.periodJarima > 0 && "!text-rose-500")}>
+                    {p.formatSom(p.salary.periodJarima)}
+                  </p>
                 </div>
                 <div className="dv-salary-cell dv-salary-cell-total col-span-2">
                   <p className="dv-salary-label">Qoladi</p>
-                  <p className="dv-salary-value text-sky-300">{p.formatSom(p.salary.periodSalary - p.salary.periodJarima)}</p>
+                  <p className="dv-salary-value !text-emerald-600 dark:!text-emerald-300">
+                    {p.formatSom(p.salary.periodSalary - p.salary.periodJarima)}
+                  </p>
                 </div>
               </div>
               {salaryOpen ? (
                 <div className="mt-2 space-y-1.5">
-                  {p.salary.lines.length ? p.salary.lines.map((line) => (
-                    <div key={line.date} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-white">{formatShortUz(line.date)}</p>
-                        <p className="truncate text-[10px] text-white/55">{line.note || "Jarima"}</p>
+                  {p.salary.lines.length ? (
+                    p.salary.lines.map((line) => (
+                      <div
+                        key={line.date}
+                        className="dv-salary-cell flex items-center justify-between gap-3 !py-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold dvx-t1">{formatShortUz(line.date)}</p>
+                          <p className="truncate text-[10px] dvx-t3">{line.note || "Jarima"}</p>
+                        </div>
+                        <p className="shrink-0 text-sm font-semibold tabular-nums text-rose-500">
+                          −{p.formatSom(line.jarima)}
+                        </p>
                       </div>
-                      <p className="shrink-0 text-sm font-semibold tabular-nums text-rose-300">−{p.formatSom(line.jarima)}</p>
-                    </div>
-                  )) : (
-                    <p className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/55">Bu davrda jarima yo‘q.</p>
+                    ))
+                  ) : (
+                    <p className="dv-salary-cell text-xs dvx-t3">Bu davrda jarima yo‘q.</p>
                   )}
                 </div>
               ) : null}
@@ -584,15 +609,12 @@ export function DavomatPremiumView(p: Props) {
 
         <div className="mt-4 flex justify-center gap-4 text-sm">
           {!p.isTgMiniApp ? (
-            <Link href="/login" className="text-sky-300/90 underline-offset-2 hover:underline">
+            <Link href="/login" className="dvx-link underline-offset-2 hover:underline">
               {p.t("davomat.loginLink")}
             </Link>
           ) : null}
           {p.isAuthenticated && p.canReport ? (
-            <Link
-              href="/davomat"
-              className="rounded-full border border-sky-400/25 bg-sky-500/10 px-3.5 py-1.5 text-xs font-semibold text-sky-300"
-            >
+            <Link href="/davomat" className="dvx-link-chip rounded-full px-3.5 py-1.5 text-xs font-semibold">
               {p.t("davomat.report")}
             </Link>
           ) : null}

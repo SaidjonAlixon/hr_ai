@@ -1,13 +1,21 @@
 /**
  * Full-screen QR scanner.
- * Default: orqa kamera; old/orqa almashtirish mumkin.
+ * Default: orqa kamera; old/orqa almashtirish va chiroq (torch) mumkin.
+ * Kamera ochilishi tez: bosish paytidagi prefetch oqimi olinadi, kadr kelmasa avtomatik qayta ulanadi.
  */
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Loader2, QrCode, SwitchCamera, X } from "lucide-react";
+import { AlertCircle, Camera, Flashlight, FlashlightOff, Loader2, QrCode, RefreshCw, SwitchCamera, X } from "lucide-react";
 import jsQR from "jsqr";
 import { cn } from "@/lib/utils";
-import { cameraErrorCode, openCameraFast, warmCamera, type CameraFacing } from "@/lib/camera-fast";
+import {
+  cameraErrorCode,
+  clearCameraDeviceCache,
+  openCameraFast,
+  prefetchCamera,
+  warmCamera,
+  type CameraFacing,
+} from "@/lib/camera-fast";
 
 function cameraErrorText(err: unknown): string {
   switch (cameraErrorCode(err)) {
@@ -16,7 +24,7 @@ function cameraErrorText(err: unknown): string {
     case "camera_busy":
       return "Kamera boshqa ilovada band. Boshqa ilovalarni yopib, qayta bosing.";
     case "camera_not_found":
-      return "Kamera topilmadi.";
+      return "Kamera topilmadi. Qurilmada kamera borligini tekshiring.";
     case "camera_timeout":
       return "Kamera javob bermadi. Qayta bosing.";
     case "secure_context":
@@ -53,10 +61,13 @@ export async function primeQrCamera(): Promise<boolean> {
   return warmCamera("environment");
 }
 
+type TorchCaps = { torch?: boolean };
+
 export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetected, title, description }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ownedStreamRef = useRef<MediaStream | null>(null);
+  const activeStreamRef = useRef<MediaStream | null>(null);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
   const [opening, setOpening] = useState(false);
@@ -65,9 +76,15 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
   const [facing, setFacing] = useState<CameraFacing>("environment");
   const facingRef = useRef<CameraFacing>("environment");
   facingRef.current = facing;
+  const [retryKey, setRetryKey] = useState(0);
+  const [torchSupported, setTorchSupported] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
   const handling = useRef(false);
+  const autoReopen = useRef(0);
   const onDetectedRef = useRef(onDetected);
   onDetectedRef.current = onDetected;
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
 
   useEffect(() => {
     if (!open) return;
@@ -82,51 +99,113 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
     if (!open) {
       ownedStreamRef.current?.getTracks().forEach((t) => t.stop());
       ownedStreamRef.current = null;
+      activeStreamRef.current = null;
       setReady(false);
       setBusy(false);
       setOpening(false);
       setError(null);
       setFacing("environment");
       facingRef.current = "environment";
+      setTorchOn(false);
+      setTorchSupported(false);
       handling.current = false;
+      autoReopen.current = 0;
       return;
     }
 
     let cancelled = false;
+    let frameWatch: number | null = null;
 
     async function bind(stream: MediaStream) {
-      const video = videoRef.current;
+      let video = videoRef.current;
+      for (let i = 0; !video && i < 30 && !cancelled; i++) {
+        await new Promise((r) => window.setTimeout(r, 50));
+        video = videoRef.current;
+      }
       if (!video || cancelled) return false;
       video.srcObject = stream;
       video.muted = true;
       video.playsInline = true;
       video.setAttribute("playsinline", "true");
       video.setAttribute("webkit-playsinline", "true");
+      video.setAttribute("autoplay", "true");
+      if (video.readyState < 1) {
+        await Promise.race([
+          new Promise<void>((resolve) => {
+            const onMeta = () => {
+              video!.removeEventListener("loadedmetadata", onMeta);
+              resolve();
+            };
+            video!.addEventListener("loadedmetadata", onMeta);
+          }),
+          new Promise<void>((resolve) => window.setTimeout(resolve, 2500)),
+        ]);
+      }
       try {
         await video.play();
       } catch {
         /* ignore */
       }
-      return video.readyState >= 1 || (video.srcObject as MediaStream | null)?.active === true;
+      if (video.paused || video.readyState < 2) {
+        try {
+          video.srcObject = stream;
+          await video.play();
+        } catch {
+          /* ignore */
+        }
+      }
+      // Birinchi haqiqiy kadrni qisqa kutamiz (iOS qora ekran)
+      if (video.readyState < 2) {
+        for (let i = 0; i < 20 && !cancelled && video.readyState < 2; i++) {
+          await new Promise((r) => window.setTimeout(r, 100));
+        }
+      }
+      return video.readyState >= 2 && video.videoWidth >= 8;
     }
+
+    const stopOwned = () => {
+      ownedStreamRef.current?.getTracks().forEach((t) => t.stop());
+      ownedStreamRef.current = null;
+    };
+
+    /** Kadr kelmay qolsa (Android/iOS qotishi) — avtomatik qayta ulash */
+    const watchFrames = (stream: MediaStream) => {
+      if (frameWatch != null) window.clearTimeout(frameWatch);
+      frameWatch = window.setTimeout(() => {
+        frameWatch = null;
+        if (cancelled || activeStreamRef.current !== stream) return;
+        const video = videoRef.current;
+        const track = stream.getVideoTracks()[0];
+        const alive = track?.readyState === "live";
+        const hasFrames = Boolean(video && video.readyState >= 2 && video.videoWidth >= 8);
+        if (alive && hasFrames) {
+          autoReopen.current = 0;
+          return;
+        }
+        if (alive && video && video.paused) void video.play().catch(() => undefined);
+        if (autoReopen.current < 2) {
+          autoReopen.current += 1;
+          clearCameraDeviceCache(facingRef.current);
+          setRetryKey((k) => k + 1);
+        } else {
+          setReady(false);
+          setError(cameraErrorText(new Error("camera_failed")));
+        }
+      }, 3000);
+    };
 
     async function start() {
       setReady(false);
       setOpening(true);
       handling.current = false;
-      if (cancelled) return;
       setError(null);
+      setTorchOn(false);
 
-      let stream =
+      let stream: MediaStream | null =
         facingRef.current === "environment" && streamProp && streamProp.active ? streamProp : null;
       if (!stream) {
         try {
           stream = await openCameraFast(facingRef.current);
-          if (cancelled) {
-            stream.getTracks().forEach((t) => t.stop());
-            return;
-          }
-          ownedStreamRef.current = stream;
         } catch (e) {
           if (!cancelled) {
             setReady(false);
@@ -135,36 +214,136 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
           }
           return;
         }
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        ownedStreamRef.current = stream;
       }
 
+      activeStreamRef.current = stream;
+      stream.getVideoTracks().forEach((track) => {
+        track.addEventListener("ended", () => {
+          if (!cancelled && activeStreamRef.current === stream) setRetryKey((k) => k + 1);
+        });
+        track.addEventListener("unmute", () => {
+          const v = videoRef.current;
+          if (v && v.paused) void v.play().catch(() => undefined);
+        });
+      });
+
       const ok = await bind(stream);
-      if (!cancelled) {
-        setReady(Boolean(ok) || stream.active);
-        setOpening(false);
+      if (cancelled) return;
+      if (!ok) {
+        // Qora preview — keshni tozalab, bir marta qayta ochamiz
+        clearCameraDeviceCache(facingRef.current);
+        stopOwned();
+        activeStreamRef.current = null;
+        if (autoReopen.current >= 2) {
+          setReady(false);
+          setOpening(false);
+          setError(cameraErrorText(new Error("camera_failed")));
+          return;
+        }
+        autoReopen.current += 1;
+        try {
+          await new Promise((r) => window.setTimeout(r, 250));
+          if (cancelled) return;
+          const again = await openCameraFast(facingRef.current);
+          if (cancelled) {
+            again.getTracks().forEach((t) => t.stop());
+            return;
+          }
+          ownedStreamRef.current = again;
+          activeStreamRef.current = again;
+          const ok2 = await bind(again);
+          if (cancelled) return;
+          setReady(ok2 || again.active);
+          setOpening(false);
+          if (ok2) {
+            autoReopen.current = 0;
+            const caps = again.getVideoTracks()[0]?.getCapabilities?.() as TorchCaps | undefined;
+            setTorchSupported(Boolean(caps?.torch));
+          } else {
+            watchFrames(again);
+          }
+        } catch (e) {
+          if (!cancelled) {
+            setReady(false);
+            setOpening(false);
+            setError(cameraErrorText(e));
+          }
+        }
+        return;
       }
+
+      autoReopen.current = 0;
+      const caps = stream.getVideoTracks()[0]?.getCapabilities?.() as TorchCaps | undefined;
+      setTorchSupported(Boolean(caps?.torch));
+      setReady(true);
+      setOpening(false);
+      watchFrames(stream);
     }
+
+    // Telefon ilovani almashtirib qaytsa — preview to‘xtab qolgan bo‘lishi mumkin
+    const onVisible = () => {
+      if (cancelled || document.visibilityState !== "visible") return;
+      const stream = activeStreamRef.current;
+      if (!stream) return;
+      const live = stream.getVideoTracks().some((t) => t.readyState === "live");
+      if (!live) {
+        setRetryKey((k) => k + 1);
+        return;
+      }
+      const v = videoRef.current;
+      if (v && v.paused) void v.play().catch(() => undefined);
+    };
+    document.addEventListener("visibilitychange", onVisible);
 
     void start();
     return () => {
       cancelled = true;
-      ownedStreamRef.current?.getTracks().forEach((t) => t.stop());
-      ownedStreamRef.current = null;
+      document.removeEventListener("visibilitychange", onVisible);
+      if (frameWatch != null) window.clearTimeout(frameWatch);
+      const v = videoRef.current;
+      if (v) {
+        try {
+          v.srcObject = null;
+        } catch {
+          /* ignore */
+        }
+      }
+      stopOwned();
+      activeStreamRef.current = null;
     };
-  }, [open, streamProp, facing]);
+  }, [open, streamProp, facing, retryKey]);
 
+  // Skan sikli: oldingi kadr tugagach keyingisi (qotish/yig‘ilib qolish yo‘q)
   useEffect(() => {
     if (!open || !ready) return;
     let cancelled = false;
+    let timer: number | null = null;
     const Detector = getBarcodeDetector();
-    const detector = Detector ? new Detector({ formats: ["qr_code"] }) : null;
+    let detector: BarcodeDetectorLike | null = null;
+    try {
+      detector = Detector ? new Detector({ formats: ["qr_code"] }) : null;
+    } catch {
+      detector = null;
+    }
+    let frameNo = 0;
 
     const handleValue = async (value: string) => {
       if (handling.current || cancelled) return;
       handling.current = true;
+      try {
+        navigator.vibrate?.(60);
+      } catch {
+        /* ignore */
+      }
       setBusy(true);
       try {
         await onDetectedRef.current(value);
-        onOpenChange(false);
+        onOpenChangeRef.current(false);
       } catch (e) {
         setBusy(false);
         setError((e as Error)?.message || "QR qabul qilinmadi — qayta urinib ko‘ring");
@@ -177,199 +356,250 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
       }
     };
 
-    const id = window.setInterval(() => {
-      void (async () => {
-        if (cancelled || handling.current) return;
-        const v = videoRef.current;
-        const canvas = canvasRef.current;
-        if (!v || v.readyState < 2 || v.videoWidth <= 0) return;
+    const scanOnce = async () => {
+      const v = videoRef.current;
+      if (!v || v.readyState < 2 || v.videoWidth <= 0 || v.paused) {
+        if (v && v.paused && v.srcObject) void v.play().catch(() => undefined);
+        return;
+      }
+      frameNo += 1;
+      if (detector) {
         try {
-          if (detector) {
-            const codes = await detector.detect(v);
-            const value = codes.find((c) => c.rawValue)?.rawValue?.trim();
-            if (value) {
-              await handleValue(value);
-              return;
-            }
+          const codes = await detector.detect(v);
+          const value = codes.find((c) => c.rawValue)?.rawValue?.trim();
+          if (value) {
+            await handleValue(value);
+            return;
           }
-          if (canvas) {
-            const ctx = canvas.getContext("2d", { willReadFrequently: true });
-            if (!ctx) return;
-            const w = Math.min(v.videoWidth, 640);
-            const h = Math.max(1, Math.round((v.videoHeight / v.videoWidth) * w));
-            if (canvas.width !== w) canvas.width = w;
-            if (canvas.height !== h) canvas.height = h;
-            ctx.drawImage(v, 0, 0, w, h);
-            const image = ctx.getImageData(0, 0, w, h);
-            const code = jsQR(image.data, w, h, { inversionAttempts: "dontInvert" });
-            if (code?.data?.trim()) await handleValue(code.data.trim());
-          }
+        } catch {
+          // Format qo‘llanmaydi — jsQR ga o‘tamiz
+          detector = null;
+        }
+      }
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return;
+      const w = Math.min(v.videoWidth, 720);
+      const h = Math.max(1, Math.round((v.videoHeight / v.videoWidth) * w));
+      if (canvas.width !== w) canvas.width = w;
+      if (canvas.height !== h) canvas.height = h;
+      ctx.drawImage(v, 0, 0, w, h);
+      const image = ctx.getImageData(0, 0, w, h);
+      const code = jsQR(image.data, w, h, {
+        inversionAttempts: frameNo % 3 === 0 ? "attemptBoth" : "dontInvert",
+      });
+      if (code?.data?.trim()) await handleValue(code.data.trim());
+    };
+
+    const tick = async () => {
+      if (cancelled) return;
+      if (!handling.current) {
+        try {
+          await scanOnce();
         } catch {
           /* skip */
         }
-      })();
-    }, 90);
+      }
+      if (!cancelled) timer = window.setTimeout(() => void tick(), detector ? 60 : 100);
+    };
+    timer = window.setTimeout(() => void tick(), 120);
 
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      if (timer != null) window.clearTimeout(timer);
     };
-  }, [open, ready, onOpenChange]);
+  }, [open, ready]);
 
-  const onTapCamera = async () => {
-    setOpening(true);
+  const onTapCamera = useCallback(() => {
+    if (opening) return;
+    // Bosish paytida (user gesture) kamerani boshlaymiz — iOS/Android ishonchli
+    clearCameraDeviceCache(facingRef.current);
+    autoReopen.current = 0;
     setError(null);
-    try {
-      ownedStreamRef.current?.getTracks().forEach((t) => t.stop());
-      ownedStreamRef.current = null;
-      const stream = await openCameraFast(facingRef.current);
-      ownedStreamRef.current = stream;
-      const video = videoRef.current;
-      if (video) {
-        video.srcObject = stream;
-        video.muted = true;
-        video.playsInline = true;
-        await video.play().catch(() => undefined);
-      }
-      setReady(true);
-    } catch (e) {
-      setReady(false);
-      setError(cameraErrorText(e));
-    } finally {
-      setOpening(false);
-    }
-  };
+    ownedStreamRef.current?.getTracks().forEach((tr) => tr.stop());
+    prefetchCamera(facingRef.current);
+    setRetryKey((k) => k + 1);
+  }, [opening]);
 
   const switchCamera = () => {
     if (busy || opening) return;
+    setError(null);
     setFacing((f) => (f === "environment" ? "user" : "environment"));
+  };
+
+  const toggleTorch = async () => {
+    const track = activeStreamRef.current?.getVideoTracks()[0];
+    if (!track) return;
+    const next = !torchOn;
+    try {
+      await track.applyConstraints({ advanced: [{ torch: next } as unknown as MediaTrackConstraintSet] });
+      setTorchOn(next);
+    } catch {
+      setTorchSupported(false);
+    }
   };
 
   if (!open || typeof document === "undefined") return null;
 
   const heading = title?.trim() || "QR scanner";
-  const hint =
-    description?.trim() ||
-    "QR kodni ramka ichiga joylashtiring — avtomatik o‘qiladi";
+  const hint = description?.trim() || "QR kodni ramka ichiga joylashtiring — avtomatik o‘qiladi";
+  const frameSize = "min(70vw, 288px)";
 
   return createPortal(
-    <div className="fixed inset-0 z-[110] bg-black" role="dialog" aria-modal="true" aria-label={heading}>
+    <div
+      className="cam-sheet-in fixed inset-0 z-[110] overflow-hidden bg-black text-white"
+      role="dialog"
+      aria-modal="true"
+      aria-label={heading}
+    >
       <video
         ref={videoRef}
-        className="absolute inset-0 h-full w-full object-cover"
+        className={cn(
+          "absolute inset-0 h-full w-full bg-black object-cover transition-opacity duration-300",
+          ready ? "opacity-100" : "opacity-0",
+          facing === "user" && "-scale-x-100",
+        )}
         playsInline
         muted
         autoPlay
       />
       <canvas ref={canvasRef} className="hidden" aria-hidden />
 
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-black/80 via-black/45 to-transparent pb-16 pt-[max(0.75rem,env(safe-area-inset-top))]">
-        <div className="pointer-events-auto flex items-start justify-between gap-3 px-4">
-          <div className="min-w-0 flex-1 pt-1">
-            <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 ring-1 ring-white/25">
-              <QrCode className="h-4 w-4 shrink-0 text-white" />
-              <span className="text-xs font-semibold uppercase tracking-wide text-white">QR</span>
+      {/* Yuqori panel */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-black/75 via-black/35 to-transparent pb-14 pt-[max(0.75rem,env(safe-area-inset-top))]">
+        <div className="pointer-events-auto flex items-center justify-between gap-3 px-4">
+          <button
+            type="button"
+            aria-label="Yopish"
+            className="cam-glass flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white active:scale-95"
+            onClick={() => onOpenChange(false)}
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <div className="min-w-0 flex-1 text-center">
+            <div className="cam-glass mx-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5">
+              <QrCode className="h-3.5 w-3.5 text-emerald-300" />
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/90">QR</span>
             </div>
-            <h2 className="mt-2 text-lg font-bold leading-tight text-white drop-shadow-sm sm:text-xl">
-              {heading}
-            </h2>
-            <p className="mt-1 max-w-[18rem] text-sm leading-snug text-white/85 sm:max-w-sm">{hint}</p>
+            <h2 className="mt-1.5 truncate text-[17px] font-bold leading-tight text-white drop-shadow">{heading}</h2>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {torchSupported && ready ? (
+              <button
+                type="button"
+                aria-label={torchOn ? "Chiroqni o‘chirish" : "Chiroqni yoqish"}
+                className={cn(
+                  "flex h-11 w-11 items-center justify-center rounded-full active:scale-95",
+                  torchOn ? "bg-amber-300 text-black" : "cam-glass text-white",
+                )}
+                onClick={() => void toggleTorch()}
+              >
+                {torchOn ? <FlashlightOff className="h-5 w-5" /> : <Flashlight className="h-5 w-5" />}
+              </button>
+            ) : null}
             <button
               type="button"
               aria-label={facing === "environment" ? "Old kamera" : "Orqa kamera"}
               disabled={busy || opening}
-              className="flex h-12 w-12 items-center justify-center rounded-full bg-black/55 text-white ring-1 ring-white/35 active:scale-95 disabled:opacity-50"
+              className="cam-glass flex h-11 w-11 items-center justify-center rounded-full text-white active:scale-95 disabled:opacity-50"
               onClick={switchCamera}
             >
               {opening ? <Loader2 className="h-5 w-5 animate-spin" /> : <SwitchCamera className="h-5 w-5" />}
-            </button>
-            <button
-              type="button"
-              aria-label="Yopish"
-              className="flex h-12 w-12 items-center justify-center rounded-full bg-black/55 text-white ring-1 ring-white/35 active:scale-95"
-              onClick={() => onOpenChange(false)}
-            >
-              <X className="h-6 w-6" />
             </button>
           </div>
         </div>
       </div>
 
+      {/* Skan ramkasi */}
       {ready ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4">
           <div
-            className={cn(
-              "relative rounded-[1.35rem] border-[3px] border-white",
-              "h-[min(72vw,300px)] w-[min(72vw,300px)]",
-              "shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]",
-            )}
+            className="relative rounded-[28px] shadow-[0_0_0_9999px_rgba(0,0,0,0.58)]"
+            style={{ width: frameSize, height: frameSize, ["--cam-scan-h" as string]: `calc(${frameSize} - 8px)` }}
           >
-            <span className="absolute -left-1 -top-1 h-10 w-10 rounded-tl-[1.35rem] border-l-[4px] border-t-[4px] border-emerald-400" />
-            <span className="absolute -right-1 -top-1 h-10 w-10 rounded-tr-[1.35rem] border-r-[4px] border-t-[4px] border-emerald-400" />
-            <span className="absolute -bottom-1 -left-1 h-10 w-10 rounded-bl-[1.35rem] border-b-[4px] border-l-[4px] border-emerald-400" />
-            <span className="absolute -bottom-1 -right-1 h-10 w-10 rounded-br-[1.35rem] border-b-[4px] border-r-[4px] border-emerald-400" />
-            <div className="absolute inset-x-4 top-1/2 h-0.5 -translate-y-1/2 overflow-hidden rounded-full">
-              <div className="h-full w-full animate-pulse bg-emerald-400/80" />
-            </div>
+            <span className="absolute -left-0.5 -top-0.5 h-11 w-11 rounded-tl-[28px] border-l-[5px] border-t-[5px] border-emerald-400" />
+            <span className="absolute -right-0.5 -top-0.5 h-11 w-11 rounded-tr-[28px] border-r-[5px] border-t-[5px] border-emerald-400" />
+            <span className="absolute -bottom-0.5 -left-0.5 h-11 w-11 rounded-bl-[28px] border-b-[5px] border-l-[5px] border-emerald-400" />
+            <span className="absolute -bottom-0.5 -right-0.5 h-11 w-11 rounded-br-[28px] border-b-[5px] border-r-[5px] border-emerald-400" />
+            {!busy ? (
+              <div className="absolute inset-x-3 top-1">
+                <div className="cam-scan-line h-[3px] w-full rounded-full bg-gradient-to-r from-transparent via-emerald-300 to-transparent shadow-[0_0_14px_2px_rgba(52,211,153,0.7)]" />
+              </div>
+            ) : null}
           </div>
         </div>
       ) : (
-        <button
-          type="button"
-          aria-label="Camera"
-          className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black/70 px-6"
-          onClick={() => void onTapCamera()}
-          disabled={opening}
-        >
-          {opening ? (
-            <>
-              <Loader2 className="h-12 w-12 animate-spin text-white" />
-              <p className="text-base font-semibold text-white">Kamera ochilmoqda…</p>
-            </>
-          ) : (
-            <>
-              <span className="flex h-24 w-24 items-center justify-center rounded-full bg-white/20 ring-2 ring-white/50 animate-pulse">
-                <svg viewBox="0 0 24 24" className="h-11 w-11 text-white" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                  <circle cx="12" cy="13" r="4" />
-                </svg>
-              </span>
-              <p className="max-w-[16rem] text-center text-base font-semibold text-white">
-                Kamerani yoqish uchun bosing
-              </p>
-              {error ? (
-                <p className="max-w-[18rem] rounded-xl bg-rose-500/20 px-3 py-2 text-center text-sm font-medium leading-snug text-rose-100 ring-1 ring-rose-400/40">
-                  {error}
-                </p>
-              ) : null}
-            </>
-          )}
-        </button>
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-5 bg-gradient-to-b from-zinc-950 via-zinc-900 to-black px-6">
+          <button
+            type="button"
+            aria-label="Kamerani yoqish"
+            onClick={onTapCamera}
+            disabled={opening}
+            className="relative flex h-28 w-28 items-center justify-center rounded-full bg-white/10 ring-1 ring-white/25 transition active:scale-95 disabled:opacity-90"
+          >
+            {!opening && !error ? <span className="cam-pulse-ring absolute inset-0 rounded-full ring-2 ring-emerald-400/60" /> : null}
+            {opening ? (
+              <Loader2 className="h-11 w-11 animate-spin text-white" />
+            ) : error ? (
+              <RefreshCw className="h-10 w-10 text-white/90" />
+            ) : (
+              <Camera className="h-11 w-11 text-white" />
+            )}
+          </button>
+          <div className="text-center">
+            <p className="text-base font-semibold text-white">
+              {opening ? "Kamera ochilmoqda…" : error ? "Kamerani qayta yoqing" : "Kamerani yoqish uchun bosing"}
+            </p>
+            {!opening && !error ? <p className="mt-1 text-sm text-white/60">{hint}</p> : null}
+          </div>
+          {error && !opening ? (
+            <div className="flex max-w-[20rem] items-start gap-2.5 rounded-2xl border border-rose-400/30 bg-rose-500/15 px-3.5 py-3 text-left text-sm leading-snug text-rose-100">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-300" />
+              <span>{error}</span>
+            </div>
+          ) : null}
+          {error && !opening ? (
+            <button
+              type="button"
+              onClick={onTapCamera}
+              className="inline-flex h-12 items-center gap-2 rounded-full bg-white px-6 text-sm font-bold text-zinc-900 active:scale-95"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Qayta urinish
+            </button>
+          ) : null}
+        </div>
       )}
 
       {ready && error && !busy ? (
-        <div className="pointer-events-none absolute inset-x-4 top-[38%] z-40 mx-auto max-w-sm -translate-y-1/2 rounded-2xl bg-rose-600/90 px-4 py-3 text-center text-sm font-semibold leading-snug text-white shadow-xl ring-1 ring-white/20">
-          {error}
+        <div className="pointer-events-none absolute inset-x-4 top-[24%] z-40 mx-auto flex max-w-sm items-center gap-2 rounded-2xl bg-rose-600/95 px-4 py-3 text-sm font-semibold leading-snug text-white shadow-xl ring-1 ring-white/20">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>{error}</span>
         </div>
       ) : null}
 
+      {/* Pastki panel */}
       {ready && !busy ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black/85 via-black/50 to-transparent pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-16">
-          <p className="mx-auto max-w-[20rem] px-4 text-center text-sm font-medium leading-snug text-white">
-            QR kodni yashil burchakli ramka ichiga tuting
-            <span className="mt-1 block text-xs text-white/60">
-              {facing === "environment" ? "Orqa kamera" : "Old kamera"} · almashtirish tugmasi yuqorida
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-16">
+          <div className="cam-glass mx-auto flex max-w-sm items-center gap-3 rounded-2xl px-4 py-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-400/20 text-emerald-300">
+              <QrCode className="h-5 w-5" />
             </span>
-          </p>
+            <div className="min-w-0 text-left">
+              <p className="text-sm font-semibold leading-snug text-white">{hint}</p>
+              <p className="mt-0.5 text-[11px] text-white/55">
+                {facing === "environment" ? "Orqa kamera" : "Old kamera"} · yaqinroq yoki uzoqroq tuting
+              </p>
+            </div>
+          </div>
         </div>
       ) : null}
 
       {busy ? (
-        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-black/55">
-          <Loader2 className="h-11 w-11 animate-spin text-white" />
-          <p className="text-sm font-medium text-white">Tasdiqlanmoqda…</p>
+        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-black/60 backdrop-blur-sm">
+          <Loader2 className="h-11 w-11 animate-spin text-emerald-300" />
+          <p className="text-sm font-semibold text-white">Tasdiqlanmoqda…</p>
         </div>
       ) : null}
     </div>,

@@ -48,9 +48,6 @@ import {
   Truck,
   Fuel,
   GripVertical,
-  RotateCcw,
-  SlidersHorizontal,
-  Check,
   Eye,
   Send,
   ShieldOff,
@@ -63,6 +60,7 @@ import {
   Receipt,
   Sparkles,
   Star,
+  Scale,
 } from 'lucide-react';
 import {
   useLogout,
@@ -94,7 +92,7 @@ import { useCall } from '@/lib/calls/engine';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
 import { VerifiedBadge, VerifiedName } from "@/components/VerifiedBadge";
-import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewEmployeesFull, canViewDavomat, canViewUlanganlar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome, isSbRole, canManageSmenaFilial, canManageStudents, canSeeAbet, canUseDocumentScanner } from "@/lib/roles";
+import { isHrManager, isHrRole, isHrOversight, isHrDirektor, isBlockedForHrDirektor, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewEmployeesFull, canViewDavomat, canViewUlanganlar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome, isSbRole, canManageSmenaFilial, canManageStudents, canSeeAbet, canUseDocumentScanner } from "@/lib/roles";
 import { AI_CHAT_ENABLED } from "@/lib/chat-flag";
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
@@ -225,7 +223,7 @@ const NAV_SECTIONS: {
     id: 'pharmacy',
     label: "Apteka tarmog'i",
     icon: Store,
-    paths: ['/pharmacy-network', '/boglanish', '/checklist', '/ehtiyoj'],
+    paths: ['/pharmacy-network', '/majburiyat', '/mijozlar-baholashi', '/boglanish', '/checklist', '/ehtiyoj'],
   },
   {
     id: 'logistika',
@@ -273,6 +271,7 @@ const NAV_SECTIONS: {
       '/admin/test',
       '/admin/scanner',
       '/admin/yordamchi-ai',
+      '/admin/ai-telefon',
       '/admin/qurilmalar',
       '/admin/kochma-davomat',
       '/admin/kochma-xarita',
@@ -368,6 +367,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/internships')) return '/internships';
   if (path.startsWith('/oquvchilar')) return '/oquvchilar';
   if (path.startsWith('/pharmacy-network')) return '/pharmacy-network';
+  if (path.startsWith('/majburiyat')) return '/majburiyat';
   if (path.startsWith('/xodim-kerak')) return '/xodim-kerak';
   if (path.startsWith('/it')) return '/it';
   if (path.startsWith('/texnik')) return '/texnik';
@@ -396,6 +396,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/admin/test')) return '/admin/test';
   if (path.startsWith('/admin/scanner')) return '/admin/scanner';
   if (path.startsWith('/admin/yordamchi-ai')) return '/admin/yordamchi-ai';
+  if (path.startsWith('/admin/ai-telefon')) return '/admin/ai-telefon';
   if (path.startsWith('/admin/qurilmalar')) return '/admin/qurilmalar';
   if (path.startsWith('/admin/kochma-davomat')) return '/admin/kochma-davomat';
   if (path.startsWith('/admin/kochma-xarita')) return '/admin/kochma-xarita';
@@ -446,8 +447,9 @@ function NavBadge({
       className={cn(
         'inline-flex items-center justify-center rounded-full font-semibold leading-none',
         pulse && 'animate-pulse ring-2 ring-teal-300/55',
-        tone === 'soft' && 'bg-[var(--sec)] text-white shadow-sm font-bold dark:text-[#0b1220]',
-        tone === 'section' && 'bg-[var(--sec-soft)] text-[var(--sec)] font-bold ring-1 ring-[color-mix(in_srgb,var(--sec)_40%,transparent)]',
+        // Sidebar bo‘limlarida --sec oq bo‘lgani uchun raqam aniq navy rangda chiqadi
+        tone === 'soft' && 'bg-white text-[#0b3a5c] shadow-sm font-bold ring-1 ring-white/70',
+        tone === 'section' && 'bg-white text-[#0b3a5c] font-extrabold shadow-sm ring-1 ring-white/70',
         tone === 'rose' && 'bg-rose-500 text-white',
         collapsed
           ? 'absolute -top-1 -right-1 min-w-[16px] h-4 px-1 text-[10px]'
@@ -992,6 +994,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (location.startsWith('/logistika') && !canViewLogistika(user.role)) {
       setLocation('/dashboard');
     }
+    if (isHrDirektor(user.role) && isBlockedForHrDirektor(location)) {
+      setLocation('/dashboard');
+    }
     if (location.startsWith('/admin/smena-sozlamalar') && !canManageSettings(user.role)) {
       setLocation('/dashboard');
     }
@@ -1005,6 +1010,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       setLocation('/dashboard');
     }
     if (location.startsWith('/admin/yordamchi-ai') && user.role !== 'admin') {
+      setLocation('/dashboard');
+    }
+    if (location.startsWith('/admin/ai-telefon') && user.role !== 'admin') {
       setLocation('/dashboard');
     }
     if (location.startsWith('/oquvchilar') && !canManageStudents(user.role)) {
@@ -1121,8 +1129,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       }
       return next;
     }
-    // HR — Javob olish holatini kuzatish (Asosiy)
-    if (hasHrOversightNav(role) && !next.some((i) => i.path === '/javob-olish/holat')) {
+    // HR — Javob olish holatini kuzatish (Asosiy); HR direktor uchun yashiriladi
+    if (
+      hasHrOversightNav(role) &&
+      !isHrDirektor(role) &&
+      !next.some((i) => i.path === '/javob-olish/holat')
+    ) {
       const dashIdx = next.findIndex((i) => i.path === '/dashboard');
       const at = dashIdx >= 0 ? dashIdx + 1 : 0;
       next = [...next.slice(0, at), javobHolatNav, ...next.slice(at)];
@@ -1234,6 +1246,25 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         { name: 'Xodim kerak', path: '/xodim-kerak', icon: UserPlus },
         ...next.slice(at),
       ];
+    }
+    // Majburiyat — Apteka tarmog‘i bo‘limidagi barcha uchun (PDF ko‘rish/yuklash)
+    if (!next.some((i) => i.path === '/majburiyat')) {
+      const pharmacyRoles =
+        role === 'mudir' ||
+        role === 'farmasevt' ||
+        role === 'stajyor' ||
+        role === 'koordinator' ||
+        role === 'regional_menejer' ||
+        next.some((i) => i.path === '/pharmacy-network');
+      if (pharmacyRoles || hasFullPlatformAccess(role) || isHrManager(role) || isDirectorRole(role)) {
+        const phIdx = next.findIndex((i) => i.path === '/pharmacy-network');
+        const at = phIdx >= 0 ? phIdx + 1 : next.length;
+        next = [
+          ...next.slice(0, at),
+          { name: 'Majburiyat', path: '/majburiyat', icon: Scale },
+          ...next.slice(at),
+        ];
+      }
     }
     // Oddiy xodim / mudir / farmasevt — Xodimlar menyusi yo‘q
     if (!canViewEmployees(role)) {
@@ -1435,6 +1466,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       smenaNav,
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+      { name: 'Majburiyat', path: '/majburiyat', icon: Scale },
       { name: "Bog'lanish", path: '/boglanish', icon: Phone },
       { name: 'Xodim kerak', path: '/xodim-kerak', icon: UserPlus },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
@@ -1453,6 +1485,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Test', path: '/admin/test', icon: Bell },
       { name: 'Skaner', path: '/admin/scanner', icon: ScanLine },
       { name: 'Yordamchi AI', path: '/admin/yordamchi-ai', icon: Sparkles },
+      { name: 'AI Telefon', path: '/admin/ai-telefon', icon: PhoneCall },
       { name: 'Mijozlar baholashi', path: '/mijozlar-baholashi', icon: Star },
       { name: 'Hisobot', path: '/admin/holat', icon: BarChart3 },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
@@ -1569,7 +1602,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     hr: hrMenejerNav,
     hr_menejer: hrMenejerNav,
-    hr_direktor: hrOversightNav,
+    hr_direktor: hrOversightNav.filter((i) => !isBlockedForHrDirektor(i.path)),
     hr_kadr_rahbar: hrOversightNav,
     hr_auditor: hrOversightNav,
     trainer: [
@@ -1957,14 +1990,17 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const userRole = normalizeUserRole(user.role);
   const oversightNav = hasHrOversightNav(userRole);
   // Korxona direktori admin menyusini oladi. Foydalanuvchilar keyinroq filtrlanadi.
-  const resolvedBase = oversightNav
-    ? hrOversightNav
-    : userRole === 'director'
-      ? roleNavigation.admin
-      : roleNavigation[userRole] ??
-      (hasFullPlatformAccess(userRole) ? roleNavigation.admin : null) ?? [
-        { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-      ];
+  // HR direktor — roleNavigation da filtrlangan ro‘yxat (Logistika/Apteka/Tizim yashirin).
+  const resolvedBase = isHrDirektor(userRole) && roleNavigation.hr_direktor
+    ? roleNavigation.hr_direktor
+    : oversightNav
+      ? hrOversightNav
+      : userRole === 'director'
+        ? roleNavigation.admin
+        : roleNavigation[userRole] ??
+        (hasFullPlatformAccess(userRole) ? roleNavigation.admin : null) ?? [
+          { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+        ];
   const roleNav = injectCommonNav(resolvedBase, userRole);
   const withFace = isLimitedOfficeStaffRole(userRole)
     ? roleNav
@@ -1985,6 +2021,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     .filter((item) => item.path !== '/admin/holat' || canViewHolat(userRole))
     .filter((item) => item.path !== '/admin/holat/xodim' || canViewHolat(userRole))
     .filter((item) => item.path !== '/admin/yordamchi-ai' || (AI_CHAT_ENABLED && userRole === 'admin'))
+    .filter((item) => item.path !== '/admin/ai-telefon' || userRole === 'admin')
     .filter((item) => item.path !== '/distribyutsiya' || canViewDistribyutsiya(userRole))
     .filter((item) => item.path !== '/omborxona-ish' || canViewOmborxona(userRole))
     .filter((item) => item.path !== '/davomat/analytics')
@@ -1994,7 +2031,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     .filter((item) => item.path !== '/requests' || isHrRole(userRole))
     .filter((item) => !isReviziyaRole(userRole) || item.path !== '/dashboard')
     .concat(canViewLogistika(userRole) ? logistikaNavItems : [])
-    .concat(canSeeAbet(userRole) && !withFace.some((i) => i.path === '/abet') ? [abetNav] : []);
+    .concat(canSeeAbet(userRole) && !withFace.some((i) => i.path === '/abet') ? [abetNav] : [])
+    // HR direktor: Logistika / Apteka / Tizim + rasmdagi bandlar ko‘rinmasin
+    .filter((item) => !isHrDirektor(userRole) || !isBlockedForHrDirektor(item.path));
 
   const toggleNav = () => {
     if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) {
@@ -2009,7 +2048,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     applyNavLayout(defaultNavSections, navLayout, { keepEmpty: navEditMode }),
   );
   const pinnedSet = new Set(pinnedIds);
-  const navIsCustom = !!navLayout;
 
   const ensureNavLayout = (): NavLayoutState => {
     if (navLayout) return navLayout;
@@ -2019,12 +2057,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const commitNavLayout = (next: NavLayoutState) => {
     setNavLayout(next);
     if (user?.id != null) saveNavLayout(next, user.id);
-  };
-
-  const resetNavLayout = () => {
-    setNavLayout(null);
-    if (user?.id != null) clearNavLayout(user.id);
-    toast({ title: t('nav.layout.resetDone') });
   };
 
   const togglePin = (id: string) => {
@@ -2077,17 +2109,21 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         >
           {item.icon ? (
             <item.icon
-              strokeWidth={opts.nested ? 2.15 : 2}
+              strokeWidth={opts.nested ? (active ? 2.4 : 2.25) : 2}
               className={cn(
                 'transition-[transform,color] duration-200',
-                opts.nested ? 'h-3.5 w-3.5' : 'h-4 w-4 min-w-[16px]',
+                opts.nested ? 'h-4 w-4' : 'h-4 w-4 min-w-[16px]',
+                opts.nested && active && 'text-white',
                 !opts.nested && active && 'text-[var(--sec,#0d9488)] dark:text-teal-300',
               )}
             />
           ) : (
             <ListTodo
-              strokeWidth={opts.nested ? 2.15 : 2}
-              className={cn('h-3.5 w-3.5', opts.nested ? '' : 'h-4 w-4 min-w-[16px]')}
+              strokeWidth={opts.nested ? (active ? 2.4 : 2.25) : 2}
+              className={cn(
+                opts.nested ? 'h-4 w-4' : 'h-4 w-4 min-w-[16px]',
+                opts.nested && active && 'text-white',
+              )}
             />
           )}
           {opts.collapsed && <NavBadge count={count} collapsed pulse={pulse} tone="soft" />}
@@ -2097,8 +2133,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             <span
               className={cn(
                 'min-w-0 flex-1 text-[12.5px] leading-snug tracking-tight break-words',
-                opts.nested && active && 'font-bold text-slate-900 dark:text-white',
-                opts.nested && !active && 'font-medium text-slate-600 group-hover:text-slate-900 dark:text-slate-300/85 dark:group-hover:text-white',
+                opts.nested && active && 'font-bold text-[#0b3a5c]',
+                opts.nested && !active && 'font-semibold text-white group-hover:text-[#0b3a5c]',
+                !opts.nested && 'font-semibold text-white/90',
               )}
             >
               {navLabelForPath(item.path, t, item.name)}
@@ -2222,7 +2259,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           key={section.id}
           data-tone={section.id}
           className={cn(
-            'app-sidebar-section-card mb-1',
+            'app-sidebar-section-card mb-0.5',
             open && 'app-sidebar-section-card-open',
             hasActive && 'app-sidebar-section-card-active',
             isSectionDrop && 'ring-1 ring-sky-400/40 rounded-lg',
@@ -2288,8 +2325,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               {badgeSum > 0 ? <NavBadge count={badgeSum} tone="section" /> : null}
               <ChevronDown
                 className={cn(
-                  'h-4 w-4 shrink-0 text-slate-400 transition-transform duration-300 ease-out dark:text-white/45',
-                  open && 'rotate-180 text-[var(--sec)] dark:text-[var(--sec)]',
+                  'h-4 w-4 shrink-0 text-white/70 transition-transform duration-300 ease-out',
+                  open && 'rotate-180 text-white',
                 )}
                 strokeWidth={2.25}
               />
@@ -2303,8 +2340,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 className={cn(
                   'shrink-0 rounded-lg p-1.5 transition-colors',
                   pinned
-                    ? 'bg-[var(--sec-soft)] text-[var(--sec)]'
-                    : 'text-slate-500 hover:bg-[var(--sec-soft)] hover:text-[var(--sec)] dark:text-white/70',
+                    ? 'bg-white/20 text-white'
+                    : 'text-white/65 hover:bg-white/15 hover:text-white',
                 )}
               >
                 <Pin className={cn('h-3.5 w-3.5', pinned && 'fill-current')} />
@@ -2357,40 +2394,41 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         className={cn(
           'app-sidebar flex flex-col transition-[transform,width] duration-300 ease-out',
           'fixed inset-y-0 left-0 z-[80] w-[min(19.5rem,92vw)]',
-          mobileOpen ? 'translate-x-0' : '-translate-x-full',
-          'md:static md:z-auto md:translate-x-0',
+          mobileOpen ? 'translate-x-0' : '-translate-x-[105%] pointer-events-none',
+          'md:static md:z-auto md:translate-x-0 md:pointer-events-auto',
           desktopCollapsed ? 'md:w-[4.75rem]' : 'md:w-[17rem]',
-          mobileOpen && 'rounded-r-[1.35rem]',
         )}
       >
         <div className="app-sidebar-brand relative shrink-0 pt-[env(safe-area-inset-top)]">
-          <div className="relative flex items-center gap-1 px-2.5 py-2 md:px-3">
-            <div className={cn('min-w-0 flex-1', desktopCollapsed && 'md:hidden')}>
-              <img
-                src={`${import.meta.env.BASE_URL}logo3d-light.png`}
-                alt="VAKSINA MED HR"
-                width={800}
-                height={220}
-                decoding="async"
-                className="app-sidebar-logo"
-              />
+          <div className="relative flex w-full items-center gap-1 px-1.5 py-0 md:px-2 md:py-0">
+            <div className={cn('min-w-0 flex-1 overflow-hidden', desktopCollapsed && 'md:hidden')}>
+              <div className="app-sidebar-logo-glass">
+                <img
+                  src={`${import.meta.env.BASE_URL}vaksina.png`}
+                  alt="VAKSINA MED"
+                  width={900}
+                  height={260}
+                  decoding="async"
+                  className="app-sidebar-logo"
+                />
+              </div>
             </div>
             {desktopCollapsed ? (
-              <div className="mx-auto hidden h-10 w-10 items-center justify-center rounded-xl bg-white/90 shadow-sm ring-1 ring-violet-200/60 md:flex">
+              <div className="mx-auto hidden h-12 w-12 items-center justify-center rounded-xl bg-white/90 shadow-md ring-1 ring-white/80 backdrop-blur-md md:flex">
                 <img
                   src={`${import.meta.env.BASE_URL}faviconni.png`}
                   alt="VM"
                   width={72}
                   height={72}
                   decoding="async"
-                  className="h-8 w-8 object-contain"
+                  className="h-10 w-10 object-contain"
                 />
               </div>
             ) : null}
             <button
               type="button"
               onClick={() => setMobileOpen(false)}
-              className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 md:hidden"
+              className="shrink-0 rounded-lg p-1.5 text-white/80 hover:bg-white/15 hover:text-white md:hidden"
               aria-label="Yopish"
             >
               <X className="h-4 w-4" />
@@ -2398,63 +2436,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           </div>
         </div>
 
-        <nav className="flex-1 overflow-y-auto overscroll-contain px-2.5 py-2 md:px-2.5">
-          <div
-            className={cn(
-              'mb-2 rounded-xl border border-indigo-200 bg-white p-1.5 shadow-sm dark:border-white/10 dark:bg-white/[0.06] dark:shadow-none',
-              desktopCollapsed && 'md:hidden',
-            )}
-          >
-            {navEditMode ? (
-              <div className="space-y-1.5">
-                <p className="px-1.5 pt-0.5 text-[10px] font-medium leading-snug text-indigo-800 dark:text-violet-100/85">
-                  {t('nav.layout.editHint')}
-                </p>
-                <div className="flex flex-wrap gap-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNavEditMode(false);
-                      setDragOverKey(null);
-                      navDragRef.current = null;
-                      toast({ title: t('nav.layout.saved') });
-                    }}
-                    className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-indigo-600 px-2 py-1.5 text-[11px] font-semibold text-white hover:bg-indigo-500 dark:bg-violet-500/90 dark:hover:bg-violet-500"
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                    {t('nav.layout.done')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={resetNavLayout}
-                    className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-300 bg-slate-100 px-2 py-1.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-200 dark:border-transparent dark:bg-white/10 dark:text-white/85 dark:hover:bg-white/15"
-                    title={t('nav.layout.reset')}
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    {t('nav.layout.resetShort')}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setDesktopCollapsed(false);
-                  setNavEditMode(true);
-                }}
-                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] font-semibold text-slate-800 transition hover:bg-indigo-50 hover:text-indigo-950 dark:font-medium dark:text-white/75 dark:hover:bg-white/10 dark:hover:text-white"
-              >
-                <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 text-indigo-600 dark:text-violet-200" />
-                <span className="min-w-0 flex-1">{t('nav.layout.customize')}</span>
-                {navIsCustom ? (
-                  <span className="rounded-md bg-indigo-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-800 dark:bg-violet-400/25 dark:font-semibold dark:text-violet-100">
-                    {t('nav.layout.customBadge')}
-                  </span>
-                ) : null}
-              </button>
-            )}
-          </div>
-          <div className="flex flex-col gap-1 md:hidden">
+        <nav className="flex-1 overflow-y-auto overscroll-contain px-2.5 pt-0.5 pb-2 md:px-2.5">
+          <div className="flex flex-col gap-0.5 md:hidden">
             {renderNavLinks({
               collapsed: false,
               mobile: true,
@@ -2688,8 +2671,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         </DialogContent>
       </Dialog>
 
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden w-full">
-        <header className="safe-top z-10 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-card/95 px-3 backdrop-blur-md sm:h-14 sm:px-5">
+      <div className="app-autumn-stage relative flex min-w-0 w-full flex-1 flex-col overflow-hidden">
+        <div className="app-autumn-bg" aria-hidden="true" />
+        <header className="app-autumn-chrome safe-top relative z-[4] flex h-14 shrink-0 items-center justify-between gap-2 px-3 sm:h-14 sm:px-5">
           <div className="flex min-w-0 items-center gap-2">
             <button
               type="button"
@@ -2719,13 +2703,33 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           </div>
         </header>
 
-        <DavomatAttendanceBanner />
-        <TelegramLinkBanner />
-        <BoglanishMissingBanner />
+        {/* Barglar navbar pastidan chiqadi, kontent ustidan tushadi */}
+        <div className="app-autumn-leaves" aria-hidden="true">
+          <span className="app-autumn-flake app-autumn-flake--a" />
+          <span className="app-autumn-flake app-autumn-flake--b" />
+          <span className="app-autumn-flake app-autumn-flake--c" />
+          <span className="app-autumn-flake app-autumn-flake--d" />
+          <span className="app-autumn-flake app-autumn-flake--e" />
+          <span className="app-autumn-flake app-autumn-flake--f" />
+          <span className="app-autumn-flake app-autumn-flake--g" />
+          <span className="app-autumn-flake app-autumn-flake--h" />
+          <span className="app-autumn-flake app-autumn-flake--i" />
+          <span className="app-autumn-flake app-autumn-flake--j" />
+          <span className="app-autumn-flake app-autumn-flake--k" />
+          <span className="app-autumn-flake app-autumn-flake--l" />
+          <span className="app-autumn-flake app-autumn-flake--m" />
+          <span className="app-autumn-flake app-autumn-flake--n" />
+        </div>
+
+        <div className="relative z-[2]">
+          <DavomatAttendanceBanner />
+          <TelegramLinkBanner />
+          <BoglanishMissingBanner />
+        </div>
 
         <main
           className={cn(
-            'min-h-0 min-w-0 flex-1',
+            'app-autumn-main relative z-[2] min-h-0 min-w-0 flex-1',
             'pb-[calc(4.85rem+env(safe-area-inset-bottom))] md:pb-0',
             location === '/vazifalar' ||
               location.startsWith('/vazifalar/tahlil') ||
@@ -2736,7 +2740,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               ? 'overflow-hidden p-0'
               : location === '/hisobkitob' || location === '/oylik'
                 ? 'overflow-x-hidden overflow-y-auto p-1 sm:p-2'
-                : 'overflow-x-hidden overflow-y-auto p-3 sm:p-6',
+                : location.startsWith('/mijozlar-baholashi')
+                  ? 'overflow-x-hidden overflow-y-auto p-2 sm:p-3 lg:p-4'
+                  : 'overflow-x-hidden overflow-y-auto p-3 sm:p-6',
           )}
         >
           <div
@@ -2762,7 +2768,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 location.startsWith('/admin/kochma-xarita') ||
                 location.startsWith('/checklist-holati') ||
                 location.startsWith('/distribyutsiya') ||
-                location.startsWith('/resepsion')
+                location.startsWith('/resepsion') ||
+                location.startsWith('/mijozlar-baholashi')
                 ? 'h-full max-w-none'
                 : location === '/pharmacy-network' || location.startsWith('/davomat/bloklash')
                   ? 'max-w-none'
@@ -2774,12 +2781,14 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           </div>
         </main>
 
-        <MobileBottomNav
-          role={user.role}
-          location={location}
-          navItems={navItems}
-          hidden={mobileOpen}
-        />
+        <div className="relative z-[2]">
+          <MobileBottomNav
+            role={user.role}
+            location={location}
+            navItems={navItems}
+            hidden={mobileOpen}
+          />
+        </div>
       </div>
     </div>
   );

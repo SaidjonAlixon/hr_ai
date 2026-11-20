@@ -1,7 +1,7 @@
 import { Router } from "express";
 import ExcelJS from "exceljs";
 import type { AuthRequest } from "../middlewares/auth";
-import { requireAuth } from "../middlewares/auth";
+import { optionalAuth, requireAuth } from "../middlewares/auth";
 import { pool } from "@workspace/db";
 import {
   canManageCustomerRatings,
@@ -14,9 +14,7 @@ import {
   listPharmacyBranches,
   publicSession,
   ratingsFeed,
-  rotateQr,
   scopedBranchIds,
-  setQrBlocked,
   submitRating,
   ensureCustomerRatingsSchema,
   employeeLeaderboard,
@@ -48,9 +46,17 @@ function clientIp(req: AuthRequest): string {
 
 // ---------- Public (auth yo‘q) ----------
 
-router.get("/public/customer-ratings/:token", async (req, res): Promise<void> => {
+router.get("/public/customer-ratings/:token", optionalAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
     await ensureCustomerRatingsSchema();
+    if (req.userId) {
+      res.status(403).json({
+        error:
+          "Bu forma faqat mijozlar uchun. Platformaga kirgan xodimlar QR orqali baholay olmaydi — brauzerda chiqing yoki boshqa (mijoz) qurilmadan oching.",
+        code: "staff_blocked",
+      });
+      return;
+    }
     const data = await publicSession(String(req.params.token || ""));
     if ("error" in data && data.error) {
       res.status(data.code === "not_found" ? 404 : 403).json(data);
@@ -63,13 +69,16 @@ router.get("/public/customer-ratings/:token", async (req, res): Promise<void> =>
   }
 });
 
-router.post("/public/customer-ratings/:token", async (req, res): Promise<void> => {
+router.post("/public/customer-ratings/:token", optionalAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
     await ensureCustomerRatingsSchema();
     const body = req.body || {};
+    const rateTypeRaw = String(body.rateType || "staff");
+    const rateType =
+      rateTypeRaw === "pharmacy" || rateTypeRaw === "complaint" ? rateTypeRaw : ("staff" as const);
     const result = await submitRating({
       token: String(req.params.token || ""),
-      rateType: body.rateType === "pharmacy" ? "pharmacy" : "staff",
+      rateType,
       employeeIds: Array.isArray(body.employeeIds) ? body.employeeIds.map(Number) : [],
       allShift: Boolean(body.allShift),
       stars: Number(body.stars),
@@ -82,6 +91,7 @@ router.post("/public/customer-ratings/:token", async (req, res): Promise<void> =
       ip: clientIp(req as AuthRequest),
       userAgent: String(req.headers["user-agent"] || ""),
       lang: body.lang === "ru" ? "ru" : "uz",
+      actorUserId: req.userId ?? null,
     });
     res.json(result);
   } catch (err) {
@@ -185,36 +195,22 @@ router.post("/customer-ratings/qr", requireAuth, async (req: AuthRequest, res): 
   }
 });
 
-router.post("/customer-ratings/qr/:branchId/rotate", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  try {
-    const role = await roleOf(req);
-    if (!canManageCustomerRatings(role)) {
-      res.status(403).json({ error: "Ruxsat yo‘q" });
-      return;
-    }
-    const branchId = Number(req.params.branchId);
-    const qr = await rotateQr(branchId, await actorOf(req));
-    res.json({ ok: true, qr });
-  } catch (err) {
-    res.status(503).json({ error: (err as Error).message || "Yangilanmadi" });
-  }
+router.post("/customer-ratings/qr/:branchId/rotate", requireAuth, async (_req: AuthRequest, res): Promise<void> => {
+  res.status(403).json({ error: "QR o‘zgarmas — almashtirish yopiq" });
 });
 
-router.post("/customer-ratings/qr/:branchId/block", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  try {
-    const role = await roleOf(req);
-    if (!canManageCustomerRatings(role)) {
-      res.status(403).json({ error: "Ruxsat yo‘q" });
-      return;
-    }
-    const branchId = Number(req.params.branchId);
-    const blocked = req.body?.blocked !== false;
-    await setQrBlocked(branchId, blocked, await actorOf(req));
-    const items = await listQrCodes(null);
-    res.json({ ok: true, item: items.find((i) => i.branchId === branchId) });
-  } catch (err) {
-    res.status(503).json({ error: (err as Error).message || "Saqlanmadi" });
-  }
+router.post("/customer-ratings/qr/:branchId/block", requireAuth, async (_req: AuthRequest, res): Promise<void> => {
+  res.status(403).json({ error: "QR o‘zgarmas — bloklash yopiq" });
+});
+
+/** Barcha QR larni to‘liq o‘chirish — yopiq (yaratilgan QR saqlanadi) */
+router.delete("/customer-ratings/qr", requireAuth, async (_req: AuthRequest, res): Promise<void> => {
+  res.status(403).json({ error: "QR o‘zgarmas — o‘chirish yopiq" });
+});
+
+/** Bitta filial QR sini to‘liq o‘chirish — yopiq */
+router.delete("/customer-ratings/qr/:branchId", requireAuth, async (_req: AuthRequest, res): Promise<void> => {
+  res.status(403).json({ error: "QR o‘zgarmas — o‘chirish yopiq" });
 });
 
 router.get("/customer-ratings/feed", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -232,7 +228,9 @@ router.get("/customer-ratings/feed", requireAuth, async (req: AuthRequest, res):
     }
     const rateTypeRaw = String(req.query.rateType || "all");
     const rateType =
-      rateTypeRaw === "pharmacy" || rateTypeRaw === "staff" ? rateTypeRaw : ("all" as const);
+      rateTypeRaw === "pharmacy" || rateTypeRaw === "staff" || rateTypeRaw === "complaint"
+        ? rateTypeRaw
+        : ("all" as const);
     const data = await ratingsFeed({
       scope,
       branchId,
@@ -355,7 +353,11 @@ router.get("/customer-ratings/export.xlsx", requireAuth, async (req: AuthRequest
     const showId = canSeeCustomerIdentity(role);
     const rateTypeRaw = String(req.query.rateType || "all");
     const rateType =
-      rateTypeRaw === "pharmacy" || rateTypeRaw === "staff" ? rateTypeRaw : ("all" as const);
+      rateTypeRaw === "pharmacy" || rateTypeRaw === "staff" || rateTypeRaw === "complaint"
+        ? rateTypeRaw
+        : ("all" as const);
+    const q = String(req.query.q || "").trim().toLocaleLowerCase("uz");
+    const starsFilter = req.query.stars ? Number(req.query.stars) : null;
     const data = await ratingsFeed({
       scope,
       branchId: req.query.branchId ? Number(req.query.branchId) : null,
@@ -367,72 +369,274 @@ router.get("/customer-ratings/export.xlsx", requireAuth, async (req: AuthRequest
       showIdentity: showId,
     });
 
-    const wb = new ExcelJS.Workbook();
-    const staffSheet = wb.addWorksheet("Xodim baholari");
-    const pharmSheet = wb.addWorksheet("Dorixona baholari");
+    const filtered = data.items.filter((it) => {
+      if (starsFilter != null && Number.isFinite(starsFilter) && it.stars !== starsFilter) return false;
+      if (!q) return true;
+      const hay = [
+        it.branchLabel,
+        it.branchName,
+        it.branchNo != null ? String(it.branchNo) : "",
+        it.branchPhone,
+        it.mudirName,
+        it.mudirPhone,
+        it.coordinatorName,
+        it.coordinatorPhone,
+        it.serviceQuality,
+        it.demeanor,
+        it.comment,
+        it.customerName,
+        it.customerPhone,
+        it.workDate,
+        ...it.targets.map((t) => t.employeeName),
+        String(it.stars),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLocaleLowerCase("uz");
+      return q.split(/\s+/).filter(Boolean).every((tok) => hay.includes(tok));
+    });
 
-    const baseCols = [
+    const wb = new ExcelJS.Workbook();
+    wb.creator = "Vaksina HR";
+    wb.created = new Date();
+    const staffSheet = wb.addWorksheet("Xodim baholari", {
+      views: [{ state: "frozen", ySplit: 3 }],
+      properties: { defaultRowHeight: 18 },
+    });
+    const pharmSheet = wb.addWorksheet("Dorixona baholari", {
+      views: [{ state: "frozen", ySplit: 3 }],
+      properties: { defaultRowHeight: 18 },
+    });
+    const complaintSheet = wb.addWorksheet("Shikoyatlar", {
+      views: [{ state: "frozen", ySplit: 3 }],
+      properties: { defaultRowHeight: 18 },
+    });
+
+    const brand = {
+      purple: "FF5C2D91",
+      gold: "FFC9A227",
+      headerBg: "FF5C2D91",
+      headerFg: "FFFFFFFF",
+      altRow: "FFF7F3FC",
+      lowBg: "FFFFE4E6",
+      highBg: "FFFFF7E6",
+      border: "FFD4C4E8",
+      titleFg: "FF5C2D91",
+      muted: "FF64748B",
+    };
+
+    type ColDef = { header: string; key: string; width: number };
+    const baseCols: ColDef[] = [
       { header: "Sana", key: "date", width: 12 },
       { header: "Filial №", key: "branchNo", width: 10 },
-      { header: "Filial nomi", key: "branch", width: 28 },
+      { header: "Filial nomi", key: "branch", width: 30 },
       { header: "Filial tel", key: "branchPhone", width: 16 },
       { header: "Mudir", key: "mudir", width: 24 },
       { header: "Mudir tel", key: "mudirPhone", width: 16 },
       { header: "Koordinator", key: "coord", width: 24 },
       { header: "Koordinator tel", key: "coordPhone", width: 16 },
-      { header: "Yulduz", key: "stars", width: 8 },
+      { header: "Yulduz", key: "stars", width: 10 },
     ];
-
-    staffSheet.columns = [
+    const idCols: ColDef[] = showId
+      ? [
+          { header: "Mijoz ismi", key: "name", width: 20 },
+          { header: "Mijoz telefon", key: "phone", width: 16 },
+        ]
+      : [];
+    const staffCols: ColDef[] = [
       ...baseCols,
       { header: "Xodimlar", key: "staff", width: 36 },
       { header: "Xizmat", key: "service", width: 14 },
       { header: "Muomala", key: "demeanor", width: 14 },
-      { header: "Izoh", key: "comment", width: 40 },
-      ...(showId
-        ? [
-            { header: "Mijoz ismi", key: "name", width: 20 },
-            { header: "Mijoz telefon", key: "phone", width: 16 },
-          ]
-        : []),
-      { header: "Vaqt", key: "at", width: 20 },
+      { header: "Izoh", key: "comment", width: 42 },
+      ...idCols,
+      { header: "Belgilangan vaqt", key: "at", width: 22 },
     ];
-
-    pharmSheet.columns = [
+    const pharmCols: ColDef[] = [
       ...baseCols,
       { header: "Tozalik", key: "service", width: 14 },
-      { header: "Mahsulot tanlovi", key: "demeanor", width: 16 },
-      { header: "Izoh", key: "comment", width: 40 },
-      ...(showId
-        ? [
-            { header: "Mijoz ismi", key: "name", width: 20 },
-            { header: "Mijoz telefon", key: "phone", width: 16 },
-          ]
-        : []),
-      { header: "Vaqt", key: "at", width: 20 },
+      { header: "Mahsulot tanlovi", key: "demeanor", width: 18 },
+      { header: "Izoh", key: "comment", width: 42 },
+      ...idCols,
+      { header: "Belgilangan vaqt", key: "at", width: 22 },
+    ];
+    const complaintCols: ColDef[] = [
+      { header: "Sana", key: "date", width: 12 },
+      { header: "Filial №", key: "branchNo", width: 10 },
+      { header: "Filial nomi", key: "branch", width: 30 },
+      { header: "Filial tel", key: "branchPhone", width: 16 },
+      { header: "Mudir", key: "mudir", width: 24 },
+      { header: "Mudir tel", key: "mudirPhone", width: 16 },
+      { header: "Koordinator", key: "coord", width: 24 },
+      { header: "Koordinator tel", key: "coordPhone", width: 16 },
+      { header: "Shikoyat", key: "comment", width: 56 },
+      ...idCols,
+      { header: "Belgilangan vaqt", key: "at", width: 22 },
     ];
 
-    for (const it of data.items) {
-      const row = {
-        date: it.workDate,
-        branchNo: it.branchNo ?? "",
-        branch: it.branchName || it.branchLabel,
-        branchPhone: it.branchPhone || "",
-        mudir: it.mudirName || "",
-        mudirPhone: it.mudirPhone || "",
-        coord: it.coordinatorName || "",
-        coordPhone: it.coordinatorPhone || "",
-        stars: it.stars,
-        staff: it.targets.map((t) => t.employeeName).join(", "),
-        service: it.serviceQuality,
-        demeanor: it.demeanor,
-        comment: it.comment || "",
-        name: it.customerName || "",
-        phone: it.customerPhone || "",
-        at: it.createdAt,
+    const nowLabel = new Date().toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
+    const filterBits = [
+      rateType === "staff"
+        ? "faqat xodim"
+        : rateType === "pharmacy"
+          ? "faqat dorixona"
+          : rateType === "complaint"
+            ? "faqat shikoyat"
+            : "barcha turlar",
+      req.query.branchId ? `filial #${req.query.branchId}` : "barcha filiallar",
+      String(req.query.complaints || "") === "1" ? "past baholar" : null,
+      starsFilter != null && Number.isFinite(starsFilter) ? `${starsFilter}★` : null,
+      q ? `qidiruv: «${String(req.query.q)}»` : null,
+    ].filter(Boolean);
+
+    const styleSheet = (
+      sheet: ExcelJS.Worksheet,
+      cols: ColDef[],
+      title: string,
+      rows: Array<Record<string, string | number>>,
+    ) => {
+      sheet.columns = cols.map((c) => ({ key: c.key, width: c.width }));
+
+      sheet.mergeCells(1, 1, 1, cols.length);
+      const titleCell = sheet.getCell(1, 1);
+      titleCell.value = `VAKSINA · ${title}`;
+      titleCell.font = { name: "Calibri", size: 16, bold: true, color: { argb: brand.headerFg } };
+      titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: brand.purple } };
+      titleCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+      sheet.getRow(1).height = 28;
+
+      sheet.mergeCells(2, 1, 2, cols.length);
+      const metaCell = sheet.getCell(2, 1);
+      metaCell.value = `Mijozlar baholashi · ${nowLabel} · ${rows.length} ta yozuv · ${filterBits.join(" · ")}`;
+      metaCell.font = { name: "Calibri", size: 10, italic: true, color: { argb: brand.muted } };
+      metaCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3EDFA" } };
+      metaCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+      sheet.getRow(2).height = 20;
+
+      const headerRow = sheet.getRow(3);
+      headerRow.height = 22;
+      cols.forEach((c, i) => {
+        const cell = headerRow.getCell(i + 1);
+        cell.value = c.header;
+        cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: brand.headerFg } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: brand.headerBg } };
+        cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+        cell.border = {
+          top: { style: "thin", color: { argb: brand.border } },
+          left: { style: "thin", color: { argb: brand.border } },
+          bottom: { style: "thin", color: { argb: brand.border } },
+          right: { style: "thin", color: { argb: brand.border } },
+        };
+      });
+
+      rows.forEach((r, idx) => {
+        const excelRow = sheet.addRow(r);
+        excelRow.height = 20;
+        const stars = Number(r.stars) || 0;
+        const rowBg =
+          stars <= 2 ? brand.lowBg : stars >= 5 ? brand.highBg : idx % 2 === 0 ? "FFFFFFFF" : brand.altRow;
+        excelRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          cell.font = { name: "Calibri", size: 10, color: { argb: "FF1E293B" } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: rowBg } };
+          cell.alignment = {
+            vertical: "middle",
+            horizontal: cols[colNumber - 1]?.key === "comment" ? "left" : "left",
+            wrapText: cols[colNumber - 1]?.key === "comment" || cols[colNumber - 1]?.key === "staff",
+          };
+          cell.border = {
+            top: { style: "hair", color: { argb: brand.border } },
+            left: { style: "hair", color: { argb: brand.border } },
+            bottom: { style: "hair", color: { argb: brand.border } },
+            right: { style: "hair", color: { argb: brand.border } },
+          };
+          if (cols[colNumber - 1]?.key === "stars") {
+            cell.alignment = { vertical: "middle", horizontal: "center" };
+            cell.font = {
+              name: "Calibri",
+              size: 11,
+              bold: true,
+              color: { argb: stars <= 2 ? "FFBE123C" : stars >= 4 ? "FFB45309" : "FF334155" },
+            };
+          }
+          if (cols[colNumber - 1]?.key === "branch") {
+            cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: brand.titleFg } };
+          }
+        });
+      });
+
+      if (rows.length) {
+        sheet.autoFilter = {
+          from: { row: 3, column: 1 },
+          to: { row: 3 + rows.length, column: cols.length },
+        };
+      }
+
+      sheet.pageSetup = {
+        orientation: "landscape",
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 },
       };
-      if (it.rateType === "pharmacy") pharmSheet.addRow(row);
-      else staffSheet.addRow(row);
+    };
+
+    const formatMarkedAt = (iso: string | null | undefined) => {
+      if (!iso) return "";
+      try {
+        return new Date(iso).toLocaleString("uz-UZ", {
+          timeZone: "Asia/Tashkent",
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+        });
+      } catch {
+        return String(iso);
+      }
+    };
+
+    const toRow = (it: (typeof filtered)[number]) => ({
+      date: it.workDate,
+      branchNo: it.branchNo ?? "",
+      branch: it.branchName || it.branchLabel,
+      branchPhone: it.branchPhone || "",
+      mudir: it.mudirName || "",
+      mudirPhone: it.mudirPhone || "",
+      coord: it.coordinatorName || "",
+      coordPhone: it.coordinatorPhone || "",
+      stars: it.stars,
+      staff: it.targets.map((t) => t.employeeName).join(", "),
+      service: it.serviceQuality,
+      demeanor: it.demeanor,
+      comment: it.comment || "",
+      name: it.customerName || "",
+      phone: it.customerPhone || "",
+      at: formatMarkedAt(it.createdAt),
+    });
+
+    const staffRows = filtered.filter((it) => it.rateType === "staff").map(toRow);
+    const pharmRows = filtered.filter((it) => it.rateType === "pharmacy").map(toRow);
+    const complaintRows = filtered.filter((it) => it.rateType === "complaint").map(toRow);
+
+    if (rateType === "pharmacy") {
+      wb.removeWorksheet(staffSheet.id);
+      wb.removeWorksheet(complaintSheet.id);
+      styleSheet(pharmSheet, pharmCols, "Dorixona baholari", pharmRows);
+    } else if (rateType === "staff") {
+      wb.removeWorksheet(pharmSheet.id);
+      wb.removeWorksheet(complaintSheet.id);
+      styleSheet(staffSheet, staffCols, "Xodim baholari", staffRows);
+    } else if (rateType === "complaint") {
+      wb.removeWorksheet(staffSheet.id);
+      wb.removeWorksheet(pharmSheet.id);
+      styleSheet(complaintSheet, complaintCols, "Shikoyatlar", complaintRows);
+    } else {
+      styleSheet(staffSheet, staffCols, "Xodim baholari", staffRows);
+      styleSheet(pharmSheet, pharmCols, "Dorixona baholari", pharmRows);
+      styleSheet(complaintSheet, complaintCols, "Shikoyatlar", complaintRows);
     }
 
     const buf = Buffer.from(await wb.xlsx.writeBuffer());

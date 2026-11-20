@@ -92,6 +92,7 @@ export const ru: Messages = {
   "nav.resepsion": "Приёмная",
   "nav.checklistStatus": "Статус чек-листа",
   "nav.pharmacy": "Сеть аптек",
+  "nav.majburiyat": "Обязательства",
   "nav.boglanish": "Связь",
   "nav.holat": "Отчёт",
   "nav.holatXodim": "Отчёт по сотруднику",

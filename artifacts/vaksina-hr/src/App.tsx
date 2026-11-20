@@ -69,6 +69,7 @@ const AdminDavomatQrPage = lazyPage('/admin/davomat-qr', () => import('./pages/a
 const AdminTestPage = lazyPage('/admin/test', () => import('./pages/admin/test'));
 const AdminScannerPage = lazyPage('/admin/scanner', () => import('./pages/admin/scanner'));
 const YordamchiAiPage = lazyPage('/admin/yordamchi-ai', () => import('./pages/admin/yordamchi-ai'));
+const AiTelefonPage = lazyPage('/admin/ai-telefon', () => import('./pages/admin/ai-telefon'));
 const YordamPage = lazyPage('/yordam', () => import('./pages/yordam'));
 const AdminTushuntirishXatlariPage = lazyPage('/admin/tushuntirish-xatlari', () => import('./pages/admin/tushuntirish-xatlari'));
 const AdminMalumotnomaPage = lazyPage('/admin/malumotnoma', () => import('./pages/admin/malumotnoma'));
@@ -78,6 +79,8 @@ const MlVerifyPage = lazyPage([], () => import('./pages/ml-verify'));
 const AbetPage = lazyPage('/abet', () => import('./pages/abet'));
 const MijozlarBaholashiPage = lazyPage('/mijozlar-baholashi', () => import('./pages/mijozlar-baholashi/index'));
 const PublicCustomerRatePage = lazyPage([], () => import('./pages/baho/public-rate'));
+const VaksinaMedPosterPage = lazyPage('/poster/vaksina-med', () => import('./pages/poster/vaksina-med'));
+const MajburiyatPage = lazyPage('/majburiyat', () => import('./pages/majburiyat/index'));
 const AdminQurilmalarPage = lazyPage('/admin/qurilmalar', () => import('./pages/admin/qurilmalar'));
 const AdminKochmaDavomatPage = lazyPage('/admin/kochma-davomat', () => import('./pages/admin/kochma-davomat'));
 const AdminKochmaXaritaPage = lazyPage('/admin/kochma-xarita', () => import('./pages/admin/kochma-xarita'));
@@ -228,6 +231,12 @@ function Router() {
           <PublicCustomerRatePage />
         </Suspense>
       </Route>
+      <Route path="/poster/vaksina-med">
+        <Suspense fallback={<PageFallback />}>
+          <VaksinaMedPosterPage />
+        </Suspense>
+      </Route>
+      <ProtectedRoute path="/majburiyat" component={MajburiyatPage} />
       <Route path="/davomat-face">
         <Suspense fallback={<PageFallback />}>
           <DavomatFacePage />
@@ -363,6 +372,7 @@ function Router() {
       <ProtectedRoute path="/admin/test" component={AdminTestPage} />
       <ProtectedRoute path="/admin/scanner" component={AdminScannerPage} />
       <ProtectedRoute path="/admin/yordamchi-ai" component={YordamchiAiPage} />
+      <ProtectedRoute path="/admin/ai-telefon" component={AiTelefonPage} />
       <ProtectedRoute path="/admin/tushuntirish-xatlari" component={AdminTushuntirishXatlariPage} />
       <ProtectedRoute path="/admin/malumotnoma" component={AdminMalumotnomaPage} />
       <ProtectedRoute path="/admin/jarimalar" component={AdminJarimalarPage} />

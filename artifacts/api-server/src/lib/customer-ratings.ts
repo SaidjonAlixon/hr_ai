@@ -16,6 +16,27 @@ import {
   customerRatingAuditTable,
 } from "@workspace/db";
 import { displayBranchName } from "./geo-location";
+import {
+  DISTRICT_NO_GPS,
+  DISTRICT_UNKNOWN,
+  TASHKENT_DISTRICTS,
+  districtFromGps,
+} from "./filial-districts";
+
+const TASHKENT_CITY_DISTRICT_NAMES = new Set(TASHKENT_DISTRICTS.map((d) => d.name));
+
+/** UI: filial qayerda — Toshkent shahar · tuman / viloyat */
+export function branchRegionLabel(
+  lat?: number | null,
+  lng?: number | null,
+  locationHint?: string | null,
+): string {
+  const raw = districtFromGps(lat, lng, locationHint);
+  if (!raw || raw === DISTRICT_NO_GPS || raw === DISTRICT_UNKNOWN) return raw || DISTRICT_NO_GPS;
+  if (TASHKENT_CITY_DISTRICT_NAMES.has(raw)) return `Toshkent shahar · ${raw}`;
+  if (/viloyat|shahar|qoraqalpog/i.test(raw)) return raw;
+  return `${raw} viloyati`;
+}
 import { getEffectiveShiftDefs } from "./shift-schedule";
 import {
   type WorkSlotRow,
@@ -32,6 +53,7 @@ import {
   canViewCustomerLeaderboard,
   canSeeCustomerIdentity,
   normalizePhone,
+  isValidUzMobilePhone,
   pickOnDutyShiftForEmployee,
   leaderboardTitleForRank,
   sortLeaderboardRows,
@@ -149,6 +171,73 @@ function hashIp(ip: string): string {
   return createHash("sha256").update(String(ip || "")).digest("hex").slice(0, 32);
 }
 
+function phoneDigits9(raw: string): string {
+  const n = normalizePhone(raw);
+  return n.length >= 9 ? n.slice(-9) : "";
+}
+
+function normName(raw: string): string {
+  return String(raw || "")
+    .toLocaleLowerCase("uz")
+    .replace(/[''`ʼ]/g, "")
+    .replace(/[^a-zа-яёўқғҳ0-9\s]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Platformadagi xodim/foydalanuvchi telefoni — mijoz emas */
+export async function findStaffByCustomerPhone(phoneRaw: string): Promise<{
+  userId: number;
+  employeeId: number | null;
+  fullName: string;
+  phone: string;
+} | null> {
+  const dig9 = phoneDigits9(phoneRaw);
+  if (dig9.length !== 9) return null;
+  const { rows } = await pool.query<{
+    user_id: number;
+    employee_id: number | null;
+    full_name: string;
+    phone: string;
+  }>(
+    `SELECT u.id AS user_id,
+            e.id AS employee_id,
+            COALESCE(e.full_name, u.full_name) AS full_name,
+            u.phone
+       FROM users u
+       LEFT JOIN employees e ON e.user_id = u.id
+      WHERE u.phone IS NOT NULL AND btrim(u.phone) <> ''
+        AND right(regexp_replace(u.phone, '\\D', '', 'g'), 9) = $1
+      ORDER BY e.id NULLS LAST
+      LIMIT 1`,
+    [dig9],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    userId: Number(r.user_id),
+    employeeId: r.employee_id != null ? Number(r.employee_id) : null,
+    fullName: String(r.full_name || ""),
+    phone: String(r.phone || ""),
+  };
+}
+
+function namesLikelySame(a: string, b: string): boolean {
+  const na = normName(a);
+  const nb = normName(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  // qisqa familiya+ism mosligi
+  const pa = na.split(" ").filter(Boolean);
+  const pb = nb.split(" ").filter(Boolean);
+  if (pa.length >= 2 && pb.length >= 2) {
+    const sa = new Set(pa);
+    const common = pb.filter((w) => sa.has(w) && w.length >= 3);
+    if (common.length >= 2) return true;
+  }
+  return false;
+}
+
 function newToken(): string {
   return randomBytes(18).toString("base64url");
 }
@@ -213,7 +302,16 @@ export async function scopedBranchIds(userId: number, role: string): Promise<num
 }
 
 export async function listPharmacyBranches(): Promise<
-  Array<{ id: number; label: string; location: string; branchNo: number | null; mudirName: string }>
+  Array<{
+    id: number;
+    label: string;
+    location: string;
+    branchNo: number | null;
+    mudirName: string;
+    regionLabel: string;
+    latitude: number | null;
+    longitude: number | null;
+  }>
 > {
   const rows = await db
     .select({
@@ -222,18 +320,28 @@ export async function listPharmacyBranches(): Promise<
       fullName: employeesTable.fullName,
       status: employeesTable.employmentStatus,
       branchNo: employeesTable.branchNo,
+      latitude: employeesTable.latitude,
+      longitude: employeesTable.longitude,
     })
     .from(employeesTable)
     .where(eq(employeesTable.orgRole, "manager"));
   return rows
     .filter((r) => !["dismissed", "closed", "need_hire", "searching"].includes(String(r.status || "").toLowerCase()))
-    .map((r) => ({
-      id: r.id,
-      location: r.location || "",
-      branchNo: r.branchNo != null ? Number(r.branchNo) : null,
-      mudirName: r.fullName || "",
-      label: displayBranchName(r.location) || r.location || r.fullName || `Filial #${r.id}`,
-    }))
+    .map((r) => {
+      const location = r.location || "";
+      const lat = r.latitude != null ? Number(r.latitude) : null;
+      const lng = r.longitude != null ? Number(r.longitude) : null;
+      return {
+        id: r.id,
+        location,
+        branchNo: r.branchNo != null ? Number(r.branchNo) : null,
+        mudirName: r.fullName || "",
+        label: displayBranchName(location) || location || r.fullName || `Filial #${r.id}`,
+        latitude: Number.isFinite(lat) ? lat : null,
+        longitude: Number.isFinite(lng) ? lng : null,
+        regionLabel: branchRegionLabel(lat, lng, location),
+      };
+    })
     .sort((a, b) => {
       const an = a.branchNo ?? 9999;
       const bn = b.branchNo ?? 9999;
@@ -379,14 +487,20 @@ export async function listQrCodes(scope: number[] | null) {
   }
 
   const origin = publicAppUrl().replace(/\/$/, "");
+  const meta = await loadBranchMeta(filtered.map((b) => b.id));
   return filtered.map((b) => {
     const q = byBranch.get(b.id);
     const status = q?.status ?? "missing";
+    const bm = meta.get(b.id);
     return {
       branchId: b.id,
       branchLabel: b.label,
       branchNo: b.branchNo ?? null,
-      mudirName: b.mudirName || "",
+      mudirName: b.mudirName || bm?.mudirName || "",
+      coordinatorName: bm?.coordinatorName || "",
+      coordinatorPhone: bm?.coordinatorPhone || "",
+      regionLabel: b.regionLabel || "",
+      location: b.location || "",
       qrId: q?.id ?? null,
       token: q?.token ?? null,
       status,
@@ -398,14 +512,47 @@ export async function listQrCodes(scope: number[] | null) {
   });
 }
 
-/** Barcha filiallarda yo‘q/revoked QR larni yaratish */
+/**
+ * Barcha QR larni to‘liq o‘chirish — faol/bloklangan/eski tokenlar yo‘qoladi.
+ * Ro‘yxatda Faol=0, QR yo‘q=barcha filial; keyin «Hammaga QR yaratish» yangi to‘liq /baho/{token} beradi.
+ */
+export async function purgeAllQr(actor: { id: number; name: string }) {
+  await ensureCustomerRatingsSchema();
+  const before = await db.select({ id: customerRatingQrTable.id }).from(customerRatingQrTable);
+  await db.delete(customerRatingQrTable);
+  await audit({
+    action: "qr_purge_all",
+    actorUserId: actor.id,
+    actorName: actor.name,
+    meta: { deleted: before.length },
+  });
+  return { ok: true, deleted: before.length };
+}
+
+/** Bitta filial QR sini to‘liq o‘chirish (blok emas — missing holatiga) */
+export async function purgeBranchQr(branchId: number, actor: { id: number; name: string }) {
+  await ensureCustomerRatingsSchema();
+  const id = Number(branchId);
+  if (!id) throw new Error("Filial topilmadi");
+  await db.delete(customerRatingQrTable).where(eq(customerRatingQrTable.branchId, id));
+  await audit({
+    action: "qr_purge_branch",
+    actorUserId: actor.id,
+    actorName: actor.name,
+    branchId: id,
+  });
+  return { ok: true, branchId: id };
+}
+
+/** Barcha filiallarda yo‘q / revoked / blocked QR larni yaratish — har biriga to‘liq havola */
 export async function createAllMissingQr(actor: { id: number; name: string }) {
   await ensureCustomerRatingsSchema();
   const items = await listQrCodes(null);
-  const need = items.filter((i) => i.status === "missing" || i.status === "revoked" || !i.token);
+  const need = items.filter((i) => i.status !== "active" || !i.token);
   const created: Array<{ branchId: number; branchLabel: string; publicUrl: string }> = [];
   for (const it of need) {
-    const qr = await createOrGetQr(it.branchId, actor);
+    // Blok/revoked — yangi token; yo‘q — yangi yozuv. Har biri to‘liq /baho/{token}
+    const qr = it.token ? await rotateQr(it.branchId, actor) : await createOrGetQr(it.branchId, actor);
     created.push({
       branchId: it.branchId,
       branchLabel: it.branchLabel,
@@ -603,10 +750,12 @@ export async function publicSession(token: string) {
   };
 }
 
+const STAFF_TARGET_MODES_SQL = `r.target_mode NOT IN ('pharmacy', 'complaint')`;
+
 export async function submitRating(input: {
   token: string;
-  /** staff = xodim(lar), pharmacy = dorixona */
-  rateType?: "staff" | "pharmacy";
+  /** staff | pharmacy | complaint */
+  rateType?: "staff" | "pharmacy" | "complaint";
   employeeIds: number[];
   allShift: boolean;
   stars: number;
@@ -619,30 +768,40 @@ export async function submitRating(input: {
   ip?: string | null;
   userAgent?: string | null;
   lang?: string | null;
+  /** Platformaga kirgan foydalanuvchi — xodimlar QR orqali baholay olmaydi */
+  actorUserId?: number | null;
 }) {
   const qr = await qrByToken(input.token);
   if (!qr || qr.status !== "active") throw Object.assign(new Error("QR faol emas"), { code: "inactive", status: 400 });
 
-  const rateType = input.rateType === "pharmacy" ? "pharmacy" : "staff";
-  const stars = Math.round(Number(input.stars));
-  if (stars < 1 || stars > 5) throw Object.assign(new Error("Yulduz 1–5 bo‘lishi kerak"), { status: 400 });
-  if (!SERVICE_QUALITY.includes(input.serviceQuality as ServiceQuality)) {
-    throw Object.assign(new Error("Xizmat sifati noto‘g‘ri"), { status: 400 });
+  if (input.actorUserId && Number(input.actorUserId) > 0) {
+    throw Object.assign(
+      new Error(
+        "Bu forma faqat mijozlar (begonalar) uchun. Platformaga kirgan xodimlar o‘zlarini yoki hamkasblarni baholay olmaydi.",
+      ),
+      { code: "staff_blocked", status: 403 },
+    );
   }
-  // Dorixona: 2–3 savollar ham sifat shkalasi; xodim: muomala shkalasi
-  if (rateType === "pharmacy") {
-    if (!SERVICE_QUALITY.includes(input.demeanor as ServiceQuality)) {
-      throw Object.assign(new Error("Dorixona bahosi noto‘g‘ri"), { status: 400 });
-    }
-  } else if (!DEMEANOR.includes(input.demeanor as Demeanor)) {
-    throw Object.assign(new Error("Muomala bahosi noto‘g‘ri"), { status: 400 });
-  }
+
+  const rateType: "staff" | "pharmacy" | "complaint" =
+    input.rateType === "pharmacy" ? "pharmacy" : input.rateType === "complaint" ? "complaint" : "staff";
 
   const name = String(input.customerName || "").trim().replace(/\s+/g, " ");
   if (name.length < 2) throw Object.assign(new Error("Ismingizni yozing"), { status: 400 });
   const phone = normalizePhone(input.customerPhone);
-  if (!/^9989\d{8}$/.test(phone)) {
-    throw Object.assign(new Error("Telefon +9989 dan boshlanishi kerak"), { status: 400 });
+  if (!isValidUzMobilePhone(phone)) {
+    throw Object.assign(new Error("Telefon +998 XX XXX XX XX formatida bo‘lishi kerak"), { status: 400 });
+  }
+
+  // Telefon platformadagi xodimniki bo‘lsa — o‘ziga o‘zi / ichki baho
+  const staffPhone = await findStaffByCustomerPhone(phone);
+  if (staffPhone) {
+    throw Object.assign(
+      new Error(
+        "Bu telefon raqam platformadagi xodimga tegishli. Baholash faqat mijozlar (begonalar) uchun — xodimlar QR skanerlab baholay olmaydi.",
+      ),
+      { code: "self_rating", status: 403 },
+    );
   }
 
   const day = todayYmd();
@@ -650,30 +809,70 @@ export async function submitRating(input: {
   let targetMode = "pharmacy";
   let workDate = day;
   let shiftKey: string | null = null;
+  let stars = 1;
+  let serviceQuality = "yomon";
+  let demeanor = "qopol";
+  let comment: string | null = String(input.comment || "").trim().slice(0, 2000) || null;
 
-  if (rateType === "staff") {
-    const onDuty = await onDutyStaffAtBranch(qr.branchId);
-    if (!onDuty.length) throw Object.assign(new Error("Hozir baholash uchun xodim yo‘q"), { status: 400 });
-
-    targets = onDuty;
-    if (!input.allShift) {
-      const ids = new Set((input.employeeIds || []).map(Number).filter((n) => n > 0));
-      if (!ids.size) throw Object.assign(new Error("Xodim tanlang"), { status: 400 });
-      targets = onDuty.filter((s) => ids.has(s.employeeId));
-      if (!targets.length) throw Object.assign(new Error("Tanlangan xodim hozir smenada emas"), { status: 400 });
+  if (rateType === "complaint") {
+    if (!comment || comment.length < 5) {
+      throw Object.assign(new Error("Shikoyat matnini yozing (kamida 5 belgi)"), { status: 400 });
     }
-    targetMode = input.allShift ? "all_shift" : targets.length > 1 ? "multi" : "single";
-    workDate = targets[0]!.workDate;
-    shiftKey = targets[0]!.shiftKey;
+    stars = 1;
+    serviceQuality = "shikoyat";
+    demeanor = "shikoyat";
+    targetMode = "complaint";
+  } else {
+    stars = Math.round(Number(input.stars));
+    if (stars < 1 || stars > 5) throw Object.assign(new Error("Yulduz 1–5 bo‘lishi kerak"), { status: 400 });
+    if (!SERVICE_QUALITY.includes(input.serviceQuality as ServiceQuality)) {
+      throw Object.assign(new Error("Xizmat sifati noto‘g‘ri"), { status: 400 });
+    }
+    serviceQuality = input.serviceQuality;
+    if (rateType === "pharmacy") {
+      if (!SERVICE_QUALITY.includes(input.demeanor as ServiceQuality)) {
+        throw Object.assign(new Error("Dorixona bahosi noto‘g‘ri"), { status: 400 });
+      }
+      demeanor = input.demeanor;
+      targetMode = "pharmacy";
+    } else {
+      if (!DEMEANOR.includes(input.demeanor as Demeanor)) {
+        throw Object.assign(new Error("Muomala bahosi noto‘g‘ri"), { status: 400 });
+      }
+      demeanor = input.demeanor;
+      const onDuty = await onDutyStaffAtBranch(qr.branchId);
+      if (!onDuty.length) throw Object.assign(new Error("Hozir baholash uchun xodim yo‘q"), { status: 400 });
+      targets = onDuty;
+      if (!input.allShift) {
+        const ids = new Set((input.employeeIds || []).map(Number).filter((n) => n > 0));
+        if (!ids.size) throw Object.assign(new Error("Xodim tanlang"), { status: 400 });
+        targets = onDuty.filter((s) => ids.has(s.employeeId));
+        if (!targets.length) throw Object.assign(new Error("Tanlangan xodim hozir smenada emas"), { status: 400 });
+      }
+      targetMode = input.allShift ? "all_shift" : targets.length > 1 ? "multi" : "single";
+      workDate = targets[0]!.workDate;
+      shiftKey = targets[0]!.shiftKey;
+
+      // Ism baholanayotgan xodim bilan bir xil — o‘ziga o‘zi
+      if (targets.some((t) => namesLikelySame(name, t.fullName))) {
+        throw Object.assign(
+          new Error(
+            "Ism baholanayotgan xodim bilan mos keldi. O‘zingizni baholash mumkin emas — faqat mijozlar baholaydi.",
+          ),
+          { code: "self_rating", status: 403 },
+        );
+      }
+    }
   }
 
-  // Anti-spam: bir telefon — bir filial — bir kun — bir tur (xodim yoki dorixona)
+  // Anti-spam: bir telefon — bir filial — bir kun — bir tur
   const { rows: dup } = await pool.query(
     `SELECT id FROM customer_ratings
       WHERE branch_id = $1 AND customer_phone = $2 AND work_date = $3
         AND (
           ($4 = 'pharmacy' AND target_mode = 'pharmacy')
-          OR ($4 = 'staff' AND target_mode <> 'pharmacy')
+          OR ($4 = 'complaint' AND target_mode = 'complaint')
+          OR ($4 = 'staff' AND target_mode NOT IN ('pharmacy', 'complaint'))
         )
       LIMIT 1`,
     [qr.branchId, phone, day, rateType],
@@ -683,13 +882,14 @@ export async function submitRating(input: {
       new Error(
         rateType === "pharmacy"
           ? "Bugun bu dorixonaga allaqachon baho qoldirilgan"
-          : "Bugun bu filial xodimlariga allaqachon baho qoldirilgan",
+          : rateType === "complaint"
+            ? "Bugun bu filialga allaqachon shikoyat yuborilgan"
+            : "Bugun bu filial xodimlariga allaqachon baho qoldirilgan",
       ),
       { code: "duplicate", status: 429 },
     );
   }
 
-  // IP: soatiga 5
   const ipHash = input.ip ? hashIp(input.ip) : null;
   if (ipHash) {
     const { rows: ipRows } = await pool.query(
@@ -702,7 +902,6 @@ export async function submitRating(input: {
     }
   }
 
-  const comment = String(input.comment || "").trim().slice(0, 1000) || null;
   const [rating] = await db
     .insert(customerRatingsTable)
     .values({
@@ -712,8 +911,8 @@ export async function submitRating(input: {
       workDate,
       shiftKey,
       stars,
-      serviceQuality: input.serviceQuality,
-      demeanor: input.demeanor,
+      serviceQuality,
+      demeanor,
       comment,
       customerName: name,
       customerPhone: phone,
@@ -736,7 +935,7 @@ export async function submitRating(input: {
   }
 
   await audit({
-    action: "rating_submit",
+    action: rateType === "complaint" ? "complaint_submit" : "rating_submit",
     branchId: qr.branchId,
     ratingId: rating!.id,
     meta: {
@@ -810,8 +1009,8 @@ export async function ratingsFeed(opts: {
   to?: string | null;
   minStars?: number | null;
   complaintsOnly?: boolean;
-  /** staff | pharmacy | all */
-  rateType?: "staff" | "pharmacy" | "all" | null;
+  /** staff | pharmacy | complaint | all */
+  rateType?: "staff" | "pharmacy" | "complaint" | "all" | null;
   limit?: number;
   showIdentity: boolean;
 }) {
@@ -846,8 +1045,13 @@ export async function ratingsFeed(opts: {
   }
   if (opts.rateType === "pharmacy") {
     where.push(`r.target_mode = 'pharmacy'`);
+  } else if (opts.rateType === "complaint") {
+    where.push(`r.target_mode = 'complaint'`);
   } else if (opts.rateType === "staff") {
-    where.push(`r.target_mode <> 'pharmacy'`);
+    where.push(STAFF_TARGET_MODES_SQL);
+  } else if (opts.rateType === "all" || !opts.rateType) {
+    // stats/all: shikoyatlarni o‘rtacha bahoga aralashtirmaslik uchun faqat baholar
+    // (admin “all” eksportida ham shikoyat alohida sheet)
   }
   if (opts.employeeId) {
     params.push(opts.employeeId);
@@ -874,10 +1078,65 @@ export async function ratingsFeed(opts: {
 
   const meta = await loadBranchMeta(rows.map((r) => Number(r.branch_id)));
 
+  // O‘ziga-o‘zi: mijoz telefoni = platforma xodimi telefoni
+  const dig9s = [
+    ...new Set(
+      rows
+        .map((r) => phoneDigits9(String(r.customer_phone || "")))
+        .filter((d) => d.length === 9),
+    ),
+  ];
+  const staffPhoneSet = new Set<string>();
+  const staffNameByPhone = new Map<string, string>();
+  if (dig9s.length) {
+    const { rows: staffPhones } = await pool.query<{ dig9: string; full_name: string }>(
+      `SELECT right(regexp_replace(u.phone, '\\D', '', 'g'), 9) AS dig9,
+              COALESCE(e.full_name, u.full_name) AS full_name
+         FROM users u
+         LEFT JOIN employees e ON e.user_id = u.id
+        WHERE u.phone IS NOT NULL AND btrim(u.phone) <> ''
+          AND right(regexp_replace(u.phone, '\\D', '', 'g'), 9) = ANY($1::text[])`,
+      [dig9s],
+    );
+    for (const s of staffPhones) {
+      const d = String(s.dig9 || "");
+      if (d.length === 9) {
+        staffPhoneSet.add(d);
+        if (s.full_name) staffNameByPhone.set(d, String(s.full_name));
+      }
+    }
+  }
+
   const items = rows.map((r) => {
     const targetMode = String(r.target_mode || "");
     const branchId = r.branch_id as number;
     const bm = meta.get(branchId);
+    const targets = r.targets as Array<{
+      employeeId: number;
+      employeeName: string;
+      position: string | null;
+      shiftKey: string | null;
+    }>;
+    const custPhone = String(r.customer_phone || "");
+    const custName = String(r.customer_name || "");
+    const dig = phoneDigits9(custPhone);
+    const phoneIsStaff = dig.length === 9 && staffPhoneSet.has(dig);
+    const nameMatchesTarget = targets.some((t) => namesLikelySame(custName, t.employeeName));
+    const nameMatchesMudir = Boolean(bm?.mudirName && namesLikelySame(custName, bm.mudirName));
+    const mudirPhoneMatch =
+      Boolean(bm?.mudirPhone) && dig.length === 9 && phoneDigits9(bm!.mudirPhone) === dig;
+    const selfRating = phoneIsStaff || mudirPhoneMatch || nameMatchesTarget || nameMatchesMudir;
+    let selfRatingReason: string | null = null;
+    if (phoneIsStaff) {
+      selfRatingReason = `Telefon platforma xodimiga tegishli${staffNameByPhone.get(dig) ? ` (${staffNameByPhone.get(dig)})` : ""}`;
+    } else if (mudirPhoneMatch) {
+      selfRatingReason = "Telefon mudir telefoni bilan bir xil";
+    } else if (nameMatchesTarget) {
+      selfRatingReason = "Ism baholanayotgan xodim bilan bir xil";
+    } else if (nameMatchesMudir) {
+      selfRatingReason = "Ism mudir bilan bir xil";
+    }
+
     return {
       id: r.id as number,
       branchId,
@@ -896,17 +1155,19 @@ export async function ratingsFeed(opts: {
       demeanor: r.demeanor as string,
       comment: r.comment as string | null,
       targetMode,
-      rateType: targetMode === "pharmacy" ? ("pharmacy" as const) : ("staff" as const),
+      rateType:
+        targetMode === "pharmacy"
+          ? ("pharmacy" as const)
+          : targetMode === "complaint"
+            ? ("complaint" as const)
+            : ("staff" as const),
       createdAt: r.created_at as string,
-      targets: r.targets as Array<{
-        employeeId: number;
-        employeeName: string;
-        position: string | null;
-        shiftKey: string | null;
-      }>,
-      customerName: opts.showIdentity ? (r.customer_name as string) : null,
-      customerPhone: opts.showIdentity ? (r.customer_phone as string) : null,
+      targets,
+      customerName: opts.showIdentity ? custName : null,
+      customerPhone: opts.showIdentity ? custPhone : null,
       anonymous: !opts.showIdentity,
+      selfRating,
+      selfRatingReason: opts.showIdentity ? selfRatingReason : selfRating ? "Ichki / o‘ziga-o‘zi baho" : null,
     };
   });
 
@@ -915,7 +1176,9 @@ export async function ratingsFeed(opts: {
     opts.branchId ?? null,
     opts.from ?? null,
     opts.to ?? null,
-    opts.rateType === "pharmacy" || opts.rateType === "staff" ? opts.rateType : null,
+    opts.rateType === "pharmacy" || opts.rateType === "staff" || opts.rateType === "complaint"
+      ? opts.rateType
+      : null,
   );
   return { items, stats };
 }
@@ -974,8 +1237,8 @@ export async function adminCreateRating(input: {
   const name = String(input.customerName || "").trim().replace(/\s+/g, " ");
   if (name.length < 2) throw Object.assign(new Error("Mijoz ismini yozing"), { status: 400 });
   const phone = normalizePhone(input.customerPhone);
-  if (!/^9989\d{8}$/.test(phone)) {
-    throw Object.assign(new Error("Telefon +9989 dan boshlanishi kerak"), { status: 400 });
+  if (!isValidUzMobilePhone(phone)) {
+    throw Object.assign(new Error("Telefon +998 XX XXX XX XX formatida bo‘lishi kerak"), { status: 400 });
   }
 
   let targets: Array<{ employeeId: number; fullName: string; position: string; shiftKey: string | null }> = [];
@@ -1056,7 +1319,7 @@ async function ratingsStats(
   branchId: number | null,
   from: string | null,
   to: string | null,
-  rateType: "staff" | "pharmacy" | null = null,
+  rateType: "staff" | "pharmacy" | "complaint" | null = null,
 ) {
   const params: unknown[] = [];
   const where: string[] = ["1=1"];
@@ -1078,13 +1341,20 @@ async function ratingsStats(
     where.push(`r.work_date <= $${params.length}`);
   }
   if (rateType === "pharmacy") where.push(`r.target_mode = 'pharmacy'`);
-  else if (rateType === "staff") where.push(`r.target_mode <> 'pharmacy'`);
+  else if (rateType === "complaint") where.push(`r.target_mode = 'complaint'`);
+  else if (rateType === "staff") where.push(STAFF_TARGET_MODES_SQL);
+  else where.push(`r.target_mode <> 'complaint'`);
   const w = where.join(" AND ");
 
   const { rows: tot } = await pool.query(
     `SELECT COUNT(*)::int AS c,
-            COALESCE(AVG(stars),0)::float AS avg,
-            COUNT(*) FILTER (WHERE stars <= 2 OR service_quality IN ('yomon','juda_yomon') OR demeanor IN ('qopol','juda_qopol'))::int AS complaints
+            COALESCE(AVG(stars) FILTER (WHERE r.target_mode <> 'complaint'),0)::float AS avg,
+            COUNT(*) FILTER (
+              WHERE r.target_mode = 'complaint'
+                 OR stars <= 2
+                 OR service_quality IN ('yomon','juda_yomon')
+                 OR demeanor IN ('qopol','juda_qopol')
+            )::int AS complaints
        FROM customer_ratings r WHERE ${w}`,
     params,
   );
@@ -1146,7 +1416,7 @@ export async function employeeLeaderboard(opts: {
   }
 
   const params: unknown[] = [];
-  const where: string[] = [`r.target_mode <> 'pharmacy'`];
+  const where: string[] = [`r.target_mode NOT IN ('pharmacy', 'complaint')`];
   if (scope) {
     if (!scope.length) {
       return { items: [], me: null, totalRated: 0, period: { from: opts.from || null, to: opts.to || null } };

@@ -39,7 +39,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../components/ui/select';
-import { Check, Clock, Pencil, ChevronDown, ChevronUp, MapPin, Store, Search, Users, X, Plus, Copy, Eye, EyeOff, Download, Trash2, UserPlus, ArrowRightLeft, Shuffle } from 'lucide-react';
+import { Check, Clock, Pencil, ChevronDown, ChevronUp, MapPin, Store, Search, Users, X, Plus, Copy, Eye, EyeOff, Download, Trash2, UserPlus, ArrowRightLeft, Shuffle, FileText } from 'lucide-react';
 import { Link } from 'wouter';
 import {
   useCreatePharmacyStaff,
@@ -1249,6 +1249,18 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
           </p>
         </div>
         <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
+          <Button asChild className="h-11 w-full gap-2 bg-[#5D0081] hover:bg-[#4a0068] sm:h-9 sm:w-auto">
+            <a href="/posters/vaksina-med-poster.pdf" download="vaksina-med-poster.pdf">
+              <FileText className="h-4 w-4" />
+              Majburiyat PDF
+            </a>
+          </Button>
+          <Button asChild variant="outline" className="h-11 w-full gap-2 sm:h-9 sm:w-auto">
+            <Link href="/majburiyat">
+              <FileText className="h-4 w-4" />
+              Majburiyat (ko‘rish)
+            </Link>
+          </Button>
           {(isKoordinatorOnly || isMudirOnly) && (
             <Button
               variant="outline"

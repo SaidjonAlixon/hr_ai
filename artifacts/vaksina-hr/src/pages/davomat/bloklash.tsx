@@ -418,7 +418,7 @@ export default function DavomatBloklashPage() {
             <h1 className="mt-3 text-2xl font-bold tracking-tight sm:text-[32px]">Bloklash oynasi</h1>
             <p className="mt-2 text-sm leading-relaxed text-slate-200/90">
               Har bir xodim uchun davomat usullarini alohida boshqaring: Face ID, QR va barmoq izi.
-              Barmoq izi hammada yashirin — faqat shu yerda yoqilgan xodimga ko‘rinadi.
+              Barmoq izi hammada sukut bo‘yicha yoqilgan — kerak bo‘lsa shu yerda xodim uchun o‘chirib qo‘yishingiz mumkin.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -550,7 +550,7 @@ export default function DavomatBloklashPage() {
                 <Fingerprint className="h-4 w-4" /> Qoidalar
               </p>
               <ul className="space-y-1.5">
-                <li>• Face ID va QR ikkalasi o‘chsa (barmoq izi yoqilmagan bo‘lsa), xodim davomat qila olmaydi.</li>
+                <li>• Face ID va QR ikkalasi o‘chsa (barmoq izi o‘chirilgan bo‘lsa), xodim davomat qila olmaydi.</li>
                 <li>• Koordinator uchun QR standart holatda yopiq.</li>
                 <li>• Barmoq izi: 1 xodim = 1 barmoq izi = 1 qurilma.</li>
                 <li>• Telefon almashsa — <RotateCcw className="inline h-3 w-3" /> qayta tiklash, keyin xodim yangidan ro‘yxatdan o‘tadi.</li>

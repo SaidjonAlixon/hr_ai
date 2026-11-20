@@ -517,49 +517,10 @@ export async function executeAssistantAction(opts: {
   }
 
   if (opts.kind === "davomat_fix") {
-    if (!userId) throw new Error("Xodim aniqlanmagan — avval xodimni aniqlang");
-    const workDate = String(payload.workDate || "").trim();
-    const checkIn = payload.checkInAt ? new Date(String(payload.checkInAt)) : null;
-    const checkOut = payload.checkOutAt ? new Date(String(payload.checkOutAt)) : null;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate) || (!checkIn && !checkOut)) {
-      throw new Error("Davomat tuzatish uchun sana va vaqtlar yetarli emas — sana/vaqtni aniqlashtiring.");
-    }
-    const [emp] = await db
-      .select({ id: employeesTable.id })
-      .from(employeesTable)
-      .where(eq(employeesTable.userId, userId))
-      .limit(1);
-    if (!emp) throw new Error("Xodim kartochkasi (employee) topilmadi");
-    const [existing] = await db
-      .select()
-      .from(attendanceRecordsTable)
-      .where(and(eq(attendanceRecordsTable.employeeId, emp.id), eq(attendanceRecordsTable.workDate, workDate)))
-      .limit(1);
-    const note = `Yordamchi AI${opts.proposalId ? ` #${opts.proposalId}` : ""}: admin buyrug'i/tasdig'i. ${String(payload.note || opts.summary).slice(0, 300)}`;
-    if (existing) {
-      await db
-        .update(attendanceRecordsTable)
-        .set({
-          checkInAt: checkIn ?? existing.checkInAt,
-          checkOutAt: checkOut ?? existing.checkOutAt,
-          source: "manual",
-          notes: note,
-          updatedAt: new Date(),
-        })
-        .where(eq(attendanceRecordsTable.id, existing.id));
-    } else {
-      await db.insert(attendanceRecordsTable).values({
-        employeeId: emp.id,
-        userId,
-        workDate,
-        checkInAt: checkIn,
-        checkOutAt: checkOut,
-        status: "present",
-        source: "manual",
-        notes: note,
-      });
-    }
-    return `Davomat ${workDate} uchun tuzatildi.`;
+    // Mutlaq taqiq: AI hech qachon davomat yozmaydi (admin so‘rasa ham)
+    throw new Error(
+      "Davomat himoyalangan. Keldim/Ketdimni AI yaratmaydi, o‘zgartirmaydi va o‘chirmaydi. Faqat xodimning o‘zi platformada qayd etadi.",
+    );
   }
 
   // account_help / admin_task
@@ -668,20 +629,10 @@ export async function buildUserSnapshot(user: PlatformUser): Promise<string> {
       .orderBy(desc(attendanceRecordsTable.workDate))
       .limit(5);
     if (recs.length) {
-      const fmtTime = new Intl.DateTimeFormat("ru-RU", {
-        timeZone: "Asia/Tashkent",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      });
+      const { formatAttendanceSnapshotBlock } = await import("./bot-attendance-docs");
+      parts.push(formatAttendanceSnapshotBlock(recs));
       parts.push(
-        "Davomat (oxirgi, vaqtlar Toshkent): " +
-          recs
-            .map(
-              (r) =>
-                `${r.workDate}: keldim=${r.checkInAt ? fmtTime.format(new Date(r.checkInAt)) : "—"}, ketdim=${r.checkOutAt ? fmtTime.format(new Date(r.checkOutAt)) : "—"}, holat=${r.status}${r.excused ? " (sababli)" : ""}`,
-            )
-            .join("; "),
+        "Javobda: Keldim vaqtini 🟢, Ketdim vaqtini 🟢 qilib yoz; holatni o‘zbekcha (O‘z vaqtida / Kechikkan / Kelmagan / Ketdim yo‘q); oxirgi kunlar statistikasini ham ayt.",
       );
     } else {
       parts.push(`Davomat: oxirgi yozuvlar topilmadi (bugun ${today}).`);
@@ -851,12 +802,12 @@ async function callAi(opts: {
     "O‘zingni bot deb tanishtirma. Lekin to‘g‘ridan-to‘g‘ri «siz botmisiz / robotmisiz / odammisiz?» deb so‘ralsa, rostini ayt: admin jamoasining AI yordamchisiman, admin nazoratida ishlayman.",
     "PAROL so‘rama va qabul qilma. Login kerak bo‘lsa faqat loginni (parolsiz) so‘ra.",
     opts.adminMode
-      ? "ADMIN REJIMI: suhbatdosh — platformaning egasi (admin), u botning yagona boshqaruvchisi. Nima desa — shuni to‘liq bajar: kimnidir yozib ma’lumot so‘rasa, JONLI BAZADAN to‘liq va aniq javob ber. Biror amal buyursa (testni qayta och, davomatni tuzat, xodimga xabar yubor) va ma’lumot yetarli bo‘lsa — proposal maydoniga amalni yoz, u DARHOL bajariladi (tasdiq kutilmaydi). reply da faqat qisqa izoh yoz («tekshirdim», nima topding) — «bajarildi» qismini tizim natija bilan qo‘shadi. Ma’lumot yetishmasa yoki xodim aniq topilmasa — proposal YARATMA, aniqlashtiruvchi savol ber."
-      : "XODIM REJIMI (QAT’IY): sen FAQAT standart so‘rovlarga javob berasan: (1) o‘z davomati — qachon keldim/ketdim, qaysi kuni kelgan-kelmagani; (2) o‘z testlari — ball, o‘tgan/o‘tmagani, jadvali; (3) javob olish so‘rovi holati; (4) platforma qanday ishlatiladi (bilim bazasidan qisqa ko‘rsatma). Boshqa hech narsa QILMA: erkin suhbat/chat, vazifa qabul qilish, ma’lumot o‘zgartirish yoki biror ishni bajarishni va’da qilish TAQIQLANGAN. proposal va file HAR DOIM null bo‘lsin. O‘zgartirish/amal so‘ralsa yoki mavzudan tashqari gap bo‘lsa — xodim yozgan tilda bitta qisqa javob ber: bu ishlarni faqat admin bajaradi, admin bilan bog‘laning; o‘zing esa faqat davomat/test/platforma bo‘yicha standart ma’lumot bera olasan. Boshqa odamlar haqida ma’lumot BERMA.",
+      ? "ADMIN REJIMI: suhbatdosh — platforma egasi. Ma’lumot so‘rasa JONLI BAZADAN javob ber. Amal: test qayta och / xabar / vazifa — proposal OK. DAVOMAT_FIX TAQIQLANGAN: keldim/ketdim yaratma/tuzatma/o‘chir — rad et. Ma’lumot yetishmasa proposal YARATMA, so‘ra."
+      : "XODIM REJIMI: faqat o‘z davomati (O‘QISH), test, javob olish, platforma ko‘rsatmasi. Davomat yozma. proposal/file DOIM null. Boshqa odam ma’lumoti BERMA.",
     opts.adminMode
       ? "FAYL BUYRUG‘I: admin «PDF qilib ber», «Excel qilib ber», «ro‘yxatni fayl qilib yubor» desa — file maydonini to‘ldir va reply da qisqa «Tayyorlayapman» deb yoz (faylni tizim o‘zi yuboradi, «yubordim» deb o‘zing yozma). Tayyor bazaviy datasetlar: employees (barcha xodimlar ro‘yxati), davomat_today (bugungi), davomat_week (oxirgi 7 kun — «1 haftalik» desa shu), davomat_month (oy boshidan), atestatsiya_results. Admin bir xodimni yozib o‘shaning davomati/testini fayl so‘rasa — odamni QIDIRMA va aniqlashtirish SO‘RAMA: tizim odamni o‘zi topgan va snapshot aynan o‘sha odam haqida; shunchaki mos datasetni tanla, fayl tizim tomonidan o‘sha xodim bo‘yicha filtrlanadi. Admin aynan snapshotdagi jadvalni fayl qilishni so‘rasa — dataset=custom_table qilib columns va rows ni O‘ZING to‘ldir (faqat bazada/suhbatda aniq ko‘ringan faktlar bilan, uydirma qo‘shma)."
       : "",
-    "Noqonuniy/for qalbakilashtirish so‘ralsa (masalan kelmagan kunga davomat yozib berish): rad et, sababini odamdek tushuntir va qonuniy yo‘lni ayt (javob olish so‘rovi, koordinatordan tasdiq). Bunday so‘rov uchun taklif YARATMA.",
+    "QISQA yoz. Saidmuhammadalixon ni ko‘p aytma — «Men AI yordamchiman» yetarli. Noqonuniy davomat tuzatish: rad et, faqat platformadan o‘tishni ayt. Sababli kech/kelmaslik: koordinator va HR ni ogohlantirishni ayt. Taklif YARATMA.",
     opts.adminMode
       ? "Ma’lumot yetishmasa bitta-ikkita aniq savol ber: ism-familiya, filial, sana/vaqt, qanday xato chiqyapti. Hamma ma’lumot yig‘ilgach va admin aniq amal so‘ragach — proposal yarat."
       : "Standart so‘rovga ma’lumot yetishmasa (masalan qaysi sana nazarda tutilgani) — bitta aniq savol ber. Amal so‘roviga esa savol berma — darhol standart rad javobini ber.",
@@ -1083,6 +1034,11 @@ async function employeeStandardReply(
         .limit(5);
       if (!recs.length) {
         sections.push(L.noDavomat);
+      } else if (loc === "uz") {
+        const { buildAttendanceReplyUz } = await import("./bot-attendance-docs");
+        sections.push(
+          (await buildAttendanceReplyUz(user.id, user.fullName)).replace(/<[^>]+>/g, ""),
+        );
       } else {
         const lines = recs.map(
           (r) =>
@@ -1256,9 +1212,9 @@ export async function handleAiAssistantMessage(
   opts?: { businessConnectionId?: string | null },
 ): Promise<boolean> {
   if (!msg.from || msg.from.is_bot) return false;
-  // Chat-bot vaqtincha yopilgan — Telegram SHAXSIY chatda jim turamiz (login buyruqlari alohida ishlaydi).
-  // GURUH bundan mustasno: u yerda bot doimidagidek javob beradi.
-  if (!aiChatEnabled() && msg.chat.type !== "group" && msg.chat.type !== "supergroup") return true;
+  // OpenAI chat yopilgan — shaxsiy chatda false qaytaramiz (Gemini HR / FAQ ishlashi uchun).
+  // Guruhda eski xulq: jim (true) emas, balki guruh gate alohida.
+  if (!aiChatEnabled() && msg.chat.type !== "group" && msg.chat.type !== "supergroup") return false;
   // Guruhda adminga javob berilmaydi (xavfsizlik to‘ri — asosiy darvoza routes/telegram.ts da)
   if (msg.chat.type === "group" || msg.chat.type === "supergroup") {
     const adminTg = await isAiAdminTelegramId(String(msg.from.id)).catch(() => false);

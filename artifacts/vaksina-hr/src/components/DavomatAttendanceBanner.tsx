@@ -54,12 +54,12 @@ export function DavomatAttendanceBanner() {
   return (
     <div
       className={cn(
-        "border-b px-3 py-1.5 sm:px-4",
+        "app-autumn-chrome px-3 py-1.5 sm:px-4",
         done
-          ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
+          ? "text-emerald-900 dark:text-emerald-200"
           : urgent
-            ? "border-amber-500/20 bg-amber-500/10 text-amber-900 dark:text-amber-100"
-            : "border-sky-500/20 bg-sky-500/10 text-sky-900 dark:text-sky-100",
+            ? "text-amber-950 dark:text-amber-100"
+            : "text-slate-900 dark:text-sky-100",
       )}
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-2">

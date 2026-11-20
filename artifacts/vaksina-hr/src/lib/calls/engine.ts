@@ -1158,6 +1158,26 @@ class CallEngine {
     this.set({ minimized: v });
   }
 
+  /** Live studio / yozuv: mic + cam tracklari (snapshot.localStream faqat video) */
+  getLocalStream(): MediaStream | null {
+    const tracks: MediaStreamTrack[] = [];
+    if (this.micTrack && this.micTrack.readyState !== "ended") tracks.push(this.micTrack);
+    if (this.camTrack && this.camTrack.readyState !== "ended") tracks.push(this.camTrack);
+    return tracks.length ? new MediaStream(tracks) : null;
+  }
+
+  getRemoteStream(): MediaStream | null {
+    return this.snap.remoteStream;
+  }
+
+  getMicTrack(): MediaStreamTrack | null {
+    return this.micTrack?.readyState !== "ended" ? this.micTrack : null;
+  }
+
+  getCamTrack(): MediaStreamTrack | null {
+    return this.camTrack?.readyState !== "ended" ? this.camTrack : null;
+  }
+
   clearNotice() {
     this.set({ notice: null });
   }

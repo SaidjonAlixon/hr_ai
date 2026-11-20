@@ -479,6 +479,8 @@ export type WorkplaceInfo = {
   mobileAnywhere?: boolean;
   /** Reviziya: ofis + istalgan filial zonasidan davomat */
   fieldBranchPunch?: boolean;
+  /** Regional menejer: ofis + o‘z viloyatidagi istalgan filial */
+  regionalFieldPunch?: boolean;
   gpsReady?: boolean;
   gpsError?: string | null;
   shiftWindowOpen?: boolean;

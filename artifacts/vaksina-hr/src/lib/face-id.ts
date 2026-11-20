@@ -89,9 +89,46 @@ export function isFaceModelsReady(): boolean {
 export function preloadFaceModels(): void {
   if (typeof window === "undefined") return;
   if (!isFaceIdSupported()) return;
-  void ensureFaceModels().catch(() => {
-    /* fon yuklash — xato skanda ko‘rinadi */
-  });
+  void ensureFaceModels()
+    .then((faceapi) => warmupFaceModels(faceapi))
+    .catch(() => {
+      /* fon yuklash — xato skanda ko‘rinadi */
+    });
+}
+
+let warmedUp = false;
+
+/**
+ * Birinchi inference WebGL shaderlarni kompilyatsiya qiladi (telefonda 1–3 soniya qotish).
+ * Buni sahifa bo‘sh turganda oldindan bajaramiz — skan ochilganda qotmaydi.
+ */
+async function warmupFaceModels(faceapi: FaceApi): Promise<void> {
+  if (warmedUp) return;
+  warmedUp = true;
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = 150;
+    canvas.height = 150;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "#808080";
+      ctx.fillRect(0, 0, 150, 150);
+    }
+    const nets = faceapi.nets as unknown as {
+      tinyFaceDetector?: unknown;
+      faceLandmark68Net?: { detectLandmarks?: (c: HTMLCanvasElement) => Promise<unknown> };
+      faceRecognitionNet?: { computeFaceDescriptor?: (c: HTMLCanvasElement) => Promise<unknown> };
+    };
+    const api = faceapi as unknown as {
+      TinyFaceDetectorOptions: new (o: { inputSize?: number; scoreThreshold?: number }) => unknown;
+      detectAllFaces: (i: HTMLCanvasElement, o: unknown) => Promise<unknown>;
+    };
+    await api.detectAllFaces(canvas, new api.TinyFaceDetectorOptions(DETECT_OPTS)).catch(() => undefined);
+    await nets.faceLandmark68Net?.detectLandmarks?.(canvas)?.catch?.(() => undefined);
+    await nets.faceRecognitionNet?.computeFaceDescriptor?.(canvas)?.catch?.(() => undefined);
+  } catch {
+    /* warmup ixtiyoriy */
+  }
 }
 
 export async function ensureFaceModels(): Promise<FaceApi> {
@@ -306,57 +343,53 @@ function eyeEar(pts?: Point[]): number | null {
   return (d(pts[1]!, pts[5]!) + d(pts[2]!, pts[4]!)) / (2 * h);
 }
 
-function frameSharpness(video: HTMLVideoElement): number {
+/** Bitta umumiy kichik canvas — har kadrda yangi element yaratilmaydi (telefonlarda GC/qotish yo‘q) */
+let statCanvas: HTMLCanvasElement | null = null;
+const STAT_W = 48;
+const STAT_H = 36;
+
+/** Yorqinlik + (kerak bo‘lsa) aniqlik — bitta chizish bilan */
+function frameStats(video: HTMLVideoElement, wantSharpness: boolean): { brightness: number; sharpness: number } {
   try {
-    const w = 48;
-    const h = 36;
-    const c = document.createElement("canvas");
-    c.width = w;
-    c.height = h;
-    const ctx = c.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return 40;
-    ctx.drawImage(video, 0, 0, w, h);
-    const data = ctx.getImageData(0, 0, w, h).data;
-    const g: number[] = [];
-    for (let i = 0; i < data.length; i += 4) {
-      g.push((data[i]! + data[i + 1]! + data[i + 2]!) / 3);
+    if (!statCanvas) {
+      statCanvas = document.createElement("canvas");
+      statCanvas.width = STAT_W;
+      statCanvas.height = STAT_H;
     }
+    const ctx = statCanvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return { brightness: 128, sharpness: 40 };
+    ctx.drawImage(video, 0, 0, STAT_W, STAT_H);
+    const data = ctx.getImageData(0, 0, STAT_W, STAT_H).data;
+    const g = new Float32Array(STAT_W * STAT_H);
+    let sum = 0;
+    for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+      const v = (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
+      g[j] = v;
+      sum += v;
+    }
+    const brightness = sum / g.length;
+    if (!wantSharpness) return { brightness, sharpness: 40 };
     let acc = 0;
     let n = 0;
-    for (let y = 1; y < h - 1; y++) {
-      for (let x = 1; x < w - 1; x++) {
-        const i = y * w + x;
-        const lap =
-          -4 * g[i]! + g[i - 1]! + g[i + 1]! + g[i - w]! + g[i + w]!;
+    for (let y = 1; y < STAT_H - 1; y++) {
+      for (let x = 1; x < STAT_W - 1; x++) {
+        const i = y * STAT_W + x;
+        const lap = -4 * g[i]! + g[i - 1]! + g[i + 1]! + g[i - STAT_W]! + g[i + STAT_W]!;
         acc += lap * lap;
         n += 1;
       }
     }
-    return n ? acc / n : 0;
+    return { brightness, sharpness: n ? acc / n : 0 };
   } catch {
-    return 40;
+    return { brightness: 128, sharpness: 40 };
   }
 }
 
-function frameBrightness(video: HTMLVideoElement): number {
-  try {
-    const c = document.createElement("canvas");
-    c.width = 48;
-    c.height = 36;
-    const ctx = c.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return 128;
-    ctx.drawImage(video, 0, 0, 48, 36);
-    const data = ctx.getImageData(0, 0, 48, 36).data;
-    let s = 0;
-    for (let i = 0; i < data.length; i += 4) s += (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
-    return s / (data.length / 4);
-  } catch {
-    return 128;
-  }
-}
-
-/** Yuqori sifat: katta inputSize + qattiq score */
-const DETECT_OPTS = { inputSize: 416 as const, scoreThreshold: 0.5 };
+/**
+ * Telefonda yengil: kichikroq inputSize — kadr tezroq, qotish yo‘q.
+ * (Yuz tanish vektori inputSize'ga bog‘liq emas — u aniqlangan yuz kesimidan olinadi.)
+ */
+const DETECT_OPTS = { inputSize: 320 as const, scoreThreshold: 0.5 };
 /** Blink: tezroq kadr — yumishni o‘tkazib yubormaslik. */
 const DETECT_OPTS_BLINK = { inputSize: 320 as const, scoreThreshold: 0.35 };
 const MIN_DETECT_SCORE = 0.58;
@@ -375,46 +408,60 @@ export async function detectFaceDescriptor(
   if (video.videoWidth > 0 && video.videoWidth < 240) {
     return { descriptor: null, status: "low_camera" };
   }
-  const brightness = frameBrightness(video);
-  if (brightness < 42) {
+  const relaxed = Boolean(opts?.allowTurn || opts?.allowBlink);
+  const stats = frameStats(video, !relaxed);
+  if (stats.brightness < 42) {
     return { descriptor: null, status: "dark" };
   }
-  if (!opts?.allowTurn && !opts?.allowBlink && frameSharpness(video) < 22) {
+  if (!relaxed && stats.sharpness < 22) {
     return { descriptor: null, status: "low_quality" };
   }
 
-  let many: Array<{ detection: { score: number } }> = [];
+  // 1-bosqich: faqat yengil detektor (yuz bormi, qayerda, nechta). Og‘ir tarmoqlar (landmark + descriptor)
+  // faqat yuz ramkada bo‘lgandagina ishlaydi — telefon qotmaydi.
+  let many: unknown[] = [];
   try {
-    many = (await faceapi.detectAllFaces(video, detector)) ?? [];
+    many = ((await faceapi.detectAllFaces(video, detector)) as unknown[]) ?? [];
   } catch {
     many = [];
   }
   if (many.length > 1) {
     return { descriptor: null, status: "many_faces", faceCount: many.length };
   }
+  const first = many[0] as
+    | { score?: number; box?: { x: number; y: number; width: number; height: number }; detection?: { score: number; box: { x: number; y: number; width: number; height: number } } }
+    | undefined;
+  const quickScore = first?.detection?.score ?? first?.score ?? 0;
+  const quickBox = first?.detection?.box ?? first?.box;
 
-  const result = await faceapi.detectSingleFace(video, detector).withFaceLandmarks().withFaceDescriptor();
-
-  const minScore = opts?.allowTurn || opts?.allowBlink ? 0.32 : MIN_DETECT_SCORE;
-  if (!result || result.detection.score < minScore) {
+  const minScore = relaxed ? 0.32 : MIN_DETECT_SCORE;
+  if (!first || !quickBox || quickScore < minScore) {
     return { descriptor: null, status: "no_face" };
   }
   if (!frame || frame.rx < 8 || frame.ry < 8) {
     return { descriptor: null, status: "outside" };
   }
 
-  const mapped = mapVideoBoxToElement(video, result.detection.box, mirrored, opts?.fit ?? "cover");
-  if (!mapped) return { descriptor: null, status: "no_face" };
-
-  if (ellipseNorm(mapped.cx, mapped.cy, frame) > (opts?.allowTurn || opts?.allowBlink ? 1.85 : 1.15)) {
+  const quickMapped = mapVideoBoxToElement(video, quickBox, mirrored, opts?.fit ?? "cover");
+  if (!quickMapped) return { descriptor: null, status: "no_face" };
+  if (ellipseNorm(quickMapped.cx, quickMapped.cy, frame) > (relaxed ? 1.85 : 1.15)) {
     return { descriptor: null, status: "outside" };
   }
+  {
+    const qFillW = quickMapped.width / (frame.rx * 2);
+    const qFillH = quickMapped.height / (frame.ry * 2);
+    const qMin = relaxed ? 0.18 : 0.28;
+    if (qFillW < qMin || qFillH < qMin - 0.05) return { descriptor: null, status: "too_far" };
+    if (qFillW > 2.4 || qFillH > 2.4) return { descriptor: null, status: "too_close" };
+  }
 
-  const fillW = mapped.width / (frame.rx * 2);
-  const fillH = mapped.height / (frame.ry * 2);
-  const minFill = opts?.allowTurn || opts?.allowBlink ? 0.18 : 0.28;
-  if (fillW < minFill || fillH < minFill - 0.05) return { descriptor: null, status: "too_far" };
-  if (fillW > 2.4 || fillH > 2.4) return { descriptor: null, status: "too_close" };
+  // 2-bosqich: to‘liq tahlil (landmark + descriptor)
+  const result = await faceapi.detectSingleFace(video, detector).withFaceLandmarks().withFaceDescriptor();
+  if (!result || result.detection.score < minScore) {
+    return { descriptor: null, status: "no_face" };
+  }
+  const mapped = mapVideoBoxToElement(video, result.detection.box, mirrored, opts?.fit ?? "cover");
+  if (!mapped) return { descriptor: null, status: "no_face" };
 
   const positions = result.landmarks.positions ?? [];
   const leftEye = result.landmarks.getLeftEye?.() ?? positions.slice(36, 42);

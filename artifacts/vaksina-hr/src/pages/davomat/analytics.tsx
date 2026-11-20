@@ -268,7 +268,7 @@ function DynamicsLoading({ days, title, hint }: { days: number; title: string; h
         })}
       </div>
       <div className="absolute inset-0 flex items-center justify-center">
-        <div className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3 shadow-[0_12px_32px_-16px_rgba(15,39,68,0.35)] backdrop-blur dark:border-white/10 dark:bg-[#101a2e]/90">
+        <div className="flex items-center gap-3 rounded-2xl border border-white/45 bg-white/40 px-4 py-3 shadow-[0_12px_32px_-16px_rgba(15,39,68,0.2)] backdrop-blur-xl dark:border-white/10 dark:bg-[#101a2e]/55">
           <span className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-[#0f2744] text-white dark:bg-sky-500/20 dark:text-sky-300">
             <Activity className="h-4 w-4" />
             <span className="absolute inset-0 animate-ping rounded-xl bg-sky-400/25" />
@@ -1019,7 +1019,7 @@ const DAY_TONE: Record<
 > = {
   emerald: {
     solid: "bg-gradient-to-br from-emerald-500 to-teal-600 shadow-emerald-500/30",
-    soft: "bg-emerald-50/70 ring-emerald-200/70 dark:bg-emerald-500/[0.06] dark:ring-emerald-500/20",
+    soft: "bg-emerald-50/35 ring-emerald-200/50 backdrop-blur-md dark:bg-emerald-500/[0.06] dark:ring-emerald-500/20",
     text: "text-emerald-600 dark:text-emerald-400",
     bar: "bg-emerald-500",
     avatar: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
@@ -1027,7 +1027,7 @@ const DAY_TONE: Record<
   },
   amber: {
     solid: "bg-gradient-to-br from-amber-400 to-orange-500 shadow-amber-500/30",
-    soft: "bg-amber-50/70 ring-amber-200/70 dark:bg-amber-500/[0.06] dark:ring-amber-500/20",
+    soft: "bg-amber-50/35 ring-amber-200/50 backdrop-blur-md dark:bg-amber-500/[0.06] dark:ring-amber-500/20",
     text: "text-amber-600 dark:text-amber-400",
     bar: "bg-amber-500",
     avatar: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
@@ -1035,7 +1035,7 @@ const DAY_TONE: Record<
   },
   rose: {
     solid: "bg-gradient-to-br from-rose-500 to-pink-600 shadow-rose-500/30",
-    soft: "bg-rose-50/70 ring-rose-200/70 dark:bg-rose-500/[0.06] dark:ring-rose-500/20",
+    soft: "bg-rose-50/35 ring-rose-200/50 backdrop-blur-md dark:bg-rose-500/[0.06] dark:ring-rose-500/20",
     text: "text-rose-600 dark:text-rose-400",
     bar: "bg-rose-500",
     avatar: "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300",
@@ -1362,7 +1362,7 @@ function OfficeDayRow({ item, tone }: { item: OfficeDayItem; tone: DayTone }) {
   const style = DAY_TONE[tone];
 
   return (
-    <div className="flex items-center gap-2.5 rounded-xl border border-white/80 bg-white px-2.5 py-2 shadow-[0_1px_2px_rgb(15_39_68/0.05)] transition hover:-translate-y-px hover:shadow-md dark:border-slate-700/50 dark:bg-slate-900/70">
+    <div className="flex items-center gap-2.5 rounded-xl border border-white/45 bg-white/35 px-2.5 py-2 shadow-[0_1px_2px_rgb(15_39_68/0.05)] backdrop-blur-md transition hover:-translate-y-px hover:bg-white/50 hover:shadow-md dark:border-slate-700/50 dark:bg-slate-900/45">
       <span
         className={cn(
           "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold",
@@ -1439,7 +1439,7 @@ function OfficeDayColumn({
         </div>
         <span className={cn("text-2xl font-extrabold leading-none tabular-nums", style.text)}>{count}</span>
       </div>
-      <div className="mx-3 mb-2.5 h-1.5 overflow-hidden rounded-full bg-white dark:bg-slate-800">
+      <div className="mx-3 mb-2.5 h-1.5 overflow-hidden rounded-full bg-white/40 dark:bg-slate-800/70">
         <div className={cn("h-full rounded-full transition-all duration-500", style.bar)} style={{ width: `${pct}%` }} />
       </div>
       <div className="h-[340px] space-y-1.5 overflow-y-auto px-2.5 pb-2.5">
@@ -1447,7 +1447,7 @@ function OfficeDayColumn({
           items.map((item) => <OfficeDayRow key={item.employeeId} item={item} tone={tone} />)
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-            <span className={cn("flex h-10 w-10 items-center justify-center rounded-full bg-white dark:bg-slate-800", style.text)}>
+            <span className={cn("flex h-10 w-10 items-center justify-center rounded-full bg-white/45 dark:bg-slate-800/70", style.text)}>
               <Icon className="h-5 w-5" />
             </span>
             <p className="max-w-[180px] text-[11px] text-muted-foreground">{empty}</p>

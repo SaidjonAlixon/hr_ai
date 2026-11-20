@@ -1,26 +1,43 @@
 /**
- * Mijoz baholash QR — A4 portrait.
- * Yuqori: Vaksina logo · Markaz: zamonaviy (nuqta) QR · Past: filial.
- * Markazda logo/dumaloq YO‘Q.
+ * Mijoz baholash QR — A4 portrait (kassa oldi).
+ * Yuqori: Vaksina logo · CTA banner · Markaz: solid premium QR · Past: filial.
+ * Markazda logo YO‘Q. Logo fayli o‘zgartirilmaydi.
  */
 import QRCode from "qrcode";
 import { jsPDF } from "jspdf";
+import { toUzbekLatinUpper } from "@/lib/script-search";
 
 const PAGE_W = 210;
 const PAGE_H = 297;
-const MARGIN = 16;
+const MARGIN = 14;
 
 /** Brend (vaksinahr_logo) */
 const PURPLE = "#5c2d91";
+const PURPLE_DEEP = "#4a1f78";
 const PURPLE_RGB: [number, number, number] = [92, 45, 145];
 const YELLOW = "#f5c518";
 const YELLOW_RGB: [number, number, number] = [245, 197, 24];
-const CYAN = "#22c5e0";
-const MUTED = "#64748b";
+const MUTED = "#5b6478";
 const LOGO_URL = "/logo_vaksina.png";
 
+/** Logo VAKSINA MED bilan bir xil — Montserrat ExtraBold */
 const UNICODE_FONT =
-  '"Segoe UI", "Noto Sans", "DejaVu Sans", Arial, "Helvetica Neue", sans-serif';
+  '"Montserrat", "Segoe UI", "Noto Sans", "DejaVu Sans", Arial, "Helvetica Neue", sans-serif';
+
+async function ensureBrandFont(): Promise<void> {
+  try {
+    if (typeof document !== "undefined" && document.fonts?.load) {
+      await Promise.all([
+        document.fonts.load("800 48px Montserrat"),
+        document.fonts.load("700 32px Montserrat"),
+        document.fonts.load("600 24px Montserrat"),
+      ]);
+      await document.fonts.ready;
+    }
+  } catch {
+    /* offline — Segoe UI fallback */
+  }
+}
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -169,11 +186,10 @@ function isFinderCell(row: number, col: number, n: number): boolean {
   return inTL || inTR || inBL;
 }
 
-function isTiming(row: number, col: number): boolean {
-  return row === 6 || col === 6;
-}
-
-/** Zamonaviy QR: yumaloq nuqtalar + yumaloq finder, markazda hech narsa yo‘q */
+/**
+ * Premium solid QR — klassik modul (skaner uchun ishonchli),
+ * yumshoq burchakli binafsha kvadratlar, sariq/cyan dekor YO‘Q.
+ */
 async function styledQrPng(url: string, size = 1000): Promise<string> {
   const qr = QRCode.create(url, { errorCorrectionLevel: "H" });
   const modules = qr.modules;
@@ -185,72 +201,37 @@ async function styledQrPng(url: string, size = 1000): Promise<string> {
   const ctx = out.getContext("2d");
   if (!ctx) throw new Error("Canvas ishlamaydi");
 
-  // Kartochka
   ctx.fillStyle = "#ffffff";
-  roundRect(ctx, 0, 0, size, size, size * 0.05);
+  roundRect(ctx, 0, 0, size, size, size * 0.04);
   ctx.fill();
 
-  // Yengil gradient frame
-  const g = ctx.createLinearGradient(0, 0, size, size);
-  g.addColorStop(0, "rgba(92,45,145,0.12)");
-  g.addColorStop(0.5, "rgba(245,197,24,0.14)");
-  g.addColorStop(1, "rgba(34,197,224,0.12)");
-  ctx.strokeStyle = g;
-  ctx.lineWidth = size * 0.012;
-  roundRect(ctx, size * 0.02, size * 0.02, size * 0.96, size * 0.96, size * 0.042);
+  // Yupqa binafsha ramka
+  ctx.strokeStyle = "rgba(92,45,145,0.22)";
+  ctx.lineWidth = Math.max(2, size * 0.008);
+  roundRect(ctx, size * 0.018, size * 0.018, size * 0.964, size * 0.964, size * 0.032);
   ctx.stroke();
 
-  // Oltin/sariq L-burchaklar
-  const tick = size * 0.07;
-  const inset = size * 0.03;
-  ctx.strokeStyle = YELLOW;
-  ctx.lineWidth = size * 0.011;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  const corners: Array<[number, number, number, number, number, number]> = [
-    [inset, inset + tick, inset, inset, inset + tick, inset],
-    [size - inset - tick, inset, size - inset, inset, size - inset, inset + tick],
-    [inset, size - inset - tick, inset, size - inset, inset + tick, size - inset],
-    [size - inset - tick, size - inset, size - inset, size - inset, size - inset, size - inset - tick],
-  ];
-  for (const [x1, y1, x2, y2, x3, y3] of corners) {
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.lineTo(x3, y3);
-    ctx.stroke();
-  }
-
-  const margin = size * 0.09;
+  const margin = size * 0.08;
   const grid = size - margin * 2;
   const cell = grid / n;
+  const gap = cell * 0.08;
+  const moduleR = cell * 0.18;
 
   const drawFinder = (originRow: number, originCol: number) => {
     const x = margin + originCol * cell;
     const y = margin + originRow * cell;
     const s = cell * 7;
-    const r = cell * 1.15;
+    const rOuter = cell * 0.55;
 
-    // Tashqi yumaloq kvadrat (binafsha)
-    roundRect(ctx, x, y, s, s, r);
+    roundRect(ctx, x, y, s, s, rOuter);
     ctx.fillStyle = PURPLE;
     ctx.fill();
 
-    // Oq ichki
-    roundRect(ctx, x + cell, y + cell, cell * 5, cell * 5, r * 0.75);
+    roundRect(ctx, x + cell, y + cell, cell * 5, cell * 5, rOuter * 0.7);
     ctx.fillStyle = "#ffffff";
     ctx.fill();
 
-    // Markaziy “ko‘z” — sariq yumaloq kvadrat
-    roundRect(ctx, x + cell * 2, y + cell * 2, cell * 3, cell * 3, r * 0.55);
-    ctx.fillStyle = YELLOW;
-    ctx.fill();
-
-    // Ichki binafsha nuqta
-    const cx = x + cell * 3.5;
-    const cy = y + cell * 3.5;
-    ctx.beginPath();
-    ctx.arc(cx, cy, cell * 0.85, 0, Math.PI * 2);
+    roundRect(ctx, x + cell * 2, y + cell * 2, cell * 3, cell * 3, rOuter * 0.45);
     ctx.fillStyle = PURPLE;
     ctx.fill();
   };
@@ -259,20 +240,16 @@ async function styledQrPng(url: string, size = 1000): Promise<string> {
   drawFinder(0, n - 7);
   drawFinder(n - 7, 0);
 
-  // Ma’lumot + timing — yumaloq nuqtalar
   for (let row = 0; row < n; row++) {
     for (let col = 0; col < n; col++) {
       if (!modules.get(row, col)) continue;
       if (isFinderCell(row, col, n)) continue;
 
-      const x = margin + col * cell + cell / 2;
-      const y = margin + row * cell + cell / 2;
-      const radius = isTiming(row, col) ? cell * 0.32 : cell * 0.38;
-
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
-      // Timing biroz cyan — brend aksenti
-      ctx.fillStyle = isTiming(row, col) ? CYAN : PURPLE;
+      const x = margin + col * cell + gap / 2;
+      const y = margin + row * cell + gap / 2;
+      const s = cell - gap;
+      roundRect(ctx, x, y, s, s, moduleR);
+      ctx.fillStyle = PURPLE;
       ctx.fill();
     }
   }
@@ -297,108 +274,302 @@ function placeText(doc: jsPDF, block: TextBlock, cx: number, y: number) {
   return y + block.heightMm;
 }
 
+function drawStar(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  outerR: number,
+  color: string,
+) {
+  const spikes = 5;
+  const innerR = outerR * 0.42;
+  ctx.beginPath();
+  for (let i = 0; i < spikes * 2; i++) {
+    const r = i % 2 === 0 ? outerR : innerR;
+    const a = (Math.PI / spikes) * i - Math.PI / 2;
+    const x = cx + Math.cos(a) * r;
+    const y = cy + Math.sin(a) * r;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+function measureSpacedWidth(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  spacing: number,
+): number {
+  let total = 0;
+  for (const ch of text) total += ctx.measureText(ch).width + spacing;
+  return Math.max(0, total - spacing);
+}
+
+function fillSpacedText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  centerX: number,
+  y: number,
+  spacing: number,
+) {
+  const total = measureSpacedWidth(ctx, text, spacing);
+  let x = centerX - total / 2;
+  for (const ch of text) {
+    const cw = ctx.measureText(ch).width;
+    ctx.fillText(ch, x + cw / 2, y);
+    x += cw + spacing;
+  }
+}
+
+/**
+ * Logo ostidagi CTA — pill + motto + 5 yulduz.
+ * Balandlik kontentdan hisoblanadi; elementlar bir-biriga tegmaydi.
+ */
+function renderWelcomeBannerPng(widthMm: number): TextBlock {
+  const dpr = 3;
+  const w = Math.round((widthMm / 25.4) * 96 * dpr);
+
+  // —— Layout o‘lchamlari (px @ dpr) — oraliqlar aniq
+  const padTop = Math.round(6 * dpr);
+  const padBottom = Math.round(10 * dpr);
+  const gapPillMotto = Math.round(14 * dpr);
+  const gapMottoStars = Math.round(12 * dpr);
+
+  const pillH = Math.round(38 * dpr);
+  const titleSize = Math.round(15.5 * dpr);
+  const titleSpacing = titleSize * 0.07;
+
+  const mottoSize = Math.round(11.5 * dpr);
+  const mottoSpacing = mottoSize * 0.16;
+
+  const starPillH = Math.round(28 * dpr);
+  const starR = Math.round(starPillH * 0.32);
+  const starGap = Math.round(starR * 0.85);
+  const starPadX = Math.round(starR * 1.25);
+  const starCount = 5;
+  const starPillW =
+    starCount * (starR * 2) + (starCount - 1) * starGap + starPadX * 2;
+
+  const h =
+    padTop +
+    pillH +
+    gapPillMotto +
+    mottoSize +
+    gapMottoStars +
+    starPillH +
+    padBottom;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    return renderUnicodeTextPng("XIZMATNI BAHOLANG", {
+      fontSizePx: 24,
+      fontWeight: "800",
+      color: PURPLE,
+      maxWidthMm: widthMm,
+      align: "center",
+      letterSpacingPx: 2,
+    });
+  }
+
+  // Sof fon — elementlar ajralib tursin
+  const bg = ctx.createLinearGradient(0, 0, 0, h);
+  bg.addColorStop(0, "rgba(245, 240, 255, 0)");
+  bg.addColorStop(0.5, "rgba(245, 240, 255, 0.4)");
+  bg.addColorStop(1, "rgba(255, 252, 245, 0.25)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+
+  // —— 1) Purple pill
+  const title = "XIZMATNI BAHOLANG";
+  ctx.font = `800 ${titleSize}px ${UNICODE_FONT}`;
+  const titleW = measureSpacedWidth(ctx, title, titleSpacing);
+  const pillPadX = titleSize * 1.35;
+  const pillW = Math.min(w * 0.72, titleW + pillPadX * 2);
+  const pillX = (w - pillW) / 2;
+  const pillY = padTop;
+  const pillR = pillH / 2;
+
+  ctx.save();
+  ctx.shadowColor = "rgba(74, 31, 120, 0.22)";
+  ctx.shadowBlur = 14 * dpr;
+  ctx.shadowOffsetY = 5 * dpr;
+  const grad = ctx.createLinearGradient(pillX, pillY, pillX, pillY + pillH);
+  grad.addColorStop(0, "#7a45b8");
+  grad.addColorStop(0.5, PURPLE);
+  grad.addColorStop(1, PURPLE_DEEP);
+  roundRect(ctx, pillX, pillY, pillW, pillH, pillR);
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  roundRect(ctx, pillX + 3 * dpr, pillY + 2.5 * dpr, pillW - 6 * dpr, pillH * 0.32, pillR * 0.4);
+  ctx.fillStyle = "rgba(255,255,255,0.16)";
+  ctx.fill();
+  ctx.restore();
+
+  ctx.font = `800 ${titleSize}px ${UNICODE_FONT}`;
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  fillSpacedText(ctx, title, w / 2, pillY + pillH / 2 + 0.5 * dpr, titleSpacing);
+
+  // —— 2) Motto (pill ostida, alohida)
+  const motto = "SIZNING FIKRINGIZ BIZ UCHUN MUHIM!";
+  const mottoY = pillY + pillH + gapPillMotto + mottoSize / 2;
+  ctx.font = `700 ${mottoSize}px ${UNICODE_FONT}`;
+  ctx.fillStyle = PURPLE_DEEP;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  fillSpacedText(ctx, motto, w / 2, mottoY, mottoSpacing);
+
+  // —— 3) Yulduzlar (motto ostida, alohida)
+  const starPillX = (w - starPillW) / 2;
+  const starPillY = mottoY + mottoSize / 2 + gapMottoStars;
+
+  ctx.save();
+  ctx.shadowColor = "rgba(92, 45, 145, 0.1)";
+  ctx.shadowBlur = 10 * dpr;
+  ctx.shadowOffsetY = 3 * dpr;
+  roundRect(ctx, starPillX, starPillY, starPillW, starPillH, starPillH / 2);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+  ctx.restore();
+  roundRect(ctx, starPillX, starPillY, starPillW, starPillH, starPillH / 2);
+  ctx.strokeStyle = "rgba(92, 45, 145, 0.14)";
+  ctx.lineWidth = 1.2 * dpr;
+  ctx.stroke();
+
+  const starsCy = starPillY + starPillH / 2;
+  for (let i = 0; i < starCount; i++) {
+    const sx = starPillX + starPadX + starR + i * (starR * 2 + starGap);
+    drawStar(ctx, sx, starsCy, starR, YELLOW);
+  }
+
+  return {
+    dataUrl: canvas.toDataURL("image/png"),
+    widthMm,
+    heightMm: (h / dpr / 96) * 25.4,
+  };
+}
+
 export type BahoQrPage = {
   branchLabel: string;
   publicUrl: string;
   branchNo?: number | null;
 };
 
-async function drawBahoQrPage(doc: jsPDF, png: string, item: BahoQrPage, pageMeta?: string) {
+async function drawBahoQrPage(doc: jsPDF, png: string, item: BahoQrPage) {
+  await ensureBrandFont();
   drawPageDecor(doc);
   const cx = PAGE_W / 2;
   const contentW = PAGE_W - MARGIN * 2;
-  let y = 18;
 
-  if (pageMeta) {
-    const meta = renderUnicodeTextPng(pageMeta, {
-      fontSizePx: 10,
-      color: MUTED,
-      maxWidthMm: contentW,
-      align: "center",
-      letterSpacingPx: 0.4,
-    });
-    y = placeText(doc, meta, cx, y) + 2;
-  }
+  /** Pastki lenta — A4 pastiga mahkam (footer ustida) */
+  const plateH = 13;
+  const plateBottomGap = 11;
+  const plateY = PAGE_H - plateBottomGap - plateH;
+  const plateW = contentW;
+  const plateX = MARGIN;
 
-  // Yuqori: logo_vaksina.png (o‘zgartirilmagan)
+  const branchLatin =
+    toUzbekLatinUpper(String(item.branchLabel || "").trim()) || "FILIAL";
+  const branchTitle = renderUnicodeTextPng(branchLatin, {
+    fontSizePx: 13,
+    fontWeight: "800",
+    color: "#ffffff",
+    maxWidthMm: plateW - 12,
+    align: "center",
+  });
+
+  const hint = renderUnicodeTextPng("Kamerani QR-kodga qarating — 5 soniyada baholaysiz", {
+    fontSizePx: 11,
+    fontWeight: "bold",
+    color: PURPLE,
+    maxWidthMm: contentW,
+    align: "center",
+  });
+
+  /** Yuqori blok — har bir qatlam alohida nafas oladi */
+  let y = 11;
+
   try {
     const logo = await loadHeaderLogo();
-    const maxW = 140;
-    const maxH = 46;
+    const maxW = 142;
+    const maxH = 38;
     const iw = logo.naturalWidth || logo.width;
     const ih = logo.naturalHeight || logo.height;
     const scale = Math.min(maxW / iw, maxH / ih);
     const wMm = iw * scale;
     const hMm = ih * scale;
     doc.addImage(logo, "PNG", cx - wMm / 2, y, wMm, hMm);
-    y += hMm + 10;
+    y += hMm + 4;
   } catch {
     const brand = renderUnicodeTextPng("VAKSINA MED", {
-      fontSizePx: 14,
-      fontWeight: "bold",
+      fontSizePx: 15,
+      fontWeight: "800",
       color: PURPLE,
       maxWidthMm: contentW,
       align: "center",
       letterSpacingPx: 2.5,
     });
-    y = placeText(doc, brand, cx, y) + 6;
+    y = placeText(doc, brand, cx, y) + 4;
   }
 
-  const title = renderUnicodeTextPng("XIZMATNI BAHOLANG", {
-    fontSizePx: 24,
-    fontWeight: "800",
-    color: PURPLE,
-    maxWidthMm: contentW,
-    align: "center",
-    letterSpacingPx: 2.8,
-  });
-  y = placeText(doc, title, cx, y) + 4;
+  const banner = renderWelcomeBannerPng(contentW * 0.86);
+  y = placeText(doc, banner, cx, y) + 4;
 
-  const sub = renderUnicodeTextPng("Dorixonamizga tashrifingiz uchun rahmat!", {
-    fontSizePx: 12,
-    color: MUTED,
-    maxWidthMm: contentW,
+  const thanks = renderUnicodeTextPng("Dorixonamizga tashrifingiz uchun rahmat!", {
+    fontSizePx: 14,
+    fontWeight: "bold",
+    color: PURPLE_DEEP,
+    maxWidthMm: contentW * 0.95,
     align: "center",
   });
-  y = placeText(doc, sub, cx, y) + 8;
+  y = placeText(doc, thanks, cx, y) + 2.2;
 
-  const qrMm = 148;
-  const qrX = (PAGE_W - qrMm) / 2;
-  doc.setFillColor(250, 248, 255);
-  doc.roundedRect(qrX - 5, y - 5, qrMm + 10, qrMm + 10, 5, 5, "F");
-  doc.addImage(png, "PNG", qrX, y, qrMm, qrMm, undefined, "FAST");
-  y += qrMm + 12;
-
-  const hint = renderUnicodeTextPng("Kamerani QR-kodga qarating", {
+  const invite = renderUnicodeTextPng("Iltimos, QR-kodni skanerlab baholang — bu biz uchun juda qadrli!", {
     fontSizePx: 11,
     color: MUTED,
-    maxWidthMm: contentW,
+    maxWidthMm: contentW * 0.9,
     align: "center",
   });
-  y = placeText(doc, hint, cx, y) + 8;
+  y = placeText(doc, invite, cx, y) + 5;
 
-  const plateW = contentW;
-  const plateH = 26;
-  const plateX = MARGIN;
-  if (y + plateH > PAGE_H - 16) y = PAGE_H - 16 - plateH;
+  /** QR — o‘rtada, matn va pastki lentadan ajratilgan */
+  const qrPad = 5;
+  const gapAboveHint = 4;
+  const gapAbovePlate = 5;
+  const qrZoneBottom = plateY - gapAbovePlate - hint.heightMm - gapAboveHint;
+  const qrZoneTop = y;
+  const availForQrFrame = Math.max(70, qrZoneBottom - qrZoneTop);
+  const qrMm = Math.max(88, Math.min(112, availForQrFrame - qrPad * 2));
+
+  const frameH = qrMm + qrPad * 2;
+  const qrBlockTop = qrZoneTop + Math.max(0, (availForQrFrame - frameH) / 2);
+  const qrX = (PAGE_W - qrMm) / 2;
+  const qrY = qrBlockTop + qrPad;
+
+  doc.setFillColor(250, 248, 255);
+  doc.roundedRect(qrX - qrPad, qrY - qrPad, qrMm + qrPad * 2, qrMm + qrPad * 2, 6, 6, "F");
+  doc.setDrawColor(...PURPLE_RGB);
+  doc.setLineWidth(0.35);
+  doc.roundedRect(qrX - qrPad, qrY - qrPad, qrMm + qrPad * 2, qrMm + qrPad * 2, 6, 6, "S");
+  doc.addImage(png, "PNG", qrX, qrY, qrMm, qrMm, undefined, "FAST");
+
+  const hintY = qrY + qrMm + qrPad + gapAboveHint;
+  placeText(doc, hint, cx, Math.min(hintY, plateY - gapAbovePlate - hint.heightMm));
+
   doc.setFillColor(...PURPLE_RGB);
-  doc.roundedRect(plateX, y, plateW, plateH, 3.5, 3.5, "F");
+  doc.roundedRect(plateX, plateY, plateW, plateH, 3, 3, "F");
   doc.setFillColor(...YELLOW_RGB);
-  doc.rect(plateX, y, 3.2, plateH, "F");
-
-  const branchLine =
-    item.branchNo != null && item.branchNo > 0
-      ? `№${item.branchNo}  ·  ${item.branchLabel}`
-      : item.branchLabel;
-
-  const branchTitle = renderUnicodeTextPng(branchLine, {
-    fontSizePx: 15,
-    fontWeight: "bold",
-    color: "#ffffff",
-    maxWidthMm: plateW - 16,
-    align: "center",
-  });
-  placeText(doc, branchTitle, cx, y + (plateH - branchTitle.heightMm) / 2);
+  doc.rect(plateX, plateY, 2.6, plateH, "F");
+  placeText(doc, branchTitle, cx, plateY + (plateH - branchTitle.heightMm) / 2);
 }
 
 export async function downloadBahoQrPdf(item: BahoQrPage) {
@@ -424,7 +595,7 @@ export async function downloadAllBahoQrPdf(items: BahoQrPage[]) {
   for (let idx = 0; idx < pngs.length; idx++) {
     if (idx > 0) doc.addPage();
     const row = pngs[idx];
-    await drawBahoQrPage(doc, row.png, row.item, `Mijoz baholash QR · ${idx + 1} / ${pngs.length}`);
+    await drawBahoQrPage(doc, row.png, row.item);
   }
   downloadBlob(doc.output("blob"), "baho-qr-barcha-filiallar.pdf");
 }

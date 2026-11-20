@@ -235,6 +235,7 @@ const TXT = {
     leadAhead: (d: number) => `Keyingi o‘rindagidan ${d} ball oldinda`,
     leadBehind: (r: number, d: number) => `${r}-o‘rindagidan ${d} ball orqada`,
     leadTie: "Keyingi o‘rindagi bilan teng ballda",
+    close: "Yopish",
     status: {
       todo: "Yangi",
       in_progress: "Jarayonda",
@@ -294,6 +295,7 @@ const TXT = {
     leadAhead: (d: number) => `Опережает следующего на ${d} балл.`,
     leadBehind: (r: number, d: number) => `Отстаёт от ${r}-го места на ${d} балл.`,
     leadTie: "Столько же баллов, сколько у следующего",
+    close: "Закрыть",
     status: {
       todo: "Новая",
       in_progress: "В работе",
@@ -395,7 +397,7 @@ function Section({
   return (
     <div
       ref={sectionRef}
-      className="shrink-0 scroll-mt-3 overflow-hidden rounded-2xl border border-border/70 bg-card shadow-[0_1px_2px_rgba(15,39,68,0.04),0_8px_24px_-12px_rgba(15,39,68,0.12)] dark:shadow-black/20"
+      className="app-glass-card shrink-0 scroll-mt-3 overflow-hidden rounded-2xl border border-white/45 shadow-none dark:border-white/10"
     >
       <div className="flex items-center gap-2.5 px-3.5 py-3">
         <span
@@ -513,7 +515,7 @@ export function TasksSidebar(props: TasksSidebarProps) {
 
   if (collapsed) {
     return (
-      <aside className="hidden w-[60px] shrink-0 flex-col items-center gap-2 border-l border-border/70 bg-gradient-to-b from-card to-muted/30 py-4 transition-[width] duration-300 xl:flex">
+      <aside className="hidden w-[60px] shrink-0 flex-col items-center gap-2 border-l border-white/35 bg-white/25 py-4 backdrop-blur-xl transition-[width] duration-300 xl:flex dark:border-white/10 dark:bg-[#101a2e]/40">
         <button
           type="button"
           onClick={() => setCollapsed(false)}
@@ -541,7 +543,7 @@ export function TasksSidebar(props: TasksSidebarProps) {
             ) : null}
           </button>
         ))}
-        <div className="mt-auto flex flex-col items-center rounded-xl border border-border/70 bg-card px-2 py-1.5 text-center shadow-sm">
+        <div className="app-glass-card mt-auto flex flex-col items-center rounded-xl border border-white/45 px-2 py-1.5 text-center shadow-none dark:border-white/10">
           <span className="text-[9px] font-semibold uppercase text-muted-foreground">
             {props.weekDays[(now.getDay() + 6) % 7]}
           </span>
@@ -581,8 +583,8 @@ export function TasksSidebar(props: TasksSidebarProps) {
   const detailRow = detail != null ? top[detail] : null;
 
   return (
-    <aside className="hidden w-[304px] shrink-0 flex-col border-l border-border/70 bg-gradient-to-b from-muted/40 via-background to-background transition-[width] duration-300 xl:flex">
-      <div className="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-3">
+    <aside className="hidden w-[304px] shrink-0 flex-col border-l border-white/35 bg-white/20 backdrop-blur-xl transition-[width] duration-300 xl:flex dark:border-white/10 dark:bg-[#101a2e]/35">
+      <div className="flex items-center justify-between gap-2 border-b border-white/35 bg-white/25 px-4 py-3 backdrop-blur-md dark:border-white/10 dark:bg-white/[0.04]">
         <div className="flex items-center gap-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#0b3a5c] text-white dark:bg-primary dark:text-primary-foreground">
             <Sparkles className="h-3.5 w-3.5" />
@@ -594,7 +596,7 @@ export function TasksSidebar(props: TasksSidebarProps) {
           onClick={() => setCollapsed(true)}
           title={tx.collapse}
           aria-label={tx.collapse}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-white/50 hover:text-foreground dark:hover:bg-white/10"
         >
           <PanelRightClose className="h-[18px] w-[18px]" />
         </button>
@@ -614,7 +616,7 @@ export function TasksSidebar(props: TasksSidebarProps) {
             <p className="truncate text-[15px] font-extrabold tracking-tight text-foreground">
               {props.formatMonth(props.month)}
             </p>
-            <div className="flex shrink-0 items-center rounded-lg border border-border/80 bg-background p-0.5">
+            <div className="flex shrink-0 items-center rounded-lg border border-white/45 bg-white/40 p-0.5 backdrop-blur-sm dark:border-white/10 dark:bg-white/5">
               <button
                 type="button"
                 aria-label="‹"
@@ -1007,7 +1009,7 @@ export function TasksSidebar(props: TasksSidebarProps) {
                   type="button"
                   onClick={action.onClick}
                   className={cn(
-                    "group flex flex-col items-center gap-2 rounded-xl border border-border/70 bg-card px-2 py-3 text-center transition hover:-translate-y-0.5 hover:shadow-md",
+                    "app-glass-card group flex flex-col items-center gap-2 rounded-xl border border-white/45 px-2 py-3 text-center transition hover:-translate-y-0.5 dark:border-white/10",
                     action.hover,
                   )}
                 >
@@ -1169,11 +1171,11 @@ function StaffDetailDialog({
     <Dialog open={!!row} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
         hideClose
-        className="max-h-[90vh] gap-0 overflow-hidden rounded-3xl border-0 p-0 sm:max-w-[440px]"
+        className="!flex h-[min(92dvh,720px)] !max-h-[min(92dvh,720px)] w-[calc(100%-1.5rem)] !grid-cols-none flex-col gap-0 overflow-hidden rounded-3xl border-0 p-0 sm:max-w-[420px]"
       >
         {row && (
-          <div className="flex max-h-[90vh] flex-col">
-            <div className="relative overflow-hidden bg-gradient-to-br from-[#0b3a5c] via-[#0f2744] to-[#0b1f36] px-6 pb-6 pt-7 text-white">
+          <>
+            <div className="relative shrink-0 overflow-hidden bg-gradient-to-br from-[#0b3a5c] via-[#0f2744] to-[#0b1f36] px-5 pb-5 pt-6 text-white sm:px-6 sm:pb-6 sm:pt-7">
               <button
                 type="button"
                 onClick={onClose}
@@ -1184,11 +1186,11 @@ function StaffDetailDialog({
               </button>
               <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/5" />
               <div className="pointer-events-none absolute -bottom-16 right-16 h-32 w-32 rounded-full bg-amber-400/10" />
-              <div className="relative flex items-center gap-4">
+              <div className="relative flex items-center gap-3.5 sm:gap-4">
                 <span className="relative shrink-0">
                   <span
                     className={cn(
-                      "flex h-16 w-16 items-center justify-center rounded-2xl text-lg font-extrabold shadow-lg",
+                      "flex h-14 w-14 items-center justify-center rounded-2xl text-base font-extrabold shadow-lg sm:h-16 sm:w-16 sm:text-lg",
                       rank < 3 ? m.avatar : "bg-white/15 text-white",
                     )}
                   >
@@ -1198,12 +1200,12 @@ function StaffDetailDialog({
                     <Crown className="absolute -right-2 -top-3 h-6 w-6 rotate-12 text-amber-300 drop-shadow" />
                   )}
                 </span>
-                <div className="min-w-0 flex-1">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
-                    <Trophy className="h-3 w-3" />
+                <div className="min-w-0 flex-1 pr-6">
+                  <span className="inline-flex max-w-full items-center gap-1 truncate rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
+                    <Trophy className="h-3 w-3 shrink-0" />
                     {tx.rank(rank + 1)} · {tx.periodLong[period]}
                   </span>
-                  <DialogTitle className="mt-1.5 truncate text-lg font-bold leading-tight text-white">
+                  <DialogTitle className="mt-1.5 truncate text-base font-bold leading-tight text-white sm:text-lg">
                     {row.name}
                   </DialogTitle>
                   <p className="text-[11px] text-white/70">{tx.tasksCount(row.total)}</p>
@@ -1216,14 +1218,14 @@ function StaffDetailDialog({
                 </div>
               </div>
               {lead && (
-                <p className="relative mt-4 flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-[11px] font-medium text-white/90">
+                <p className="relative mt-3.5 flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-[11px] font-medium text-white/90 sm:mt-4">
                   <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-amber-300" />
                   {lead}
                 </p>
               )}
             </div>
 
-            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-5 py-4 sm:px-6 sm:py-5">
               <section>
                 <h4 className="mb-2.5 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
                   {tx.whyTitle}
@@ -1263,18 +1265,18 @@ function StaffDetailDialog({
                       <div
                         key={p.label}
                         className={cn(
-                          "flex items-center gap-2.5 border-b border-border/70 px-3.5 py-2.5 text-xs last:border-b-0",
+                          "flex items-center gap-2 border-b border-border/70 px-3 py-2.5 text-xs last:border-b-0 sm:gap-2.5 sm:px-3.5",
                           p.n === 0 && "opacity-45",
                         )}
                       >
                         <Icon className={cn("h-4 w-4 shrink-0", p.tone)} />
-                        <span className="flex-1 text-foreground">{p.label}</span>
-                        <span className="tabular-nums text-muted-foreground">
+                        <span className="min-w-0 flex-1 truncate text-foreground">{p.label}</span>
+                        <span className="shrink-0 tabular-nums text-muted-foreground">
                           {p.n} × {p.pts > 0 ? `+${p.pts}` : p.pts}
                         </span>
                         <span
                           className={cn(
-                            "w-10 text-right font-bold tabular-nums",
+                            "w-9 shrink-0 text-right font-bold tabular-nums sm:w-10",
                             sub > 0 && "text-emerald-600 dark:text-emerald-400",
                             sub < 0 && "text-rose-600 dark:text-rose-400",
                             sub === 0 && "text-muted-foreground",
@@ -1285,7 +1287,7 @@ function StaffDetailDialog({
                       </div>
                     );
                   })}
-                  <div className="flex items-center justify-between bg-muted/60 px-3.5 py-2.5 text-xs font-bold">
+                  <div className="flex items-center justify-between bg-muted/60 px-3 py-2.5 text-xs font-bold sm:px-3.5">
                     <span className="text-foreground">{tx.total}</span>
                     <span className="tabular-nums text-foreground">
                       {rawTotal < 0 ? `${rawTotal} → 0` : row.score} {tx.pts}
@@ -1338,12 +1340,12 @@ function StaffDetailDialog({
                         <button
                           type="button"
                           onClick={() => onOpenTask(task)}
-                          className="group flex w-full items-center gap-2.5 rounded-xl border border-border/70 px-3 py-2 text-left transition hover:border-[#0b3a5c]/30 hover:bg-muted/50"
+                          className="group flex w-full items-center gap-2 rounded-xl border border-border/70 px-3 py-2 text-left transition hover:border-[#0b3a5c]/30 hover:bg-muted/50 sm:gap-2.5"
                         >
                           <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
                             {task.title}
                           </span>
-                          <span className={cn("shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold", st.cls)}>
+                          <span className={cn("max-w-[7.5rem] shrink-0 truncate rounded-md px-1.5 py-0.5 text-[10px] font-bold", st.cls)}>
                             {st.label}
                           </span>
                           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50 transition group-hover:translate-x-0.5" />
@@ -1354,7 +1356,18 @@ function StaffDetailDialog({
                 </ul>
               </section>
             </div>
-          </div>
+
+            <div className="shrink-0 border-t border-border/70 bg-background px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#0b3a5c] text-sm font-bold text-white transition hover:bg-[#0f4a73] active:scale-[0.99] dark:bg-primary dark:text-primary-foreground"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                {tx.close}
+              </button>
+            </div>
+          </>
         )}
       </DialogContent>
     </Dialog>

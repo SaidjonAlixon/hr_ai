@@ -1,0 +1,4 @@
+py-tgcalls>=2.1.0
+telethon>=1.36.0
+qrcode>=7.4
+Pillow>=10.0

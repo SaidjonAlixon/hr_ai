@@ -60,13 +60,7 @@ export function BoglanishMissingBanner() {
   if (!status?.show) return null;
 
   return (
-    <div
-      className={cn(
-        "border-b border-amber-500/30 bg-amber-50 px-3 py-2.5 text-amber-950",
-        "dark:border-amber-400/25 dark:bg-amber-500/10 dark:text-amber-100",
-        "sm:px-4",
-      )}
-    >
+    <div className={cn("app-autumn-chrome px-3 py-2.5 text-amber-950 sm:px-4 dark:text-amber-100")}>
       <div className="mx-auto flex max-w-6xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-start gap-2.5">
           <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300">

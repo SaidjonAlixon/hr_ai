@@ -394,10 +394,8 @@ async function placementOf(target: EmpRow): Promise<{ branchId: number | null; b
     .from(employeeWorkSlotsTable)
     .where(and(eq(employeeWorkSlotsTable.employeeId, target.id), eq(employeeWorkSlotsTable.active, true)));
   const homeId = homeBranchIdFor(target, slots);
-  const base =
-    slots.find((r) => !r.overrideBase && r.mode === "permanent" && r.branchId === homeId) ||
-    slots.find((r) => !r.overrideBase && r.mode === "permanent") ||
-    null;
+  const today = todayTashkentYmd();
+  const base = findBasePermanentSlot(slots, homeId, today);
   return {
     branchId: homeId,
     branchLabel: await branchLabelOf(homeId),
@@ -1812,7 +1810,7 @@ router.patch("/smena/slots/:id", requireAuth, async (req: AuthRequest, res): Pro
 
 /**
  * Xodimning joriy filialida faqat smenani almashtirish (filial ID o‘zgarmaydi).
- * Slot bo‘lmasa — employee.shiftType yangilanadi; bo‘lsa — asosiy doimiy slot yangilanadi.
+ * Taxta bilan bir xil: asosiy doimiy slot + employees.shiftType har doim yangilanadi.
  */
 router.patch("/smena/shift-only/:employeeId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
@@ -1844,47 +1842,13 @@ router.patch("/smena/shift-only/:employeeId", requireAuth, async (req: AuthReque
       .from(employeeWorkSlotsTable)
       .where(and(eq(employeeWorkSlotsTable.employeeId, employeeId), eq(employeeWorkSlotsTable.active, true)));
 
-    const branchId =
-      target.assignedBranchId ||
-      (target.orgRole === MANAGER_ORG ? target.id : target.reportsToId) ||
-      slots[0]?.branchId ||
-      null;
+    const today = todayTashkentYmd();
+    const homeId = homeBranchIdFor(target, slots);
+    const branchId = homeId || slots.find((s) => !s.overrideBase)?.branchId || null;
     // Filial faqat matn (location) sifatida yozilgan xodim: smena xodim kartasining o‘zida saqlanadi
     if (!branchId && !(target.location || "").split("|")[0].trim()) {
       res.status(400).json({ error: "Avval filial biriktirilgan bo‘lishi kerak" });
       return;
-    }
-
-    const atBranch = branchId ? slots.filter((s) => s.branchId === branchId && !s.overrideBase) : [];
-    const permanentAtBranch = atBranch.filter((s) => s.mode === "permanent");
-    const toUpdate = permanentAtBranch[0] || atBranch[0] || null;
-
-    if (toUpdate) {
-      const others = slots.filter((s) => s.id !== toUpdate.id);
-      const proposed: WorkSlotRow[] = [
-        ...others.map(mapSlotRow),
-        { ...mapSlotRow(toUpdate), shiftKey: applied.shiftType as WorkSlotRow["shiftKey"] },
-      ];
-      const sampleTo = toUpdate.validTo || addDaysYmd(toUpdate.validFrom, 28);
-      const conflict = conflictAmongSlots(proposed, toUpdate.validFrom, sampleTo, defs);
-      if (conflict) {
-        res.status(400).json({ error: conflict });
-        return;
-      }
-      await db
-        .update(employeeWorkSlotsTable)
-        .set({ shiftKey: applied.shiftType, updatedAt: new Date() })
-        .where(eq(employeeWorkSlotsTable.id, toUpdate.id));
-      await syncPrimaryFromSlots(employeeId);
-    } else {
-      await db
-        .update(employeesTable)
-        .set({
-          shiftType: applied.shiftType,
-          shiftLabel: applied.shiftLabel,
-          updatedAt: new Date(),
-        })
-        .where(eq(employeesTable.id, employeeId));
     }
 
     const branch = branchId ? await empById(branchId) : null;
@@ -1894,6 +1858,88 @@ router.patch("/smena/shift-only/:employeeId", requireAuth, async (req: AuthReque
       branch?.fullName ||
       (target.location || "").split("|")[0].trim() ||
       "Filial";
+
+    // Taxtadagi «asosiy smena» — amaldagi doimiy slot (muddati o‘tganlar emas)
+    const baseSlot = findBasePermanentSlot(slots, homeId, today);
+    const expiredPermanent = slots.filter(
+      (s) => !s.overrideBase && s.mode === "permanent" && !slotRowActiveOn(s, today),
+    );
+
+    if (baseSlot) {
+      const others = slots.filter((s) => s.id !== baseSlot.id);
+      const proposed: WorkSlotRow[] = [
+        ...others.map(mapSlotRow),
+        {
+          ...mapSlotRow(baseSlot),
+          shiftKey: applied.shiftType as WorkSlotRow["shiftKey"],
+          validTo: null,
+        },
+      ];
+      const conflict = conflictAmongSlots(proposed, today, addDaysYmd(today, 28), defs);
+      if (conflict) {
+        res.status(400).json({ error: conflict });
+        return;
+      }
+      await db
+        .update(employeeWorkSlotsTable)
+        .set({
+          shiftKey: applied.shiftType,
+          validTo: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(employeeWorkSlotsTable.id, baseSlot.id));
+    } else if (branchId) {
+      // Asosiy slot yo‘q yoki muddati o‘tgan — yangi doimiy slot yozamiz (taxta shu yerdan o‘qiydi)
+      for (const old of expiredPermanent) {
+        await db
+          .update(employeeWorkSlotsTable)
+          .set({ active: false, updatedAt: new Date() })
+          .where(eq(employeeWorkSlotsTable.id, old.id));
+      }
+      const proposed: WorkSlotRow[] = [
+        ...slots.filter((s) => slotRowActiveOn(s, today)).map(mapSlotRow),
+        {
+          employeeId,
+          branchId,
+          branchLabel: branchName,
+          shiftKey: applied.shiftType as WorkSlotRow["shiftKey"],
+          mode: "permanent",
+          validFrom: today,
+          validTo: null,
+          active: true,
+        },
+      ];
+      const conflict = conflictAmongSlots(proposed, today, addDaysYmd(today, 28), defs);
+      if (conflict) {
+        res.status(400).json({ error: conflict });
+        return;
+      }
+      await db.insert(employeeWorkSlotsTable).values({
+        employeeId,
+        branchId,
+        branchLabel: branchName,
+        shiftKey: applied.shiftType,
+        mode: "permanent",
+        validFrom: today,
+        validTo: null,
+        weekdays: null,
+        workDates: null,
+        overrideBase: false,
+        note: "Asosiy smena (smena o‘zgartirish)",
+        active: true,
+        createdById: req.userId ?? null,
+      });
+    }
+
+    // Har doim xodim kartasidagi smenani ham yangilaymiz — slot va karta mos bo‘lsin
+    await db
+      .update(employeesTable)
+      .set({
+        shiftType: applied.shiftType,
+        shiftLabel: applied.shiftLabel,
+        updatedAt: new Date(),
+      })
+      .where(eq(employeesTable.id, employeeId));
 
     await logSmenaChange({
       ...logBase(actor, target),
@@ -1957,6 +2003,30 @@ function homeBranchIdFor(
     (target.orgRole === MANAGER_ORG ? target.id : target.reportsToId) ||
     slots.find((s) => !s.overrideBase && s.mode === "permanent")?.branchId ||
     slots.find((s) => !s.overrideBase)?.branchId ||
+    null
+  );
+}
+
+/** Slot shu kunda amal qiladimi (muddati o‘tgan permanent ham chiqariladi) */
+function slotRowActiveOn(
+  r: { validFrom: string; validTo: string | null },
+  ymd: string,
+): boolean {
+  if (r.validFrom && r.validFrom > ymd) return false;
+  if (r.validTo && r.validTo < ymd) return false;
+  return true;
+}
+
+/** Taxtadagi asosiy smena sloti — faqat bugun amaldagi doimiy slot */
+function findBasePermanentSlot<
+  T extends { branchId: number; mode: string; overrideBase: boolean; validFrom: string; validTo: string | null },
+>(rows: T[], homeId: number | null, ymd: string): T | null {
+  const permanent = rows.filter(
+    (r) => !r.overrideBase && r.mode === "permanent" && slotRowActiveOn(r, ymd),
+  );
+  return (
+    (homeId != null ? permanent.find((r) => r.branchId === homeId) : undefined) ||
+    permanent[0] ||
     null
   );
 }
@@ -2034,10 +2104,8 @@ router.get("/smena/shift-board", requireAuth, async (req: AuthRequest, res): Pro
     const staff = people.map((p) => {
       const rows = slotsByEmp.get(p.id) || [];
       const homeId = homeBranchIdFor(p, rows);
-      const baseSlot =
-        rows.find((r) => !r.overrideBase && r.mode === "permanent" && r.branchId === homeId) ||
-        rows.find((r) => !r.overrideBase && r.mode === "permanent") ||
-        null;
+      // Muddati o‘tgan «permanent» slot asosiy smenani yolg‘on 1-smenada ushlab qolmasin
+      const baseSlot = findBasePermanentSlot(rows, homeId, today);
       const baseShiftKey = toBoardShiftKey(baseSlot?.shiftKey || p.shiftType);
       const overrides = rows
         .filter((r) => r.overrideBase && r.mode === "weekly")
@@ -2145,10 +2213,7 @@ router.post("/smena/shift-override", requireAuth, async (req: AuthRequest, res):
       newShift = parsed.shiftKey;
     }
 
-    const baseSlot =
-      slots.find((r) => !r.overrideBase && r.mode === "permanent" && r.branchId === branchId) ||
-      slots.find((r) => !r.overrideBase && r.mode === "permanent") ||
-      null;
+    const baseSlot = findBasePermanentSlot(slots, branchId, todayTashkentYmd());
     const baseShiftKey = toBoardShiftKey(baseSlot?.shiftKey || target.shiftType);
     if (newShift && newShift === baseShiftKey) newShift = null;
 

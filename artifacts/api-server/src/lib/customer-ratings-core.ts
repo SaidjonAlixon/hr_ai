@@ -69,10 +69,10 @@ export function normalizePhone(raw: string): string {
   return d.length === 9 ? `998${d}` : d;
 }
 
-/** Mijoz bahosi: faqat +998 9X… mobil */
+/** Mijoz bahosi: +998 + istalgan 9 xonali kod/raqam (50, 77, 90, …) */
 export function isValidUzMobilePhone(raw: string): boolean {
   const n = normalizePhone(raw);
-  return /^9989\d{8}$/.test(n);
+  return /^998\d{9}$/.test(n);
 }
 
 /**

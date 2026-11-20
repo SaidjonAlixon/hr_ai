@@ -42,9 +42,10 @@ export type TelegramMessage = {
   caption_entities?: TelegramMessageEntity[];
   photo?: TelegramPhotoSize[];
   document?: { file_id: string; mime_type?: string; file_name?: string; file_size?: number };
-  voice?: { file_id: string; duration?: number };
-  video_note?: { file_id: string; duration?: number };
-  audio?: { file_id: string; duration?: number };
+  voice?: { file_id: string; duration?: number; mime_type?: string; file_size?: number };
+  video_note?: { file_id: string; duration?: number; length?: number; file_size?: number };
+  audio?: { file_id: string; duration?: number; mime_type?: string; file_size?: number };
+  video?: { file_id: string; duration?: number; mime_type?: string; file_size?: number; file_name?: string };
   /** Telegram Business: admin akkauntiga ulangan bot xabari */
   business_connection_id?: string;
   reply_to_message?: TelegramMessage;
@@ -202,6 +203,18 @@ export async function deleteMessage(chatId: number | string, messageId: number) 
   return tgCall<boolean>("deleteMessage", { chat_id: chatId, message_id: messageId });
 }
 
+export async function editMessageReplyMarkup(
+  chatId: number | string,
+  messageId: number,
+  replyMarkup: { inline_keyboard: InlineKeyboardButton[][] },
+) {
+  return tgCall("editMessageReplyMarkup", {
+    chat_id: chatId,
+    message_id: messageId,
+    reply_markup: replyMarkup,
+  });
+}
+
 /** Faylni Telegram chatga yuborish (private chat_id = telegram user id) */
 export async function sendDocument(
   chatId: number | string,
@@ -297,6 +310,106 @@ export async function getMe() {
   return tgCall<{ id: number; username?: string; first_name?: string }>("getMe", {});
 }
 
+export async function sendChatAction(
+  chatId: number | string,
+  action: "typing" | "upload_photo" | "upload_document" | "record_voice" | "upload_voice" = "typing",
+  opts?: { business_connection_id?: string; message_thread_id?: number | null },
+) {
+  return tgCall<boolean>("sendChatAction", {
+    chat_id: chatId,
+    action,
+    business_connection_id: opts?.business_connection_id || undefined,
+    message_thread_id: opts?.message_thread_id || undefined,
+  });
+}
+
+/** Ovozli xabar (OGG/Opus) — Telegram voice bubble */
+export async function sendVoice(
+  chatId: number | string,
+  file: Buffer,
+  opts?: {
+    filename?: string;
+    durationSec?: number | null;
+    caption?: string;
+    reply_to_message_id?: number;
+    business_connection_id?: string;
+    message_thread_id?: number | null;
+  },
+) {
+  if (!botToken()) throw new Error("TELEGRAM_BOT_TOKEN sozlanmagan");
+  if (!file?.length) throw new Error("Ovoz fayli bo‘sh");
+  const safeName = String(opts?.filename || "voice.ogg")
+    .replace(/[/\\]/g, "_")
+    .slice(0, 120);
+  const blob = new Blob([new Uint8Array(file)], { type: "audio/ogg" });
+  const result = await tgRequest<TelegramMessage>(
+    "sendVoice",
+    () => {
+      const form = new FormData();
+      form.append("chat_id", String(chatId));
+      form.append("voice", blob, safeName);
+      if (opts?.caption) form.append("caption", opts.caption.slice(0, 1024));
+      if (opts?.business_connection_id) form.append("business_connection_id", opts.business_connection_id);
+      if (opts?.message_thread_id) form.append("message_thread_id", String(opts.message_thread_id));
+      if (opts?.reply_to_message_id) {
+        form.append(
+          "reply_parameters",
+          JSON.stringify({
+            message_id: opts.reply_to_message_id,
+            allow_sending_without_reply: true,
+          }),
+        );
+      }
+      const dur = Number(opts?.durationSec);
+      if (Number.isFinite(dur) && dur > 0) form.append("duration", String(Math.round(dur)));
+      return { method: "POST", body: form };
+    },
+    { timeoutMs: UPLOAD_TIMEOUT_MS },
+  );
+  return { ok: true as const, result };
+}
+
+function mimeFromTelegramPath(filePath: string): string {
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".ogg") || lower.endsWith(".oga") || lower.endsWith(".opus")) return "audio/ogg";
+  if (lower.endsWith(".mp3")) return "audio/mpeg";
+  if (lower.endsWith(".m4a")) return "audio/mp4";
+  if (lower.endsWith(".wav")) return "audio/wav";
+  if (lower.endsWith(".webm")) return "audio/webm";
+  if (lower.endsWith(".mp4")) return "video/mp4";
+  if (lower.endsWith(".mov")) return "video/quicktime";
+  if (lower.endsWith(".mkv")) return "video/x-matroska";
+  return "image/jpeg";
+}
+
+/** Telegram faylini yuklab olish (rasm / ovoz / video) */
+export async function downloadTelegramFile(
+  fileId: string,
+  opts?: { maxBytes?: number },
+): Promise<{ buffer: Buffer; mimeType: string; filePath: string } | null> {
+  const token = botToken();
+  if (!token || !fileId) return null;
+  const maxBytes = opts?.maxBytes ?? 12_000_000;
+  try {
+    const meta = await tgCall<{ file_id: string; file_path?: string; file_size?: number }>("getFile", {
+      file_id: fileId,
+    });
+    if (!meta?.file_path) return null;
+    if (meta.file_size && meta.file_size > maxBytes) return null;
+    const res = await fetch(`${TG_API}/file/bot${token}/${meta.file_path}`, {
+      signal: AbortSignal.timeout(45_000),
+    });
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    return { buffer: buf, mimeType: mimeFromTelegramPath(meta.file_path), filePath: meta.file_path };
+  } catch {
+    return null;
+  }
+}
+
 export async function setWebhook(url: string, secret?: string) {
   return tgCall("setWebhook", {
     url,
@@ -381,10 +494,16 @@ export function verifyTelegramInitData(initData: string): {
 }
 
 /** Login/parol matnini ajratib olish — bir necha namuna format */
+/** Oddiy suhbat / savol — login-parol deb o‘qilmasin */
+const CHAT_NOT_CREDENTIALS_RE =
+  /sheyda|bor\s*mi|qale|salom|assalom|rahmat|iltimos|yordam|nima|qanday|qachon|qayer|nega|привет|пока|\bok\b|yaxshi|zor\b|ishl|muammo|xato|skrin|face|davomat|smena|oylik|topshiriq|vazifa|kirish|parol\s*xato|login\s*xato|\?|!/i;
+
 export function parseLoginPassword(text: string): { login: string; password: string } | null {
   const compact = (v: string) => v.replace(/[\s\u00a0\u200b\uFEFF]+/g, "");
   const t = text.trim().replace(/\u00a0/g, " ");
   if (!t) return null;
+  // «Saidmuhammad sheydamisz» kabi suhbatni login+parol deb yutib yubormaslik
+  if (CHAT_NOT_CREDENTIALS_RE.test(t)) return null;
 
   const labeled =
     /(?:^|\n)\s*(?:login|логин)\s*[:=]\s*(\S+)\s*(?:\n|\s)+(?:parol|password|пароль|pass)\s*[:=]\s*(\S+)/i.exec(
@@ -403,14 +522,26 @@ export function parseLoginPassword(text: string): { login: string; password: str
   if (lines.length === 2) {
     const a = compact(lines[0]!.replace(/^(?:login|логин)\s*[:=]\s*/i, ""));
     const b = compact(lines[1]!.replace(/^(?:parol|password|пароль|pass)\s*[:=]\s*/i, ""));
-    if (a && b) return { login: a, password: b };
+    if (a && b && a.length <= 64 && b.length <= 64) return { login: a, password: b };
   }
 
   const parts = t.split(/\s+/).filter(Boolean);
   if (parts.length === 2 && parts[0] && parts[1]) {
     const login = compact(parts[0]);
     const password = compact(parts[1]);
-    if (login && password) return { login, password };
+    // Faqat login-ko‘rinishidagi tokenlar (ism+savol emas)
+    if (
+      login &&
+      password &&
+      login.length >= 3 &&
+      login.length <= 40 &&
+      password.length >= 3 &&
+      password.length <= 64 &&
+      /^[a-zA-Z0-9._@+-]+$/.test(login) &&
+      !/^saidmuhammad/i.test(login)
+    ) {
+      return { login, password };
+    }
   }
 
   return null;

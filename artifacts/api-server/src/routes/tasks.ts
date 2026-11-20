@@ -744,6 +744,7 @@ async function enrichTask(row: typeof tasksTable.$inferSelect) {
     .where(eq(usersTable.id, row.createdById));
 
   const assigneeName = await resolveAssigneeName(row.assigneeKind, row.assigneeId);
+  const assigneeUserIdResolved = await resolveNotifyUserId(row.assigneeKind, row.assigneeId);
 
   return {
     ...row,
@@ -754,6 +755,8 @@ async function enrichTask(row: typeof tasksTable.$inferSelect) {
       unknown
     >,
     assigneeName,
+    /** UI select uchun: employee bo‘lsa ham linked user id */
+    assigneeUserId: assigneeUserIdResolved,
     createdByName: creator?.fullName ?? null,
     dueAt: row.dueAt ? row.dueAt.toISOString() : null,
     completedAt: row.completedAt ? row.completedAt.toISOString() : null,

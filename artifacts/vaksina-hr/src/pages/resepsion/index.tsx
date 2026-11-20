@@ -116,7 +116,7 @@ const TYPE_TABS: TypeMeta[] = [
     activeTab:
       "border-sky-400/60 bg-sky-50 text-sky-900 shadow-sky-500/10 dark:border-sky-400/40 dark:bg-sky-500/15 dark:text-sky-100",
     panel:
-      "border-sky-200/70 bg-gradient-to-br from-sky-50/90 via-card to-card dark:border-sky-500/25 dark:from-sky-950/50 dark:via-card dark:to-card",
+      "border-white/50 bg-gradient-to-br from-sky-50/40 via-card/30 to-card/20 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.55)] dark:border-sky-400/25 dark:from-sky-950/30 dark:via-card/20 dark:to-card/10",
     chipOn: "border-sky-500 bg-sky-600 text-white",
     chipOff:
       "border-sky-200 bg-sky-50/80 text-sky-900 hover:border-sky-300 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100",
@@ -150,7 +150,7 @@ const TYPE_TABS: TypeMeta[] = [
     activeTab:
       "border-violet-400/60 bg-violet-50 text-violet-950 shadow-violet-500/10 dark:border-violet-400/40 dark:bg-violet-500/15 dark:text-violet-100",
     panel:
-      "border-violet-200/70 bg-gradient-to-br from-violet-50/90 via-card to-card dark:border-violet-500/25 dark:from-violet-950/50 dark:via-card dark:to-card",
+      "border-white/50 bg-gradient-to-br from-violet-50/40 via-card/30 to-card/20 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.55)] dark:border-violet-400/25 dark:from-violet-950/30 dark:via-card/20 dark:to-card/10",
     chipOn: "border-violet-600 bg-violet-600 text-white",
     chipOff:
       "border-violet-200 bg-violet-50/80 text-violet-950 hover:border-violet-300 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-100",
@@ -177,7 +177,7 @@ const TYPE_TABS: TypeMeta[] = [
     activeTab:
       "border-emerald-400/60 bg-emerald-50 text-emerald-950 shadow-emerald-500/10 dark:border-emerald-400/40 dark:bg-emerald-500/15 dark:text-emerald-100",
     panel:
-      "border-emerald-200/70 bg-gradient-to-br from-emerald-50/90 via-card to-card dark:border-emerald-500/25 dark:from-emerald-950/45 dark:via-card dark:to-card",
+      "border-white/50 bg-gradient-to-br from-emerald-50/40 via-card/30 to-card/20 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.55)] dark:border-emerald-400/25 dark:from-emerald-950/30 dark:via-card/20 dark:to-card/10",
     chipOn: "border-emerald-600 bg-emerald-600 text-white",
     chipOff:
       "border-emerald-200 bg-emerald-50/80 text-emerald-950 hover:border-emerald-300 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100",
@@ -204,7 +204,7 @@ const TYPE_TABS: TypeMeta[] = [
     activeTab:
       "border-amber-400/60 bg-amber-50 text-amber-950 shadow-amber-500/10 dark:border-amber-400/40 dark:bg-amber-500/15 dark:text-amber-100",
     panel:
-      "border-amber-200/70 bg-gradient-to-br from-amber-50/90 via-card to-card dark:border-amber-500/25 dark:from-amber-950/40 dark:via-card dark:to-card",
+      "border-white/50 bg-gradient-to-br from-amber-50/40 via-card/30 to-card/20 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.55)] dark:border-amber-400/25 dark:from-amber-950/30 dark:via-card/20 dark:to-card/10",
     chipOn: "border-amber-600 bg-amber-600 text-white",
     chipOff:
       "border-amber-200 bg-amber-50/80 text-amber-950 hover:border-amber-300 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100",
@@ -237,7 +237,7 @@ const TYPE_TABS: TypeMeta[] = [
     activeTab:
       "border-rose-400/60 bg-rose-50 text-rose-950 shadow-rose-500/10 dark:border-rose-400/40 dark:bg-rose-500/15 dark:text-rose-100",
     panel:
-      "border-rose-200/70 bg-gradient-to-br from-rose-50/90 via-card to-card dark:border-rose-500/25 dark:from-rose-950/45 dark:via-card dark:to-card",
+      "border-white/50 bg-gradient-to-br from-rose-50/40 via-card/30 to-card/20 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.55)] dark:border-rose-400/25 dark:from-rose-950/30 dark:via-card/20 dark:to-card/10",
     chipOn: "border-rose-600 bg-rose-600 text-white",
     chipOff:
       "border-rose-200 bg-rose-50/80 text-rose-950 hover:border-rose-300 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100",
@@ -1380,7 +1380,7 @@ export default function ResepsionPage() {
   return (
     <div className="w-full space-y-5 pb-28">
       {/* Header — aniq sana + raqamli soat (glass pill emas) */}
-      <div className="relative overflow-hidden rounded-[1.75rem] border border-border/60 bg-card shadow-xl shadow-primary/5 dark:border-white/10 dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+      <div className="relative overflow-hidden rounded-[1.75rem] border border-white/50 bg-card/25 shadow-xl shadow-primary/5 backdrop-blur-xl dark:border-white/15 dark:bg-gradient-to-br dark:from-slate-950/40 dark:via-slate-900/30 dark:to-slate-950/20">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(56,189,248,0.18),transparent_55%)] dark:bg-[radial-gradient(ellipse_at_top_right,rgba(56,189,248,0.22),transparent_50%)]" />
         <div className="pointer-events-none absolute -bottom-20 left-0 h-40 w-40 rounded-full bg-violet-500/10 blur-3xl" />
         <div className="relative flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
@@ -2008,7 +2008,7 @@ export default function ResepsionPage() {
         </section>
 
         {/* Host preview */}
-        <section className="rounded-3xl border border-border/70 bg-gradient-to-br from-primary/5 via-card to-card p-4 shadow-sm sm:p-5 xl:col-span-4 dark:border-white/10 dark:from-primary/10">
+        <section className="rounded-3xl border border-white/50 bg-gradient-to-br from-primary/10 via-card/30 to-card/15 p-4 shadow-sm sm:p-5 xl:col-span-4 dark:border-white/15 dark:from-primary/15">
           <h2 className="mb-3 text-base font-semibold">Kimning oldiga</h2>
           {selectedHost ? (
             <div className="space-y-4">
@@ -2272,7 +2272,7 @@ export default function ResepsionPage() {
               </div>
             </div>
           ) : (
-            <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 px-4 text-center">
+            <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/40 bg-white/10 px-4 text-center backdrop-blur-md">
               <BriefcaseBusiness className="mb-2 h-8 w-8 text-muted-foreground/50" />
               <p className="text-sm font-medium text-foreground">Xodim tanlanmagan</p>
               <p className="mt-1 text-xs text-muted-foreground">
@@ -2285,7 +2285,7 @@ export default function ResepsionPage() {
 
         {/* Quick side — bo‘sh joyni to‘ldiruvchi kartalar */}
         <aside className="space-y-3 xl:col-span-3">
-          <div className="rounded-3xl border border-border/70 bg-card p-4 shadow-sm dark:border-white/10">
+          <div className="rounded-3xl border border-white/50 bg-card/30 p-4 shadow-sm backdrop-blur-xl dark:border-white/15">
             <p className="mb-2 text-sm font-bold">Tezkor amallar</p>
             <div className="space-y-1.5">
               <button
@@ -2327,7 +2327,7 @@ export default function ResepsionPage() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-emerald-200/70 bg-gradient-to-br from-emerald-50/80 via-card to-card p-4 shadow-sm dark:border-emerald-500/25 dark:from-emerald-500/10">
+          <div className="rounded-3xl border border-white/50 bg-gradient-to-br from-emerald-50/35 via-card/25 to-card/15 p-4 shadow-sm dark:border-emerald-400/25 dark:from-emerald-500/10">
             <div className="mb-2.5 flex items-center justify-between gap-2">
               <p className="text-sm font-bold text-emerald-900 dark:text-emerald-100">Ofisda hozir</p>
               <span className="rounded-lg bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
@@ -2362,7 +2362,7 @@ export default function ResepsionPage() {
             )}
           </div>
 
-          <div className="rounded-3xl border border-amber-200/70 bg-gradient-to-br from-amber-50/80 via-card to-card p-4 shadow-sm dark:border-amber-500/25 dark:from-amber-500/10">
+          <div className="rounded-3xl border border-white/50 bg-gradient-to-br from-amber-50/35 via-card/25 to-card/15 p-4 shadow-sm dark:border-amber-400/25 dark:from-amber-500/10">
             <div className="mb-2.5 flex items-center justify-between gap-2">
               <p className="text-sm font-bold text-amber-950 dark:text-amber-100">Kutilmoqda</p>
               <span className="rounded-lg bg-amber-500/15 px-2 py-0.5 text-[11px] font-bold tabular-nums text-amber-800 dark:text-amber-200">
@@ -2394,7 +2394,7 @@ export default function ResepsionPage() {
             )}
           </div>
 
-          <div className="rounded-3xl border border-border/70 bg-card p-4 shadow-sm dark:border-white/10">
+          <div className="rounded-3xl border border-white/50 bg-card/30 p-4 shadow-sm backdrop-blur-xl dark:border-white/15">
             <p className="mb-3 text-sm font-bold">Bugungi turlar</p>
             <div className="space-y-2">
               {typeTodayBreakdown.map((t) => {
@@ -2440,7 +2440,7 @@ export default function ResepsionPage() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-sky-200/70 bg-gradient-to-br from-sky-50 via-card to-indigo-50/50 p-4 shadow-sm dark:border-sky-500/25 dark:from-sky-500/10 dark:to-indigo-500/5">
+          <div className="rounded-3xl border border-white/50 bg-gradient-to-br from-sky-50/35 via-card/25 to-indigo-50/20 p-4 shadow-sm dark:border-sky-400/25 dark:from-sky-500/10 dark:to-indigo-500/5">
             <p className="flex items-center gap-2 text-sm font-bold text-sky-950 dark:text-sky-100">
               <Send className="h-4 w-4 text-sky-600 dark:text-sky-400" />
               Desk eslatma
@@ -2455,8 +2455,8 @@ export default function ResepsionPage() {
       </div>
 
       {/* Table */}
-      <section className="overflow-hidden rounded-3xl border border-border/70 bg-card shadow-lg shadow-primary/5 dark:border-white/10">
-        <div className="space-y-3 border-b border-border/60 bg-gradient-to-r from-muted/40 via-card to-card px-4 py-4 dark:from-muted/20">
+      <section className="overflow-hidden rounded-3xl border border-white/50 bg-card/30 shadow-lg shadow-primary/5 backdrop-blur-xl dark:border-white/15">
+        <div className="space-y-3 border-b border-white/30 bg-gradient-to-r from-muted/20 via-card/20 to-card/10 px-4 py-4 dark:from-muted/15">
           <div className="flex flex-wrap items-center justify-between gap-2.5">
             <div className="min-w-0">
               <h2 className="text-base font-bold tracking-tight">

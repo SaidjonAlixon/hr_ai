@@ -167,141 +167,695 @@
   }
 }
 
-/* —— Sidebar: ink rail — kunduzgi (ochiq) + tungi (qorong‘i) —— */
+/* —— Kuz (autumn) asosiy fon — barcha Layout sahifalari —— */
+.app-autumn-stage {
+  isolation: isolate;
+  background: transparent;
+  /* Tokenlar — oq o‘rniga shisha (kuz orqadan ko‘rinsin) */
+  --color-background: transparent;
+  --color-card: rgb(255 255 255 / 0.34);
+  --color-muted: rgb(255 255 255 / 0.22);
+  --color-secondary: rgb(255 255 255 / 0.28);
+  --color-accent: rgb(255 255 255 / 0.24);
+  --color-border: rgb(255 255 255 / 0.42);
+  --color-input: rgb(255 255 255 / 0.4);
+}
+
+.dark .app-autumn-stage {
+  --color-background: transparent;
+  --color-card: rgb(16 26 46 / 0.42);
+  --color-muted: rgb(255 255 255 / 0.06);
+  --color-secondary: rgb(255 255 255 / 0.08);
+  --color-accent: rgb(255 255 255 / 0.08);
+  --color-border: rgb(255 255 255 / 0.12);
+  --color-input: rgb(255 255 255 / 0.1);
+}
+
+.app-autumn-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-color: #f4eee6;
+  background-image:
+    linear-gradient(
+      180deg,
+      rgba(255, 250, 244, 0.32) 0%,
+      rgba(255, 247, 238, 0.22) 35%,
+      rgba(255, 244, 232, 0.28) 100%
+    ),
+    url('/kuz.png');
+  background-size: cover;
+  background-position: center top;
+  background-repeat: no-repeat;
+}
+
+/* Header + bannerlar: bir xil shisha qatlam — 3 xil “chiziq” bo‘lmasin */
+.app-autumn-chrome {
+  background: rgb(255 255 255 / 0.55);
+  border-bottom: 1px solid rgb(226 232 240 / 0.85);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  /* Sidebar bilan tutashganda chiziq/kesilish bo‘lmasin */
+  margin-left: -1px;
+  padding-left: calc(0.75rem + 1px);
+}
+
+.dark .app-autumn-chrome {
+  background: rgb(8 12 22 / 0.55);
+  border-bottom-color: rgb(255 255 255 / 0.08);
+}
+
+/* Barcha oq / card / muted joylar — shisha (kuz fon bilinadi) */
+.app-glass-card,
+.app-autumn-stage .bg-card,
+.app-autumn-stage .bg-background,
+.app-autumn-stage .bg-muted,
+.app-autumn-stage .bg-secondary,
+.app-autumn-stage .bg-accent,
+.app-autumn-stage .bg-card\/90,
+.app-autumn-stage .bg-card\/80,
+.app-autumn-stage .bg-card\/70,
+.app-autumn-stage .bg-card\/60,
+.app-autumn-stage .bg-background\/90,
+.app-autumn-stage .bg-background\/80,
+.app-autumn-stage .bg-muted\/60,
+.app-autumn-stage .bg-muted\/50,
+.app-autumn-stage .bg-muted\/40,
+.app-autumn-stage .bg-muted\/25,
+.app-autumn-stage .bg-white,
+.app-autumn-stage .bg-white\/90,
+.app-autumn-stage .bg-white\/95,
+.app-autumn-stage .bg-white\/80,
+.app-autumn-stage .bg-white\/70,
+.app-autumn-stage .bg-slate-50,
+.app-autumn-stage .bg-slate-100 {
+  background-color: rgb(255 255 255 / 0.2) !important;
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  box-shadow: 0 10px 36px -18px rgb(15 23 42 / 0.28);
+}
+
+/* Pastel gradient panellar (resepsion va boshqalar) — ham shisha */
+.app-autumn-stage .rounded-3xl.bg-gradient-to-br,
+.app-autumn-stage .rounded-2xl.bg-gradient-to-br,
+.app-autumn-stage section.bg-gradient-to-br {
+  background-image: none !important;
+  background-color: rgb(255 255 255 / 0.18) !important;
+  backdrop-filter: blur(20px) saturate(1.25);
+  -webkit-backdrop-filter: blur(20px) saturate(1.25);
+  border-color: rgb(255 255 255 / 0.42) !important;
+  box-shadow:
+    0 12px 40px -20px rgb(15 23 42 / 0.3),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.55);
+}
+
+.app-autumn-stage .analytics-panel,
+.app-autumn-stage .analytics-kpi,
+.app-autumn-stage .analytics-segment,
+.app-autumn-stage .analytics-toolbar-group {
+  background-color: rgb(255 255 255 / 0.2) !important;
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+}
+
+/* Input / textarea — o‘qilishi uchun biroz quyuqroq shisha */
+.app-autumn-stage input:not([type='checkbox']):not([type='radio']),
+.app-autumn-stage textarea,
+.app-autumn-stage select {
+  background-color: rgb(255 255 255 / 0.52) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.dark .app-glass-card,
+.dark .app-autumn-stage .bg-card,
+.dark .app-autumn-stage .bg-background,
+.dark .app-autumn-stage .bg-muted,
+.dark .app-autumn-stage .bg-secondary,
+.dark .app-autumn-stage .bg-accent,
+.dark .app-autumn-stage .bg-card\/90,
+.dark .app-autumn-stage .bg-card\/80,
+.dark .app-autumn-stage .bg-card\/70,
+.dark .app-autumn-stage .bg-card\/60,
+.dark .app-autumn-stage .bg-white,
+.dark .app-autumn-stage .bg-white\/90,
+.dark .app-autumn-stage .bg-white\/95,
+.dark .app-autumn-stage .bg-white\/80,
+.dark .app-autumn-stage .bg-slate-50,
+.dark .app-autumn-stage .bg-slate-100,
+.dark .app-autumn-stage .bg-slate-900 {
+  background-color: rgb(12 20 36 / 0.32) !important;
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+}
+
+.dark .app-autumn-stage .rounded-3xl.bg-gradient-to-br,
+.dark .app-autumn-stage .rounded-2xl.bg-gradient-to-br,
+.dark .app-autumn-stage section.bg-gradient-to-br {
+  background-image: none !important;
+  background-color: rgb(12 20 36 / 0.28) !important;
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  border-color: rgb(255 255 255 / 0.12) !important;
+}
+
+.dark .app-autumn-stage input:not([type='checkbox']):not([type='radio']),
+.dark .app-autumn-stage textarea,
+.dark .app-autumn-stage select {
+  background-color: rgb(12 20 36 / 0.55) !important;
+}
+
+/* Solid primary / destructive tugmalar — shisha qoidasidan chiqarish */
+.app-autumn-stage .bg-primary {
+  background-color: hsl(var(--primary)) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.app-autumn-stage .bg-destructive {
+  background-color: hsl(var(--destructive)) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Faqat to‘liq oq gradient panellar (from-white/10 kabi bannerlarni tegma) */
+.app-autumn-stage .from-white.rounded-xl,
+.app-autumn-stage .from-white.rounded-2xl,
+.app-autumn-stage .from-white.rounded-3xl,
+.app-autumn-stage .via-white.rounded-xl,
+.app-autumn-stage .via-white.rounded-2xl,
+.app-autumn-stage .via-white.rounded-3xl {
+  background-image: none !important;
+  background-color: rgb(255 255 255 / 0.2) !important;
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+}
+
+.app-glass-card .app-glass-card-head {
+  background: rgb(255 255 255 / 0.16) !important;
+  border-bottom-color: rgb(255 255 255 / 0.35) !important;
+}
+
+.dark .app-glass-card .app-glass-card-head {
+  background: rgb(255 255 255 / 0.04) !important;
+  border-bottom-color: rgb(255 255 255 / 0.06) !important;
+}
+
+/* Oddiy slate panellar ham shisha */
+.app-autumn-stage .rounded-2xl.bg-slate-50,
+.app-autumn-stage .rounded-3xl.bg-slate-50,
+.app-autumn-stage .rounded-2xl.bg-slate-100,
+.app-autumn-stage .rounded-3xl.bg-slate-100 {
+  background-color: rgb(255 255 255 / 0.18) !important;
+  backdrop-filter: blur(16px) saturate(1.15);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+}
+
+.dark .app-autumn-stage .rounded-2xl.bg-slate-900,
+.dark .app-autumn-stage .rounded-3xl.bg-slate-900,
+.dark .app-autumn-stage .dark\:bg-slate-900 {
+  background-color: rgb(16 26 46 / 0.48) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Dialog / sheet / popover — o‘qilishi uchun qalinroq qolsin */
+.app-autumn-stage [data-radix-popper-content-wrapper] .bg-card,
+.app-autumn-stage [role='dialog'].bg-card,
+.app-autumn-stage [role='dialog'].bg-white {
+  background-color: rgb(255 255 255 / 0.92) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.dark .app-autumn-stage [data-radix-popper-content-wrapper] .bg-card,
+.dark .app-autumn-stage [role='dialog'].bg-card,
+.dark .app-autumn-stage [role='dialog'].bg-white {
+  background-color: rgb(16 26 46 / 0.92) !important;
+}
+
+/* Barglar navbar pastidan — kontent ORQASIDA (halaqit qilmasin) */
+.app-autumn-leaves {
+  position: absolute;
+  top: 3.5rem; /* header h-14 */
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Haqiqiy barg rasmlari — to‘liq rang, xirasiz */
+.app-autumn-flake {
+  --fall-x: 0px;
+  --fall-sway: 36px;
+  --fall-rot: 320deg;
+  --pile-y: 88vh;
+  position: absolute;
+  top: -1.25rem;
+  left: 0;
+  display: block;
+  width: 2.6rem;
+  height: 2.6rem;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  background-color: transparent;
+  opacity: 0;
+  filter: drop-shadow(0 4px 8px rgba(90, 40, 8, 0.28));
+  will-change: transform, opacity;
+  pointer-events: none;
+  animation: autumn-fall-pile 16s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+}
+
+/* qizil maple · barg_kuzz2 */
+.app-autumn-flake--a {
+  left: 6%;
+  width: 3.35rem;
+  height: 3.1rem;
+  background-image: url('/autumn-leaves/barg-maple-red.png');
+  --fall-sway: 52px;
+  --fall-rot: 390deg;
+  animation-duration: 18.5s;
+  animation-delay: 0s;
+}
+/* to‘q sariq maple · barg4 */
+.app-autumn-flake--b {
+  left: 18%;
+  width: 2.15rem;
+  height: 2.05rem;
+  background-image: url('/autumn-leaves/barg-maple-orange.png');
+  --fall-sway: -44px;
+  --fall-rot: -300deg;
+  --pile-y: 89vh;
+  animation-duration: 15.2s;
+  animation-delay: -2.8s;
+}
+/* yurak barg · barg6 */
+.app-autumn-flake--c {
+  left: 31%;
+  width: 1.55rem;
+  height: 1.7rem;
+  background-image: url('/autumn-leaves/barg-heart-red.png');
+  --fall-sway: 34px;
+  --fall-rot: 430deg;
+  --pile-y: 92vh;
+  animation-duration: 13.8s;
+  animation-delay: -6.2s;
+}
+/* oltin oval · kuzbarg3 */
+.app-autumn-flake--d {
+  left: 44%;
+  width: 2.55rem;
+  height: 3.15rem;
+  background-image: url('/autumn-leaves/barg-oval-gold.png');
+  --fall-sway: -58px;
+  --fall-rot: 280deg;
+  --pile-y: 90vh;
+  animation-duration: 17.4s;
+  animation-delay: -1.2s;
+}
+.app-autumn-flake--e {
+  left: 57%;
+  width: 2.9rem;
+  height: 2.8rem;
+  background-image: url('/autumn-leaves/barg-maple-orange.png');
+  --fall-sway: 46px;
+  --fall-rot: -370deg;
+  --pile-y: 93vh;
+  animation-duration: 19.2s;
+  animation-delay: -7.5s;
+}
+.app-autumn-flake--f {
+  left: 70%;
+  width: 1.35rem;
+  height: 1.25rem;
+  background-image: url('/autumn-leaves/barg-maple-red.png');
+  --fall-sway: -28px;
+  --fall-rot: 250deg;
+  --pile-y: 88vh;
+  animation-duration: 12.6s;
+  animation-delay: -4s;
+}
+.app-autumn-flake--g {
+  left: 82%;
+  width: 2.05rem;
+  height: 2.45rem;
+  background-image: url('/autumn-leaves/barg-oval-gold.png');
+  --fall-sway: 62px;
+  --fall-rot: 350deg;
+  --pile-y: 94vh;
+  animation-duration: 16.1s;
+  animation-delay: -9.5s;
+}
+.app-autumn-flake--h {
+  left: 12%;
+  width: 1.7rem;
+  height: 1.85rem;
+  background-image: url('/autumn-leaves/barg-heart-red.png');
+  --fall-sway: -50px;
+  --fall-rot: -260deg;
+  --pile-y: 91.5vh;
+  animation-duration: 14.4s;
+  animation-delay: -11.5s;
+}
+.app-autumn-flake--i {
+  left: 38%;
+  width: 3.05rem;
+  height: 2.85rem;
+  background-image: url('/autumn-leaves/barg-maple-red.png');
+  --fall-sway: -24px;
+  --fall-rot: 210deg;
+  --pile-y: 92.5vh;
+  animation-duration: 20.5s;
+  animation-delay: -5.2s;
+}
+.app-autumn-flake--j {
+  left: 64%;
+  width: 1.2rem;
+  height: 1.45rem;
+  background-image: url('/autumn-leaves/barg-oval-gold.png');
+  --fall-sway: 72px;
+  --fall-rot: -410deg;
+  --pile-y: 93.5vh;
+  animation-duration: 11.8s;
+  animation-delay: -7.2s;
+}
+.app-autumn-flake--k {
+  left: 26%;
+  width: 2.35rem;
+  height: 2.25rem;
+  background-image: url('/autumn-leaves/barg-maple-orange.png');
+  --fall-sway: 38px;
+  --fall-rot: 320deg;
+  --pile-y: 90.5vh;
+  animation-duration: 16.8s;
+  animation-delay: -13s;
+}
+.app-autumn-flake--l {
+  left: 88%;
+  width: 1.9rem;
+  height: 2.05rem;
+  background-image: url('/autumn-leaves/barg-heart-red.png');
+  --fall-sway: -36px;
+  --fall-rot: -180deg;
+  --pile-y: 91vh;
+  animation-duration: 15s;
+  animation-delay: -8.8s;
+}
+.app-autumn-flake--m {
+  left: 50%;
+  width: 1.05rem;
+  height: 1rem;
+  background-image: url('/autumn-leaves/barg-maple-red.png');
+  --fall-sway: 55px;
+  --fall-rot: 480deg;
+  --pile-y: 89.5vh;
+  animation-duration: 11.2s;
+  animation-delay: -3.5s;
+}
+.app-autumn-flake--n {
+  left: 76%;
+  width: 2.7rem;
+  height: 3.3rem;
+  background-image: url('/autumn-leaves/barg-oval-gold.png');
+  --fall-sway: -40px;
+  --fall-rot: 190deg;
+  --pile-y: 92vh;
+  animation-duration: 18s;
+  animation-delay: -14.5s;
+}
+
+@keyframes autumn-fall-pile {
+  0% {
+    transform: translate3d(0, -6px, 0) rotate(-12deg) scale(0.88);
+    opacity: 0;
+  }
+  4% {
+    opacity: 1;
+    transform: translate3d(calc(var(--fall-sway) * 0.05), 8px, 0) rotate(0deg) scale(0.95);
+  }
+  55% {
+    transform: translate3d(var(--fall-sway), 52vh, 0) rotate(calc(var(--fall-rot) * 0.55)) scale(1);
+    opacity: 1;
+  }
+  78% {
+    transform: translate3d(calc(var(--fall-sway) * 0.45), calc(var(--pile-y) - 4vh), 0)
+      rotate(calc(var(--fall-rot) * 0.88)) scale(1);
+    opacity: 1;
+  }
+  88% {
+    transform: translate3d(calc(var(--fall-sway) * 0.2), var(--pile-y), 0) rotate(var(--fall-rot))
+      scale(1);
+    opacity: 0.95;
+  }
+  96% {
+    transform: translate3d(calc(var(--fall-sway) * 0.15), var(--pile-y), 0)
+      rotate(calc(var(--fall-rot) + 8deg)) scale(1);
+    opacity: 0.75;
+  }
+  100% {
+    transform: translate3d(calc(var(--fall-sway) * 0.1), calc(var(--pile-y) + 2vh), 0)
+      rotate(calc(var(--fall-rot) + 12deg)) scale(0.98);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-autumn-flake {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/* Mobil: faqat biroz kichikroq — rang to‘liq qoladi */
+@media (max-width: 767px) {
+  .app-autumn-flake {
+    zoom: 0.72;
+  }
+
+  .app-autumn-flake--i,
+  .app-autumn-flake--k,
+  .app-autumn-flake--m,
+  .app-autumn-flake--n {
+    display: none;
+  }
+}
+
+.dark .app-autumn-bg {
+  background-image:
+    linear-gradient(
+      165deg,
+      rgba(8, 12, 22, 0.78) 0%,
+      rgba(10, 14, 24, 0.72) 50%,
+      rgba(8, 12, 20, 0.8) 100%
+    ),
+    url('/kuz.png');
+  filter: saturate(0.75) brightness(0.7);
+}
+
+.dark .app-autumn-flake {
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.4));
+}
+
+/* —— Sidebar: menyu_fon to‘liq, shisha/kesilish yo‘q —— */
 .app-sidebar {
-  --sb-accent: #0284c7;
-  --sb-accent-soft: rgba(2, 132, 199, 0.12);
-  --sb-ink: #0f172a;
-  --sec: #0284c7;
-  --sec-soft: rgba(2, 132, 199, 0.1);
-  --sec-glow: rgba(2, 132, 199, 0.28);
-  --sb-icon-on: #ffffff;
+  --sb-accent: #0b3a5c;
+  --sb-accent-soft: rgba(255, 255, 255, 0.16);
+  --sb-ink: #f8fafc;
+  --sec: #ffffff;
+  --sec-soft: rgba(255, 255, 255, 0.16);
+  --sec-glow: rgba(255, 255, 255, 0.35);
+  --sb-icon-on: #0b3a5c;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   color: var(--sb-ink);
-  background:
-    radial-gradient(ellipse 90% 45% at 0% 0%, rgba(14, 165, 233, 0.1), transparent 55%),
-    radial-gradient(ellipse 70% 35% at 100% 100%, rgba(251, 191, 36, 0.08), transparent 50%),
-    linear-gradient(180deg, #ffffff 0%, #f8fafc 55%, #f1f5f9 100%);
-  border-right: 1px solid rgb(15 23 42 / 0.08);
-  box-shadow: 10px 0 32px -20px rgba(15, 23, 42, 0.22);
+  background-color: #1a1535;
+  background-image: url('/menyu_fon.png');
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
+  border-right: none;
+  box-shadow: 8px 0 28px -20px rgba(15, 23, 42, 0.4);
+}
+
+.app-sidebar::before {
+  display: none;
+}
+
+.app-sidebar > * {
+  position: relative;
+  z-index: 1;
 }
 
 .app-sidebar-logo {
   display: block;
-  width: 100%;
+  position: relative;
+  z-index: 1;
+  /* Scale dan keyin eni 100% bo‘lishi uchun oldindan kichikroq */
+  width: calc(100% / 1.22);
+  max-width: none;
   height: auto;
+  /* Faqat yuqori/pastki PNG bo‘shligini kes — matn to‘liq */
+  clip-path: inset(16% 0 14% 0);
+  margin-block: -0.65rem;
   object-fit: contain;
   object-position: left center;
   image-rendering: auto;
-  filter: none;
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.12));
+  border-radius: 0;
+  transform: scale(1.22);
+  transform-origin: left center;
 }
 
+/* Brand + logo — ixcham, logo to‘liq */
 .app-sidebar-brand {
-  background: linear-gradient(180deg, #ffffff 0%, rgb(248 250 252 / 0.9) 100%);
-  border-bottom: 1px solid rgb(15 23 42 / 0.08);
+  background: rgb(255 255 255 / 0.96);
+  border-bottom: 1px solid rgb(226 232 240 / 0.9);
+  backdrop-filter: blur(18px) saturate(1.05);
+  -webkit-backdrop-filter: blur(18px) saturate(1.05);
+  box-shadow: none;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.app-sidebar-logo-glass {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  padding: 0.15rem 0;
+  border-radius: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  overflow: hidden;
+}
+
+.app-sidebar-logo-glass::before {
+  display: none;
 }
 
 .dark .app-sidebar {
   --sb-accent: #7dd3fc;
-  --sb-accent-soft: rgba(125, 211, 252, 0.16);
-  --sb-ink: #f1f5f9;
-  --sec: #38bdf8;
-  --sec-soft: rgba(56, 189, 248, 0.14);
-  --sec-glow: rgba(56, 189, 248, 0.35);
+  --sb-accent-soft: rgba(125, 211, 252, 0.14);
+  --sb-ink: #f8fafc;
+  --sec: #7dd3fc;
+  --sec-soft: rgba(125, 211, 252, 0.16);
+  --sec-glow: rgba(125, 211, 252, 0.3);
   --sb-icon-on: #0b1220;
-  color: #f1f5f9;
-  background:
-    radial-gradient(ellipse 120% 55% at 0% 0%, rgba(14, 116, 144, 0.28), transparent 55%),
-    linear-gradient(180deg, #060a12 0%, #080d16 100%);
-  border-color: rgb(255 255 255 / 0.05);
-  box-shadow: 12px 0 40px -18px rgba(0, 0, 0, 0.55);
+  color: #f8fafc;
+  border-right: none;
+  box-shadow: 8px 0 28px -18px rgba(0, 0, 0, 0.55);
+}
+
+.dark .app-sidebar::before {
+  display: none;
 }
 
 .dark .app-sidebar-brand {
-  background: linear-gradient(180deg, rgb(255 255 255 / 0.03) 0%, transparent 100%);
-  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+  background: rgb(255 255 255 / 0.94);
+  border-bottom: 1px solid rgb(226 232 240 / 0.5);
 }
 .dark .app-sidebar-logo {
-  filter: drop-shadow(0 2px 8px rgba(56, 189, 248, 0.15));
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.25));
+}
+.dark .app-sidebar-logo-glass {
+  background: transparent;
+  border: none;
 }
 
 .app-sidebar-nav-item {
-  color: #475569;
+  color: rgb(248 250 252 / 0.88);
 }
 .app-sidebar-nav-item:hover {
-  background: rgb(2 132 199 / 0.08);
-  color: #0f172a;
+  background: rgb(255 255 255 / 0.14);
+  color: #fff;
 }
 .app-sidebar-nav-item-active {
-  background: rgb(2 132 199 / 0.12);
-  color: #0f172a;
-  font-weight: 650;
-  box-shadow: inset 3px 0 0 0 #0284c7;
+  background: #ffffff;
+  color: #0b3a5c;
+  font-weight: 700;
+  box-shadow: inset 3px 0 0 0 #0b3a5c;
 }
 
 .dark .app-sidebar-nav-item {
-  color: rgb(226 232 240 / 0.7);
+  color: rgb(248 250 252 / 0.85);
 }
 .dark .app-sidebar-nav-item:hover {
-  background: rgb(255 255 255 / 0.06);
+  background: rgb(255 255 255 / 0.1);
   color: #fff;
 }
 .dark .app-sidebar-nav-item-active {
-  background: rgb(125 211 252 / 0.14);
-  color: #fff;
-  box-shadow: inset 3px 0 0 0 #7dd3fc;
+  background: rgb(255 255 255 / 0.95);
+  color: #0b3a5c;
+  box-shadow: inset 3px 0 0 0 #0b3a5c;
 }
 
-/* Bo‘lim kartasi — yumshoq, chiziqsiz */
+/* Bo‘limlar — bitta korporativ rang (rainbow yo‘q) */
 .app-sidebar-section-card {
-  --sec: #0284c7;
-  --sec-soft: rgba(2, 132, 199, 0.1);
-  --sec-glow: rgba(2, 132, 199, 0.28);
+  --sec: #ffffff;
+  --sec-soft: rgba(255, 255, 255, 0.16);
+  --sec-glow: rgba(255, 255, 255, 0.35);
   border: none;
-  border-radius: 1rem;
+  border-radius: 0.75rem;
   background: transparent;
-  padding: 0.2rem;
-  margin-bottom: 0.35rem;
+  padding: 0.1rem;
+  margin-bottom: 0.12rem;
   box-shadow: none;
 }
 
-.app-sidebar-section-card[data-tone='main'] { --sec: #0284c7; --sec-soft: rgba(2,132,199,.12); --sec-glow: rgba(2,132,199,.3); }
-.app-sidebar-section-card[data-tone='attendance'] { --sec: #ca8a04; --sec-soft: rgba(202,138,4,.12); --sec-glow: rgba(202,138,4,.28); }
-.app-sidebar-section-card[data-tone='work'] { --sec: #ea580c; --sec-soft: rgba(234,88,12,.12); --sec-glow: rgba(234,88,12,.28); }
-.app-sidebar-section-card[data-tone='staff'] { --sec: #059669; --sec-soft: rgba(5,150,105,.12); --sec-glow: rgba(5,150,105,.28); }
-.app-sidebar-section-card[data-tone='finance'] { --sec: #db2777; --sec-soft: rgba(219,39,119,.1); --sec-glow: rgba(219,39,119,.26); }
-.app-sidebar-section-card[data-tone='pharmacy'] { --sec: #0f766e; --sec-soft: rgba(15,118,110,.12); --sec-glow: rgba(15,118,110,.28); }
-.app-sidebar-section-card[data-tone='logistika'] { --sec: #2563eb; --sec-soft: rgba(37,99,235,.12); --sec-glow: rgba(37,99,235,.28); }
-.app-sidebar-section-card[data-tone='distribution'] { --sec: #c2410c; --sec-soft: rgba(194,65,12,.12); --sec-glow: rgba(194,65,12,.28); }
-.app-sidebar-section-card[data-tone='warehouse'] { --sec: #475569; --sec-soft: rgba(71,85,105,.12); --sec-glow: rgba(71,85,105,.25); }
-.app-sidebar-section-card[data-tone='system'] { --sec: #7c3aed; --sec-soft: rgba(124,58,237,.1); --sec-glow: rgba(124,58,237,.26); }
-.app-sidebar-section-card[data-tone='other'] { --sec: #64748b; --sec-soft: rgba(100,116,139,.12); --sec-glow: rgba(100,116,139,.25); }
-
-.app-sidebar-section-card-open {
-  background: color-mix(in srgb, var(--sec) 5%, transparent);
+.app-sidebar-section-card[data-tone='main'],
+.app-sidebar-section-card[data-tone='attendance'],
+.app-sidebar-section-card[data-tone='work'],
+.app-sidebar-section-card[data-tone='staff'],
+.app-sidebar-section-card[data-tone='finance'],
+.app-sidebar-section-card[data-tone='pharmacy'],
+.app-sidebar-section-card[data-tone='logistika'],
+.app-sidebar-section-card[data-tone='distribution'],
+.app-sidebar-section-card[data-tone='warehouse'],
+.app-sidebar-section-card[data-tone='system'],
+.app-sidebar-section-card[data-tone='other'] {
+  --sec: #ffffff;
+  --sec-soft: rgba(255, 255, 255, 0.16);
+  --sec-glow: rgba(255, 255, 255, 0.35);
 }
+
+.app-sidebar-section-card-open,
 .app-sidebar-section-card-active {
-  background: color-mix(in srgb, var(--sec) 7%, transparent);
+  background: transparent;
 }
 
 .dark .app-sidebar-section-card {
   background: transparent;
   box-shadow: none;
 }
-.dark .app-sidebar-section-card[data-tone='main'] { --sec: #38bdf8; --sec-soft: rgba(56,189,248,.16); --sec-glow: rgba(56,189,248,.4); }
-.dark .app-sidebar-section-card[data-tone='attendance'] { --sec: #fbbf24; --sec-soft: rgba(251,191,36,.16); --sec-glow: rgba(251,191,36,.35); }
-.dark .app-sidebar-section-card[data-tone='work'] { --sec: #fb923c; --sec-soft: rgba(251,146,60,.16); --sec-glow: rgba(251,146,60,.35); }
-.dark .app-sidebar-section-card[data-tone='staff'] { --sec: #4ade80; --sec-soft: rgba(74,222,128,.14); --sec-glow: rgba(74,222,128,.35); }
-.dark .app-sidebar-section-card[data-tone='finance'] { --sec: #f472b6; --sec-soft: rgba(244,114,182,.14); --sec-glow: rgba(244,114,182,.35); }
-.dark .app-sidebar-section-card[data-tone='pharmacy'] { --sec: #2dd4bf; --sec-soft: rgba(45,212,191,.16); --sec-glow: rgba(45,212,191,.35); }
-.dark .app-sidebar-section-card[data-tone='logistika'] { --sec: #60a5fa; --sec-soft: rgba(96,165,250,.16); --sec-glow: rgba(96,165,250,.35); }
-.dark .app-sidebar-section-card[data-tone='distribution'] { --sec: #f97316; --sec-soft: rgba(249,115,22,.16); --sec-glow: rgba(249,115,22,.35); }
-.dark .app-sidebar-section-card[data-tone='warehouse'] { --sec: #94a3b8; --sec-soft: rgba(148,163,184,.16); --sec-glow: rgba(148,163,184,.3); }
-.dark .app-sidebar-section-card[data-tone='system'] { --sec: #a78bfa; --sec-soft: rgba(167,139,250,.16); --sec-glow: rgba(167,139,250,.35); }
-.dark .app-sidebar-section-card[data-tone='other'] { --sec: #94a3b8; --sec-soft: rgba(148,163,184,.14); --sec-glow: rgba(148,163,184,.3); }
+.dark .app-sidebar-section-card[data-tone='main'],
+.dark .app-sidebar-section-card[data-tone='attendance'],
+.dark .app-sidebar-section-card[data-tone='work'],
+.dark .app-sidebar-section-card[data-tone='staff'],
+.dark .app-sidebar-section-card[data-tone='finance'],
+.dark .app-sidebar-section-card[data-tone='pharmacy'],
+.dark .app-sidebar-section-card[data-tone='logistika'],
+.dark .app-sidebar-section-card[data-tone='distribution'],
+.dark .app-sidebar-section-card[data-tone='warehouse'],
+.dark .app-sidebar-section-card[data-tone='system'],
+.dark .app-sidebar-section-card[data-tone='other'] {
+  --sec: #ffffff;
+  --sec-soft: rgba(255, 255, 255, 0.16);
+  --sec-glow: rgba(255, 255, 255, 0.35);
+}
 
 .dark .app-sidebar-section-card-open,
 .dark .app-sidebar-section-card-active {
-  background: color-mix(in srgb, var(--sec) 8%, transparent);
+  background: transparent;
 }
 
 .app-sidebar-section-open { @apply bg-transparent ring-0 shadow-none; }
@@ -310,154 +864,189 @@
 .dark .app-sidebar-section-closed { @apply hover:bg-transparent; }
 
 .app-sidebar-section-trigger {
-  color: #0f172a;
-  font-weight: 750;
-  letter-spacing: 0.02em;
+  color: #ffffff;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  font-size: 11px !important;
-  border-radius: 0.85rem;
-  padding-block: 0.5rem !important;
+  font-size: 10.5px !important;
+  border-radius: 0.65rem;
+  padding-block: 0.45rem !important;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
 }
 .app-sidebar-section-trigger:hover {
-  background: rgb(15 23 42 / 0.04);
+  background: rgb(255 255 255 / 0.12);
 }
 .app-sidebar-section-trigger-open {
-  background: var(--sec-soft);
-  color: var(--sec);
+  background: rgb(255 255 255 / 0.14);
+  color: #ffffff;
 }
 
 .dark .app-sidebar-section-trigger {
-  color: #f8fafc;
+  color: #ffffff;
   font-weight: 700;
 }
 .dark .app-sidebar-section-trigger:hover {
-  background: rgb(255 255 255 / 0.05);
+  background: rgb(255 255 255 / 0.12);
 }
 .dark .app-sidebar-section-trigger-open {
-  background: color-mix(in srgb, var(--sec) 14%, transparent);
-  color: var(--sec);
+  background: rgb(255 255 255 / 0.14);
+  color: #ffffff;
 }
 
 .app-sidebar-section-icon {
-  background: var(--sec);
-  color: var(--sb-icon-on);
-  border-radius: 999px;
-  border: none;
-  box-shadow: 0 4px 12px -4px var(--sec-glow);
-  transition:
-    transform 0.25s cubic-bezier(0.34, 1.45, 0.64, 1),
-    background 0.2s ease,
-    box-shadow 0.2s ease,
-    color 0.2s ease;
+  background: #0b3a5c;
+  color: #ffffff;
+  border-radius: 0.55rem;
+  border: 1px solid rgb(255 255 255 / 0.28);
+  box-shadow: 0 2px 8px -2px rgb(0 0 0 / 0.45);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
 }
 .app-sidebar-section-trigger:hover .app-sidebar-section-icon,
 .app-sidebar-section-trigger-open .app-sidebar-section-icon {
-  transform: scale(1.06);
-  box-shadow: 0 6px 16px -4px var(--sec-glow);
+  transform: none;
+  background: #0a2f4a;
+  box-shadow: 0 3px 10px -2px rgb(0 0 0 / 0.5);
 }
 
-/* Ichki menyu — yumshoq panel, daraxt chiziqlari yo‘q */
+.dark .app-sidebar-section-icon {
+  background: #0b3a5c;
+  color: #ffffff;
+  border-color: rgb(255 255 255 / 0.28);
+  box-shadow: 0 2px 8px -2px rgb(0 0 0 / 0.45);
+}
+.dark .app-sidebar-section-trigger:hover .app-sidebar-section-icon,
+.dark .app-sidebar-section-trigger-open .app-sidebar-section-icon {
+  background: #0a2f4a;
+  color: #ffffff;
+}
+
+/* Ichki menyu — aniq oq tugmalar */
 .app-sidebar-nested-panel {
-  border-radius: 0.85rem;
-  background: rgb(15 23 42 / 0.03);
-  border: none;
+  border-radius: 0.7rem;
+  background: rgb(0 0 0 / 0.18);
+  border: 1px solid rgb(255 255 255 / 0.16);
   margin-left: 0;
   padding: 0.3rem;
   box-shadow: none;
   backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
 }
 
 .dark .app-sidebar-nested-panel {
-  background: rgb(255 255 255 / 0.04);
-  border: none;
+  background: rgb(0 0 0 / 0.22);
+  border: 1px solid rgb(255 255 255 / 0.14);
   box-shadow: none;
 }
 
 .app-sidebar-item-icon {
   display: flex;
-  height: 1.7rem;
-  width: 1.7rem;
+  height: 1.75rem;
+  width: 1.75rem;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
-  background: transparent;
-  border: 1px solid rgb(15 23 42 / 0.12);
-  color: #64748b;
-  transition:
-    transform 0.22s cubic-bezier(0.34, 1.45, 0.64, 1),
-    background 0.2s ease,
-    color 0.2s ease,
-    border-color 0.2s ease,
-    box-shadow 0.2s ease;
+  border-radius: 0.5rem;
+  background: rgb(255 255 255 / 0.16);
+  border: 1px solid rgb(255 255 255 / 0.32);
+  color: #ffffff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.18);
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
-.group:hover .app-sidebar-item-icon {
-  transform: scale(1.08);
-  border-color: var(--sec);
-  color: var(--sec);
-  background: var(--sec-soft);
-  box-shadow: 0 0 14px -6px var(--sec-glow);
+.group:hover .app-sidebar-item-icon:not(.app-sidebar-item-icon--active) {
+  transform: none;
+  border-color: transparent;
+  color: #0b3a5c;
+  background: #ffffff;
+  box-shadow: 0 1px 6px rgb(0 0 0 / 0.12);
 }
+/* Faol: oq fon ustida aniq ko‘rinadigan korporativ ikonka */
 .app-sidebar-item-icon--active {
-  background: var(--sec);
-  border-color: var(--sec);
-  color: var(--sb-icon-on) !important;
-  box-shadow: 0 0 16px -4px var(--sec-glow);
-  transform: scale(1.06);
+  background: #0b3a5c !important;
+  border-color: #0b3a5c !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgb(11 58 92 / 0.35);
+  transform: none;
 }
 
 .dark .app-sidebar-item-icon {
-  border-color: rgb(255 255 255 / 0.12);
-  color: rgb(226 232 240 / 0.65);
+  background: rgb(255 255 255 / 0.16);
+  border-color: rgb(255 255 255 / 0.32);
+  color: #ffffff;
+}
+.dark .group:hover .app-sidebar-item-icon:not(.app-sidebar-item-icon--active) {
+  color: #0b3a5c;
+  border-color: transparent;
+  background: #ffffff;
+}
+.dark .app-sidebar-item-icon--active {
+  background: #0b3a5c !important;
+  border-color: #0b3a5c !important;
+  color: #ffffff !important;
 }
 
 .app-sidebar-nested-item {
-  color: #475569;
-  font-weight: 500;
-  border-radius: 0.7rem;
+  color: #ffffff !important;
+  font-weight: 600;
+  border-radius: 0.55rem;
   position: relative;
-  transition:
-    background 0.18s ease,
-    color 0.18s ease,
-    box-shadow 0.18s ease,
-    transform 0.18s ease;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 .app-sidebar-nested-item:hover {
-  background: rgb(255 255 255 / 0.85);
-  color: #0f172a;
-  box-shadow: 0 1px 4px rgb(15 23 42 / 0.04);
+  background: #ffffff !important;
+  color: #0b3a5c !important;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.18);
+}
+.app-sidebar-nested-item:hover > span:not(.app-sidebar-item-icon) {
+  color: #0b3a5c !important;
 }
 .app-sidebar-nested-item-active {
-  background: #fff;
-  color: #0f172a;
+  background: #ffffff !important;
+  color: #0b3a5c !important;
   font-weight: 700;
   box-shadow:
-    0 2px 8px -2px rgb(15 23 42 / 0.08),
-    inset 3px 0 0 0 var(--sec);
+    0 2px 10px rgb(0 0 0 / 0.2),
+    inset 3px 0 0 0 #0b3a5c;
+}
+/* Matn navy — ikonka oq qolsin (ko‘rinmaslik bug‘i) */
+.app-sidebar-nested-item-active > span:not(.app-sidebar-item-icon) {
+  color: #0b3a5c !important;
+}
+.app-sidebar-nested-item-active .app-sidebar-item-icon,
+.app-sidebar-nested-item-active .app-sidebar-item-icon--active {
+  background: #0b3a5c !important;
+  border-color: #0b3a5c !important;
+  color: #ffffff !important;
+}
+.app-sidebar-nested-item-active .app-sidebar-item-icon svg,
+.app-sidebar-nested-item-active .app-sidebar-item-icon--active svg {
+  color: #ffffff !important;
+  stroke: currentColor;
 }
 
 .dark .app-sidebar-nested-item {
-  color: rgb(226 232 240 / 0.72);
+  color: #ffffff !important;
 }
 .dark .app-sidebar-nested-item:hover {
-  background: rgb(255 255 255 / 0.06);
-  color: #fff;
-  box-shadow: none;
+  background: #ffffff !important;
+  color: #0b3a5c !important;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.18);
 }
 .dark .app-sidebar-nested-item-active {
-  background: color-mix(in srgb, var(--sec) 18%, rgb(15 23 42));
-  color: #fff;
-  box-shadow: inset 3px 0 0 0 var(--sec);
+  background: #ffffff !important;
+  color: #0b3a5c !important;
+  box-shadow:
+    0 2px 10px rgb(0 0 0 / 0.2),
+    inset 3px 0 0 0 #0b3a5c;
 }
 
 .app-sidebar-active-dot {
   width: 0.4rem;
   height: 0.4rem;
   border-radius: 999px;
-  background: var(--sec);
-  box-shadow: 0 0 8px var(--sec-glow);
+  background: #0b3a5c;
+  box-shadow: none;
   display: block;
 }
 
@@ -505,54 +1094,59 @@
 }
 
 .app-sidebar-collapse-btn {
-  background: #f1f5f9;
-  border: 1px solid #cbd5e1;
-  color: #0f172a;
-  font-weight: 600;
+  background: #ffffff;
+  border: 1px solid rgb(255 255 255 / 0.9);
+  color: #0b3a5c;
+  font-weight: 700;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.2);
 }
 
 .app-sidebar-collapse-btn:hover {
-  background: rgb(2 132 199 / 0.1);
-  border-color: rgb(2 132 199 / 0.35);
-  color: #0c4a6e;
+  background: #f8fafc;
+  border-color: #fff;
+  color: #0a2f4a;
 }
 
 .dark .app-sidebar-collapse-btn {
-  background: rgb(255 255 255 / 0.06);
-  border: 1px solid rgb(255 255 255 / 0.12);
-  color: rgb(255 255 255 / 0.85);
+  background: #ffffff;
+  border: 1px solid rgb(255 255 255 / 0.9);
+  color: #0b3a5c;
 }
 
 .dark .app-sidebar-collapse-btn:hover {
-  background: rgb(56 189 248 / 0.16);
-  color: #fff;
+  background: #f8fafc;
+  color: #0a2f4a;
 }
 
 .app-sidebar-profile-card {
   @apply rounded-xl p-2;
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.05);
+  border: 1px solid rgb(255 255 255 / 0.9);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.22);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   overflow: hidden;
 }
 
 .dark .app-sidebar-profile-card {
-  background: rgb(255 255 255 / 0.06);
-  border-color: rgb(255 255 255 / 0.1);
-  box-shadow: none;
+  background: #ffffff;
+  border-color: rgb(255 255 255 / 0.9);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.22);
 }
 
 .app-sidebar-profile-avatar {
   @apply flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full text-[11px] font-bold;
-  background: linear-gradient(135deg, #0284c7 0%, #38bdf8 55%, #ca8a04 100%);
+  background: #0b3a5c;
   color: #fff;
-  border: none;
+  border: 1px solid rgb(255 255 255 / 0.25);
 }
 
 .dark .app-sidebar-profile-avatar {
-  background: linear-gradient(135deg, #0ea5e9 0%, #38bdf8 55%, #fbbf24 100%);
-  color: #fff;
-  border: none;
+  background: rgb(125 211 252 / 0.2);
+  color: #e0f2fe;
+  border: 1px solid rgb(125 211 252 / 0.3);
 }
 
 .app-sidebar-profile-name {
@@ -587,7 +1181,7 @@
 }
 
 .dark .app-sidebar-profile-name {
-  @apply text-white;
+  color: #0f172a;
 }
 
 html:not(.dark) .app-sidebar-profile-name {
@@ -603,7 +1197,7 @@ html:not(.dark) .app-sidebar-profile-name {
 
 .dark .app-sidebar-profile-role {
   background: transparent;
-  color: rgb(255 255 255 / 0.55);
+  color: #64748b;
   border: none;
 }
 
@@ -621,15 +1215,15 @@ html:not(.dark) .app-sidebar-profile-name {
 }
 
 .dark .app-sidebar-profile-action {
-  border: 1px solid rgb(255 255 255 / 0.14);
-  color: rgb(255 255 255 / 0.8);
-  background: rgb(255 255 255 / 0.06);
+  border: 1px solid #cbd5e1;
+  color: #0369a1;
+  background: #f0f9ff;
 }
 
 .dark .app-sidebar-profile-action:hover {
-  color: #fff;
-  background: rgb(56 189 248 / 0.18);
-  border-color: rgb(56 189 248 / 0.4);
+  color: #0c4a6e;
+  background: #e0f2fe;
+  border-color: #7dd3fc;
 }
 
 .app-sidebar-face-id-btn {
@@ -653,29 +1247,33 @@ html:not(.dark) .app-sidebar-profile-name {
 }
 
 .analytics-shell {
-  @apply min-h-full bg-background text-foreground;
+  @apply min-h-full bg-transparent text-foreground;
 }
 
 .dark .analytics-shell {
-  @apply bg-gradient-to-b from-[#0a1628] via-[#0d1b2e] to-[#0a1628] text-slate-100;
+  @apply bg-transparent text-slate-100;
 }
 
 .analytics-panel {
-  @apply overflow-hidden rounded-2xl border border-slate-200/80 bg-card text-card-foreground;
-  box-shadow: 0 1px 2px rgb(15 39 68 / 0.04), 0 10px 30px -14px rgb(15 39 68 / 0.14);
+  @apply overflow-hidden rounded-2xl border border-white/45 text-card-foreground backdrop-blur-xl;
+  background: rgb(255 255 255 / 0.38) !important;
+  box-shadow: 0 1px 2px rgb(15 39 68 / 0.04), 0 10px 30px -14px rgb(15 39 68 / 0.12);
 }
 
 .dark .analytics-panel {
-  @apply border-slate-700/50 bg-slate-900/60 text-slate-100 backdrop-blur-sm;
+  @apply border-slate-700/50 text-slate-100 backdrop-blur-xl;
+  background: rgb(16 26 46 / 0.42) !important;
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 14px 34px -16px rgb(0 0 0 / 0.55);
 }
 
 .analytics-panel-header {
-  @apply flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3.5;
+  @apply flex items-center justify-between gap-3 border-b border-white/40 px-5 py-3.5;
+  background: rgb(255 255 255 / 0.22);
 }
 
 .dark .analytics-panel-header {
-  @apply border-slate-700/50;
+  @apply border-slate-700/40;
+  background: rgb(255 255 255 / 0.04);
 }
 
 .analytics-panel-title {
@@ -699,11 +1297,13 @@ html:not(.dark) .app-sidebar-profile-name {
 }
 
 .analytics-toolbar-group {
-  @apply inline-flex h-10 items-center gap-0.5 rounded-xl border border-slate-200/90 bg-card p-1 shadow-sm;
+  @apply inline-flex h-10 items-center gap-0.5 rounded-xl border border-white/50 p-1 shadow-sm backdrop-blur-xl;
+  background: rgb(255 255 255 / 0.4) !important;
 }
 
 .dark .analytics-toolbar-group {
-  @apply border-slate-700/60 bg-slate-900/70;
+  @apply border-slate-700/60;
+  background: rgb(16 26 46 / 0.5) !important;
 }
 
 .analytics-toolbar-btn {
@@ -756,12 +1356,14 @@ html:not(.dark) .app-sidebar-profile-name {
   position: sticky;
   top: 0;
   z-index: 2;
-  background-color: #f8fafc;
-  box-shadow: inset 0 -1px 0 rgb(226 232 240);
+  background-color: rgb(255 255 255 / 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: inset 0 -1px 0 rgb(226 232 240 / 0.7);
 }
 
 .dark .analytics-table--pin thead th {
-  background-color: #0f172a;
+  background-color: rgb(15 23 42 / 0.65);
   box-shadow: inset 0 -1px 0 rgb(51 65 85 / 0.8);
 }
 
@@ -825,41 +1427,64 @@ html:not(.dark) .app-sidebar-profile-name {
 }
 
 .analytics-kpi {
-  @apply relative overflow-hidden rounded-2xl border border-slate-200/80 bg-card p-4 text-card-foreground transition-all duration-200 hover:-translate-y-0.5;
-  box-shadow: 0 1px 2px rgb(15 39 68 / 0.04), 0 8px 24px -14px rgb(15 39 68 / 0.16);
+  @apply relative overflow-hidden rounded-2xl border border-white/45 p-4 text-card-foreground backdrop-blur-xl transition-all duration-200 hover:-translate-y-0.5;
+  background: rgb(255 255 255 / 0.36) !important;
+  box-shadow: 0 1px 2px rgb(15 39 68 / 0.04), 0 8px 24px -14px rgb(15 39 68 / 0.14);
 }
 
 .analytics-kpi:hover {
-  box-shadow: 0 2px 4px rgb(15 39 68 / 0.05), 0 16px 32px -14px rgb(15 39 68 / 0.22);
+  box-shadow: 0 2px 4px rgb(15 39 68 / 0.05), 0 16px 32px -14px rgb(15 39 68 / 0.2);
 }
 
 .dark .analytics-kpi {
-  @apply border-slate-700/50 bg-slate-900/60 text-slate-100 backdrop-blur-sm;
+  @apply border-slate-700/50 text-slate-100 backdrop-blur-xl;
+  background: rgb(16 26 46 / 0.42) !important;
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 28px -16px rgb(0 0 0 / 0.6);
 }
 
 .analytics-segment {
-  @apply relative rounded-2xl border border-slate-200/90 bg-card p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md;
+  @apply relative rounded-2xl border border-white/45 p-4 text-left backdrop-blur-xl transition-all duration-200 hover:-translate-y-0.5 hover:border-white/70 hover:shadow-md;
+  background: rgb(255 255 255 / 0.34) !important;
 }
 
 .analytics-segment-active {
-  @apply border-[#0b3a5c]/60 bg-gradient-to-br from-[#0b3a5c]/[0.06] to-transparent shadow-md ring-1 ring-[#0b3a5c]/20 hover:border-[#0b3a5c]/60;
+  @apply border-[#0b3a5c]/55 shadow-md ring-1 ring-[#0b3a5c]/20 hover:border-[#0b3a5c]/60;
+  background: rgb(255 255 255 / 0.48) !important;
 }
 
 .dark .analytics-segment {
-  @apply border-slate-700/60 bg-slate-900/50 hover:border-slate-500;
+  @apply border-slate-700/60 hover:border-slate-500;
+  background: rgb(16 26 46 / 0.4) !important;
 }
 
 .dark .analytics-segment-active {
-  @apply border-sky-400/60 from-sky-400/10 ring-sky-400/30;
+  @apply border-sky-400/60 ring-sky-400/30;
+  background: rgb(16 26 46 / 0.55) !important;
 }
 
 .analytics-inset {
-  @apply rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-slate-100;
+  @apply rounded-xl px-3 py-2 ring-1 ring-white/40 backdrop-blur-sm;
+  background: rgb(255 255 255 / 0.28) !important;
 }
 
 .dark .analytics-inset {
-  @apply bg-slate-800/50 ring-slate-700/40;
+  @apply ring-slate-700/40;
+  background: rgb(30 41 59 / 0.4) !important;
+}
+
+/* Analytics ichidagi qattiq oq “orolchalar” ham shisha */
+.analytics-shell .bg-white,
+.analytics-shell .bg-white\/90,
+.analytics-shell .bg-white\/80 {
+  background-color: rgb(255 255 255 / 0.36) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.dark .analytics-shell .bg-white,
+.dark .analytics-shell .bg-white\/90,
+.dark .analytics-shell .bg-white\/80 {
+  background-color: rgb(16 26 46 / 0.42) !important;
 }
 
 /* Aptekalar tarmog'i — dark mode */
@@ -2934,3 +3559,546 @@ body.tg-mini-app #root {
   border: none;
   overflow: visible;
 }
+
+/* ===== Shisha scrollbar � oq yo�lak ko�rinmasin, fon bilan birga ===== */
+html,
+body,
+.app-autumn-stage *,
+.app-autumn-main {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(15 23 42 / 0.28) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(15 23 42 / 0.22);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(15 23 42 / 0.38);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+.dark ::-webkit-scrollbar-thumb,
+.dark .app-autumn-stage *,
+.dark html,
+.dark body {
+  scrollbar-color: rgb(255 255 255 / 0.22) transparent;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 0.2);
+  background-clip: padding-box;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgb(255 255 255 / 0.34);
+  background-clip: padding-box;
+}
+
+/* ── Kamera skanerlari (QR / Face ID) ───────────────────────── */
+@keyframes cam-scan-line {
+  0% { transform: translateY(0); opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { transform: translateY(var(--cam-scan-h, 240px)); opacity: 0; }
+}
+.cam-scan-line {
+  animation: cam-scan-line 2.1s ease-in-out infinite;
+}
+@keyframes cam-sheet-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+.cam-sheet-in {
+  animation: cam-sheet-in 0.22s ease-out both;
+}
+@keyframes cam-pulse-ring {
+  0% { transform: scale(0.92); opacity: 0.55; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+.cam-pulse-ring {
+  animation: cam-pulse-ring 1.6s ease-out infinite;
+}
+.cam-glass {
+  background: rgb(10 14 24 / 0.55);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid rgb(255 255 255 / 0.14);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cam-scan-line, .cam-sheet-in, .cam-pulse-ring { animation: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Davomat — yangi dizayn (kunduzgi iliq / kechki binafsha)
+   Kun: 06:00–18:00 → vaksinaDavomat_fon, kech: 18:00–06:00 → kechki_vaksinafon
+   ═══════════════════════════════════════════════════════════════ */
+.dv-premium.dv-day {
+  --dvx-bg: #fbf1e3;
+  --dvx-surface: #ffffff;
+  --dvx-surface-2: #fff6ea;
+  --dvx-border: rgba(166, 104, 44, 0.18);
+  --dvx-t1: #3b2311;
+  --dvx-t2: rgba(59, 35, 17, 0.7);
+  --dvx-t3: rgba(59, 35, 17, 0.5);
+  --dvx-shadow: 0 10px 26px rgba(150, 92, 32, 0.13);
+  --dvx-accent: #c2571a;
+  --dvx-accent-soft: rgba(224, 120, 40, 0.14);
+  background:
+    radial-gradient(90% 40% at 100% 0%, rgba(255, 190, 110, 0.35), transparent 60%),
+    linear-gradient(180deg, #fcf3e6 0%, #faecdc 48%, #f6e2cc 100%);
+  color: var(--dvx-t1);
+}
+.dv-premium.dv-night {
+  --dvx-bg: #0b0e21;
+  --dvx-surface: rgba(21, 25, 56, 0.82);
+  --dvx-surface-2: rgba(255, 255, 255, 0.06);
+  --dvx-border: rgba(255, 255, 255, 0.11);
+  --dvx-t1: #f5f2ff;
+  --dvx-t2: rgba(245, 242, 255, 0.74);
+  --dvx-t3: rgba(245, 242, 255, 0.5);
+  --dvx-shadow: 0 12px 30px rgba(0, 0, 0, 0.38);
+  --dvx-accent: #f4a259;
+  --dvx-accent-soft: rgba(244, 162, 89, 0.16);
+  background:
+    radial-gradient(90% 40% at 0% 0%, rgba(124, 58, 237, 0.28), transparent 60%),
+    linear-gradient(180deg, #0b0e21 0%, #12102c 50%, #0a0b1c 100%);
+  color: var(--dvx-t1);
+}
+.dark .dv-premium.dv-day {
+  background:
+    radial-gradient(90% 40% at 100% 0%, rgba(255, 190, 110, 0.35), transparent 60%),
+    linear-gradient(180deg, #fcf3e6 0%, #faecdc 48%, #f6e2cc 100%);
+}
+.dark .dv-premium.dv-night {
+  background:
+    radial-gradient(90% 40% at 0% 0%, rgba(124, 58, 237, 0.28), transparent 60%),
+    linear-gradient(180deg, #0b0e21 0%, #12102c 50%, #0a0b1c 100%);
+}
+
+.dvx-t1 { color: var(--dvx-t1); }
+.dvx-t2 { color: var(--dvx-t2); }
+.dvx-t3 { color: var(--dvx-t3); }
+
+/* Hero (rasm almashinuvi) */
+.dvx-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  /* Yuqori qism cho‘zilgan: dorixona rasmi ko‘rinib tursin */
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 21.5rem;
+  padding: 0.5rem 0.75rem 0.6rem;
+  border-radius: 0 0 1.6rem 1.6rem;
+}
+@media (min-width: 640px) { .dvx-hero { padding-inline: 1rem; } }
+.dvx-hero-img {
+  position: absolute;
+  inset: 0;
+  z-index: -3;
+  background-size: cover;
+  background-position: 100% 0;
+  background-repeat: no-repeat;
+  transition: opacity 1.2s ease;
+}
+.dvx-hero-img-day { background-image: url("/vaksinaDavomat_fon.jpg"); opacity: 1; }
+.dvx-hero-img-night { background-image: url("/kechki_vaksinafon.jpg"); opacity: 0; }
+.dv-night .dvx-hero-img-day { opacity: 0; }
+.dv-night .dvx-hero-img-night { opacity: 1; }
+.dvx-hero-shade {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+}
+.dv-day .dvx-hero-shade {
+  background:
+    linear-gradient(90deg, rgba(255, 246, 232, 0.82) 0%, rgba(255, 246, 232, 0.4) 52%, rgba(255, 246, 232, 0) 82%),
+    linear-gradient(180deg, rgba(255, 246, 232, 0) 55%, rgba(251, 241, 227, 0.92) 100%);
+}
+.dv-night .dvx-hero-shade {
+  background:
+    linear-gradient(90deg, rgba(9, 9, 32, 0.78) 0%, rgba(9, 9, 32, 0.4) 52%, rgba(9, 9, 32, 0) 82%),
+    linear-gradient(180deg, rgba(10, 12, 30, 0) 55%, rgba(11, 14, 33, 0.94) 100%);
+}
+
+.dvx-back {
+  display: inline-flex;
+  height: 2rem;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0 0.7rem;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dvx-t1);
+  background: var(--dvx-surface);
+  background: color-mix(in srgb, var(--dvx-surface) 78%, transparent);
+  border: 1px solid var(--dvx-border);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--dvx-shadow);
+}
+.dvx-date {
+  min-width: 5.6rem;
+  border-radius: 0.95rem;
+  padding: 0.4rem 0.7rem;
+  text-align: right;
+  background: var(--dvx-surface);
+  background: color-mix(in srgb, var(--dvx-surface) 72%, transparent);
+  border: 1px solid var(--dvx-border);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--dvx-shadow);
+}
+.dvx-date-week { font-size: 13px; font-weight: 800; line-height: 1.15; color: var(--dvx-t1); }
+.dvx-date-day { margin-top: 0.1rem; font-size: 11px; font-weight: 600; line-height: 1.2; color: var(--dvx-t2); }
+
+.dvx-clock {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.35rem;
+  padding: 0.8rem 0.85rem;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 16px 34px rgba(120, 52, 10, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+.dv-day .dvx-clock {
+  background:
+    radial-gradient(120% 120% at 0% 0%, rgba(255, 190, 110, 0.4), transparent 55%),
+    linear-gradient(135deg, #d9722a 0%, #b4501a 55%, #8a3a12 100%);
+}
+.dv-night .dvx-clock {
+  background:
+    radial-gradient(120% 120% at 0% 0%, rgba(168, 120, 255, 0.4), transparent 55%),
+    linear-gradient(135deg, #5b3fc4 0%, #3d2a94 55%, #261a62 100%);
+  box-shadow: 0 16px 34px rgba(30, 18, 90, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+.dvx-clock-icon {
+  display: flex;
+  height: 3.1rem;
+  width: 3.1rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+}
+.dvx-clock-split {
+  width: 1px;
+  align-self: stretch;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+}
+.dvx-pill {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.18rem 0.55rem;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #eafff3;
+  background: rgba(22, 120, 72, 0.7);
+  border: 1px solid rgba(167, 243, 208, 0.4);
+}
+.dvx-pill.is-live { background: rgba(16, 185, 129, 0.85); }
+
+.dvx-stat {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.6rem;
+  border-radius: 1.2rem;
+  padding: 0.6rem 0.7rem;
+  text-align: left;
+  color: #fff;
+  cursor: default;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.dvx-stat-in { background: linear-gradient(135deg, #36a269 0%, #207a4b 100%); }
+.dvx-stat-out { background: linear-gradient(135deg, #cf5733 0%, #98311a 100%); }
+.dv-night .dvx-stat-in { background: linear-gradient(135deg, #1f8f5e 0%, #12583a 100%); }
+.dv-night .dvx-stat-out { background: linear-gradient(135deg, #b8423c 0%, #6e1f2a 100%); }
+.dvx-stat-icon {
+  display: flex;
+  height: 2.5rem;
+  width: 2.5rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+/* Umumiy sirt (karta) */
+.dvx-card {
+  overflow: hidden;
+  border-radius: 1.5rem;
+  background: var(--dvx-surface);
+  border: 1px solid var(--dvx-border);
+  box-shadow: var(--dvx-shadow);
+}
+.dv-night .dvx-card {
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+.dvx-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.7rem 0.85rem 0.55rem;
+}
+.dvx-ico {
+  display: flex;
+  height: 2.4rem;
+  width: 2.4rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--dvx-accent);
+  background: var(--dvx-accent-soft);
+}
+.dvx-zone {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: 999px;
+  padding: 0.32rem 0.65rem;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.dvx-zone.is-ok { color: #0d7a43; background: rgba(34, 170, 98, 0.16); }
+.dvx-zone.is-bad { color: #b4233f; background: rgba(225, 60, 90, 0.14); }
+.dvx-zone.is-warn { color: #9a5a05; background: rgba(240, 160, 30, 0.2); }
+.dv-night .dvx-zone.is-ok { color: #7ff0b4; background: rgba(34, 197, 94, 0.18); }
+.dv-night .dvx-zone.is-bad { color: #ffb3c0; background: rgba(244, 63, 94, 0.2); }
+.dv-night .dvx-zone.is-warn { color: #ffd68a; background: rgba(245, 158, 11, 0.2); }
+
+/* Xarita kartochka ichida */
+.dvx-card .dv-map-shell {
+  height: 232px;
+  border-radius: 1.1rem;
+  border: 1px solid var(--dvx-border);
+  box-shadow: none;
+}
+.dv-day .dvx-card .dv-map-shell,
+.dv-day .dvx-card .dv-map-leaflet { background: #ece7de; }
+.dv-day .dvx-card .dv-lf-tiles { filter: sepia(0.2) saturate(1.05) contrast(0.98) brightness(1.02); }
+.dvx-card .dv-map-place { display: none; }
+.dvx-card .dv-map-status-ok { display: none; }
+.dvx-card .dv-map-footer { justify-content: center; background: none; padding-bottom: 0.65rem; }
+.dvx-card .dv-map-radius {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.3rem 0.8rem;
+  text-align: center;
+}
+.dvx-card .dv-map-radius p:first-child { font-size: 9px !important; }
+.dvx-card .dv-map-radius p:last-child { font-size: 12px !important; }
+.dv-day .dvx-card .dv-map-radius {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(34, 170, 98, 0.4);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.14);
+}
+.dv-day .dvx-card .dv-map-radius p:first-child { color: rgba(59, 35, 17, 0.6) !important; }
+.dv-day .dvx-card .dv-map-radius p:last-child { color: #0d7a43 !important; }
+.dv-day .dvx-card .dv-map-locate {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(166, 104, 44, 0.22);
+  color: #3b2311;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
+}
+.dv-day .dvx-card .dv-map-leaflet .leaflet-control-zoom a {
+  background: rgba(255, 255, 255, 0.94) !important;
+  border-color: rgba(166, 104, 44, 0.2) !important;
+  color: #3b2311 !important;
+}
+.dv-day .dvx-card .dv-map-leaflet .leaflet-control-zoom { box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16) !important; }
+/* Usul kartalari */
+.dvx-method {
+  position: relative;
+  display: flex;
+  gap: 0.6rem;
+  border-radius: 1.2rem;
+  padding: 0.7rem 0.75rem;
+  text-align: left;
+  color: var(--dvx-t1);
+  background: var(--dvx-surface);
+  border: 1px solid var(--dvx-border);
+  box-shadow: var(--dvx-shadow);
+  transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.dvx-method:active { transform: scale(0.98); }
+.dvx-method.is-row { flex-direction: row; align-items: center; }
+.dvx-method.is-col { flex-direction: column; align-items: flex-start; gap: 0.45rem; }
+.dvx-method-ico {
+  display: flex;
+  height: 2.6rem;
+  width: 2.6rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.95rem;
+}
+.dvx-method-ico.t-face { color: #4f46e5; background: rgba(99, 102, 241, 0.14); }
+.dvx-method-ico.t-qr { color: #7c3aed; background: rgba(139, 92, 246, 0.14); }
+.dvx-method-ico.t-finger { color: #059669; background: rgba(16, 185, 129, 0.15); }
+.dv-night .dvx-method-ico.t-face { color: #a5b4fc; }
+.dv-night .dvx-method-ico.t-qr { color: #c4b5fd; }
+.dv-night .dvx-method-ico.t-finger { color: #6ee7b7; }
+.dvx-method-title { font-size: 14px; font-weight: 800; line-height: 1.15; color: var(--dvx-t1); }
+.dvx-method-sub { margin-top: 0.15rem; font-size: 10.5px; line-height: 1.3; color: var(--dvx-t3); }
+.dvx-method.is-on {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.28);
+  background: linear-gradient(135deg, #4b6bff 0%, #5a45ee 55%, #6d3df0 100%);
+  box-shadow: 0 14px 30px rgba(84, 70, 230, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.dvx-method.is-on .dvx-method-title { color: #fff; }
+.dvx-method.is-on .dvx-method-sub { color: rgba(255, 255, 255, 0.8); }
+.dvx-method.is-on .dvx-method-ico { color: #fff; background: rgba(255, 255, 255, 0.2); }
+.dvx-method.is-locked { opacity: 0.55; box-shadow: none; }
+.dvx-method.is-locked .dvx-method-sub { color: #d6455f; font-weight: 600; }
+
+/* Eski panellar (tarix, maosh) — yangi mavzuga */
+.dv-premium .dv-panel {
+  background: var(--dvx-surface);
+  border: 1px solid var(--dvx-border);
+  box-shadow: var(--dvx-shadow);
+}
+.dv-premium .dv-panel-salary { background: var(--dvx-surface); border-color: rgba(34, 170, 98, 0.28); }
+.dv-premium .dv-panel-head { border-bottom: 1px solid var(--dvx-border); background: none; }
+.dv-premium .dv-salary-cell { background: var(--dvx-surface-2); border: 1px solid var(--dvx-border); }
+.dv-premium .dv-salary-label { color: var(--dvx-t3); }
+.dv-premium .dv-salary-value { color: var(--dvx-t1); }
+.dv-premium .dv-range-tabs { background: var(--dvx-surface-2); border: 1px solid var(--dvx-border); }
+.dv-premium .dv-range-tab { color: var(--dvx-t3); }
+.dv-premium .dv-range-tab-on { color: #fff; background: linear-gradient(135deg, #e0782a, #bf4f17); box-shadow: 0 4px 12px rgba(191, 79, 23, 0.35); }
+.dv-night .dv-range-tab-on { background: linear-gradient(135deg, #7c5cf0, #5a3fd0); box-shadow: 0 4px 12px rgba(90, 63, 208, 0.45); }
+
+.dv-day .dv-panel .text-white,
+.dv-day .dv-panel [class*="text-white/"] { color: var(--dvx-t1); }
+.dv-day .dv-panel [class*="text-white/3"],
+.dv-day .dv-panel [class*="text-white/4"],
+.dv-day .dv-panel [class*="text-white/5"] { color: var(--dvx-t3); }
+.dv-day .dv-panel [class*="text-sky-"] { color: #b4501a; }
+.dv-day .dv-panel [class*="text-emerald-300"] { color: #0f8f52; }
+.dv-day .dv-panel [class*="text-rose-300"] { color: #d63a55; }
+.dv-day .dv-panel [class*="text-emerald-50"] { color: #0b5f3a; }
+.dv-day .dv-panel [class*="border-white/"] { border-color: var(--dvx-border); }
+.dv-day .dv-panel .bg-sky-500\/10 { background: rgba(224, 120, 40, 0.1); }
+.dv-day .dv-panel li[class*="bg-white"] { background: var(--dvx-surface-2); }
+.dv-day .dv-panel .dv-panel-icon-sky { color: #c2571a; background: rgba(224, 120, 40, 0.14); border-color: rgba(224, 120, 40, 0.28); }
+.dv-day .dv-panel .dv-panel-icon-emerald { color: #0f8f52; background: rgba(16, 185, 129, 0.14); border-color: rgba(16, 185, 129, 0.3); }
+.dv-day .dv-panel-head span[class*="text-sky-300"] { color: #b4501a; background: var(--dvx-surface-2); border-color: var(--dvx-border); }
+
+.dvx-link { color: var(--dvx-accent); }
+.dvx-link-chip {
+  color: var(--dvx-accent);
+  background: var(--dvx-accent-soft);
+  border: 1px solid var(--dvx-border);
+}
+
+/* ── Ranglarni mavzuga moslash: ko‘k ajralib qolmasin ── */
+.dvx-date { padding: 0.3rem 0.65rem; margin-top: -0.1rem; }
+
+/* Tanlangan usul: kunduz — iliq terrakota, kech — binafsha */
+.dv-day .dvx-method.is-on {
+  background: linear-gradient(135deg, #e8903f 0%, #cf5f1f 55%, #a8420f 100%);
+  box-shadow: 0 14px 28px rgba(190, 90, 25, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+.dv-night .dvx-method.is-on {
+  background: linear-gradient(135deg, #8a68f5 0%, #5f43d6 55%, #402a9e 100%);
+  box-shadow: 0 14px 28px rgba(80, 55, 200, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+.dv-day .dvx-method-ico.t-face { color: #c2571a; background: rgba(224, 120, 40, 0.15); }
+.dv-day .dvx-method-ico.t-qr { color: #9a4a22; background: rgba(160, 82, 45, 0.14); }
+.dv-night .dvx-method-ico.t-face { color: #c4b5fd; background: rgba(139, 92, 246, 0.2); }
+.dv-night .dvx-method-ico.t-qr { color: #f0abfc; background: rgba(217, 70, 239, 0.16); }
+
+/* «Davom etish» tugmasi (ko‘k o‘rniga mavzu rangi) */
+.dv-day .dv-cta:not(.dv-cta-in):not(.dv-cta-out):not(.dv-cta-done):not(.dv-cta-warn) {
+  background: linear-gradient(90deg, #e8903f 0%, #cf5f1f 52%, #a8420f 100%);
+  box-shadow: 0 14px 30px rgba(190, 90, 25, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+.dv-night .dv-cta:not(.dv-cta-in):not(.dv-cta-out):not(.dv-cta-done):not(.dv-cta-warn) {
+  background: linear-gradient(90deg, #8a68f5 0%, #6446dc 52%, #4a2fb0 100%);
+  box-shadow: 0 14px 30px rgba(80, 55, 200, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+.dv-day .dv-cta-in { background: linear-gradient(90deg, #3aa86f 0%, #2a8a58 55%, #1f6b45 100%); }
+.dv-day .dv-cta-out { background: linear-gradient(90deg, #d4623a 0%, #b84326 55%, #8f2f1a 100%); }
+.dv-day .dv-cta-warn { background: linear-gradient(90deg, #8f3a2a 0%, #a8402f 55%, #7a2a22 100%); }
+
+/* Xarita: marker/doira ranglari ham iliq */
+.dv-day .dvx-card .dv-lf-branch-pin { background: linear-gradient(160deg, #e8903f, #c2571a); }
+.dv-night .dvx-card .dv-lf-branch-pin { background: linear-gradient(160deg, #8a68f5, #5a3fd0); }
+.dv-day .dvx-card .dv-map-unlock-chip { background: rgba(59, 35, 17, 0.82); color: #fff3e3; border-color: rgba(255, 255, 255, 0.2); }
+.dv-day .dvx-card .dv-map-locate.is-on { color: #c2571a; border-color: rgba(194, 87, 26, 0.5); box-shadow: 0 8px 18px rgba(194, 87, 26, 0.25); }
+.dv-day .dvx-card .dv-lf-branch-pin { box-shadow: 0 8px 18px rgba(194, 87, 26, 0.5); }
+.dv-night .dvx-card .dv-lf-branch-pin { box-shadow: 0 8px 18px rgba(90, 63, 208, 0.55); }
+
+/* Salomlashuv matni: pastroqda, o‘qilishi aniq */
+.dv-night .dvx-greet { text-shadow: 0 1px 10px rgba(10, 6, 30, 0.7), 0 0 2px rgba(10, 6, 30, 0.6); }
+.dv-day .dvx-greet { text-shadow: 0 1px 8px rgba(255, 246, 232, 0.9); }
+.dvx-greet h1 { letter-spacing: -0.01em; }
+
+/* ── Kechki rejim: binafsha o‘rniga chuqur slate + oltin-amber ── */
+.dv-premium.dv-night,
+.dark .dv-premium.dv-night {
+  --dvx-bg: #0d1218;
+  --dvx-surface: rgba(24, 31, 40, 0.84);
+  --dvx-surface-2: rgba(255, 255, 255, 0.06);
+  --dvx-border: rgba(255, 224, 170, 0.12);
+  --dvx-t1: #f7f3ec;
+  --dvx-t2: rgba(247, 243, 236, 0.78);
+  --dvx-t3: rgba(247, 243, 236, 0.52);
+  --dvx-accent: #f2b544;
+  --dvx-accent-soft: rgba(242, 181, 68, 0.16);
+  background:
+    radial-gradient(90% 40% at 0% 0%, rgba(214, 140, 40, 0.2), transparent 60%),
+    linear-gradient(180deg, #0d1218 0%, #111a22 50%, #0a0f14 100%);
+}
+.dv-night .dvx-hero-shade {
+  background:
+    linear-gradient(90deg, rgba(8, 12, 18, 0.8) 0%, rgba(8, 12, 18, 0.42) 52%, rgba(8, 12, 18, 0) 82%),
+    linear-gradient(180deg, rgba(10, 14, 20, 0) 55%, rgba(13, 18, 24, 0.95) 100%);
+}
+.dv-night .dvx-clock {
+  background:
+    radial-gradient(120% 120% at 0% 0%, rgba(255, 205, 120, 0.38), transparent 55%),
+    linear-gradient(135deg, #c98a24 0%, #8f5a14 55%, #5a3810 100%);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.dv-night .dvx-method.is-on {
+  background: linear-gradient(135deg, #e0a03a 0%, #c0771a 55%, #8f520f 100%);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+.dv-night .dv-cta:not(.dv-cta-in):not(.dv-cta-out):not(.dv-cta-done):not(.dv-cta-warn) {
+  background: linear-gradient(90deg, #e0a03a 0%, #c9811c 52%, #9a5a10 100%);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+.dv-night .dvx-method-ico.t-face { color: #ffd488; background: rgba(242, 181, 68, 0.18); }
+.dv-night .dvx-method-ico.t-qr { color: #9fe3d6; background: rgba(45, 190, 170, 0.16); }
+.dv-night .dv-range-tab-on { background: linear-gradient(135deg, #e0a03a, #b8691a); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); }
+.dv-night .dvx-card .dv-lf-branch-pin { background: linear-gradient(160deg, #f2b544, #c0771a); box-shadow: 0 8px 18px rgba(0, 0, 0, 0.5); }
+.dv-night .dvx-greet { text-shadow: 0 1px 10px rgba(6, 10, 16, 0.75), 0 0 2px rgba(6, 10, 16, 0.6); }

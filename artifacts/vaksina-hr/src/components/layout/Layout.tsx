@@ -472,7 +472,7 @@ function HeaderCallButton({ active }: { active: boolean }) {
       aria-label="Qo‘ng‘iroq"
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group relative inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-emerald-600 py-1 pl-1 pr-2.5 text-white shadow-sm transition-all duration-200 hover:bg-emerald-500 active:scale-95',
+        'group relative inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-emerald-700/25 bg-gradient-to-b from-emerald-500 to-emerald-600 py-0 pl-1 pr-3 text-white shadow-[0_6px_14px_-8px_rgba(5,150,105,0.9)] transition-all duration-200 hover:from-emerald-400 hover:to-emerald-500 active:scale-95 dark:border-white/15',
         active && 'ring-2 ring-emerald-400/60 ring-offset-2 ring-offset-card',
       )}
     >
@@ -485,7 +485,7 @@ function HeaderCallButton({ active }: { active: boolean }) {
           </span>
         ) : null}
       </span>
-      <span className="text-[11px] font-bold tracking-wide">Qo‘ng‘iroq</span>
+      <span className="text-xs font-bold tracking-wide">Qo‘ng‘iroq</span>
     </Link>
   );
 }
@@ -552,7 +552,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const [avatarOpen, setAvatarOpen] = React.useState(false);
   const [avatarBroken, setAvatarBroken] = React.useState(false);
   /** Profil rasmi: avval Face ID rasmi; bo‘lmasa xodim rasmi (/staff/:id/avatar). */
-  const avatarSrc = facePhotoUrl ?? (user?.id ? `/api/staff/${user.id}/avatar` : null);
+  const avatarSrc =
+    normalizeUserRole(user?.role) === 'admin'
+      ? null // Admin akkauntida rasm ko‘rsatilmaydi — toza (harf) avatar
+      : (facePhotoUrl ?? (user?.id ? `/api/staff/${user.id}/avatar` : null));
 
   /** Rasmni Layout o‘zi yuklaydi — FaceIdEnroll (bosh sahifada yashirin) ga bog‘liq emas. */
   React.useEffect(() => {
@@ -2531,8 +2534,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <button
                 type="button"
-                onClick={() => setAvatarOpen(true)}
-                className="app-sidebar-profile-avatar ring-1 ring-white/15 cursor-zoom-in"
+                onClick={() => {
+                  if (avatarSrc && !avatarBroken) setAvatarOpen(true);
+                }}
+                className={cn(
+                  'app-sidebar-profile-avatar ring-1 ring-white/15',
+                  avatarSrc && !avatarBroken ? 'cursor-zoom-in' : 'cursor-default',
+                )}
                 title="Rasmni kattalashtirish"
                 aria-label="Rasmni kattalashtirish"
               >

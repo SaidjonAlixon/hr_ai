@@ -5,6 +5,8 @@ type Props = {
   className?: string;
   /** compact — header/mobile */
   size?: "sm" | "md";
+  /** header: rejimga moslashadi, dark: to'q fon ustida */
+  variant?: "header" | "dark";
 };
 
 function FlagUz({ className }: { className?: string }) {
@@ -50,8 +52,10 @@ const FLAGS: Record<Locale, (p: { className?: string }) => JSX.Element> = {
   ru: FlagRu,
 };
 
-export function LanguageSwitcher({ className, size = "sm" }: Props) {
+export function LanguageSwitcher({ className, size = "sm", variant = "header" }: Props) {
   const { locale, setLocale, t } = useI18n();
+  /** header — kunduzgi/kechki rejimga moslashadi; dark — to'q fon ustida (login) */
+  const onDark = variant === "dark";
 
   const btn = (code: Locale, label: string) => {
     const active = locale === code;
@@ -65,17 +69,23 @@ export function LanguageSwitcher({ className, size = "sm" }: Props) {
         aria-pressed={active}
         aria-label={`${t("common.language")}: ${label}`}
         className={cn(
-          "group relative inline-flex items-center gap-1.5 rounded-full font-semibold tracking-wide transition-all duration-200",
-          size === "sm" ? "px-2 py-1 text-[11px]" : "px-2.5 py-1.5 text-xs",
-          active
-            ? "bg-white text-slate-900 shadow-sm"
-            : "text-white/75 hover:bg-white/10 hover:text-white",
+          "group relative inline-flex items-center justify-center gap-1.5 rounded-full font-semibold tracking-wide transition-all duration-200",
+          size === "sm" ? "h-8 px-2.5 text-xs" : "h-9 px-3 text-sm",
+          onDark
+            ? active
+              ? "bg-white text-slate-900 shadow-sm"
+              : "text-white/75 hover:bg-white/10 hover:text-white"
+            : active
+              ? "bg-[#0b3a5c] text-white shadow-sm dark:bg-white dark:text-slate-900"
+              : "text-slate-600 hover:bg-slate-900/5 hover:text-slate-900 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white",
         )}
       >
         <span
           className={cn(
             "relative overflow-hidden rounded-[3px] ring-1",
-            active ? "ring-slate-900/10 shadow-sm" : "ring-white/20",
+            onDark
+              ? active ? "ring-slate-900/10 shadow-sm" : "ring-white/20"
+              : "ring-black/10 dark:ring-white/20",
             flagSize,
           )}
         >
@@ -90,7 +100,10 @@ export function LanguageSwitcher({ className, size = "sm" }: Props) {
     <div
       className={cn(
         "inline-flex items-center gap-0.5 rounded-full p-0.5",
-        "border border-white/15 bg-[#312e81]/90 shadow-[0_8px_18px_-12px_rgba(91,33,182,0.85)] backdrop-blur-md",
+        size === "sm" ? "h-9" : "h-11",
+        onDark
+          ? "border border-white/15 bg-[#312e81]/90 shadow-[0_8px_18px_-12px_rgba(91,33,182,0.85)] backdrop-blur-md"
+          : "border border-slate-200/90 bg-[hsl(0_0%_100%/0.85)] shadow-sm backdrop-blur-md dark:border-white/15 dark:bg-slate-900/70",
         className,
       )}
       role="group"

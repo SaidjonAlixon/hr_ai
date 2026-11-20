@@ -10,9 +10,11 @@ import jsQR from "jsqr";
 import { cn } from "@/lib/utils";
 import {
   cameraErrorCode,
+  cameraViewScale,
   clearCameraDeviceCache,
   openCameraFast,
   prefetchCamera,
+  tuneCameraStream,
   warmCamera,
   type CameraFacing,
 } from "@/lib/camera-fast";
@@ -79,6 +81,8 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
   const [retryKey, setRetryKey] = useState(0);
   const [torchSupported, setTorchSupported] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
+  /** Qurilma zoom'i yo'q bo'lsa preview'ni CSS bilan yaqinlashtirish (QR "uzoq" ko'rinmasin) */
+  const [viewScale, setViewScale] = useState(1);
   const handling = useRef(false);
   const autoReopen = useRef(0);
   const onDetectedRef = useRef(onDetected);
@@ -411,6 +415,23 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
     };
   }, [open, ready]);
 
+  // Zoom/fokus qo'llangach preview kattalashtirishni aniqlaymiz (qurilma zoom'i ishlamasa CSS)
+  useEffect(() => {
+    if (!open || !ready) {
+      setViewScale(1);
+      return;
+    }
+    const stream = activeStreamRef.current;
+    if (!stream) return;
+    let off = false;
+    void tuneCameraStream(stream, facing).then(() => {
+      if (!off) setViewScale(cameraViewScale(stream, facing));
+    });
+    return () => {
+      off = true;
+    };
+  }, [open, ready, facing, retryKey]);
+
   const onTapCamera = useCallback(() => {
     if (opening) return;
     // Bosish paytida (user gesture) kamerani boshlaymiz — iOS/Android ishonchli
@@ -460,6 +481,7 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
           ready ? "opacity-100" : "opacity-0",
           facing === "user" && "-scale-x-100",
         )}
+        style={viewScale > 1 ? { transform: `scale(${viewScale})` } : undefined}
         playsInline
         muted
         autoPlay

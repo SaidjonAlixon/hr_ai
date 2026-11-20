@@ -718,7 +718,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, onStreamR
             }
           }
           if (running && !cancelled) {
-            const delay = want?.blink ? 20 : 70;
+            const delay = want?.blink ? 20 : 40;
             window.setTimeout(() => void loop(), delay);
           }
         };

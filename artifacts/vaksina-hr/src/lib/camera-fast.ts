@@ -225,16 +225,49 @@ function preferredAttempts(
   return list;
 }
 
-async function resetDigitalZoom(stream: MediaStream) {
+/**
+ * Kerakli yaqinlashtirish. Oldin zoom MINIMUMGA (eng keng burchak) qo'yilardi — shu sabab
+ * kamera "uzoq" ko'rsatardi. Endi QR uchun ~2x, yuz uchun ~1.3x.
+ */
+const ZOOM_TARGET: Record<CameraFacing, number> = { environment: 2, user: 1.3 };
+/** Qurilma zoom'i yo'q bo'lsa (iOS) — faqat QR preview'ni CSS bilan yaqinlashtiramiz */
+const CSS_FALLBACK_SCALE: Record<CameraFacing, number> = { environment: 1.35, user: 1 };
+
+/** Qurilma (hardware) zoom'i haqiqatan qo'llangan oqimlar */
+const hwZoom = new WeakMap<MediaStream, number>();
+const tuned = new WeakMap<MediaStream, Promise<void>>();
+
+/** Zoom + doimiy avtofokus (bir oqim uchun bir marta). Ochilishni kechiktirmaslik uchun kutilmaydi. */
+export function tuneCameraStream(stream: MediaStream, facing: CameraFacing): Promise<void> {
+  const prev = tuned.get(stream);
+  if (prev) return prev;
+  const p = applyZoomAndFocus(stream, facing).catch(() => undefined);
+  tuned.set(stream, p);
+  return p;
+}
+
+/** Preview uchun qo'shimcha CSS scale (qurilma zoom'i ishlagan bo'lsa 1). */
+export function cameraViewScale(stream: MediaStream | null | undefined, facing: CameraFacing): number {
+  if (!stream) return 1;
+  const hw = hwZoom.get(stream);
+  if (hw && hw > 1.05) return 1;
+  return CSS_FALLBACK_SCALE[facing];
+}
+
+async function applyZoomAndFocus(stream: MediaStream, facing: CameraFacing) {
   const track = stream.getVideoTracks()[0];
   const caps = track?.getCapabilities?.() as
-    | { zoom?: { min?: number }; focusMode?: string[] }
+    | { zoom?: { min?: number; max?: number }; focusMode?: string[] }
     | undefined;
   if (!track || !caps) return;
-  const min = caps.zoom?.min;
-  if (typeof min === "number") {
+  const zoomMin = typeof caps.zoom?.min === "number" ? caps.zoom.min : 1;
+  const zoomMax = caps.zoom?.max;
+  const want = typeof zoomMax === "number" ? Math.min(zoomMax, Math.max(zoomMin, ZOOM_TARGET[facing])) : 0;
+  if (want > 1.05) {
     try {
-      await track.applyConstraints({ advanced: [{ zoom: min } as MediaTrackConstraintSet] });
+      await track.applyConstraints({ advanced: [{ zoom: want } as MediaTrackConstraintSet] });
+      const got = (track.getSettings?.() as { zoom?: number } | undefined)?.zoom;
+      if (typeof got === "number" && got > 1.05) hwZoom.set(stream, got);
     } catch {
       /* zoom yo‘q */
     }
@@ -386,7 +419,8 @@ async function openCameraOnce(facing: CameraFacing): Promise<MediaStream> {
   let fallbackStream: MediaStream | null = null;
 
   const accept = async (stream: MediaStream, constraints: MediaStreamConstraints, got: CameraFacing | null) => {
-    await resetDigitalZoom(stream);
+    // Zoom/fokus fonda qo'llanadi — kamera ochilishini kechiktirmaydi
+    void tuneCameraStream(stream, facing);
     if (got === facing) remember(facing, stream, constraints);
     else markGranted();
     return stream;

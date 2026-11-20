@@ -70,7 +70,7 @@ export function LanguageSwitcher({ className, size = "sm", variant = "header" }:
         aria-label={`${t("common.language")}: ${label}`}
         className={cn(
           "group relative inline-flex items-center justify-center gap-1.5 rounded-full font-semibold tracking-wide transition-all duration-200",
-          size === "sm" ? "h-8 px-2.5 text-xs" : "h-9 px-3 text-sm",
+          size === "sm" ? "h-8 gap-1 px-2 text-xs sm:gap-1.5 sm:px-2.5" : "h-9 px-3 text-sm",
           onDark
             ? active
               ? "bg-white text-slate-900 shadow-sm"

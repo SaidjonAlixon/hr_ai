@@ -468,8 +468,8 @@ function HeaderCallButton({ active }: { active: boolean }) {
   return (
     <Link
       href="/qongiroq"
-      title="Qo‘ng‘iroq"
-      aria-label="Qo‘ng‘iroq"
+      title="Konferensiya"
+      aria-label="Konferensiya"
       aria-current={active ? 'page' : undefined}
       className={cn(
         'group relative inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-emerald-700/25 bg-gradient-to-b from-emerald-500 to-emerald-600 py-0 pl-1 pr-3 text-white shadow-[0_6px_14px_-8px_rgba(5,150,105,0.9)] transition-all duration-200 hover:from-emerald-400 hover:to-emerald-500 active:scale-95 dark:border-white/15',
@@ -477,7 +477,7 @@ function HeaderCallButton({ active }: { active: boolean }) {
       )}
     >
       <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/20 ring-1 ring-white/30 transition group-hover:bg-white/25">
-        <PhoneCall className="h-4 w-4" />
+        <Video className="h-4 w-4" />
         {live ? (
           <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/80" />
@@ -485,7 +485,7 @@ function HeaderCallButton({ active }: { active: boolean }) {
           </span>
         ) : null}
       </span>
-      <span className="text-xs font-bold tracking-wide">Qo‘ng‘iroq</span>
+      <span className="text-xs font-bold tracking-wide">Konferensiya</span>
     </Link>
   );
 }

@@ -257,9 +257,9 @@
 }
 
 /* Pastel gradient panellar (resepsion va boshqalar) — ham shisha */
-.app-autumn-stage .rounded-3xl.bg-gradient-to-br,
-.app-autumn-stage .rounded-2xl.bg-gradient-to-br,
-.app-autumn-stage section.bg-gradient-to-br {
+.app-autumn-stage .rounded-3xl.bg-gradient-to-br:not(.text-white):not(.hero-dark),
+.app-autumn-stage .rounded-2xl.bg-gradient-to-br:not(.text-white):not(.hero-dark),
+.app-autumn-stage section.bg-gradient-to-br:not(.text-white):not(.hero-dark) {
   background-image: none !important;
   background-color: rgb(255 255 255 / 0.18) !important;
   backdrop-filter: blur(20px) saturate(1.25);
@@ -310,9 +310,9 @@
   -webkit-backdrop-filter: blur(18px) saturate(1.15);
 }
 
-.dark .app-autumn-stage .rounded-3xl.bg-gradient-to-br,
-.dark .app-autumn-stage .rounded-2xl.bg-gradient-to-br,
-.dark .app-autumn-stage section.bg-gradient-to-br {
+.dark .app-autumn-stage .rounded-3xl.bg-gradient-to-br:not(.text-white):not(.hero-dark),
+.dark .app-autumn-stage .rounded-2xl.bg-gradient-to-br:not(.text-white):not(.hero-dark),
+.dark .app-autumn-stage section.bg-gradient-to-br:not(.text-white):not(.hero-dark) {
   background-image: none !important;
   background-color: rgb(12 20 36 / 0.28) !important;
   backdrop-filter: blur(20px) saturate(1.2);
@@ -337,6 +337,16 @@
   background-color: hsl(var(--destructive)) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+}
+
+/* To'q gradientli sarlavhalar (oq matn): shisha bo'lmasin, ichidagi oq tugmalar ham to'q fonda aniq turadi */
+.app-autumn-stage :is(.text-white, .hero-dark).bg-gradient-to-br .bg-white,
+.app-autumn-stage :is(.text-white, .hero-dark).bg-gradient-to-br .bg-white\/90,
+.app-autumn-stage :is(.text-white, .hero-dark).bg-gradient-to-br .bg-white\/95 {
+  background-color: rgb(255 255 255) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none;
 }
 
 /* Faqat to‘liq oq gradient panellar (from-white/10 kabi bannerlarni tegma) */

@@ -106,6 +106,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
+import { fetchFaceIdStatus } from '@/lib/face-id';
 import {
   type NavLayoutState,
   applyNavLayout,
@@ -547,6 +548,28 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     },
     [],
   );
+
+  const [avatarOpen, setAvatarOpen] = React.useState(false);
+  const [avatarBroken, setAvatarBroken] = React.useState(false);
+  /** Profil rasmi: avval Face ID rasmi; bo‘lmasa xodim rasmi (/staff/:id/avatar). */
+  const avatarSrc = facePhotoUrl ?? (user?.id ? `/api/staff/${user.id}/avatar` : null);
+
+  /** Rasmni Layout o‘zi yuklaydi — FaceIdEnroll (bosh sahifada yashirin) ga bog‘liq emas. */
+  React.useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    fetchFaceIdStatus()
+      .then((s) => {
+        if (!cancelled) {
+          setFacePhotoUrl(s.photoUrl ?? null);
+          setAvatarBroken(false);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   const openProfileEditor = () => {
     const parts = splitFullName(user?.fullName || '');
@@ -2467,8 +2490,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full ring-2 ring-white/20 transition hover:ring-white/40"
                 title={t('common.profileEdit')}
               >
-                {facePhotoUrl ? (
-                  <img src={facePhotoUrl} alt="" className="h-full w-full object-cover" />
+                {avatarSrc && !avatarBroken ? (
+                  <img src={avatarSrc} onError={() => setAvatarBroken(true)} alt="" className="h-full w-full object-cover" />
                 ) : (
                   <span className="flex h-full w-full items-center justify-center bg-gradient-to-br from-violet-500 to-sky-400 text-sm font-bold text-white">
                     {(user.fullName || 'U').slice(0, 1).toUpperCase()}
@@ -2505,19 +2528,26 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               desktopCollapsed && 'md:hidden',
             )}
           >
-            <button
-              type="button"
-              onClick={openProfileEditor}
-              className="flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left transition-colors hover:bg-slate-900/[0.04] dark:hover:bg-white/[0.06]"
-              title={t('common.profileEdit')}
-            >
-              <div className="app-sidebar-profile-avatar ring-1 ring-white/15">
-                {facePhotoUrl ? (
-                  <img src={facePhotoUrl} alt="" className="h-full w-full object-cover" />
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setAvatarOpen(true)}
+                className="app-sidebar-profile-avatar ring-1 ring-white/15 cursor-zoom-in"
+                title="Rasmni kattalashtirish"
+                aria-label="Rasmni kattalashtirish"
+              >
+                {avatarSrc && !avatarBroken ? (
+                  <img src={avatarSrc} onError={() => setAvatarBroken(true)} alt="" className="h-full w-full object-cover" />
                 ) : (
                   (user.fullName || 'U').slice(0, 1).toUpperCase()
                 )}
-              </div>
+              </button>
+              <button
+                type="button"
+                onClick={openProfileEditor}
+                className="flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left transition-colors hover:bg-slate-900/[0.04] dark:hover:bg-white/[0.06]"
+                title={t('common.profileEdit')}
+              >
               <div className="min-w-0 flex-1">
                 <span className="flex min-w-0 items-center gap-1">
                   <span className="app-sidebar-profile-name">{profileDisplayName(user.fullName)}</span>
@@ -2533,7 +2563,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                   </span>
                 </span>
               </div>
-            </button>
+              </button>
+            </div>
             <div className="flex shrink-0 items-center gap-0.5">
               <ThemeToggle
                 variant="sidebar"
@@ -2589,6 +2620,25 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         </div>
       </aside>
 
+      {/* Profil rasmi — bosilganda katta ko‘rinish */}
+      <Dialog open={avatarOpen} onOpenChange={setAvatarOpen}>
+        <DialogContent className="w-[min(92vw,420px)] max-w-none border-0 bg-transparent p-0 shadow-none">
+          <DialogTitle className="sr-only">{user?.fullName || 'Profil rasmi'}</DialogTitle>
+          {avatarSrc && !avatarBroken ? (
+            <img
+              src={avatarSrc}
+              onError={() => setAvatarBroken(true)}
+              alt={user?.fullName || ''}
+              className="aspect-square w-full rounded-3xl object-cover shadow-2xl"
+            />
+          ) : (
+            <div className="flex aspect-square w-full items-center justify-center rounded-3xl bg-slate-800 text-7xl font-bold text-white">
+              {(user?.fullName || 'U').slice(0, 1).toUpperCase()}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
         <DialogContent className="w-[calc(100%-1.25rem)] max-w-md">
           <DialogHeader>
@@ -2597,8 +2647,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           <div className="space-y-3 py-1">
             <div className="flex items-center gap-3 rounded-xl border bg-muted p-3">
               <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted text-lg font-bold text-muted-foreground">
-                {facePhotoUrl ? (
-                  <img src={facePhotoUrl} alt="" className="h-full w-full object-cover" />
+                {avatarSrc && !avatarBroken ? (
+                  <img src={avatarSrc} onError={() => setAvatarBroken(true)} alt="" className="h-full w-full object-cover" />
                 ) : (
                   (user.fullName || 'U').slice(0, 1).toUpperCase()
                 )}

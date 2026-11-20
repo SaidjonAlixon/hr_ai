@@ -684,10 +684,8 @@
   overflow: hidden;
   color: var(--sb-ink);
   background-color: #1a1535;
-  background-image: url('/menyu_fon.png');
-  background-size: cover;
-  background-position: center center;
-  background-repeat: no-repeat;
+  /* Fon rasm ::before qatlamida — faqat orqa xira (blur), menyu matni aniq qoladi */
+  background-image: none;
   border-right: none;
   box-shadow: 8px 0 28px -20px rgba(15, 23, 42, 0.4);
 }
@@ -705,7 +703,17 @@
 }
 
 .app-sidebar::before {
-  display: none;
+  content: '';
+  display: block;
+  position: absolute;
+  /* Blur chetlarda och ko'rinmasligi uchun biroz kattaroq */
+  inset: -12px;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(14, 10, 32, 0.34) 0%, rgba(14, 10, 32, 0.46) 100%),
+    url('/menyu_fon.png') center center / cover no-repeat;
+  filter: blur(3px) saturate(1.05);
 }
 
 .app-sidebar > * {
@@ -779,7 +787,9 @@
 }
 
 .dark .app-sidebar::before {
-  display: none;
+  background:
+    linear-gradient(180deg, rgba(6, 8, 20, 0.5) 0%, rgba(6, 8, 20, 0.62) 100%),
+    url('/menyu_fon.png') center center / cover no-repeat;
 }
 
 .dark .app-sidebar-brand {

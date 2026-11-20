@@ -688,12 +688,14 @@ export async function confirmOwnerFaceWithAi(opts: {
   liveSnapshot?: unknown;
   localDist: number;
   localCosine: number;
+  /** true bo'lsa AI/rasm bo'lmagan holatda lokal natijaga ishonilmaydi (qat'iy rejim). */
+  requireAi?: boolean;
 }): Promise<
   | { ok: true; confidence: number; similarity: number }
   | { ok: false; error: string; code: string }
 > {
   if (!isFaceAiEnabled()) {
-    if (isSamePerson(opts.localDist, opts.localCosine, FACE_MATCH_MAX)) {
+    if (!opts.requireAi && isSamePerson(opts.localDist, opts.localCosine, FACE_MATCH_MAX)) {
       return { ok: true, confidence: opts.localCosine, similarity: opts.localCosine };
     }
     return { ok: false, error: FACE_LOGIN_MSG_RETRY, code: "face_ai_mismatch" };
@@ -701,7 +703,7 @@ export async function confirmOwnerFaceWithAi(opts: {
 
   const live = toAiLiveDataUrl(typeof opts.liveSnapshot === "string" ? opts.liveSnapshot : null);
   if (!live) {
-    if (isSamePerson(opts.localDist, opts.localCosine, FACE_MATCH_MAX)) {
+    if (!opts.requireAi && isSamePerson(opts.localDist, opts.localCosine, FACE_MATCH_MAX)) {
       return { ok: true, confidence: opts.localCosine, similarity: opts.localCosine };
     }
     return {
@@ -715,7 +717,7 @@ export async function confirmOwnerFaceWithAi(opts: {
   const enrolled = photos.get(opts.faceProfileId)?.dataUrl;
   if (!enrolled) {
     /** Rasm yo‘q — lokal yetarli bo‘lsa OK. */
-    if (opts.localDist <= FACE_MATCH_MAX && opts.localCosine >= 0.88) {
+    if (!opts.requireAi && opts.localDist <= FACE_MATCH_MAX && opts.localCosine >= 0.88) {
       return { ok: true, confidence: opts.localCosine, similarity: opts.localCosine };
     }
     return {

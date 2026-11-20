@@ -444,22 +444,76 @@ export async function matchFaceForOwnerWithAi(
     };
   }
 
-  let bestDist = Number.POSITIVE_INFINITY;
-  let bestCosine = 0;
-  for (const probe of probes) {
+  /** Har bir kadr uchun egasining shablonlariga eng yaqin masofa. */
+  const perProbe: Array<{ dist: number; cosine: number }> = [];
+  for (const probe of probes.slice(0, 8)) {
+    let pd = Number.POSITIVE_INFINITY;
+    let pc = 0;
     for (const row of stored) {
       const { dist, cosine } = faceDistance(probe, row);
-      if (dist < bestDist) {
-        bestDist = dist;
-        bestCosine = cosine;
+      if (dist < pd) {
+        pd = dist;
+        pc = cosine;
       }
     }
+    perProbe.push({ dist: pd, cosine: pc });
+  }
+  perProbe.sort((a, b) => a.dist - b.dist);
+  const firstProbe = perProbe[0] ?? { dist: Number.POSITIVE_INFINITY, cosine: 0 };
+  /** Bitta tasodifiy "omadli" kadr boshqa odamni o'tkazmasin: 3+ kadrda 2-eng yaxshisi hisoblanadi. */
+  const aggProbe = perProbe.length >= 3 ? perProbe[1]! : firstProbe;
+  const bestDist = aggProbe.dist;
+  const bestCosine = aggProbe.cosine;
+
+  /**
+   * Boshqa ro'yxatdan o'tgan odam shu yuzga egasidan yaqinroq (yoki deyarli teng) bo'lsa —
+   * bu egasi emas (o'xshash/boshqa odam o'z profiliga yaqin chiqadi).
+   */
+  const RIVAL_MARGIN = Number(process.env.FACE_OWNER_RIVAL_MARGIN) || 0.06;
+  let rivalDist = Number.POSITIVE_INFINITY;
+  let rivalUserId: number | null = null;
+  try {
+    const allRows = await loadFaceRows();
+    for (const probe of probes.slice(0, 8)) {
+      for (const row of allRows) {
+        if (row.userId === userId) continue;
+        const { dist } = faceDistance(probe, row.descriptor);
+        if (dist < rivalDist) {
+          rivalDist = dist;
+          rivalUserId = row.userId;
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn({ event: "face_owner_verify", err: err instanceof Error ? err.message : "error" }, "rival check failed");
+  }
+  const ownerBest = firstProbe.dist;
+  const rivalCloser =
+    Number.isFinite(rivalDist) &&
+    (rivalDist <= ownerBest || (ownerBest > 0.3 && rivalDist < ownerBest + RIVAL_MARGIN));
+  if (rivalCloser) {
+    logger.warn(
+      {
+        event: "face_owner_verify",
+        ok: false,
+        userId,
+        code: "rival_closer",
+        dist: Number(ownerBest.toFixed(4)),
+        rivalUserId,
+        rivalDist: Number(rivalDist.toFixed(4)),
+      },
+      "face owner rejected — another enrolled face is closer",
+    );
+    return notOwner;
   }
 
+  /** Qat'iy mahalliy chegara — AI siz faqat juda aniq moslik o'tadi. */
+  const OWNER_STRICT_DIST = Math.min(OWNER_DIST_OK, Number(process.env.FACE_OWNER_STRICT_DIST) || 0.38);
+  const OWNER_STRICT_COS = Math.max(OWNER_COS_OK, Number(process.env.FACE_OWNER_STRICT_COS) || 0.9);
   const localOk =
     Number.isFinite(bestDist) &&
-    bestDist <= OWNER_DIST_OK &&
-    bestCosine >= OWNER_COS_OK;
+    bestDist <= OWNER_STRICT_DIST &&
+    bestCosine >= OWNER_STRICT_COS;
 
   /** 1) Lokal aniq — mavjud egasi AI siz o‘tadi. */
   if (localOk) {
@@ -485,7 +539,7 @@ export async function matchFaceForOwnerWithAi(
   const { confirmOwnerFaceWithAi, FACE_AI_SOFT_DIST, isFaceAiEnabled } = await import("./face-ai-verify");
 
   /** 2) Lokal yetmasa — soft zonada AI zaxira. */
-  if (!isFaceAiEnabled() || bestDist > OWNER_DIST_OK) {
+  if (!isFaceAiEnabled() || bestDist > OWNER_DIST_OK || bestCosine < OWNER_COS_OK) {
     logger.info(
       { event: "face_owner_verify", ok: false, userId, dist: Number(bestDist.toFixed(4)) },
       "face owner local mismatch",
@@ -498,6 +552,8 @@ export async function matchFaceForOwnerWithAi(
     liveSnapshot,
     localDist: bestDist,
     localCosine: bestCosine,
+    /** Chegaraviy zona: AI tasdig'i MAJBURIY (AI/rasm yo'q bo'lsa — rad). */
+    requireAi: true,
   });
 
   if (ai.ok) {

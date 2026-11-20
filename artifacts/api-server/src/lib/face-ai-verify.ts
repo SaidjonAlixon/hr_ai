@@ -715,7 +715,7 @@ export async function confirmOwnerFaceWithAi(opts: {
   const enrolled = photos.get(opts.faceProfileId)?.dataUrl;
   if (!enrolled) {
     /** Rasm yo‘q — lokal yetarli bo‘lsa OK. */
-    if (opts.localDist <= Math.max(FACE_MATCH_MAX, FACE_AI_SOFT_DIST) && opts.localCosine >= 0.88) {
+    if (opts.localDist <= FACE_MATCH_MAX && opts.localCosine >= 0.88) {
       return { ok: true, confidence: opts.localCosine, similarity: opts.localCosine };
     }
     return {

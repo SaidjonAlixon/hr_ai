@@ -406,9 +406,13 @@ export async function matchFaceForOwnerWithAi(
     code: "face_not_owner",
     fullName: name,
   };
-  /** Owner 1:1 — gallery dan yumshoqroq (yorug‘lik/burchak). */
-  const OWNER_DIST_OK = Math.max(FACE_MATCH_MAX, FACE_OWNER_MATCH_MAX);
-  const OWNER_COS_OK = Math.min(FACE_MATCH_MIN_COSINE, FACE_OWNER_MIN_COSINE);
+  /**
+   * Owner 1:1 — QAT'IY. Yumshatish (FACE_OWNER_MATCH_MAX=0.55 / cosine 0.85) boshqa odamni
+   * ham o'tkazib yuborardi (log: dist 0.52 → ok). Shuning uchun gallery chegaralaridan
+   * yumshoq bo'lmaydi; env bilan ham dist ≤ FACE_MATCH_MAX, cosine ≥ FACE_MATCH_MIN_COSINE.
+   */
+  const OWNER_DIST_OK = Math.min(FACE_MATCH_MAX, FACE_OWNER_MATCH_MAX);
+  const OWNER_COS_OK = Math.max(FACE_MATCH_MIN_COSINE, FACE_OWNER_MIN_COSINE);
 
   const [profile] = await db
     .select({
@@ -481,7 +485,7 @@ export async function matchFaceForOwnerWithAi(
   const { confirmOwnerFaceWithAi, FACE_AI_SOFT_DIST, isFaceAiEnabled } = await import("./face-ai-verify");
 
   /** 2) Lokal yetmasa — soft zonada AI zaxira. */
-  if (!isFaceAiEnabled() || bestDist > Math.max(OWNER_DIST_OK, FACE_AI_SOFT_DIST)) {
+  if (!isFaceAiEnabled() || bestDist > OWNER_DIST_OK) {
     logger.info(
       { event: "face_owner_verify", ok: false, userId, dist: Number(bestDist.toFixed(4)) },
       "face owner local mismatch",

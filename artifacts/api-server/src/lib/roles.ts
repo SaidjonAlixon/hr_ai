@@ -422,7 +422,7 @@ export const NON_STAFF_ROLES = ["admin", STUDENT_ROLE] as const;
  * Davomat doskasi / hisobot / analitika / e’lonlarda ko‘rinmaydi (sonlarda ham yo‘q).
  * Tizimda (login, menyu, vazifa…) to‘liq ishlayveradi.
  */
-export const DAVOMAT_HIDDEN_ROLES = ["asoschi", "direktor_yordamchisi", "broker", "mexanik"] as const;
+export const DAVOMAT_HIDDEN_ROLES = ["asoschi", "direktor_yordamchisi", "broker"] as const;
 
 export function isHiddenFromDavomat(role?: string | null): boolean {
   const r = (role ?? "").trim().toLowerCase();

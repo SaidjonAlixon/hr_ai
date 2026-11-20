@@ -199,7 +199,7 @@ export function isAsoschiRole(role?: string | null): boolean {
 }
 
 /** Davomat doskasi / hisobotlarda ko‘rinmaydi (sonlarda ham); tizimda ishlayveradi */
-export const DAVOMAT_HIDDEN_ROLES = ["asoschi", "direktor_yordamchisi", "broker", "mexanik"] as const;
+export const DAVOMAT_HIDDEN_ROLES = ["asoschi", "direktor_yordamchisi", "broker"] as const;
 
 export function isHiddenFromDavomat(role?: string | null): boolean {
   const r = normalizeUserRole(role);

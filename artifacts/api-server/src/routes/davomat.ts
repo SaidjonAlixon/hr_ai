@@ -3922,7 +3922,12 @@ async function geoGate(
       label: string;
     }> = [];
     for (const slot of active) {
-      const coords = await branchCoordsById(slot.branchId);
+      let coords = await branchCoordsById(slot.branchId);
+      // Mudir o‘chirilib yangi «Mudir yo‘q» slot ochilganda eski branch_id qolishi mumkin —
+      // xodimning hozirgi mudir/filialiga tushamiz
+      if (!coords && emp.reportsToId && emp.reportsToId !== slot.branchId) {
+        coords = await branchCoordsById(emp.reportsToId);
+      }
       if (!coords) continue;
       candidates.push({
         slot,
@@ -3931,6 +3936,21 @@ async function geoGate(
         lng: coords.lng,
         label: slot.branchLabel || coords.label,
       });
+    }
+    if (!candidates.length) {
+      // Oxirgi chora: reports_to filial GPS (slotlar o‘lik id ga qolgan bo‘lsa)
+      if (emp.reportsToId) {
+        const fallback = await branchCoordsById(emp.reportsToId);
+        if (fallback && active[0]) {
+          candidates.push({
+            slot: active[0],
+            distanceMeters: haversineMeters(latitude, longitude, fallback.lat, fallback.lng),
+            lat: fallback.lat,
+            lng: fallback.lng,
+            label: active[0].branchLabel || fallback.label,
+          });
+        }
+      }
     }
     if (!candidates.length) {
       return {
@@ -5174,7 +5194,8 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
       !isRegionalManager(user.role) &&
       !isTamojniOrDistrib
     ) {
-      const coords = await branchCoordsById(preferredSlot.branchId);
+      let coords = await branchCoordsById(preferredSlot.branchId);
+      if (!coords && emp.reportsToId) coords = await branchCoordsById(emp.reportsToId);
       if (coords) {
         resolved = {
           ok: true,
@@ -5193,7 +5214,8 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
       !isRegionalManager(user.role) &&
       !isTamojniOrDistrib
     ) {
-      const coords = await branchCoordsById(activeNow[0].branchId);
+      let coords = await branchCoordsById(activeNow[0].branchId);
+      if (!coords && emp.reportsToId) coords = await branchCoordsById(emp.reportsToId);
       if (coords) {
         resolved = {
           ok: true,
@@ -5213,7 +5235,8 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
       !isRegionalManager(user.role) &&
       !isTamojniOrDistrib
     ) {
-      const coords = await branchCoordsById(daySlots[0].branchId);
+      let coords = await branchCoordsById(daySlots[0].branchId);
+      if (!coords && emp.reportsToId) coords = await branchCoordsById(emp.reportsToId);
       if (coords) {
         resolved = {
           ok: true,

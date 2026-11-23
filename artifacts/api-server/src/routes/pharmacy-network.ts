@@ -538,18 +538,28 @@ router.patch("/pharmacy-network/credentials/:employeeId", requireAuth, async (re
  * Avtomatik login/parol yaratadi.
  */
 router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  const actorRole = req.userRole ?? "";
+  const actorRole: string = String(req.userRole ?? "");
   const actorId = req.userId;
   if (!actorId) {
     res.status(401).json({ error: "Avtorizatsiya talab etiladi" });
     return;
   }
 
-  const { firstName, lastName, phone, role, location, coordinates, managerEmployeeId } = req.body ?? {};
+  const {
+    firstName,
+    lastName,
+    phone,
+    role,
+    location,
+    coordinates,
+    managerEmployeeId,
+    coordinatorEmployeeId,
+  } = req.body ?? {};
   const fn = String(firstName || "").trim();
   const ln = String(lastName || "").trim();
   const phoneVal = String(phone || "").trim();
   const staffRole = String(role || "").trim() as StaffRole;
+  const requestedCoordId = parseInt(String(coordinatorEmployeeId ?? ""), 10);
 
   if (!fn || !ln) {
     res.status(400).json({ error: "Ism va familiya majburiy" });
@@ -582,36 +592,44 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
   let branchLat: number | null = null;
   let branchLng: number | null = null;
 
+  async function resolveCoordinatorEmployeeId(preferredId: number | null): Promise<number | null> {
+    if (preferredId != null && Number.isFinite(preferredId) && preferredId > 0) {
+      const [pref] = await db
+        .select({ id: employeesTable.id, orgRole: employeesTable.orgRole })
+        .from(employeesTable)
+        .where(eq(employeesTable.id, preferredId))
+        .limit(1);
+      if (pref && String(pref.orgRole || "").toLowerCase() === "coordinator") return pref.id;
+    }
+    if (actorRole === "koordinator" && actorId) {
+      const coord = await ensureCoordinatorEmployee(actorId, actor?.fullName || "Koordinator");
+      return coord.id;
+    }
+    const [coord] = await db
+      .select({ id: employeesTable.id })
+      .from(employeesTable)
+      .where(eq(employeesTable.orgRole, "coordinator"))
+      .limit(1);
+    return coord?.id ?? null;
+  }
+
   if (staffRole === "mudir") {
     orgRole = "manager";
     position = "Filial mudiri";
-    if (actorRole === "koordinator") {
-      const coord = await ensureCoordinatorEmployee(
-        actorId,
-        actor?.fullName || "Koordinator",
-      );
-      reportsToId = coord.id;
-    } else {
-      const [coord] = await db
-        .select()
-        .from(employeesTable)
-        .where(eq(employeesTable.orgRole, "coordinator"))
-        .limit(1);
-      if (!coord) {
-        res.status(400).json({
-          error: "Avval tizimda koordinator xodimi bo‘lishi kerak",
-        });
-        return;
-      }
-      reportsToId = coord.id;
+    reportsToId = await resolveCoordinatorEmployeeId(
+      Number.isFinite(requestedCoordId) ? requestedCoordId : null,
+    );
+    if (!reportsToId) {
+      res.status(400).json({ error: "Avval tizimda koordinator xodimi bo‘lishi kerak" });
+      return;
     }
     const gps = parseGpsText(String(coordinates || location || ""));
     if (gps) {
       branchLat = gps.lat;
       branchLng = gps.lng;
-      if (!branchLocation || parseGpsText(branchLocation)) {
-        branchLocation = "Filial";
-      }
+      // Nom+GPS (masalan «Samarqand Marxabo |gps:…») saqlansin — faqat sof koordinata bo‘lsa «Filial»
+      const named = displayBranchName(branchLocation).trim();
+      if (!named) branchLocation = "Filial";
     }
     if (!branchLocation) branchLocation = "Filial";
   } else {
@@ -623,25 +641,8 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
       position = "Farmasevt";
     }
 
-    if (actorRole === "mudir") {
-      const [myBranch] = await db
-        .select()
-        .from(employeesTable)
-        .where(eq(employeesTable.userId, actorId));
-      if (!myBranch || myBranch.orgRole !== "manager") {
-        res.status(400).json({
-          error: "Filial bog‘lanmagan — avval sizni mudir sifatida tarmoqqa ulang",
-        });
-        return;
-      }
-      reportsToId = myBranch.id;
-      branchLocation = myBranch.location;
-    } else {
-      const mid = parseInt(String(managerEmployeeId ?? ""), 10);
-      if (!Number.isFinite(mid)) {
-        res.status(400).json({ error: "Qaysi filialga qo‘shishni tanlang" });
-        return;
-      }
+    const mid = parseInt(String(managerEmployeeId ?? ""), 10);
+    if (Number.isFinite(mid)) {
       const [mgr] = await db
         .select({
           id: employeesTable.id,
@@ -656,15 +657,28 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
         res.status(400).json({ error: "Filial (mudir) topilmadi" });
         return;
       }
-      if (actorRole === "koordinator") {
-        const coord = await actorEmployee(actorId, "coordinator");
-        if (!coord || mgr.reportsToId !== coord.id) {
-          res.status(403).json({ error: "Faqat o‘z qo‘l ostidagi filialga qo‘shasiz" });
-          return;
-        }
-      }
       reportsToId = mgr.id;
       branchLocation = mgr.location;
+    } else {
+      // Mudirsiz filial (orphan): farmasevt/stajyor koordinator ostida + manzil bilan qo‘shiladi
+      const orphanLoc = String(location || "").trim();
+      if (!orphanLoc) {
+        res.status(400).json({ error: "Qaysi filialga qo‘shishni tanlang" });
+        return;
+      }
+      reportsToId = await resolveCoordinatorEmployeeId(
+        Number.isFinite(requestedCoordId) ? requestedCoordId : null,
+      );
+      if (!reportsToId) {
+        res.status(400).json({ error: "Koordinator topilmadi — mudirsiz filialga qo‘shib bo‘lmadi" });
+        return;
+      }
+      branchLocation = orphanLoc;
+      const gps = parseGpsText(orphanLoc);
+      if (gps) {
+        branchLat = gps.lat;
+        branchLng = gps.lng;
+      }
     }
   }
 
@@ -707,7 +721,7 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
       }
       employeeId = filled.id;
       employeeRow = filled;
-    } else if (staffRole === "mudir" && actorRole === "koordinator" && reportsToId) {
+    } else if (staffRole === "mudir" && reportsToId) {
       const vacant = await db
         .select()
         .from(employeesTable)
@@ -777,6 +791,37 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
         .returning();
       employeeId = employee!.id;
       employeeRow = employee!;
+    }
+
+    // Yangi mudir qo‘yilganda shu manzildagi mudirsiz (koordinator ostidagi) xodimlarni mudirga biriktiramiz
+    if (staffRole === "mudir" && employeeRow.orgRole === "manager" && reportsToId) {
+      const want = displayBranchName(employeeRow.location).trim().toLowerCase();
+      if (want) {
+        const orphans = await db
+          .select({
+            id: employeesTable.id,
+            location: employeesTable.location,
+            orgRole: employeesTable.orgRole,
+            reportsToId: employeesTable.reportsToId,
+          })
+          .from(employeesTable)
+          .where(
+            and(
+              eq(employeesTable.reportsToId, reportsToId),
+              inArray(employeesTable.orgRole, ["pharmacist", "intern", "supervisor"]),
+              ne(employeesTable.employmentStatus, "dismissed"),
+            ),
+          );
+        const orphanIds = orphans
+          .filter((o) => displayBranchName(o.location).trim().toLowerCase() === want)
+          .map((o) => o.id);
+        if (orphanIds.length) {
+          await db
+            .update(employeesTable)
+            .set({ reportsToId: employeeId })
+            .where(inArray(employeesTable.id, orphanIds));
+        }
+      }
     }
 
     res.status(201).json({

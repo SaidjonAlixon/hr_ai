@@ -382,6 +382,7 @@ export default function PharmacyNetworkPage() {
   const [staffRole, setStaffRole] = useState<PharmacyStaffRole>('mudir');
   const [addKind, setAddKind] = useState<'mudir' | 'xodim'>('mudir');
   const [addManagerId, setAddManagerId] = useState('');
+  const [addCoordinatorId, setAddCoordinatorId] = useState('');
   const [branchLocation, setBranchLocation] = useState('');
   const [createdCreds, setCreatedCreds] = useState<PharmacyStaffResult | null>(null);
   const [showPwd, setShowPwd] = useState(false);
@@ -897,14 +898,21 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
     );
   };
 
-  const openAddStaff = (kind: 'mudir' | 'xodim' = canAddMudir ? 'mudir' : 'xodim', managerId?: number) => {
+  const openAddStaff = (
+    kind: 'mudir' | 'xodim' = canAddMudir ? 'mudir' : 'xodim',
+    managerId?: number,
+    opts?: { location?: string; coordinatorId?: number },
+  ) => {
     setFirstName('');
     setLastName('');
     setPhone('');
     setAddKind(kind);
     setStaffRole(kind === 'mudir' ? 'mudir' : 'farmasevt');
     setAddManagerId(managerId != null ? String(managerId) : '');
-    if (kind === 'mudir' && managerId != null) {
+    setAddCoordinatorId(opts?.coordinatorId != null ? String(opts.coordinatorId) : '');
+    if (opts?.location) {
+      setBranchLocation(opts.location);
+    } else if (kind === 'mudir' && managerId != null) {
       const slot = orgPeople.find((e) => e.id === managerId);
       setBranchLocation(slot?.location ?? '');
     } else {
@@ -912,6 +920,12 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
     }
     setShowPwd(false);
     setAddOpen(true);
+  };
+
+  /** Mudirsiz filial kartasidan — mudir yoki farmasevt qo‘shish */
+  const openAddForOrphan = (group: { location: string; staff: Employee[] }, kind: 'mudir' | 'xodim') => {
+    const coordId = group.staff.find((s) => s.reportsToId != null)?.reportsToId ?? undefined;
+    openAddStaff(kind, undefined, { location: group.location, coordinatorId: coordId });
   };
 
   const fillingVacantSlot = useMemo(() => {
@@ -929,8 +943,14 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
       toast({ title: UZ_PHONE_HINT, variant: 'destructive' });
       return;
     }
-    if (addKind === 'xodim' && canPickFilialForStaff && !addManagerId && !canAddTeam) {
+    const orphanCoordId = Number(addCoordinatorId);
+    const hasOrphanTarget = Number.isFinite(orphanCoordId) && orphanCoordId > 0 && !!branchLocation.trim();
+    if (addKind === 'xodim' && canPickFilialForStaff && !addManagerId && !canAddTeam && !hasOrphanTarget) {
       toast({ title: t('pharmacy.pickBranch'), variant: 'destructive' });
+      return;
+    }
+    if ((addKind === 'mudir' || hasOrphanTarget) && !branchLocation.trim() && !addManagerId) {
+      toast({ title: 'Filial manzilini kiriting', variant: 'destructive' });
       return;
     }
     createStaff.mutate(
@@ -939,11 +959,12 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
         lastName: lastName.trim(),
         phone: normalizeUzPhone(phone),
         role: staffRole,
-        location: staffRole === 'mudir' ? branchLocation.trim() || undefined : undefined,
-        managerEmployeeId:
-          addManagerId
-            ? Number(addManagerId)
+        location:
+          staffRole === 'mudir' || hasOrphanTarget
+            ? branchLocation.trim() || undefined
             : undefined,
+        managerEmployeeId: addManagerId ? Number(addManagerId) : undefined,
+        coordinatorEmployeeId: hasOrphanTarget ? orphanCoordId : undefined,
       },
       {
         onSuccess: (data) => {
@@ -2259,10 +2280,34 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                       <p className="mt-0.5 text-[11px] text-muted-foreground">
                         Filialda xodimlar bor, mudir biriktirilmagan. Ular ishlashda davom etadi.
                       </p>
-                      <div className="mt-2">
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         <span className="inline-flex rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900 ring-1 ring-inset ring-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:ring-amber-500/30">
                           Mudir yo‘q
                         </span>
+                        {canAddMudir ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 gap-1 border-rose-300 bg-rose-50 px-2 text-[11px] font-semibold text-rose-800 hover:bg-rose-100 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-200"
+                            onClick={() => openAddForOrphan(group, 'mudir')}
+                          >
+                            <Plus className="h-3 w-3" />
+                            Mudir qo‘shish
+                          </Button>
+                        ) : null}
+                        {canAddStaff ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 gap-1 border-sky-300 bg-sky-50 px-2 text-[11px] font-semibold text-sky-900 hover:bg-sky-100 dark:border-sky-500/40 dark:bg-sky-950/40 dark:text-sky-300"
+                            onClick={() => openAddForOrphan(group, 'xodim')}
+                          >
+                            <Plus className="h-3 w-3" />
+                            Farmasevt qo‘shish
+                          </Button>
+                        ) : null}
                       </div>
                     </div>
                     <div className="space-y-2 border-t border-amber-100 pt-3 dark:border-amber-500/20">
@@ -2600,9 +2645,11 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                     </SelectContent>
                   </Select>
                 </div>
-                {fillingVacantSlot ? (
+                {fillingVacantSlot || (addCoordinatorId && branchLocation) ? (
                   <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-200">
-                    Bo‘sh filial sloti — manzil va GPS saqlangan. Yangi mudir shu filialga biriktiriladi.
+                    {fillingVacantSlot
+                      ? "Bo‘sh filial sloti — manzil va GPS saqlangan. Yangi mudir shu filialga biriktiriladi."
+                      : `Mudirsiz filial: ${displayBranchName(branchLocation) || branchLocation}. Yangi mudir shu yerga biriktiriladi, mavjud xodimlar unga o‘tadi.`}
                   </p>
                 ) : (
                   <div className="space-y-1.5">
@@ -2620,7 +2667,12 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
               </>
             ) : (
               <>
-                {isKoordinatorOnly || (canPickFilialForStaff && !canAddTeam) ? (
+                {addCoordinatorId && branchLocation && !addManagerId ? (
+                  <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900 dark:border-sky-500/40 dark:bg-sky-950/40 dark:text-sky-200">
+                    Filial: <span className="font-semibold">{displayBranchName(branchLocation) || branchLocation}</span>
+                    {" · "}mudir yo‘q — xodim shu filialga (koordinator ostida) qo‘shiladi.
+                  </p>
+                ) : isKoordinatorOnly || (canPickFilialForStaff && !canAddTeam) ? (
                   <div className="space-y-1.5">
                     <Label>Filial</Label>
                     <Select value={addManagerId || undefined} onValueChange={setAddManagerId}>

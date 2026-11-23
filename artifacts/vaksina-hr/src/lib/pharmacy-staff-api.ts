@@ -9,6 +9,8 @@ export type PharmacyStaffInput = {
   role: PharmacyStaffRole;
   location?: string;
   managerEmployeeId?: number;
+  /** Mudirsiz filialga qo‘shishda — xodim/mudir shu koordinator ostida */
+  coordinatorEmployeeId?: number;
 };
 
 export type PharmacyStaffResult = {

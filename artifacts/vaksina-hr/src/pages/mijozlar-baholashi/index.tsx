@@ -69,11 +69,21 @@ type FeedItem = {
   anonymous: boolean;
   targetMode?: string;
   rateType?: "staff" | "pharmacy" | "complaint";
-  targets: Array<{ employeeId: number; employeeName: string }>;
+  targets: Array<{
+    employeeId: number;
+    employeeName: string;
+    position?: string | null;
+    shiftKey?: string | null;
+    userId?: number | null;
+    phone?: string | null;
+    photoUrl?: string | null;
+  }>;
   createdAt: string;
   selfRating?: boolean;
   selfRatingReason?: string | null;
 };
+
+type FeedTarget = FeedItem["targets"][number];
 
 type Tab = "qr" | "staff" | "pharmacy" | "complaint" | "stats";
 
@@ -1081,6 +1091,132 @@ function DetailField({ label, children }: { label: string; children: ReactNode }
   );
 }
 
+function initialsOf(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return `${parts[0]!.slice(0, 1)}${parts[1]!.slice(0, 1)}`.toUpperCase();
+}
+
+function StaffAvatar({
+  name,
+  photoUrl,
+  size = "md",
+  className,
+}: {
+  name: string;
+  photoUrl?: string | null;
+  size?: "sm" | "md" | "lg" | "xl";
+  className?: string;
+}) {
+  const [broken, setBroken] = useState(false);
+  const dim =
+    size === "sm" ? "h-8 w-8 text-[10px]" : size === "lg" ? "h-16 w-16 text-lg" : size === "xl" ? "h-24 w-24 text-2xl" : "h-11 w-11 text-xs";
+  const show = Boolean(photoUrl && !broken);
+  return (
+    <span
+      className={cn(
+        "relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-[#5c2d91] to-[#c9a227] font-black text-white ring-2 ring-white shadow-md",
+        dim,
+        className,
+      )}
+    >
+      {show ? (
+        <img
+          src={photoUrl!}
+          alt={name}
+          className="h-full w-full object-cover"
+          loading="lazy"
+          onError={() => setBroken(true)}
+        />
+      ) : (
+        <span aria-hidden>{initialsOf(name)}</span>
+      )}
+    </span>
+  );
+}
+
+function RatedStaffCard({
+  target,
+  onOpen,
+}: {
+  target: FeedTarget;
+  onOpen: (t: FeedTarget) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(target)}
+      className="group flex w-full items-center gap-3 rounded-2xl border border-amber-200/80 bg-gradient-to-r from-amber-50 via-white to-[#faf7ff] px-3 py-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-md dark:border-amber-500/20 dark:from-amber-500/10 dark:via-slate-900 dark:to-slate-900"
+    >
+      <StaffAvatar name={target.employeeName} photoUrl={target.photoUrl} size="lg" className="rounded-2xl ring-amber-200/80" />
+      <span className="min-w-0 flex-1">
+        <span className="block text-[10px] font-bold uppercase tracking-[0.14em] text-amber-700/80">Baholangan xodim</span>
+        <span className="mt-0.5 block truncate text-[15px] font-black text-slate-900 dark:text-slate-50">
+          {target.employeeName}
+        </span>
+        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-semibold text-slate-500">
+          {target.position ? <span>{target.position}</span> : null}
+          {target.phone ? <span className="tabular-nums">{target.phone}</span> : null}
+        </span>
+        <span className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-bold text-[#5c2d91] group-hover:underline">
+          <Eye className="h-3.5 w-3.5" /> Rasm va ma’lumot
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function StaffPhotoLightbox({ target, onClose }: { target: FeedTarget; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm overflow-hidden rounded-3xl bg-white shadow-2xl dark:bg-slate-900"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="relative aspect-[4/5] bg-slate-100 dark:bg-slate-800">
+          {target.photoUrl ? (
+            <img
+              src={target.photoUrl}
+              alt={target.employeeName}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-gradient-to-br from-[#5c2d91] to-[#c9a227] text-white">
+              <span className="text-5xl font-black tracking-tight">{initialsOf(target.employeeName)}</span>
+              <span className="text-xs font-semibold text-white/80">Rasm yuklanmagan</span>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/45 text-lg text-white backdrop-blur hover:bg-black/60"
+            aria-label="Yopish"
+          >
+            ×
+          </button>
+        </div>
+        <div className="space-y-1 px-5 py-4">
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Baholangan xodim</p>
+          <h4 className="text-lg font-black tracking-tight text-slate-900 dark:text-white">{target.employeeName}</h4>
+          {target.position ? (
+            <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">{target.position}</p>
+          ) : null}
+          {target.phone ? (
+            <p className="text-sm font-medium tabular-nums text-slate-500">{target.phone}</p>
+          ) : null}
+          <Button type="button" variant="outline" className="mt-3 h-11 w-full rounded-xl" onClick={onClose}>
+            Yopish
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RatingDetailModal({
   item,
   kind,
@@ -1098,6 +1234,7 @@ function RatingDetailModal({
   onDelete: (id: number) => void;
   deleting: boolean;
 }) {
+  const [photoTarget, setPhotoTarget] = useState<FeedTarget | null>(null);
   const title =
     kind === "complaint" ? "Shikoyat tafsiloti" : kind === "pharmacy" ? "Dorixona bahosi" : "Xodim bahosi";
   return (
@@ -1148,6 +1285,18 @@ function RatingDetailModal({
             </div>
           ) : null}
 
+          {kind === "staff" ? (
+            <div className="space-y-2">
+              {item.targets.length ? (
+                item.targets.map((t) => (
+                  <RatedStaffCard key={t.employeeId} target={t} onOpen={setPhotoTarget} />
+                ))
+              ) : (
+                <DetailField label="Baholangan xodim(lar)">—</DetailField>
+              )}
+            </div>
+          ) : null}
+
           <div className="grid gap-3 sm:grid-cols-2">
             <DetailField label="Filial">
               <p>
@@ -1169,25 +1318,6 @@ function RatingDetailModal({
               <PersonCell name={item.coordinatorName} phone={item.coordinatorPhone} />
             </DetailField>
           </div>
-
-          {kind === "staff" ? (
-            <DetailField label="Baholangan xodim(lar)">
-              {item.targets.length ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {item.targets.map((t) => (
-                    <span
-                      key={t.employeeId}
-                      className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-950 ring-1 ring-amber-200/80"
-                    >
-                      {t.employeeName}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                "—"
-              )}
-            </DetailField>
-          ) : null}
 
           {kind !== "complaint" ? (
             <div className="grid gap-3 sm:grid-cols-2">
@@ -1248,6 +1378,7 @@ function RatingDetailModal({
           </div>
         </div>
       </div>
+      {photoTarget ? <StaffPhotoLightbox target={photoTarget} onClose={() => setPhotoTarget(null)} /> : null}
     </div>
   );
 }
@@ -1567,14 +1698,15 @@ function RatingsTable({
                   </td>
                   {kind === "staff" ? (
                     <td className="px-4 py-3.5">
-                      <div className="flex max-w-[220px] flex-wrap gap-1">
+                      <div className="flex max-w-[260px] flex-col gap-1.5">
                         {it.targets.length ? (
                           it.targets.map((t) => (
                             <span
                               key={t.employeeId}
-                              className="rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-950 ring-1 ring-amber-200/70"
+                              className="inline-flex items-center gap-2 rounded-xl bg-amber-50/90 px-2 py-1.5 text-[12px] font-bold text-amber-950 ring-1 ring-amber-200/70"
                             >
-                              {t.employeeName}
+                              <StaffAvatar name={t.employeeName} photoUrl={t.photoUrl} size="sm" className="rounded-xl ring-1 ring-amber-200/60" />
+                              <span className="min-w-0 truncate">{t.employeeName}</span>
                             </span>
                           ))
                         ) : (

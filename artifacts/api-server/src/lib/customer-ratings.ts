@@ -1107,16 +1107,73 @@ export async function ratingsFeed(opts: {
     }
   }
 
+  const rawTargets = rows.flatMap((r) => {
+    const targets = r.targets as Array<{ employeeId: number }>;
+    return Array.isArray(targets) ? targets.map((t) => Number(t.employeeId)).filter((id) => id > 0) : [];
+  });
+  const targetEmpIds = [...new Set(rawTargets)];
+  type TargetEnrich = {
+    userId: number | null;
+    phone: string;
+    position: string | null;
+    photoUrl: string | null;
+  };
+  const enrichByEmp = new Map<number, TargetEnrich>();
+  if (targetEmpIds.length) {
+    const { rows: empRows } = await pool.query<{
+      id: number;
+      user_id: number | null;
+      phone: string | null;
+      position: string | null;
+      has_photo: boolean;
+    }>(
+      `SELECT e.id,
+              e.user_id,
+              COALESCE(NULLIF(btrim(u.phone), ''), '') AS phone,
+              COALESCE(NULLIF(btrim(e.position), ''), NULL) AS position,
+              (
+                (fp.photo_url IS NOT NULL AND btrim(fp.photo_url) <> '')
+                OR (e.photo_url IS NOT NULL AND btrim(e.photo_url) <> '')
+              ) AS has_photo
+         FROM employees e
+         LEFT JOIN users u ON u.id = e.user_id
+         LEFT JOIN face_profiles fp ON fp.user_id = e.user_id
+        WHERE e.id = ANY($1::int[])`,
+      [targetEmpIds],
+    );
+    for (const e of empRows) {
+      const userId = e.user_id != null ? Number(e.user_id) : null;
+      enrichByEmp.set(Number(e.id), {
+        userId: userId && userId > 0 ? userId : null,
+        phone: String(e.phone || ""),
+        position: e.position,
+        photoUrl: userId && userId > 0 && e.has_photo ? `/api/staff/${userId}/avatar` : null,
+      });
+    }
+  }
+
   const items = rows.map((r) => {
     const targetMode = String(r.target_mode || "");
     const branchId = r.branch_id as number;
     const bm = meta.get(branchId);
-    const targets = r.targets as Array<{
+    const targetsRaw = r.targets as Array<{
       employeeId: number;
       employeeName: string;
       position: string | null;
       shiftKey: string | null;
     }>;
+    const targets = (Array.isArray(targetsRaw) ? targetsRaw : []).map((t) => {
+      const extra = enrichByEmp.get(Number(t.employeeId));
+      return {
+        employeeId: Number(t.employeeId),
+        employeeName: t.employeeName,
+        position: extra?.position || t.position || null,
+        shiftKey: t.shiftKey || null,
+        userId: extra?.userId ?? null,
+        phone: extra?.phone || "",
+        photoUrl: extra?.photoUrl ?? null,
+      };
+    });
     const custPhone = String(r.customer_phone || "");
     const custName = String(r.customer_name || "");
     const dig = phoneDigits9(custPhone);

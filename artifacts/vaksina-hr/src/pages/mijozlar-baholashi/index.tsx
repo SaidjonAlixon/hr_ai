@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
@@ -1084,8 +1085,8 @@ function PersonCell({ name, phone }: { name?: string | null; phone?: string | nu
 
 function DetailField({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="min-w-0 rounded-2xl border border-slate-100 bg-slate-50/80 px-3.5 py-3 dark:border-white/10 dark:bg-white/[0.03]">
-      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+    <div className="min-w-0 rounded-2xl border border-slate-200 bg-slate-100 px-3.5 py-3 dark:border-slate-700 dark:bg-slate-800">
+      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{label}</p>
       <div className="mt-1.5 text-[14px] font-semibold text-slate-800 dark:text-slate-100">{children}</div>
     </div>
   );
@@ -1147,7 +1148,7 @@ function RatedStaffCard({
     <button
       type="button"
       onClick={() => onOpen(target)}
-      className="group flex w-full items-center gap-3 rounded-2xl border border-amber-200/80 bg-gradient-to-r from-amber-50 via-white to-[#faf7ff] px-3 py-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-md dark:border-amber-500/20 dark:from-amber-500/10 dark:via-slate-900 dark:to-slate-900"
+      className="group flex w-full items-center gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-3 py-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-amber-400 hover:bg-amber-100 hover:shadow-md dark:border-amber-500/40 dark:bg-slate-800"
     >
       <StaffAvatar name={target.employeeName} photoUrl={target.photoUrl} size="lg" className="rounded-2xl ring-amber-200/80" />
       <span className="min-w-0 flex-1">
@@ -1170,11 +1171,11 @@ function RatedStaffCard({
 function StaffPhotoLightbox({ target, onClose }: { target: FeedTarget; onClose: () => void }) {
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/85 p-4 backdrop-blur-md"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-sm overflow-hidden rounded-3xl bg-white shadow-2xl dark:bg-slate-900"
+        className="w-full max-w-sm overflow-hidden rounded-3xl bg-white shadow-2xl dark:bg-slate-950"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="relative aspect-[4/5] bg-slate-100 dark:bg-slate-800">
@@ -1237,13 +1238,14 @@ function RatingDetailModal({
   const [photoTarget, setPhotoTarget] = useState<FeedTarget | null>(null);
   const title =
     kind === "complaint" ? "Shikoyat tafsiloti" : kind === "pharmacy" ? "Dorixona bahosi" : "Xodim bahosi";
-  return (
+  const modal = (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[80] flex items-end justify-center bg-black/80 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       onClick={onClose}
     >
       <div
-        className="max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white shadow-2xl dark:bg-slate-900 sm:rounded-3xl"
+        className="max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white shadow-2xl dark:bg-slate-950 sm:rounded-3xl"
+        style={{ backgroundColor: "var(--baho-modal-bg, #ffffff)" }}
         onClick={(e) => e.stopPropagation()}
       >
         <div
@@ -1275,7 +1277,7 @@ function RatingDetailModal({
           </div>
         </div>
 
-        <div className="space-y-3 p-5">
+        <div className="space-y-3 bg-white p-5 dark:bg-slate-950">
           {item.selfRating ? (
             <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-950">
               O‘ziga-o‘zi / ichki baho
@@ -1381,6 +1383,8 @@ function RatingDetailModal({
       {photoTarget ? <StaffPhotoLightbox target={photoTarget} onClose={() => setPhotoTarget(null)} /> : null}
     </div>
   );
+  if (typeof document === "undefined") return modal;
+  return createPortal(modal, document.body);
 }
 
 function ComplaintsTable({

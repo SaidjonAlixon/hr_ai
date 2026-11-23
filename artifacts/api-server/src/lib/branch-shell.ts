@@ -151,6 +151,45 @@ export async function detachMudirFromBranch(tx: DbTx, mudir: EmployeeRow): Promi
   return placeholderId;
 }
 
+function locationLabel(location: string | null | undefined): string {
+  return (location || "").split("|gps:")[0]!.trim();
+}
+
+/**
+ * Foydalanuvchi/xodim o‘chirilishidan oldin mudir filialini «Mudir yo‘q» slot sifatida saqlaydi.
+ * Agar dorixona bo‘shatish allaqachon slot ochgan bo‘lsa — ikkinchi nusxa yaratilmaydi.
+ */
+export async function ensureVacantBranchBeforeMudirRemoval(mudir: EmployeeRow): Promise<number | null> {
+  if (mudir.orgRole !== "manager" || !mudir.userId) return null;
+  if (mudir.employmentStatus === "no_manager") return null;
+
+  const label = locationLabel(mudir.location);
+  if (label) {
+    const twins = await db
+      .select({ id: employeesTable.id, location: employeesTable.location })
+      .from(employeesTable)
+      .where(
+        and(
+          eq(employeesTable.orgRole, "manager"),
+          isNull(employeesTable.userId),
+          eq(employeesTable.employmentStatus, "no_manager"),
+          mudir.reportsToId != null
+            ? eq(employeesTable.reportsToId, mudir.reportsToId)
+            : isNull(employeesTable.reportsToId),
+        ),
+      );
+    const existing = twins.find((t) => locationLabel(t.location) === label);
+    if (existing) {
+      await db.transaction(async (tx) => {
+        await moveBranchRefs(tx, mudir.id, existing.id);
+      });
+      return existing.id;
+    }
+  }
+
+  return db.transaction((tx) => detachMudirFromBranch(tx, mudir));
+}
+
 /** Bo‘sh filialga mavjud xodimni mudir qilib qo‘yadi — xodimning o‘z qatori filialga aylanadi. */
 export async function occupyVacantBranch(tx: DbTx, slot: EmployeeRow, person: EmployeeRow): Promise<void> {
   await tx.update(employeesTable).set({ branchNo: null }).where(eq(employeesTable.id, slot.id));

@@ -3,6 +3,8 @@ import { db, employeesTable, departmentsTable } from "@workspace/db";
 import { formatPersonName } from "./person-name";
 import { resolveDepartmentIdForRole } from "./role-departments";
 import { NON_STAFF_ROLES } from "./roles";
+import { ensureVacantBranchBeforeMudirRemoval } from "./branch-shell";
+import { invalidateFilialBranchCache } from "./filial-bot-data";
 
 const ROLE_POSITION: Record<string, string> = {
   admin: "Admin",
@@ -76,12 +78,19 @@ function todayYmd(): string {
 }
 
 export async function removeEmployeesForUser(userId: number): Promise<void> {
-  const doomed = await db
-    .select({ id: employeesTable.id })
-    .from(employeesTable)
-    .where(eq(employeesTable.userId, userId));
+  const doomed = await db.select().from(employeesTable).where(eq(employeesTable.userId, userId));
+  if (!doomed.length) return;
+
+  // Mudir o‘chsa ham filial «Mudir yo‘q» bo‘lib koordinatorda qoladi
+  let preservedBranch = false;
+  for (const emp of doomed) {
+    if (emp.orgRole === "manager") {
+      const slotId = await ensureVacantBranchBeforeMudirRemoval(emp);
+      if (slotId) preservedBranch = true;
+    }
+  }
+
   const ids = doomed.map((r) => r.id);
-  if (!ids.length) return;
   await db
     .update(employeesTable)
     .set({ reportsToId: null })
@@ -94,6 +103,7 @@ export async function removeEmployeesForUser(userId: number): Promise<void> {
       .set({ userId: null, employmentStatus: "closed", updatedAt: new Date() })
       .where(inArray(employeesTable.id, ids));
   }
+  if (preservedBranch) invalidateFilialBranchCache();
 }
 
 export async function ensureEmployeeForNewUser(user: {

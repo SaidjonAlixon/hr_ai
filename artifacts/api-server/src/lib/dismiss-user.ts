@@ -14,6 +14,8 @@ import {
   pushSubscriptionsTable,
 } from "@workspace/db";
 import { removeEmployeesForUser } from "./user-employee-sync";
+import { ensureVacantBranchBeforeMudirRemoval } from "./branch-shell";
+import { invalidateFilialBranchCache } from "./filial-bot-data";
 import { logger } from "./logger";
 
 /**
@@ -322,7 +324,15 @@ export async function purgeUserCompletely(
   if (!user) return false;
   if (user.role === "admin" && !opts.allowAdmin) throw new Error("Adminni faqat bosh admin butunlay o‘chira oladi");
 
-  const empIds = await employeeIdsForUser(userId);
+  const empRows = await db.select().from(employeesTable).where(eq(employeesTable.userId, userId));
+  let preservedBranch = false;
+  for (const emp of empRows) {
+    if (emp.orgRole === "manager") {
+      const slotId = await ensureVacantBranchBeforeMudirRemoval(emp);
+      if (slotId) preservedBranch = true;
+    }
+  }
+  const empIds = empRows.map((r) => r.id);
   if (empIds.length) {
     await db.update(employeesTable).set({ reportsToId: null }).where(inArray(employeesTable.reportsToId, empIds));
     await db.update(employeesTable).set({ assignedBranchId: null }).where(inArray(employeesTable.assignedBranchId, empIds));
@@ -334,7 +344,8 @@ export async function purgeUserCompletely(
   await db.delete(employeesTable).where(eq(employeesTable.userId, userId));
   await db.delete(dismissedStaffTable).where(eq(dismissedStaffTable.formerUserId, userId));
   await db.delete(usersTable).where(eq(usersTable.id, userId));
-  logger.info({ userId, empIds }, "foydalanuvchi butunlay o‘chirildi");
+  if (preservedBranch) invalidateFilialBranchCache();
+  logger.info({ userId, empIds, preservedBranch }, "foydalanuvchi butunlay o‘chirildi");
   return true;
 }
 

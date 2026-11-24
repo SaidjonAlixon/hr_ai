@@ -129,7 +129,7 @@ import { SendReportDialog } from "./send-report-dialog";
 import { useAuth } from "../../contexts/AuthContext";
 import { useI18n } from "../../i18n/I18nProvider";
 import { displayBranchName } from "../../lib/pharmacy-staff-api";
-import { toUzbekLatin } from "../../lib/script-search";
+import { toUzbekLatinUpper } from "../../lib/script-search";
 import {
   canEditDavomatManual,
   canMarkDavomatExcuse,
@@ -3023,7 +3023,7 @@ export default function DavomatPage() {
                                 const branch = pharmacyBranchById.get(emp.id);
                                 const branchName =
                                   branch && branch.key !== "none" && branch.label !== "Filialsiz"
-                                    ? toUzbekLatin(branch.label)
+                                    ? toUzbekLatinUpper(branch.label)
                                     : null;
                                 return (
                                   <div className="min-w-0 leading-tight">

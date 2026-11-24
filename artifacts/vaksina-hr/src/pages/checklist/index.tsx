@@ -1390,6 +1390,10 @@ export default function ChecklistPage() {
                     <Badge className="rounded-full bg-slate-900 px-3 py-1 text-white hover:bg-slate-900">
                       {tf(t, "checklist.visitNext", { name: t(visitLabelKey(nextVisitNum)) })}
                     </Badge>
+                  ) : openNeedsChecklist ? (
+                    <Badge className="rounded-full bg-sky-700 px-3 py-1 text-white hover:bg-sky-700">
+                      Qo‘shimcha tashrif
+                    </Badge>
                   ) : (
                     <Badge variant="destructive" className="rounded-full">
                       {t("checklist.visitFull")}

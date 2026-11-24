@@ -1414,11 +1414,18 @@ router.post("/branch-audits/my-visit/confirm-presence", requireAuth, async (req:
       req.body?.longitude != null && Number.isFinite(Number(req.body.longitude))
         ? Number(req.body.longitude)
         : null;
+    const accuracyMeters =
+      req.body?.accuracy != null && Number.isFinite(Number(req.body.accuracy))
+        ? Number(req.body.accuracy)
+        : req.body?.checkAccuracy != null && Number.isFinite(Number(req.body.checkAccuracy))
+          ? Number(req.body.checkAccuracy)
+          : null;
 
     const result = await confirmCoordinatorPresence({
       userId: req.userId,
       latitude,
       longitude,
+      accuracyMeters,
     });
     if (!result.ok) {
       res.status(result.status).json({
@@ -1635,12 +1642,19 @@ router.post("/branch-audits/my-visit/finish", requireAuth, async (req: AuthReque
       req.body?.longitude != null && Number.isFinite(Number(req.body.longitude))
         ? Number(req.body.longitude)
         : null;
+    const accuracyMeters =
+      req.body?.accuracy != null && Number.isFinite(Number(req.body.accuracy))
+        ? Number(req.body.accuracy)
+        : req.body?.checkAccuracy != null && Number.isFinite(Number(req.body.checkAccuracy))
+          ? Number(req.body.checkAccuracy)
+          : null;
 
     const result = await finishCoordinatorVisitWithNote({
       userId: req.userId,
       note,
       latitude,
       longitude,
+      accuracyMeters,
     });
     if (!result.ok) {
       res.status(result.status).json({

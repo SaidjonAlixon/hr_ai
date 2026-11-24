@@ -61,6 +61,9 @@ export type BranchAuditInput = {
   categories: AuditCategory[];
   checkLatitude?: number;
   checkLongitude?: number;
+  /** GPS accuracy (m) — server geofence slack uchun */
+  accuracy?: number;
+  checkAccuracy?: number;
   /** Birinchi javob belgilangan vaqt (ISO) — cheklist davomiyligi uchun */
   startedAt?: string;
 };
@@ -473,6 +476,7 @@ export async function finishCoordinatorVisit(payload: {
   note: string;
   latitude?: number | null;
   longitude?: number | null;
+  accuracy?: number | null;
 }) {
   return apiFetch<{
     ok: boolean;
@@ -487,6 +491,7 @@ export async function finishCoordinatorVisit(payload: {
 export async function confirmCoordinatorPresence(payload: {
   latitude?: number | null;
   longitude?: number | null;
+  accuracy?: number | null;
 }) {
   return apiFetch<{
     ok: boolean;

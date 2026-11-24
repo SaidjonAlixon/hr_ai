@@ -522,6 +522,7 @@ export async function finishCoordinatorVisitWithNote(opts: {
   note: string;
   latitude?: number | null;
   longitude?: number | null;
+  accuracyMeters?: number | null;
 }): Promise<
   | { ok: true; visit: CoordVisitRow }
   | { ok: false; status: number; error: string; code: string; distanceMeters?: number }
@@ -558,6 +559,7 @@ export async function finishCoordinatorVisitWithNote(opts: {
     branchId: open.branchId,
     latitude: opts.latitude,
     longitude: opts.longitude,
+    accuracyMeters: opts.accuracyMeters,
   });
   if (!zone.ok) {
     return {
@@ -710,6 +712,7 @@ export async function confirmCoordinatorPresence(opts: {
   userId: number;
   latitude?: number | null;
   longitude?: number | null;
+  accuracyMeters?: number | null;
 }): Promise<
   | { ok: true; visit: CoordVisitRow; distanceMeters: number }
   | { ok: false; status: number; error: string; code: string; distanceMeters?: number }
@@ -736,6 +739,7 @@ export async function confirmCoordinatorPresence(opts: {
     branchId: open.branchId,
     latitude: opts.latitude,
     longitude: opts.longitude,
+    accuracyMeters: opts.accuracyMeters,
   });
   if (!zone.ok) {
     return {

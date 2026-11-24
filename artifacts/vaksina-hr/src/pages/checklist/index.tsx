@@ -607,6 +607,7 @@ export default function ChecklistPage() {
       const res = await confirmCoordinatorPresence({
         latitude: pos.lat,
         longitude: pos.lng,
+        accuracy: pos.accuracy,
       });
       await refetchMyVisit();
       toast({
@@ -816,6 +817,7 @@ export default function ChecklistPage() {
         note,
         latitude: gps.lat,
         longitude: gps.lng,
+        accuracy: gps.accuracy,
       });
       setFinishOpen(false);
       setManagerId("");
@@ -986,7 +988,13 @@ export default function ChecklistPage() {
         generalNote: generalNote.trim() || null,
         categories,
         ...(saveGps
-          ? { checkLatitude: saveGps.lat, checkLongitude: saveGps.lng }
+          ? {
+              checkLatitude: saveGps.lat,
+              checkLongitude: saveGps.lng,
+              ...(saveGps.accuracy != null && Number.isFinite(saveGps.accuracy)
+                ? { accuracy: saveGps.accuracy }
+                : {}),
+            }
           : {}),
         ...(checklistStartedAtRef.current ? { startedAt: checklistStartedAtRef.current } : {}),
       });

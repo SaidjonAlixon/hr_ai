@@ -39,7 +39,18 @@ declare global {
         isExpanded?: boolean;
         platform?: string;
         colorScheme?: string;
+        version?: string;
+        isVersionAtLeast?: (v: string) => boolean;
         openTelegramLink?: (url: string) => void;
+        showScanQrPopup?: (
+          params: { text?: string },
+          callback?: (data: string) => boolean | void,
+        ) => void;
+        closeScanQrPopup?: () => void;
+        HapticFeedback?: {
+          impactOccurred?: (style: "light" | "medium" | "heavy" | "rigid" | "soft") => void;
+          notificationOccurred?: (type: "error" | "success" | "warning") => void;
+        };
       };
     };
   }

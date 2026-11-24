@@ -9,6 +9,19 @@ export type CameraFacing = "user" | "environment";
 const GRANT_KEY = "vaksina-camera-granted";
 const DEVICE_KEY = "vaksina-camera-devices";
 
+/** Telegram WebView — getUserMedia sekinroq, timeout kattaroq */
+function isTgHost(): boolean {
+  try {
+    return Boolean(typeof window !== "undefined" && window.Telegram?.WebApp);
+  } catch {
+    return false;
+  }
+}
+
+function timeoutBudget(baseMs: number): number {
+  return isTgHost() ? Math.round(baseMs * 1.6) : baseMs;
+}
+
 type CacheEntry = {
   facing: CameraFacing;
   deviceId?: string;
@@ -169,8 +182,8 @@ function preferredAttempts(
   deviceId: string | undefined,
   grantedBefore: boolean,
 ): Array<{ constraints: MediaStreamConstraints; timeoutMs: number; usesStored: boolean }> {
-  const firstMs = grantedBefore ? 7_000 : 12_000;
-  const nextMs = 4_000;
+  const firstMs = timeoutBudget(grantedBefore ? 7_000 : 12_000);
+  const nextMs = timeoutBudget(4_000);
   // QR uchun yuqoriroq o‘lcham (kichik kodlar uzoqdan o‘qilsin); Face ID uchun yengil 640x480
   const size =
     facing === "environment"
@@ -344,7 +357,7 @@ export function prefetchCamera(facing: CameraFacing): void {
     if (pendingOpen[facing] !== p) return;
     delete pendingOpen[facing];
     void p.then((s) => s.getTracks().forEach((t) => t.stop())).catch(() => undefined);
-  }, 10_000);
+  }, isTgHost() ? 18_000 : 10_000);
   p.catch(() => {
     window.clearTimeout(timer);
     if (pendingOpen[facing] === p) delete pendingOpen[facing];
@@ -487,7 +500,7 @@ async function openCameraOnce(facing: CameraFacing): Promise<MediaStream> {
             height: { ideal: 480 },
           },
         };
-        const stream = await tryGet(constraints, 5_000);
+        const stream = await tryGet(constraints, timeoutBudget(5_000));
         if (fallbackStream) {
           fallbackStream.getTracks().forEach((t) => t.stop());
           fallbackStream = null;

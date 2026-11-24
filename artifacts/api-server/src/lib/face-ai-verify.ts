@@ -81,9 +81,17 @@ export const FACE_AI_MIN_SIMILARITY = envNum("FACE_AI_MIN_SIMILARITY", 0.88);
  * FACE_AI_SKIP_IF_CLEAR orqali AI ni o‘tkazib yuboradi.
  * To‘liq o‘chirish: FACE_AI_VERIFY=0
  */
+function hasOpenAiKey(): boolean {
+  return Boolean(process.env.OPENAI_API_KEY?.trim());
+}
+
+function hasGeminiKey(): boolean {
+  return Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_AI_API_KEY?.trim());
+}
+
 export function isFaceAiEnabled(): boolean {
   if (!envFlag("FACE_AI_VERIFY", true)) return false;
-  return Boolean(process.env.OPENAI_API_KEY?.trim());
+  return hasOpenAiKey() || hasGeminiKey();
 }
 
 function imageDetail(): "low" | "high" | "auto" {
@@ -165,6 +173,106 @@ async function openaiJson(
   } finally {
     clearTimeout(timer);
   }
+}
+
+const FACE_COMPARE_SYSTEM =
+  "You are a strict biometric matcher. Compare two full face photos of real people. " +
+  "Decide if they are the SAME living person. Ignore hair, makeup, glasses, lighting, angle if identity is clear. " +
+  "Reject phone screens, prints, masks, dolls. Reply ONLY JSON: " +
+  '{"samePerson":boolean,"confidence":0-1,"similarity":0-1,"reason":"short"}';
+
+function splitDataUrl(dataUrl: string): { mime: string; b64: string } | null {
+  const m = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!m) return null;
+  return { mime: m[1]!, b64: m[2]! };
+}
+
+async function geminiJsonFaceCompare(
+  enrolledDataUrl: string,
+  liveDataUrl: string,
+): Promise<FaceAiCompareResult> {
+  const key = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_AI_API_KEY?.trim();
+  if (!key) throw new Error("GEMINI_API_KEY missing");
+  const a = splitDataUrl(enrolledDataUrl);
+  const b = splitDataUrl(liveDataUrl);
+  if (!a || !b) throw new Error("gemini_bad_image");
+  const model =
+    process.env.GEMINI_FACE_MODEL?.trim() ||
+    process.env.GEMINI_MODEL?.trim() ||
+    "gemini-2.0-flash";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FACE_AI_TIMEOUT_MS);
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: FACE_COMPARE_SYSTEM + "\n\nImage 1 = enrolled Face ID. Image 2 = live camera." },
+              { inlineData: { mimeType: a.mime, data: a.b64 } },
+              { inlineData: { mimeType: b.mime, data: b.b64 } },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0,
+          maxOutputTokens: 220,
+          responseMimeType: "application/json",
+        },
+      }),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      throw new Error(`gemini_http_${res.status}:${errText.slice(0, 180)}`);
+    }
+    const body = (await res.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    };
+    const text = body.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") ?? "";
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      const m = text.match(/\{[\s\S]*\}/);
+      if (!m) throw new Error("gemini_bad_json");
+      parsed = JSON.parse(m[0]);
+    }
+    const out = parseFaceAiPayload(parsed);
+    if (!out) throw new Error("gemini_bad_payload");
+    return out;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Gemini birinchi (tez), OpenAI zaxira — kalit bor bo‘lsa. */
+async function callFaceCompare(
+  enrolledDataUrl: string,
+  liveDataUrl: string,
+): Promise<FaceAiCompareResult & { provider: string }> {
+  const errors: string[] = [];
+  if (hasGeminiKey()) {
+    try {
+      const ai = await geminiJsonFaceCompare(enrolledDataUrl, liveDataUrl);
+      return { ...ai, provider: "gemini" };
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : "gemini_fail");
+    }
+  }
+  if (hasOpenAiKey()) {
+    try {
+      const ai = await callOpenAiFaceCompare(enrolledDataUrl, liveDataUrl);
+      return { ...ai, provider: "openai" };
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : "openai_fail");
+    }
+  }
+  throw new Error(errors.join(" | ") || "face_ai_unavailable");
 }
 
 async function callOpenAiFaceCompare(
@@ -579,7 +687,7 @@ export async function resolveLoginIdentityWithAi(opts: {
     for (const g of gallery.slice(0, pairLimit)) {
       const c = opts.candidates.find((x) => x.id === g.id);
       if (!c) continue;
-      const ai = await callOpenAiFaceCompare(g.dataUrl, live);
+      const ai = await callFaceCompare(g.dataUrl, live);
       scores.push({
         faceProfileId: c.id,
         userId: c.userId,
@@ -731,10 +839,11 @@ export async function confirmOwnerFaceWithAi(opts: {
   const minSim = envNum("FACE_OWNER_AI_MIN_SIMILARITY", 0.68);
 
   try {
-    const ai = await callOpenAiFaceCompare(enrolled, live);
+    const ai = await callFaceCompare(enrolled, live);
     logger.info(
       {
         event: "face_owner_ai_compare",
+        provider: ai.provider,
         profileId: opts.faceProfileId,
         samePerson: ai.samePerson,
         confidence: ai.confidence,
@@ -812,7 +921,7 @@ export async function identifyFromTerminalSnapshot(
     const prefUrl = toDataUrl(pref?.photoUrl);
     if (pref && prefUrl) {
       try {
-        const ai = await callOpenAiFaceCompare(prefUrl, live);
+        const ai = await callFaceCompare(prefUrl, live);
         /** Terminal: biroz yumshoqroq (qurilma o‘zi yuzni tasdiqlagan) */
         const okSoft =
           ai.samePerson &&
@@ -908,7 +1017,7 @@ export async function identifyFromTerminalSnapshot(
       const hit = batch.find((g) => g.id === matchId);
       if (!hit) continue;
       /** Gallery tanlovini 1:1 tasdiqlash */
-      const confirm = await callOpenAiFaceCompare(hit.dataUrl, live);
+      const confirm = await callFaceCompare(hit.dataUrl, live);
       if (
         confirm.samePerson &&
         confirm.confidence >= FACE_AI_MIN_CONFIDENCE &&

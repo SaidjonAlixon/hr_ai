@@ -830,8 +830,8 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, onStreamR
                 <path
                   d={ringPath}
                   fill="none"
-                  stroke={aligned ? "rgb(52 211 153 / 0.55)" : "rgb(255 255 255 / 0.4)"}
-                  strokeWidth={3}
+                  stroke={aligned ? "rgb(52 211 153 / 0.7)" : "rgb(255 255 255 / 0.55)"}
+                  strokeWidth={6}
                   vectorEffect="non-scaling-stroke"
                   pathLength={100}
                 />
@@ -839,7 +839,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, onStreamR
                   d={ringPath}
                   fill="none"
                   stroke="rgb(52 211 153)"
-                  strokeWidth={5}
+                  strokeWidth={8}
                   strokeLinecap="round"
                   vectorEffect="non-scaling-stroke"
                   pathLength={100}

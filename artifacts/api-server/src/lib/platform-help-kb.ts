@@ -7,6 +7,7 @@ const KB_FILES = [
   "docs/admin-platforma.md",
   "docs/FACE-ID-IMPLEMENTATION.md",
   "docs/ATTENDANCE-SHIFTS.md",
+  "docs/VAKSINA_DAVOMAT_SMENA_QOLLANMA.md",
   "TELEGRAM.md",
 ] as const;
 
@@ -14,9 +15,10 @@ const LIVE_FACTS = `
 ## Hozirgi texnik faktlar
 - Kirish: https://vaksinahr.uz | @vaksinahrbot — boshqa ilova YO‘Q
 - Geofence: filial 30m · ofis 100m · checklist 70m
-- Davomat: Face ID / QR / barmoq — FAQAT o‘qish; AI yozmaydi
+- Davomat: Face ID / QR / barmoq — FAQAT o‘qish; AI yozmaydi / tuzatmaydi
+- 1-smena 08:00–17:00 Ketdim≤23:55 · 2-smena 17:00–23:59 Ketdim≤ertasi 02:00 · 3-smena 23:00–07:00 Ketdim≤10:00 · Ofis 09:00–18:00 Ketdim≤23:55
+- Kechikish: start+15 daq; davomat qilmasa jarima xavfi; og‘ir holatda HR tuzatadi
 - Vazifa havolasi: /vazifalar?task={id}
-- Ish vaqti (Toshkent): 09:00–18:00
 `.trim();
 
 let cachedKb: string | null = null;

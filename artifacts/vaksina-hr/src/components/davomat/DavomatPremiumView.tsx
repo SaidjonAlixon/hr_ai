@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Building2,
   CheckCircle2,
+  Bot,
   Clock3,
   Fingerprint,
   History,
@@ -95,6 +96,17 @@ type Props = {
   ctaDisabled: boolean;
   /** perm | go | warn | in | out | done */
   ctaTone?: "perm" | "go" | "warn" | "in" | "out" | "done";
+  /** Kun yopilganda AI / qoidalar izohi — faqat o‘z smenasi */
+  closedExplain?: {
+    title: string;
+    body: string;
+    bullets: string[];
+    rules?: string[];
+    source?: "gemini" | "rules";
+    loading?: boolean;
+  } | null;
+  /** Muammo / agent chat */
+  onOpenAgentChat?: () => void;
   onContinue: () => void;
   onEnableGps: () => void;
   backHref: string;
@@ -126,8 +138,9 @@ export function DavomatPremiumView(p: Props) {
   const { toast } = useToast();
   const [salaryOpen, setSalaryOpen] = useState(false);
   const inDone = Boolean(p.hasIn || p.done);
-  /** Faqat kun butunlay yopilganda «Ketdi» — 2-filial Keldim kutayotganda ochiq */
-  const outDone = Boolean(p.done);
+  /** Haqiqiy ketish vaqti bor — «—» bilan yopilgan kun «Ketdi» deb chalkashtirilmasin */
+  const outPunched = Boolean(p.checkOutLabel && p.checkOutLabel !== "—");
+  const outDone = Boolean(p.done && outPunched);
   const methodNames = [
     p.showFace ? "Face ID" : null,
     p.showQr ? "QR" : null,
@@ -305,9 +318,11 @@ export function DavomatPremiumView(p: Props) {
             </span>
             <span className="min-w-0 flex-1">
               <span className="flex items-center gap-1.5 text-[13px] font-bold leading-none">
-                {outDone ? "Ketdi" : "Ketadi"}
+                {outDone ? "Ketdi" : p.done ? "Ketmadi" : "Ketadi"}
                 {outDone ? (
                   <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-rose-100" />
+                ) : p.done ? (
+                  <TriangleAlert className="h-3.5 w-3.5 shrink-0 text-amber-200" />
                 ) : (
                   <Clock3 className="h-3.5 w-3.5 shrink-0 text-white/75" />
                 )}
@@ -513,6 +528,56 @@ export function DavomatPremiumView(p: Props) {
             ) : null}
           </button>
         </div>
+
+        {/* Kun yopilgan — faqat o‘z smenasi, ixcham */}
+        {p.done && p.closedExplain ? (
+          <section
+            className="mt-3 rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2.5"
+            aria-live="polite"
+          >
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-100">
+                {p.closedExplain.loading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Bot className="h-3.5 w-3.5" />
+                )}
+              </span>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-[12.5px] font-extrabold leading-tight text-amber-50">
+                  {p.closedExplain.title}
+                </h3>
+                <p className="mt-1 text-[12px] leading-snug text-white/90">
+                  {p.closedExplain.body}
+                </p>
+                {p.closedExplain.bullets?.length ? (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {p.closedExplain.bullets.map((b) => (
+                      <span
+                        key={b}
+                        className="rounded-md bg-black/30 px-2 py-0.5 font-mono text-[10.5px] font-semibold tabular-nums text-emerald-100/95"
+                      >
+                        {b}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        {/* Muammo — agent chat */}
+        {p.onOpenAgentChat ? (
+          <button
+            type="button"
+            onClick={p.onOpenAgentChat}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-3 text-[14px] font-bold text-white shadow-[0_6px_18px_rgba(225,29,72,0.35)] ring-1 ring-rose-400/40 transition active:scale-[0.99] hover:bg-rose-500"
+          >
+            <Bot className="h-4 w-4" />
+            Muammo bo‘lsa yozing
+          </button>
+        ) : null}
 
         {/* Tarix */}
         <section className="dv-panel mt-5">

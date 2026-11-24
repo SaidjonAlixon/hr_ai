@@ -217,6 +217,82 @@ export async function remindPharmacyShiftWarn(): Promise<number> {
 }
 
 /**
+ * Smena boshidan + grace (15 daq) o‘tgach hali Keldim yo‘q —
+ * bir marta: kech qolyapsiz, davomat qiling, aks holda jarima.
+ * Telegram bot + platforma bildirishnoma.
+ */
+export async function remindLateNoCheckIn(): Promise<number> {
+  const { ymd, hour, minute } = tashkentParts();
+  const mins = hour * 60 + minute;
+  const since = dayStartUtcApprox(ymd);
+  const linked = await loadLinkedStaff();
+  const roles = await userRoleMap(linked.map((e) => e.userId || 0));
+  const defs = await getEffectiveShiftDefs();
+  await loadWorkCalendar();
+  const overrides = await overridesForRows(linked.map((e) => ({ empId: e.empId, workDate: ymd })));
+  let sent = 0;
+
+  for (const e of linked) {
+    if (!e.userId) continue;
+    const role = roles.get(e.userId) || "";
+    if (isHiddenFromDavomat(role)) continue;
+    if (
+      isScheduledRestDay(ymd, {
+        employeeId: e.empId,
+        userRole: role,
+        orgRole: e.orgRole,
+        position: e.position,
+        shiftType: e.shiftType,
+        shiftLabel: e.shiftLabel,
+      })
+    ) {
+      continue;
+    }
+    const planType = await dayPlanShiftType(e.empId, ymd);
+    const shiftType = planType || e.shiftType;
+    const shiftLabel = planType ? null : e.shiftLabel;
+    const w = scheduleWithOverride(
+      workScheduleForStaff(role, e.orgRole, shiftType, shiftLabel, defs),
+      pickScheduleOverride(overrides.get(e.empId), ymd),
+    );
+    const startMin = hmToMinutes(w.start);
+    const lateFrom = startMin + Math.max(0, w.graceMinutes || 15);
+    // Birinchi 20 daqiqa oynasida bir marta
+    if (mins < lateFrom || mins >= lateFrom + 20) continue;
+
+    const [rec] = await db
+      .select({ checkInAt: attendanceRecordsTable.checkInAt })
+      .from(attendanceRecordsTable)
+      .where(
+        and(eq(attendanceRecordsTable.employeeId, e.empId), eq(attendanceRecordsTable.workDate, ymd)),
+      )
+      .limit(1);
+    if (rec?.checkInAt) continue;
+
+    const type = "davomat_late_no_checkin";
+    if (await alreadyNotifiedToday(e.userId, type, since)) continue;
+
+    const text =
+      `⚠️ Kech qolyapsiz — davomat qiling!\n` +
+      `${w.label}: boshlanish ${w.start} (siz hali «Keldim» bosmadingiz).\n` +
+      `Hozir GPS yoqing, Face ID yoki QR bilan «Keldim»ni belgilang.\n` +
+      `Davomat qilmasangiz kechikish/jarimaga sabab bo‘lishi mumkin.`;
+
+    await notifyUser({
+      userId: e.userId,
+      text,
+      type,
+      linkUrl: "/davomat-face",
+      telegram: true,
+      title: "Davomat — kechikish ogohlantirishi",
+    });
+    sent += 1;
+  }
+  if (sent > 0) logger.info({ sent }, "Davomat late no-checkin reminders");
+  return sent;
+}
+
+/**
  * 2) Ish tugashidan (Ketdim) 1 soat oldin — bir marta.
  * Takroriy «Ketdim ni bosing» nag yo‘q.
  */
@@ -405,13 +481,15 @@ export async function remindDavomatCheckOut(): Promise<number> {
 }
 
 /**
- * Faqat 2 ta davomat eslatmasi:
+ * Davomat eslatmalari:
  * - ish boshlanishidan 15 daqiqa oldin (1 marta)
+ * - start+grace dan keyin hali Keldim yo‘q — kechikish ogohlantirishi (1 marta)
  * - ish tugashidan 1 soat oldin (1 marta)
  * + jim auto-absent (xabar yo‘q)
  */
 export async function runDavomatReminderCycle(): Promise<void> {
   await remindShiftStart15Min();
+  await remindLateNoCheckIn();
   await remindCheckoutOneHourBefore();
   await autoCloseMissedCheckoutSilent();
   const { sendCoordinatorShiftReports } = await import("./davomat-coordinator-reports");
@@ -428,7 +506,7 @@ export function startDavomatReminderJob(): void {
     );
   }, FIVE_MIN_MS);
   logger.info(
-    "Davomat reminders: start−15m + end−1h only (every 5 min); nags/policy/check-in spam off",
+    "Davomat reminders: start−15m + late-checkin + end−1h (every 5 min)",
   );
 }
 

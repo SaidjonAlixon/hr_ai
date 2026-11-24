@@ -5550,6 +5550,107 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
   }
 });
 
+/** Davomat agent-chat — platforma + o‘z smenasi asosida (READ-ONLY) */
+router.post("/davomat/me/agent-chat", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const message = String(body.message || "").trim();
+    const ctxRaw = (body.context && typeof body.context === "object" ? body.context : {}) as Record<
+      string,
+      unknown
+    >;
+    const historyRaw = Array.isArray(body.history) ? body.history : [];
+    const history = historyRaw
+      .slice(-8)
+      .map((h: unknown) => {
+        const row = h as Record<string, unknown>;
+        const role = row.role === "assistant" ? "assistant" : "user";
+        const text = String(row.text || row.content || "").trim().slice(0, 800);
+        return text ? { role: role as "user" | "assistant", text } : null;
+      })
+      .filter(Boolean) as Array<{ role: "user" | "assistant"; text: string }>;
+
+    const {
+      answerDavomatAgent,
+      davomatAgentGreeting,
+      loadRecentAttendanceDays,
+    } = await import("../lib/davomat-agent");
+    const context = {
+      fullName: typeof ctxRaw.fullName === "string" ? ctxRaw.fullName : null,
+      role: typeof ctxRaw.role === "string" ? ctxRaw.role : req.userRole || null,
+      workDate: typeof ctxRaw.workDate === "string" ? ctxRaw.workDate : null,
+      shiftLabel: typeof ctxRaw.shiftLabel === "string" ? ctxRaw.shiftLabel : null,
+      shiftStart: typeof ctxRaw.shiftStart === "string" ? ctxRaw.shiftStart : null,
+      shiftEnd: typeof ctxRaw.shiftEnd === "string" ? ctxRaw.shiftEnd : null,
+      shiftType: typeof ctxRaw.shiftType === "string" ? ctxRaw.shiftType : null,
+      overnight: Boolean(ctxRaw.overnight),
+      deadlineHm: typeof ctxRaw.deadlineHm === "string" ? ctxRaw.deadlineHm : null,
+      deadlineHint: typeof ctxRaw.deadlineHint === "string" ? ctxRaw.deadlineHint : null,
+      checkIn: typeof ctxRaw.checkIn === "string" ? ctxRaw.checkIn : null,
+      checkOut: typeof ctxRaw.checkOut === "string" ? ctxRaw.checkOut : null,
+      nextAction: typeof ctxRaw.nextAction === "string" ? ctxRaw.nextAction : null,
+      status: typeof ctxRaw.status === "string" ? ctxRaw.status : null,
+      workplaceTitle: typeof ctxRaw.workplaceTitle === "string" ? ctxRaw.workplaceTitle : null,
+      done: Boolean(ctxRaw.done),
+      missingCheckout: Boolean(ctxRaw.missingCheckout),
+    };
+    const userId = req.userId || 0;
+
+    if (!message || message === "__greet__") {
+      const days = userId ? await loadRecentAttendanceDays(userId, 10) : [];
+      res.json({ reply: davomatAgentGreeting(context, days), source: "rules", greeting: true });
+      return;
+    }
+    const out = await answerDavomatAgent({ message, context, history, userId });
+    res.json(out);
+  } catch (err) {
+    console.error("POST /davomat/me/agent-chat error:", err);
+    res.status(503).json({
+      error: "Agent javob bermadi",
+      reply: "Hozir javob chiqmadi. Qayta yozing yoki eng qiyin holatda HR tuzatadi.",
+    });
+  }
+});
+
+/** Kun yopilganda — smena/Ketdim qoidalari izohi (Gemini + aniq fallback) */
+router.post("/davomat/me/closed-explain", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const workDate = String(body.workDate || "").trim();
+    const shiftStart = String(body.shiftStart || "").trim() || "08:00";
+    const shiftEnd = String(body.shiftEnd || "").trim() || "17:00";
+    const shiftLabel = String(body.shiftLabel || "").trim() || "1-smena";
+    const deadlineHm = String(body.deadlineHm || "").trim() || CHECKOUT_DEADLINE_HM;
+    const deadlineHint = String(body.deadlineHint || "").trim();
+    const checkIn = body.checkIn != null ? String(body.checkIn) : null;
+    const checkOut = body.checkOut != null ? String(body.checkOut) : null;
+    const missingCheckout = Boolean(body.missingCheckout) || !checkOut || checkOut === "—";
+    const { explainClosedDay } = await import("../lib/davomat-closed-explain");
+    const out = await explainClosedDay({
+      workDate: workDate || new Date().toISOString().slice(0, 10),
+      shiftLabel,
+      shiftStart,
+      shiftEnd,
+      deadlineHm,
+      deadlineHint:
+        deadlineHint ||
+        checkoutDeadlineHint({
+          shiftType: typeof body.shiftType === "string" ? body.shiftType : null,
+          overnight: Boolean(body.overnight),
+        }),
+      checkIn,
+      checkOut,
+      missingCheckout,
+      status: typeof body.status === "string" ? body.status : null,
+      overnight: Boolean(body.overnight),
+    });
+    res.json(out);
+  } catch (err) {
+    console.error("POST /davomat/me/closed-explain error:", err);
+    res.status(503).json({ error: "Izoh yuklanmadi" });
+  }
+});
+
 /** Belgilangan davomat nuqtasi — login shart emas */
 router.get("/davomat/site", async (_req, res): Promise<void> => {
   res.json({

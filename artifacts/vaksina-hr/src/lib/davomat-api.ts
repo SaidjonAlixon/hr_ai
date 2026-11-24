@@ -573,6 +573,69 @@ export async function fetchMyWorkplace(opts?: {
   return apiJson<WorkplaceInfo>(`/davomat/me/workplace${suffix}`);
 }
 
+export type ClosedDayExplain = {
+  title: string;
+  body: string;
+  bullets: string[];
+  rules: string[];
+  source: "gemini" | "rules";
+};
+
+/** Kun yopilganda AI/qoidalar izohi */
+export async function fetchClosedDayExplain(payload: {
+  workDate: string;
+  shiftLabel: string;
+  shiftStart: string;
+  shiftEnd: string;
+  shiftType?: string | null;
+  overnight?: boolean;
+  deadlineHm: string;
+  deadlineHint?: string;
+  checkIn: string | null;
+  checkOut: string | null;
+  missingCheckout: boolean;
+  status?: string | null;
+}): Promise<ClosedDayExplain> {
+  return apiJson<ClosedDayExplain>("/davomat/me/closed-explain", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export type DavomatAgentContext = {
+  fullName?: string | null;
+  role?: string | null;
+  workDate?: string | null;
+  shiftLabel?: string | null;
+  shiftStart?: string | null;
+  shiftEnd?: string | null;
+  shiftType?: string | null;
+  overnight?: boolean;
+  deadlineHm?: string | null;
+  deadlineHint?: string | null;
+  checkIn?: string | null;
+  checkOut?: string | null;
+  nextAction?: string | null;
+  status?: string | null;
+  workplaceTitle?: string | null;
+  done?: boolean;
+  missingCheckout?: boolean;
+};
+
+/** Davomat agent-chat */
+export async function fetchDavomatAgentChat(opts: {
+  message: string;
+  context: DavomatAgentContext;
+  history?: Array<{ role: "user" | "assistant"; text: string }>;
+}): Promise<{ reply: string; source?: string; greeting?: boolean }> {
+  return apiJson("/davomat/me/agent-chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(opts),
+  });
+}
+
 export async function fetchMyDavomat(): Promise<{
   from: string;
   to: string;

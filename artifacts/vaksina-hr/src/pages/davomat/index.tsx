@@ -3018,7 +3018,25 @@ export default function DavomatPage() {
                                               ? `${emp.shiftLabel} · ${h.start}–${h.end}`
                                               : `${smenaLabelShort(emp)} · ${h.start}–${h.end}`
                                             : `${h.start}–${h.end}`;
-                                return day!.planCustom ? `${base} · o‘zgartirilgan` : base;
+                                const shiftText = day!.planCustom ? `${base} · o‘zgartirilgan` : base;
+                                const branch = pharmacyBranchById.get(emp.id);
+                                const branchName =
+                                  branch && branch.key !== "none" && branch.label !== "Filialsiz"
+                                    ? branch.label
+                                    : null;
+                                return (
+                                  <div className="min-w-0 leading-tight">
+                                    <div className="whitespace-nowrap">{shiftText}</div>
+                                    {branchName ? (
+                                      <div
+                                        className="mt-0.5 max-w-[11rem] truncate text-[10px] font-medium tracking-wide text-slate-500/95 dark:text-slate-400"
+                                        title={branchName}
+                                      >
+                                        {branchName}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                );
                               })()}
                             </td>
                           ) : null}

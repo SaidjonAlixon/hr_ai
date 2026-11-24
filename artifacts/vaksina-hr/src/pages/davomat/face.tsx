@@ -61,15 +61,19 @@ import {
   faceVerifyDavomat,
   fetchDavomatMethods,
   fetchDavomatSite,
+  fetchClosedDayExplain,
   fetchMyDavomat,
   fetchMyWorkplace,
   haversineMeters,
   qrPunchDavomat,
+  type ClosedDayExplain,
+  type DavomatAgentContext,
   type DavomatDayMetrics,
   type DavomatEmployee,
   type DavomatSite,
   type WorkplaceInfo,
 } from "@/lib/davomat-api";
+import { DavomatAgentChat } from "@/components/davomat/DavomatAgentChat";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
@@ -971,6 +975,9 @@ export default function DavomatFacePage() {
   const [fingerStatus, setFingerStatus] = useState<FingerprintStatus | null>(null);
   const [fingerEnrollOpen, setFingerEnrollOpen] = useState(false);
   const [fingerScanning, setFingerScanning] = useState(false);
+  const [closedExplain, setClosedExplain] = useState<ClosedDayExplain | null>(null);
+  const [closedExplainLoading, setClosedExplainLoading] = useState(false);
+  const [agentChatOpen, setAgentChatOpen] = useState(false);
   const fingerSeqRef = useRef(0);
   const fingerAllowed = fingerStatus?.enabled === true;
 
@@ -1691,19 +1698,27 @@ export default function DavomatFacePage() {
    * Faqat masofa. Avval gpsReady/hasGps bilan AND qilinganda hudud ichida
    * (qolgan 0 m) bo‘lsa ham «Hududdan tashqaridasiz» chiqardi.
    */
-  const gpsLive = gps?.at != null && nowTick - gps.at <= 45_000;
-  const geoInside =
-    gpsLive &&
+  /** TG WebView GPS yangilanishi sekin — 45s o‘rniga 2 daqiqa «tirik» hisoblanadi */
+  const gpsLiveMaxMs = isTgMiniApp ? 120_000 : 45_000;
+  const gpsLive = gps?.at != null && nowTick - gps.at <= gpsLiveMaxMs;
+  /** Oxirgi nuqta biroz eski bo‘lsa ham masofa ichida bo‘lsa — kamerani ochishga ruxsat (GPS fonida yangilanadi) */
+  const gpsRecentEnough = gps?.at != null && nowTick - gps.at <= (isTgMiniApp ? 180_000 : 90_000);
+  const distanceInside =
     distance != null &&
     (distance <= effectiveAllowedM || Math.round(Math.max(0, distance - allowedMeters)) <= 0);
+  const geoInside = Boolean(gpsLive && distanceInside);
+  const geoInsideSoft = Boolean((gpsLive || gpsRecentEnough) && distanceInside);
   const inside = !workplaceGateBlocked && geoInside;
+  const insideSoft = !workplaceGateBlocked && geoInsideSoft;
   /** Admin ko‘chma ruxsat — yashil zonadan tashqarida ham davomat */
   const mobileAnywhere = Boolean(workplace?.mobileAnywhere);
   const geoOk = adminQrAnywhere || mobileAnywhere || geoInside;
+  /** Kamerani ochish — soft (eski GPS), punch — qat’iy geoOk */
+  const geoOkForCamera = adminQrAnywhere || mobileAnywhere || geoInsideSoft;
   /** Hudud tasdiqi — faqat o‘z yashil hududi. Ko‘chma ruxsat hisobga olinmaydi. */
   const zoneGeoOk = gpsLive && geoInside && !workplaceGateBlocked;
   /** Xarita: geografik hudud yoki ko‘chma/admin — «hududda» */
-  const mapInside = geoInside || mobileAnywhere || adminQrAnywhere;
+  const mapInside = geoInsideSoft || mobileAnywhere || adminQrAnywhere;
 
   const nextAction = verified?.nextAction || workplace?.today.nextAction || "in";
   // 2-filial: 1-smena Ketdi bo‘lsa ham nextAction="in" — kun yopilmagan
@@ -1767,7 +1782,7 @@ export default function DavomatFacePage() {
     methodsReady &&
     isFaceIdSupported() &&
     (adminQrAnywhere ||
-      (!zoneLocked && Boolean(gps) && !gpsError && geoOk && !done));
+      (!zoneLocked && Boolean(gps) && !gpsError && geoOkForCamera && !done));
 
   /** QR: koordinator uchun o‘chirilgan; ofis — avval Face ID enroll */
   const canOpenQr =
@@ -1777,7 +1792,7 @@ export default function DavomatFacePage() {
       (!mustEnrollFace &&
         !zoneLocked &&
         !done &&
-        (mobileAnywhere || (Boolean(gps) && !gpsError && inside))));
+        (mobileAnywhere || (Boolean(gps) && !gpsError && insideSoft))));
 
   /** Barmoq izi: ofis uchun ham avval Face ID enroll */
   const canOpenFinger =
@@ -1897,6 +1912,8 @@ export default function DavomatFacePage() {
   const openFaceMethod = useCallback(() => {
     if (busy || qrVerifiedReady || fingerVerifiedReady) return;
     if (!canOpenFace) return;
+    // GPS biroz eski bo‘lsa — fonida yangilab qo‘yamiz (kamera ochilishini kutmaydi)
+    if (!gpsLive) void requestLocationPermission();
     preloadFaceModels();
     setMethodHint(null);
     setQrOpen(false);
@@ -1905,20 +1922,91 @@ export default function DavomatFacePage() {
     // Dialog darhol — kamera ichida ochiladi (ketma-ket getUserMedia kutmasin)
     if (faceRegistered === false) setEnrollOpen(true);
     else setScanOpen(true);
-  }, [canOpenFace, busy, faceRegistered, qrVerifiedReady, fingerVerifiedReady]);
+  }, [canOpenFace, busy, faceRegistered, qrVerifiedReady, fingerVerifiedReady, gpsLive]);
 
   const openQrMethod = useCallback(() => {
     if (busy || faceVerifiedReady) return;
     if (!canOpenQr) return;
+    if (!gpsLive) void requestLocationPermission();
     setMethodHint(null);
     setScanOpen(false);
     setEnrollOpen(false);
-    // Bosish paytida (user gesture) orqa kamerani darhol ochamiz — dialog chizilishini kutmaymiz
-    prefetchCamera("environment");
-    // Dialog darhol — kamera ichida ochiladi (ketma-ket getUserMedia kutmasin)
-    setQrStream(null);
-    setQrOpen(true);
-  }, [canOpenQr, busy, faceVerifiedReady]);
+
+    const openWebCameraQr = () => {
+      prefetchCamera("environment");
+      setQrStream(null);
+      setQrOpen(true);
+    };
+
+    // Telegram native QR — WebView getUserMedia muammosidan qochadi
+    if (isTgMiniApp) {
+      void (async () => {
+        try {
+          const { scanQrWithTelegramNative } = await import("@/lib/tg-webapp");
+          const payload = await scanQrWithTelegramNative(
+            nextAction === "out" ? "Ketdim QR kodini skanerlang" : "Keldim QR kodini skanerlang",
+          );
+          if (payload?.trim()) {
+            if (!adminQrAnywhere) {
+              if (!gps) {
+                toast({ title: "GPS kerak", description: "Joylashuvni yoqing", variant: "destructive" });
+                return;
+              }
+              if (!geoOkForCamera) {
+                toast({
+                  title: "Hududdan tashqaridasiz",
+                  description: "Yashil zonaga kirib qayta skanerlang",
+                  variant: "destructive",
+                });
+                return;
+              }
+            }
+            const action = (verified?.nextAction || workplace?.today.nextAction || "in") as "in" | "out" | "done";
+            if (action === "done") {
+              toast({ title: t("davomat.oncePerDay"), variant: "destructive" });
+              return;
+            }
+            setMethodHint("QR");
+            setVerified({
+              descriptor: [],
+              qrPayload: payload.trim(),
+              fullName: workplace?.employee.fullName || user?.fullName || t("davomat.employee"),
+              nextAction: action === "out" ? "out" : "in",
+              checkIn: workplace?.today.checkIn || "—",
+              checkOut: workplace?.today.checkOut || "—",
+              checkInAt: workplace?.today.checkInAt || null,
+              checkOutAt: workplace?.today.checkOutAt || null,
+            });
+            toast({
+              title: "✓ QR scanner tasdiqlandi",
+              description: action === "out" ? "Endi «Ketdim» ni bosing" : "Endi «Keldim» ni bosing",
+            });
+            return;
+          }
+        } catch (err) {
+          console.warn("tg native qr failed", err);
+        }
+        openWebCameraQr();
+      })();
+      return;
+    }
+    openWebCameraQr();
+  }, [
+    canOpenQr,
+    busy,
+    faceVerifiedReady,
+    gpsLive,
+    isTgMiniApp,
+    nextAction,
+    adminQrAnywhere,
+    gps,
+    geoOkForCamera,
+    verified?.nextAction,
+    workplace,
+    user?.fullName,
+    t,
+    toast,
+  ]);
 
   const guideStep = useMemo((): GuideStep => {
     if (done) return "done";
@@ -2161,6 +2249,16 @@ export default function DavomatFacePage() {
       }
       return { fullName: result.fullName };
     } catch (err) {
+      if (err instanceof DavomatApiError && (err.code === "face_not_registered" || err.code === "face_not_enrolled")) {
+        setScanOpen(false);
+        setFaceRegistered(false);
+        setEnrollOpen(true);
+        const msg =
+          err.message ||
+          "Bu akkauntda Face ID ulanmagan. Avval yuzni ro‘yxatdan o‘tkazing.";
+        toast({ title: "Face ID ulanmagan", description: msg, variant: "destructive" });
+        throw new Error(msg);
+      }
       if (err instanceof DavomatApiError && err.code === "face_not_owner") {
         const msg =
           err.message ||
@@ -2680,6 +2778,77 @@ export default function DavomatFacePage() {
     nextAction === "in" && !done
       ? "—"
       : verified?.checkOut || workplace?.today.checkOut || "—";
+  const missingCheckoutClosed =
+    done && checkInLabel !== "—" && checkOutLabel === "—";
+
+  useEffect(() => {
+    if (!done || !workplace) {
+      setClosedExplain(null);
+      setClosedExplainLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const shiftLabel = workplace.shift?.label || displayShift?.label || "Smena";
+    const shiftStart = workplace.shift?.start || shiftStartHm;
+    const shiftEnd = workplace.shift?.end || shiftEndHm;
+    const inHm = checkInLabel !== "—" ? checkInLabel : null;
+    const outHm = checkOutLabel !== "—" ? checkOutLabel : null;
+    const missing = missingCheckoutClosed;
+    const localBody = missing
+      ? `${shiftLabel}: ish vaqti ${shiftStart}–${shiftEnd}. «Ketdim»ni ${checkoutDeadlineHmLabel} gacha bosish shart edi` +
+        (inHm ? ` (siz ${inHm} da keldingiz)` : "") +
+        `, lekin bosilmadi — kun avtomatik yopildi.`
+      : `${shiftLabel} (${shiftStart}–${shiftEnd}) yakunlandi` +
+        (inHm && outHm ? `: kelish ${inHm}, ketish ${outHm}.` : ".");
+    setClosedExplain({
+      title: missing ? "Nega bugun yopildi?" : "Bugungi davomat yakunlandi",
+      body: localBody,
+      bullets: [
+        `${shiftLabel}: ${shiftStart}–${shiftEnd}`,
+        `Ketdim muddati: ${checkoutDeadlineHmLabel}`,
+        `Keldim ${inHm || "—"} · Ketdim ${outHm || "bosilmadi"}`,
+      ],
+      rules: [],
+      source: "rules",
+    });
+    setClosedExplainLoading(true);
+    void fetchClosedDayExplain({
+      workDate: workplace.workDate || workDateYmd,
+      shiftLabel,
+      shiftStart,
+      shiftEnd,
+      shiftType: workplace.shift?.type,
+      overnight: Boolean(workplace.shift?.overnight),
+      deadlineHm: checkoutDeadlineHmLabel,
+      deadlineHint: workplace.shift?.checkoutDeadlineHint,
+      checkIn: inHm,
+      checkOut: outHm,
+      missingCheckout: missing,
+      status: workplace.today.status,
+    })
+      .then((res) => {
+        if (!cancelled) setClosedExplain(res);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setClosedExplainLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    done,
+    workplace,
+    displayShift?.label,
+    shiftStartHm,
+    shiftEndHm,
+    checkInLabel,
+    checkOutLabel,
+    missingCheckoutClosed,
+    checkoutDeadlineHmLabel,
+    workDateYmd,
+  ]);
+
   const closedWork = done
     ? workedMinutesFromPunch({
         checkIn: checkInLabel,
@@ -2910,7 +3079,11 @@ export default function DavomatFacePage() {
     if (done) {
       return {
         label: t("davomat.closedToday"),
-        sub: elapsedLabel ? `Ishlagan: ${elapsedLabel}` : "",
+        sub: missingCheckoutClosed
+          ? `Ketdim ${checkoutDeadlineHmLabel} gacha bosilmadi · ${elapsedLabel || ""}`.trim()
+          : elapsedLabel
+            ? `Ishlagan: ${elapsedLabel}`
+            : "",
         disabled: true,
         tone: "done" as const,
       };
@@ -3052,19 +3225,52 @@ export default function DavomatFacePage() {
     }
     if (done) return { title: t("davomat.closedToday") };
     if (!methodsReady) return { title: "Yuklanmoqda…", description: "Bir soniyadan keyin qayta bosing." };
+    if (m === "QR" && mustEnrollFace) {
+      return {
+        title: "Avval Face ID ulang",
+        description: "Ofis xodimlari uchun avval yuzni ro‘yxatdan o‘tkazing — keyin QR ochiladi.",
+      };
+    }
     if (!adminQrAnywhere && (!gps || gpsError)) {
       return { title: "Joylashuv aniqlanmadi", description: gpsError || "GPS yoqing va bir necha soniya kuting." };
     }
-    if (m === "FACE_ID" && !isFaceIdSupported()) {
-      return { title: "Face ID ishlamaydi", description: t("davomat.faceUnsupported") };
+    if (gpsStale && !geoOkForCamera) {
+      return {
+        title: "GPS yangilanmagan",
+        description: isTgMiniApp
+          ? "Telegramda GPS sekin yangilanadi. Bir soniya kuting yoki joylashuvni qayta yoqing."
+          : "Joylashuv eskirgan. GPS yoqing yoki biroz kuting.",
+      };
     }
-    if (outsideZone || !geoOk) {
+    if (m === "FACE_ID" && !isFaceIdSupported()) {
+      return {
+        title: "Kamera ochilmadi",
+        description: isTgMiniApp
+          ? "Telegram sozlamalarida kameraga ruxsat bering, keyin qayta bosing."
+          : t("davomat.faceUnsupported"),
+      };
+    }
+    if (workplaceGateBlocked) {
+      return {
+        title: workplaceGpsMissing ? "Filial GPS yo‘q" : "Filial tayyor emas",
+        description: workplace?.gpsError || "Koordinator filial lokatsiyasini kiritsin.",
+      };
+    }
+    if (outsideZone || !geoOkForCamera) {
       return {
         title: "Hududdan tashqaridasiz",
         description: outsideWarn || "Keldim va Ketdim faqat belgilangan hududda qabul qilinadi.",
       };
     }
-    return { title: "Hozir ochilmadi", description: "Bir necha soniyadan keyin qayta bosing." };
+    if (m === "FACE_ID" && faceRegistered === false) {
+      return { title: "Face ID ulanmagan", description: "Avval yuzni ro‘yxatdan o‘tkazing." };
+    }
+    return {
+      title: isTgMiniApp ? "Kamera tayyorlanmoqda" : "Hozir ochilmadi",
+      description: isTgMiniApp
+        ? "Telegramda kamera birinchi marta sekin ochilishi mumkin — yana bir marta bosing."
+        : "Bir necha soniyadan keyin qayta bosing.",
+    };
   };
 
   const pickMethod = (m: PremiumMethod) => {
@@ -3078,20 +3284,25 @@ export default function DavomatFacePage() {
     }
     if (m === "FINGERPRINT" && !fingerAllowed) return;
     if (busy || fingerScanning) return;
-    // Face ID: GPS kerak bo‘lsa ruxsat; kamera dialog ichida ochiladi
-    if (m === "FACE_ID" && !done && !zoneLocked && !methodReady && (needsGpsPerms || gpsTurnOff)) {
+    // Faqat GPS umuman yo‘q/xato bo‘lsa kutamiz. Eskirgan GPS (stale) kamerani to‘xtatmasin —
+    // Telegramda GPS sekin yangilanadi, lekin soft zona ichida Face/QR ochilishi kerak.
+    if (m === "FACE_ID" && !done && !zoneLocked && !methodReady && needsGpsPerms) {
       setSelectedMethod(m);
       void requestLocationPermission();
       return;
     }
-    if (m !== "FACE_ID" && !done && !zoneLocked && !methodReady && (needsPerms || gpsTurnOff)) {
+    if (m === "QR" && !done && !zoneLocked && !methodReady && needsPerms && !canOpenQr) {
+      setSelectedMethod(m);
+      void requestLocationPermission();
+      return;
+    }
+    if (m === "FINGERPRINT" && !done && !zoneLocked && !methodReady && needsPerms && !canOpenFinger) {
       setSelectedMethod(m);
       void requestLocationPermission();
       return;
     }
     const blocked =
       done ||
-      outsideZone ||
       (m === "FACE_ID" && !canOpenFace) ||
       (m === "QR" && !canOpenQr) ||
       (m === "FINGERPRINT" && !canOpenFinger);
@@ -3110,10 +3321,6 @@ export default function DavomatFacePage() {
         return;
       }
       void openFingerMethod();
-      return;
-    }
-    if (m === "QR" && needsPerms) {
-      void requestLocationPermission();
       return;
     }
     if (methodReady) return;
@@ -3332,6 +3539,12 @@ export default function DavomatFacePage() {
         ctaSub={cta.sub}
         ctaDisabled={cta.disabled}
         ctaTone={cta.tone}
+        closedExplain={
+          done && closedExplain
+            ? { ...closedExplain, loading: closedExplainLoading }
+            : null
+        }
+        onOpenAgentChat={() => setAgentChatOpen(true)}
         onContinue={handleContinue}
         onEnableGps={() => {
           void requestLocationPermission();
@@ -3507,6 +3720,32 @@ export default function DavomatFacePage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <DavomatAgentChat
+        open={agentChatOpen}
+        onClose={() => setAgentChatOpen(false)}
+        context={
+          {
+            fullName: personName || user?.fullName || null,
+            role: user?.role || null,
+            workDate: workplace?.workDate || workDateYmd,
+            shiftLabel: workplace?.shift?.label || displayShift?.label || null,
+            shiftStart: workplace?.shift?.start || shiftStartHm,
+            shiftEnd: workplace?.shift?.end || shiftEndHm,
+            shiftType: workplace?.shift?.type || null,
+            overnight: Boolean(workplace?.shift?.overnight ?? shiftOvernight),
+            deadlineHm: checkoutDeadlineHmLabel,
+            deadlineHint: workplace?.shift?.checkoutDeadlineHint || null,
+            checkIn: checkInLabel !== "—" ? checkInLabel : null,
+            checkOut: checkOutLabel !== "—" ? checkOutLabel : null,
+            nextAction,
+            status: workplace?.today.status || null,
+            workplaceTitle,
+            done,
+            missingCheckout: missingCheckoutClosed,
+          } satisfies DavomatAgentContext
+        }
+      />
     </>
   );
 }

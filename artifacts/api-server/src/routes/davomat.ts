@@ -499,6 +499,22 @@ function computeMetrics(
   const checkInHm = formatHm(checkInAt ?? null);
   const checkOutHm = formatHm(checkOutAt ?? null);
 
+  // Ghost punch: UI da 00:00–00:00, lekin Ketdim ertasi kun → noto‘g‘ri 24:00
+  if (
+    checkInAt &&
+    checkOutAt &&
+    checkInHm === "00:00" &&
+    checkOutHm === "00:00" &&
+    workedMinutes >= 23 * 60
+  ) {
+    workedMinutes = 0;
+    earlyArrivalMin = 0;
+    lateArrivalMin = 0;
+    earlyLeaveMin = 0;
+    overtimeMin = 0;
+    status = "incomplete";
+  }
+
   // Omborxona: Kelmagan o‘rniga ertalabki/kechgi/ishda
   if (
     (hours?.warehouseFlexible || hours?.warehouse) &&

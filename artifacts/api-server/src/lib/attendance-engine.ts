@@ -533,6 +533,22 @@ export function computeDayAttendance(input: {
         warnings.push("Check-out check-in dan oldin — segment e’tiborsiz");
         continue;
       }
+      const spanMin = Math.round((cout.getTime() - cin.getTime()) / 60_000);
+      // 00:00 → ertasi 00:00 (UI da bir xil) — ghost 24 soat, hisobga olmaslik
+      if (spanMin >= 23 * 60 && spanMin <= 25 * 60) {
+        const hmFmt = new Intl.DateTimeFormat("en-GB", {
+          timeZone: TZ,
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        });
+        const cinHm = hmFmt.format(cin);
+        const coutHm = hmFmt.format(cout);
+        if (cinHm === "00:00" && coutHm === "00:00") {
+          warnings.push("00:00–00:00 (+1 kun) ghost punch — ishlangan 0");
+          continue;
+        }
+      }
       rawIntervals.push({ startMs: cin.getTime(), endMs: cout.getTime() });
 
       if (cin.getTime() < plan.startMs) {

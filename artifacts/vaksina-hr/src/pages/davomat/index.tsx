@@ -1619,6 +1619,23 @@ export default function DavomatPage() {
 
   const saveEdit = async () => {
     if (!edit || !canEdit) return;
+    const norm = (v: string) => {
+      const s = String(v || "").trim();
+      if (!/^\d{1,2}:\d{2}$/.test(s)) return "";
+      const [h, m] = s.split(":").map(Number);
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    };
+    const inHm = norm(edit.checkIn);
+    const outHm = norm(edit.checkOut);
+    if (inHm === "00:00" || outHm === "00:00") {
+      toast({
+        title: "00:00 mumkin emas",
+        description:
+          "Kelish/Ketish 00:00 qilib saqlanmaydi. Haqiqiy smena vaqtini yozing. Aks holda kechikkan hisoblanadi.",
+        variant: "destructive",
+      });
+      return;
+    }
     setSaving(true);
     try {
       await saveDavomatManual({

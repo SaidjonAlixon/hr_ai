@@ -445,10 +445,28 @@ function computeMetrics(
   let workedMinutes = engine.rawWorkedMinutes;
   let status = forcedStatus || engine.status;
 
+  const checkInHmEarly = formatHm(checkInAt ?? null);
+  const checkOutHmEarly = formatHm(checkOutAt ?? null);
+  const planStartHm = hours?.start ?? WORK_START;
+  /** 00:00 Keldim kechki smena uchun «erta» emas — noto‘g‘ri punch */
+  const midnightGhostIn =
+    checkInHmEarly === "00:00" &&
+    planStartHm !== "00:00" &&
+    planStartHm > "01:00" &&
+    !hours?.overnight;
+
   // Tanlangan smena oynasi (hours.start/end) bo‘yicha — erta va kech bir-birini istisno qiladi
   if (checkInAt) {
     const inDiff = minutesBetween(start, checkInAt);
-    if (inDiff < 0) {
+    if (midnightGhostIn) {
+      // 00:00 + kechki smena: erta deb hisoblama — kechikkan (smena o‘tkazib yuborilgan)
+      earlyArrivalMin = 0;
+      lateArrivalMin = Math.max(1, minutesBetween(start, end) || 1);
+    } else if (checkInAt.getTime() > end.getTime()) {
+      // Smena tugagach / keyin Keldim — kechikkan
+      earlyArrivalMin = 0;
+      lateArrivalMin = Math.max(1, minutesBetween(start, checkInAt));
+    } else if (inDiff < 0) {
       earlyArrivalMin = -inDiff;
       lateArrivalMin = 0;
     } else if (inDiff > 0) {
@@ -459,7 +477,7 @@ function computeMetrics(
       lateArrivalMin = 0;
     }
   }
-  if (checkInAt && checkOutAt && !engine.missingCheckout) {
+  if (checkInAt && checkOutAt && !engine.missingCheckout && !midnightGhostIn) {
     const outDiff = minutesBetween(end, checkOutAt);
     if (outDiff < 0) {
       earlyLeaveMin = -outDiff <= earlyLeaveGraceMin(hours?.end ?? WORK_END) ? 0 : -outDiff;
@@ -477,7 +495,9 @@ function computeMetrics(
     status = forcedStatus;
   } else if (checkInAt) {
     const grace = hours?.graceMinutes ?? 15;
-    if (lateArrivalMin > grace) status = "late";
+    if (midnightGhostIn) status = "late";
+    else if (lateArrivalMin > grace) status = "late";
+    else if (checkInAt.getTime() > end.getTime()) status = "late";
     else if (engine.missingCheckout) status = "incomplete";
     else status = "present";
   } else if (engine.missingCheckout) {
@@ -496,23 +516,28 @@ function computeMetrics(
     workedMinutes = 0;
   }
 
-  const checkInHm = formatHm(checkInAt ?? null);
-  const checkOutHm = formatHm(checkOutAt ?? null);
+  const checkInHm = checkInHmEarly;
+  const checkOutHm = checkOutHmEarly;
 
-  // Ghost punch: UI da 00:00–00:00, lekin Ketdim ertasi kun → noto‘g‘ri 24:00
-  if (
-    checkInAt &&
-    checkOutAt &&
-    checkInHm === "00:00" &&
-    checkOutHm === "00:00" &&
-    workedMinutes >= 23 * 60
-  ) {
+  // Ghost / yaroqsiz 00:00–00:00 — hech qachon «Kelgan» + 24 soat
+  if (checkInAt && checkOutAt && checkInHm === "00:00" && checkOutHm === "00:00") {
     workedMinutes = 0;
     earlyArrivalMin = 0;
-    lateArrivalMin = 0;
+    overtimeMin = 0;
+    earlyLeaveMin = 0;
+    if (!hours?.noPenalty && !hours?.warehouseFlexible) {
+      lateArrivalMin = Math.max(lateArrivalMin, 1);
+      status = "late";
+    } else {
+      lateArrivalMin = 0;
+      status = "incomplete";
+    }
+  } else if (midnightGhostIn) {
+    workedMinutes = 0;
+    earlyArrivalMin = 0;
     earlyLeaveMin = 0;
     overtimeMin = 0;
-    status = "incomplete";
+    status = "late";
   }
 
   // Omborxona: Kelmagan o‘rniga ertalabki/kechgi/ishda
@@ -2054,10 +2079,25 @@ router.post("/davomat/manual", requireAuth, async (req: AuthRequest, res): Promi
       return;
     }
 
-    const checkInAt =
-      checkIn && /^\d{1,2}:\d{2}$/.test(checkIn) ? atTashkent(workDate, checkIn) : null;
-    const checkOutAt =
-      checkOut && /^\d{1,2}:\d{2}$/.test(checkOut) ? atTashkent(workDate, checkOut) : null;
+    const normHm = (raw: string | null | undefined) => {
+      const s = String(raw || "").trim();
+      if (!/^\d{1,2}:\d{2}$/.test(s)) return null;
+      const [h, m] = s.split(":").map(Number);
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    };
+    const checkInHmIn = normHm(checkIn);
+    const checkOutHmIn = normHm(checkOut);
+    if (checkInHmIn === "00:00" || checkOutHmIn === "00:00") {
+      res.status(400).json({
+        error:
+          "Kelish/Ketish 00:00 bo‘lishi mumkin emas. Haqiqiy smena vaqtini yozing (masalan 19:05). 00:00 — yaroqsiz.",
+        code: "invalid_midnight_punch",
+      });
+      return;
+    }
+
+    const checkInAt = checkInHmIn ? atTashkent(workDate, checkInHmIn) : null;
+    const checkOutAt = checkOutHmIn ? atTashkent(workDate, checkOutHmIn) : null;
 
     const hours = hoursWithOverride(
       hoursForStaff(emp.orgRole, emp.shiftType, emp.userRole, emp.shiftLabel, await getEffectiveShiftDefs()),
@@ -4333,6 +4373,18 @@ async function applyFacePunch(opts: {
     ? staffHoursFromOverride(punchOverride, basePunchHours.graceMinutes)
     : basePunchHours;
   const now = new Date();
+  const nowHm = formatHm(now);
+  if (nowHm === "00:00") {
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        error:
+          "00:00 da Keldim/Ketdim qabul qilinmaydi. 1 daqiqadan keyin qayta urining yoki smena vaqtida davomat qiling.",
+        code: "invalid_midnight_punch",
+      },
+    };
+  }
   const dateFilter = and(
     eq(attendanceRecordsTable.employeeId, emp.id),
     eq(attendanceRecordsTable.workDate, workDate),

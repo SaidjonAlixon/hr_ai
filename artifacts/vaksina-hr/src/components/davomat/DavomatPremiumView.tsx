@@ -572,7 +572,7 @@ export function DavomatPremiumView(p: Props) {
           <button
             type="button"
             onClick={p.onOpenAgentChat}
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-3 text-[14px] font-bold text-white shadow-[0_6px_18px_rgba(225,29,72,0.35)] ring-1 ring-rose-400/40 transition active:scale-[0.99] hover:bg-rose-500"
+            className="dvx-agent-btn mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-[14px] font-bold transition active:scale-[0.99]"
           >
             <Bot className="h-4 w-4" />
             Muammo bo‘lsa yozing

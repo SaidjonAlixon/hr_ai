@@ -3685,50 +3685,63 @@ body,
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   Davomat — yangi dizayn (kunduzgi iliq / kechki binafsha)
-   Kun: 06:00–18:00 → vaksinaDavomat_fon, kech: 18:00–06:00 → kechki_vaksinafon
+   Davomat — Vaksina Med logo ranglari (binafsha + oltin)
+   Kun: 06:00–18:00 → och binafsha / oltin
+   Kech: 18:00–06:00 → chuqur binafsha / yorqin oltin
    ═══════════════════════════════════════════════════════════════ */
 .dv-premium.dv-day {
-  --dvx-bg: #fbf1e3;
+  --dvx-brand-purple: #6b2d91;
+  --dvx-brand-purple-deep: #4a1d6e;
+  --dvx-brand-gold: #e8b923;
+  --dvx-brand-gold-deep: #c9960f;
+  --dvx-bg: #f6f1fb;
   --dvx-surface: #ffffff;
-  --dvx-surface-2: #fff6ea;
-  --dvx-border: rgba(166, 104, 44, 0.18);
-  --dvx-t1: #3b2311;
-  --dvx-t2: rgba(59, 35, 17, 0.7);
-  --dvx-t3: rgba(59, 35, 17, 0.5);
-  --dvx-shadow: 0 10px 26px rgba(150, 92, 32, 0.13);
-  --dvx-accent: #c2571a;
-  --dvx-accent-soft: rgba(224, 120, 40, 0.14);
+  --dvx-surface-2: #f3ecfa;
+  --dvx-border: rgba(107, 45, 145, 0.16);
+  --dvx-t1: #2a1540;
+  --dvx-t2: rgba(42, 21, 64, 0.72);
+  --dvx-t3: rgba(42, 21, 64, 0.5);
+  --dvx-shadow: 0 10px 26px rgba(107, 45, 145, 0.12);
+  --dvx-accent: #6b2d91;
+  --dvx-accent-soft: rgba(107, 45, 145, 0.12);
   background:
-    radial-gradient(90% 40% at 100% 0%, rgba(255, 190, 110, 0.35), transparent 60%),
-    linear-gradient(180deg, #fcf3e6 0%, #faecdc 48%, #f6e2cc 100%);
+    radial-gradient(90% 42% at 100% 0%, rgba(232, 185, 35, 0.22), transparent 58%),
+    radial-gradient(70% 36% at 0% 8%, rgba(107, 45, 145, 0.12), transparent 55%),
+    linear-gradient(180deg, #f8f3fc 0%, #f3ecf9 48%, #eee4f6 100%);
   color: var(--dvx-t1);
 }
 .dv-premium.dv-night {
-  --dvx-bg: #0b0e21;
-  --dvx-surface: rgba(21, 25, 56, 0.82);
-  --dvx-surface-2: rgba(255, 255, 255, 0.06);
-  --dvx-border: rgba(255, 255, 255, 0.11);
-  --dvx-t1: #f5f2ff;
-  --dvx-t2: rgba(245, 242, 255, 0.74);
-  --dvx-t3: rgba(245, 242, 255, 0.5);
-  --dvx-shadow: 0 12px 30px rgba(0, 0, 0, 0.38);
-  --dvx-accent: #f4a259;
-  --dvx-accent-soft: rgba(244, 162, 89, 0.16);
+  --dvx-brand-purple: #9b6ad4;
+  --dvx-brand-purple-deep: #5b2c8a;
+  --dvx-brand-gold: #f5c518;
+  --dvx-brand-gold-deep: #d4a40e;
+  --dvx-bg: #12081f;
+  --dvx-surface: rgba(36, 18, 58, 0.88);
+  --dvx-surface-2: rgba(255, 255, 255, 0.07);
+  --dvx-border: rgba(245, 197, 24, 0.16);
+  --dvx-t1: #f8f4ff;
+  --dvx-t2: rgba(248, 244, 255, 0.76);
+  --dvx-t3: rgba(248, 244, 255, 0.52);
+  --dvx-shadow: 0 12px 30px rgba(0, 0, 0, 0.42);
+  --dvx-accent: #f5c518;
+  --dvx-accent-soft: rgba(245, 197, 24, 0.16);
   background:
-    radial-gradient(90% 40% at 0% 0%, rgba(124, 58, 237, 0.28), transparent 60%),
-    linear-gradient(180deg, #0b0e21 0%, #12102c 50%, #0a0b1c 100%);
+    radial-gradient(90% 40% at 0% 0%, rgba(107, 45, 145, 0.42), transparent 58%),
+    radial-gradient(70% 34% at 100% 10%, rgba(245, 197, 24, 0.12), transparent 50%),
+    linear-gradient(180deg, #12081f 0%, #1a0e2e 50%, #0e0618 100%);
   color: var(--dvx-t1);
 }
 .dark .dv-premium.dv-day {
   background:
-    radial-gradient(90% 40% at 100% 0%, rgba(255, 190, 110, 0.35), transparent 60%),
-    linear-gradient(180deg, #fcf3e6 0%, #faecdc 48%, #f6e2cc 100%);
+    radial-gradient(90% 42% at 100% 0%, rgba(232, 185, 35, 0.22), transparent 58%),
+    radial-gradient(70% 36% at 0% 8%, rgba(107, 45, 145, 0.12), transparent 55%),
+    linear-gradient(180deg, #f8f3fc 0%, #f3ecf9 48%, #eee4f6 100%);
 }
 .dark .dv-premium.dv-night {
   background:
-    radial-gradient(90% 40% at 0% 0%, rgba(124, 58, 237, 0.28), transparent 60%),
-    linear-gradient(180deg, #0b0e21 0%, #12102c 50%, #0a0b1c 100%);
+    radial-gradient(90% 40% at 0% 0%, rgba(107, 45, 145, 0.42), transparent 58%),
+    radial-gradient(70% 34% at 100% 10%, rgba(245, 197, 24, 0.12), transparent 50%),
+    linear-gradient(180deg, #12081f 0%, #1a0e2e 50%, #0e0618 100%);
 }
 
 .dvx-t1 { color: var(--dvx-t1); }
@@ -3770,13 +3783,13 @@ body,
 }
 .dv-day .dvx-hero-shade {
   background:
-    linear-gradient(90deg, rgba(255, 246, 232, 0.82) 0%, rgba(255, 246, 232, 0.4) 52%, rgba(255, 246, 232, 0) 82%),
-    linear-gradient(180deg, rgba(255, 246, 232, 0) 55%, rgba(251, 241, 227, 0.92) 100%);
+    linear-gradient(90deg, rgba(246, 241, 251, 0.88) 0%, rgba(246, 241, 251, 0.42) 52%, rgba(246, 241, 251, 0) 82%),
+    linear-gradient(180deg, rgba(246, 241, 251, 0) 55%, rgba(238, 228, 246, 0.94) 100%);
 }
 .dv-night .dvx-hero-shade {
   background:
-    linear-gradient(90deg, rgba(9, 9, 32, 0.78) 0%, rgba(9, 9, 32, 0.4) 52%, rgba(9, 9, 32, 0) 82%),
-    linear-gradient(180deg, rgba(10, 12, 30, 0) 55%, rgba(11, 14, 33, 0.94) 100%);
+    linear-gradient(90deg, rgba(18, 8, 31, 0.82) 0%, rgba(18, 8, 31, 0.42) 52%, rgba(18, 8, 31, 0) 82%),
+    linear-gradient(180deg, rgba(18, 8, 31, 0) 55%, rgba(18, 8, 31, 0.95) 100%);
 }
 
 .dvx-back {
@@ -3818,18 +3831,18 @@ body,
   padding: 0.8rem 0.85rem;
   color: #fff;
   border: 1px solid rgba(255, 255, 255, 0.22);
-  box-shadow: 0 16px 34px rgba(120, 52, 10, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  box-shadow: 0 16px 34px rgba(107, 45, 145, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 .dv-day .dvx-clock {
   background:
-    radial-gradient(120% 120% at 0% 0%, rgba(255, 190, 110, 0.4), transparent 55%),
-    linear-gradient(135deg, #d9722a 0%, #b4501a 55%, #8a3a12 100%);
+    radial-gradient(120% 120% at 100% 0%, rgba(232, 185, 35, 0.45), transparent 50%),
+    linear-gradient(135deg, #8a3aad 0%, #6b2d91 50%, #4a1d6e 100%);
 }
 .dv-night .dvx-clock {
   background:
-    radial-gradient(120% 120% at 0% 0%, rgba(168, 120, 255, 0.4), transparent 55%),
-    linear-gradient(135deg, #5b3fc4 0%, #3d2a94 55%, #261a62 100%);
-  box-shadow: 0 16px 34px rgba(30, 18, 90, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    radial-gradient(120% 120% at 0% 0%, rgba(245, 197, 24, 0.35), transparent 55%),
+    linear-gradient(135deg, #5b2c8a 0%, #3d1a62 55%, #24103f 100%);
+  box-shadow: 0 16px 34px rgba(20, 8, 40, 0.55), inset 0 1px 0 rgba(255, 220, 120, 0.22);
 }
 .dvx-clock-icon {
   display: flex;
@@ -3874,9 +3887,9 @@ body,
   box-shadow: 0 12px 26px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 .dvx-stat-in { background: linear-gradient(135deg, #36a269 0%, #207a4b 100%); }
-.dvx-stat-out { background: linear-gradient(135deg, #cf5733 0%, #98311a 100%); }
+.dvx-stat-out { background: linear-gradient(135deg, #8a3aad 0%, #5b2c8a 100%); }
 .dv-night .dvx-stat-in { background: linear-gradient(135deg, #1f8f5e 0%, #12583a 100%); }
-.dv-night .dvx-stat-out { background: linear-gradient(135deg, #b8423c 0%, #6e1f2a 100%); }
+.dv-night .dvx-stat-out { background: linear-gradient(135deg, #c9960f 0%, #8a6508 100%); }
 .dvx-stat-icon {
   display: flex;
   height: 2.5rem;
@@ -3931,10 +3944,10 @@ body,
 }
 .dvx-zone.is-ok { color: #0d7a43; background: rgba(34, 170, 98, 0.16); }
 .dvx-zone.is-bad { color: #b4233f; background: rgba(225, 60, 90, 0.14); }
-.dvx-zone.is-warn { color: #9a5a05; background: rgba(240, 160, 30, 0.2); }
+.dvx-zone.is-warn { color: #6b2d91; background: rgba(107, 45, 145, 0.14); }
 .dv-night .dvx-zone.is-ok { color: #7ff0b4; background: rgba(34, 197, 94, 0.18); }
 .dv-night .dvx-zone.is-bad { color: #ffb3c0; background: rgba(244, 63, 94, 0.2); }
-.dv-night .dvx-zone.is-warn { color: #ffd68a; background: rgba(245, 158, 11, 0.2); }
+.dv-night .dvx-zone.is-warn { color: #f5c518; background: rgba(245, 197, 24, 0.18); }
 
 /* Xarita kartochka ichida */
 .dvx-card .dv-map-shell {
@@ -3944,8 +3957,8 @@ body,
   box-shadow: none;
 }
 .dv-day .dvx-card .dv-map-shell,
-.dv-day .dvx-card .dv-map-leaflet { background: #ece7de; }
-.dv-day .dvx-card .dv-lf-tiles { filter: sepia(0.2) saturate(1.05) contrast(0.98) brightness(1.02); }
+.dv-day .dvx-card .dv-map-leaflet { background: #ebe4f2; }
+.dv-day .dvx-card .dv-lf-tiles { filter: saturate(0.92) contrast(0.98) brightness(1.02); }
 .dvx-card .dv-map-place { display: none; }
 .dvx-card .dv-map-status-ok { display: none; }
 .dvx-card .dv-map-footer { justify-content: center; background: none; padding-bottom: 0.65rem; }
@@ -3964,18 +3977,18 @@ body,
   border-color: rgba(34, 170, 98, 0.4);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.14);
 }
-.dv-day .dvx-card .dv-map-radius p:first-child { color: rgba(59, 35, 17, 0.6) !important; }
+.dv-day .dvx-card .dv-map-radius p:first-child { color: rgba(42, 21, 64, 0.6) !important; }
 .dv-day .dvx-card .dv-map-radius p:last-child { color: #0d7a43 !important; }
 .dv-day .dvx-card .dv-map-locate {
   background: rgba(255, 255, 255, 0.94);
-  border-color: rgba(166, 104, 44, 0.22);
-  color: #3b2311;
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
+  border-color: rgba(107, 45, 145, 0.22);
+  color: #2a1540;
+  box-shadow: 0 8px 18px rgba(107, 45, 145, 0.14);
 }
 .dv-day .dvx-card .dv-map-leaflet .leaflet-control-zoom a {
   background: rgba(255, 255, 255, 0.94) !important;
-  border-color: rgba(166, 104, 44, 0.2) !important;
-  color: #3b2311 !important;
+  border-color: rgba(107, 45, 145, 0.2) !important;
+  color: #2a1540 !important;
 }
 .dv-day .dvx-card .dv-map-leaflet .leaflet-control-zoom { box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16) !important; }
 /* Usul kartalari */
@@ -4015,8 +4028,8 @@ body,
 .dvx-method.is-on {
   color: #fff;
   border-color: rgba(255, 255, 255, 0.28);
-  background: linear-gradient(135deg, #4b6bff 0%, #5a45ee 55%, #6d3df0 100%);
-  box-shadow: 0 14px 30px rgba(84, 70, 230, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  background: linear-gradient(135deg, #8a3aad 0%, #6b2d91 55%, #4a1d6e 100%);
+  box-shadow: 0 14px 30px rgba(107, 45, 145, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 .dvx-method.is-on .dvx-method-title { color: #fff; }
 .dvx-method.is-on .dvx-method-sub { color: rgba(255, 255, 255, 0.8); }
@@ -4037,24 +4050,24 @@ body,
 .dv-premium .dv-salary-value { color: var(--dvx-t1); }
 .dv-premium .dv-range-tabs { background: var(--dvx-surface-2); border: 1px solid var(--dvx-border); }
 .dv-premium .dv-range-tab { color: var(--dvx-t3); }
-.dv-premium .dv-range-tab-on { color: #fff; background: linear-gradient(135deg, #e0782a, #bf4f17); box-shadow: 0 4px 12px rgba(191, 79, 23, 0.35); }
-.dv-night .dv-range-tab-on { background: linear-gradient(135deg, #7c5cf0, #5a3fd0); box-shadow: 0 4px 12px rgba(90, 63, 208, 0.45); }
+.dv-premium .dv-range-tab-on { color: #fff; background: linear-gradient(135deg, #8a3aad, #6b2d91); box-shadow: 0 4px 12px rgba(107, 45, 145, 0.35); }
+.dv-night .dv-range-tab-on { background: linear-gradient(135deg, #f5c518, #c9960f); color: #2a1540; box-shadow: 0 4px 12px rgba(201, 150, 15, 0.4); }
 
 .dv-day .dv-panel .text-white,
 .dv-day .dv-panel [class*="text-white/"] { color: var(--dvx-t1); }
 .dv-day .dv-panel [class*="text-white/3"],
 .dv-day .dv-panel [class*="text-white/4"],
 .dv-day .dv-panel [class*="text-white/5"] { color: var(--dvx-t3); }
-.dv-day .dv-panel [class*="text-sky-"] { color: #b4501a; }
+.dv-day .dv-panel [class*="text-sky-"] { color: #6b2d91; }
 .dv-day .dv-panel [class*="text-emerald-300"] { color: #0f8f52; }
 .dv-day .dv-panel [class*="text-rose-300"] { color: #d63a55; }
 .dv-day .dv-panel [class*="text-emerald-50"] { color: #0b5f3a; }
 .dv-day .dv-panel [class*="border-white/"] { border-color: var(--dvx-border); }
-.dv-day .dv-panel .bg-sky-500\/10 { background: rgba(224, 120, 40, 0.1); }
+.dv-day .dv-panel .bg-sky-500\/10 { background: rgba(107, 45, 145, 0.1); }
 .dv-day .dv-panel li[class*="bg-white"] { background: var(--dvx-surface-2); }
-.dv-day .dv-panel .dv-panel-icon-sky { color: #c2571a; background: rgba(224, 120, 40, 0.14); border-color: rgba(224, 120, 40, 0.28); }
+.dv-day .dv-panel .dv-panel-icon-sky { color: #6b2d91; background: rgba(107, 45, 145, 0.12); border-color: rgba(107, 45, 145, 0.28); }
 .dv-day .dv-panel .dv-panel-icon-emerald { color: #0f8f52; background: rgba(16, 185, 129, 0.14); border-color: rgba(16, 185, 129, 0.3); }
-.dv-day .dv-panel-head span[class*="text-sky-300"] { color: #b4501a; background: var(--dvx-surface-2); border-color: var(--dvx-border); }
+.dv-day .dv-panel-head span[class*="text-sky-300"] { color: #6b2d91; background: var(--dvx-surface-2); border-color: var(--dvx-border); }
 
 .dvx-link { color: var(--dvx-accent); }
 .dvx-link-chip {
@@ -4066,83 +4079,63 @@ body,
 /* ── Ranglarni mavzuga moslash: ko‘k ajralib qolmasin ── */
 .dvx-date { padding: 0.3rem 0.65rem; margin-top: -0.1rem; }
 
-/* Tanlangan usul: kunduz — iliq terrakota, kech — binafsha */
+/* Tanlangan usul: kunduz — binafsha, kech — oltin */
 .dv-day .dvx-method.is-on {
-  background: linear-gradient(135deg, #e8903f 0%, #cf5f1f 55%, #a8420f 100%);
-  box-shadow: 0 14px 28px rgba(190, 90, 25, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  background: linear-gradient(135deg, #8a3aad 0%, #6b2d91 55%, #4a1d6e 100%);
+  box-shadow: 0 14px 28px rgba(107, 45, 145, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 .dv-night .dvx-method.is-on {
-  background: linear-gradient(135deg, #8a68f5 0%, #5f43d6 55%, #402a9e 100%);
-  box-shadow: 0 14px 28px rgba(80, 55, 200, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  background: linear-gradient(135deg, #f5c518 0%, #e0a914 55%, #c9960f 100%);
+  box-shadow: 0 14px 28px rgba(201, 150, 15, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  color: #2a1540;
 }
-.dv-day .dvx-method-ico.t-face { color: #c2571a; background: rgba(224, 120, 40, 0.15); }
-.dv-day .dvx-method-ico.t-qr { color: #9a4a22; background: rgba(160, 82, 45, 0.14); }
-.dv-night .dvx-method-ico.t-face { color: #c4b5fd; background: rgba(139, 92, 246, 0.2); }
-.dv-night .dvx-method-ico.t-qr { color: #f0abfc; background: rgba(217, 70, 239, 0.16); }
+.dv-night .dvx-method.is-on .dvx-method-title { color: #2a1540; }
+.dv-night .dvx-method.is-on .dvx-method-sub { color: rgba(42, 21, 64, 0.75); }
+.dv-night .dvx-method.is-on .dvx-method-ico { color: #2a1540; background: rgba(42, 21, 64, 0.12); }
+.dv-night .dvx-method.is-on .absolute { color: #2a1540; }
+.dv-day .dvx-method-ico.t-face { color: #6b2d91; background: rgba(107, 45, 145, 0.14); }
+.dv-day .dvx-method-ico.t-qr { color: #c9960f; background: rgba(232, 185, 35, 0.18); }
+.dv-night .dvx-method-ico.t-face { color: #d4b3f5; background: rgba(155, 106, 212, 0.22); }
+.dv-night .dvx-method-ico.t-qr { color: #f5c518; background: rgba(245, 197, 24, 0.16); }
 
-/* «Davom etish» tugmasi (ko‘k o‘rniga mavzu rangi) */
+/* «Davom etish» va boshqa CTA — logo ranglari */
 .dv-day .dv-cta:not(.dv-cta-in):not(.dv-cta-out):not(.dv-cta-done):not(.dv-cta-warn) {
-  background: linear-gradient(90deg, #e8903f 0%, #cf5f1f 52%, #a8420f 100%);
-  box-shadow: 0 14px 30px rgba(190, 90, 25, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  background: linear-gradient(90deg, #8a3aad 0%, #6b2d91 52%, #4a1d6e 100%);
+  box-shadow: 0 14px 30px rgba(107, 45, 145, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 .dv-night .dv-cta:not(.dv-cta-in):not(.dv-cta-out):not(.dv-cta-done):not(.dv-cta-warn) {
-  background: linear-gradient(90deg, #8a68f5 0%, #6446dc 52%, #4a2fb0 100%);
-  box-shadow: 0 14px 30px rgba(80, 55, 200, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  background: linear-gradient(90deg, #f5c518 0%, #e0a914 52%, #c9960f 100%);
+  color: #2a1540;
+  box-shadow: 0 14px 30px rgba(201, 150, 15, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 .dv-day .dv-cta-in { background: linear-gradient(90deg, #3aa86f 0%, #2a8a58 55%, #1f6b45 100%); }
-.dv-day .dv-cta-out { background: linear-gradient(90deg, #d4623a 0%, #b84326 55%, #8f2f1a 100%); }
-.dv-day .dv-cta-warn { background: linear-gradient(90deg, #8f3a2a 0%, #a8402f 55%, #7a2a22 100%); }
+.dv-day .dv-cta-out { background: linear-gradient(90deg, #8a3aad 0%, #6b2d91 55%, #4a1d6e 100%); }
+.dv-day .dv-cta-warn { background: linear-gradient(90deg, #7a2a5a 0%, #5b1d6e 55%, #3d1450 100%); }
+.dv-night .dv-cta-in { background: linear-gradient(90deg, #2f9e68 0%, #1f7a4e 55%, #145c3a 100%); }
+.dv-night .dv-cta-out { background: linear-gradient(90deg, #e0a914 0%, #c9960f 55%, #9a720a 100%); color: #2a1540; }
+.dv-night .dv-cta-warn { background: linear-gradient(90deg, #6b2d91 0%, #4a1d6e 55%, #2e1148 100%); }
 
-/* Xarita: marker/doira ranglari ham iliq */
-.dv-day .dvx-card .dv-lf-branch-pin { background: linear-gradient(160deg, #e8903f, #c2571a); }
-.dv-night .dvx-card .dv-lf-branch-pin { background: linear-gradient(160deg, #8a68f5, #5a3fd0); }
-.dv-day .dvx-card .dv-map-unlock-chip { background: rgba(59, 35, 17, 0.82); color: #fff3e3; border-color: rgba(255, 255, 255, 0.2); }
-.dv-day .dvx-card .dv-map-locate.is-on { color: #c2571a; border-color: rgba(194, 87, 26, 0.5); box-shadow: 0 8px 18px rgba(194, 87, 26, 0.25); }
-.dv-day .dvx-card .dv-lf-branch-pin { box-shadow: 0 8px 18px rgba(194, 87, 26, 0.5); }
-.dv-night .dvx-card .dv-lf-branch-pin { box-shadow: 0 8px 18px rgba(90, 63, 208, 0.55); }
+/* Muammo / agent tugmasi — logo binafsha */
+.dv-premium .dvx-agent-btn {
+  background: linear-gradient(90deg, #8a3aad 0%, #6b2d91 55%, #4a1d6e 100%);
+  box-shadow: 0 8px 20px rgba(107, 45, 145, 0.35);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+.dv-night .dvx-agent-btn {
+  background: linear-gradient(90deg, #f5c518 0%, #e0a914 55%, #c9960f 100%);
+  box-shadow: 0 8px 20px rgba(201, 150, 15, 0.35);
+  color: #2a1540;
+  border-color: rgba(255, 255, 255, 0.2);
+}
 
-/* Salomlashuv matni: pastroqda, o‘qilishi aniq */
-.dv-night .dvx-greet { text-shadow: 0 1px 10px rgba(10, 6, 30, 0.7), 0 0 2px rgba(10, 6, 30, 0.6); }
-.dv-day .dvx-greet { text-shadow: 0 1px 8px rgba(255, 246, 232, 0.9); }
+/* Xarita: marker — binafsha / oltin */
+.dv-day .dvx-card .dv-lf-branch-pin { background: linear-gradient(160deg, #8a3aad, #6b2d91); box-shadow: 0 8px 18px rgba(107, 45, 145, 0.5); }
+.dv-night .dvx-card .dv-lf-branch-pin { background: linear-gradient(160deg, #f5c518, #c9960f); box-shadow: 0 8px 18px rgba(201, 150, 15, 0.5); }
+.dv-day .dvx-card .dv-map-unlock-chip { background: rgba(42, 21, 64, 0.82); color: #f8f3fc; border-color: rgba(255, 255, 255, 0.2); }
+.dv-day .dvx-card .dv-map-locate.is-on { color: #6b2d91; border-color: rgba(107, 45, 145, 0.5); box-shadow: 0 8px 18px rgba(107, 45, 145, 0.25); }
+
+/* Salomlashuv matni */
+.dv-night .dvx-greet { text-shadow: 0 1px 10px rgba(18, 8, 31, 0.75), 0 0 2px rgba(18, 8, 31, 0.6); }
+.dv-day .dvx-greet { text-shadow: 0 1px 8px rgba(246, 241, 251, 0.95); }
 .dvx-greet h1 { letter-spacing: -0.01em; }
-
-/* ── Kechki rejim: binafsha o‘rniga chuqur slate + oltin-amber ── */
-.dv-premium.dv-night,
-.dark .dv-premium.dv-night {
-  --dvx-bg: #0d1218;
-  --dvx-surface: rgba(24, 31, 40, 0.84);
-  --dvx-surface-2: rgba(255, 255, 255, 0.06);
-  --dvx-border: rgba(255, 224, 170, 0.12);
-  --dvx-t1: #f7f3ec;
-  --dvx-t2: rgba(247, 243, 236, 0.78);
-  --dvx-t3: rgba(247, 243, 236, 0.52);
-  --dvx-accent: #f2b544;
-  --dvx-accent-soft: rgba(242, 181, 68, 0.16);
-  background:
-    radial-gradient(90% 40% at 0% 0%, rgba(214, 140, 40, 0.2), transparent 60%),
-    linear-gradient(180deg, #0d1218 0%, #111a22 50%, #0a0f14 100%);
-}
-.dv-night .dvx-hero-shade {
-  background:
-    linear-gradient(90deg, rgba(8, 12, 18, 0.8) 0%, rgba(8, 12, 18, 0.42) 52%, rgba(8, 12, 18, 0) 82%),
-    linear-gradient(180deg, rgba(10, 14, 20, 0) 55%, rgba(13, 18, 24, 0.95) 100%);
-}
-.dv-night .dvx-clock {
-  background:
-    radial-gradient(120% 120% at 0% 0%, rgba(255, 205, 120, 0.38), transparent 55%),
-    linear-gradient(135deg, #c98a24 0%, #8f5a14 55%, #5a3810 100%);
-  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
-}
-.dv-night .dvx-method.is-on {
-  background: linear-gradient(135deg, #e0a03a 0%, #c0771a 55%, #8f520f 100%);
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.24);
-}
-.dv-night .dv-cta:not(.dv-cta-in):not(.dv-cta-out):not(.dv-cta-done):not(.dv-cta-warn) {
-  background: linear-gradient(90deg, #e0a03a 0%, #c9811c 52%, #9a5a10 100%);
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.24);
-}
-.dv-night .dvx-method-ico.t-face { color: #ffd488; background: rgba(242, 181, 68, 0.18); }
-.dv-night .dvx-method-ico.t-qr { color: #9fe3d6; background: rgba(45, 190, 170, 0.16); }
-.dv-night .dv-range-tab-on { background: linear-gradient(135deg, #e0a03a, #b8691a); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); }
-.dv-night .dvx-card .dv-lf-branch-pin { background: linear-gradient(160deg, #f2b544, #c0771a); box-shadow: 0 8px 18px rgba(0, 0, 0, 0.5); }
-.dv-night .dvx-greet { text-shadow: 0 1px 10px rgba(6, 10, 16, 0.75), 0 0 2px rgba(6, 10, 16, 0.6); }

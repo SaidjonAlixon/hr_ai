@@ -4174,9 +4174,24 @@ body,
   box-shadow: 0 14px 28px rgba(107, 45, 145, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.28);
   border-color: rgba(242, 186, 0, 0.35);
 }
+/* Tanlanganda ikon binafsha fon ustida aniq ko‘rinsin */
+.dv-day .dvx-method.is-on .dvx-method-ico,
+.dv-day .dvx-method.is-on .dvx-method-ico.t-face,
+.dv-day .dvx-method.is-on .dvx-method-ico.t-qr,
+.dv-day .dvx-method.is-on .dvx-method-ico.t-finger {
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.22) !important;
+}
 .dv-night .dvx-method-ico.t-face { color: #e6d0ff; background: rgba(180, 120, 255, 0.22); }
 .dv-night .dvx-method-ico.t-qr { color: #ffd54a; background: rgba(255, 213, 74, 0.18); }
 .dv-night .dvx-method-ico.t-finger { color: #6eefc4; background: rgba(52, 211, 153, 0.18); }
+.dv-night .dvx-method.is-on .dvx-method-ico,
+.dv-night .dvx-method.is-on .dvx-method-ico.t-face,
+.dv-night .dvx-method.is-on .dvx-method-ico.t-qr,
+.dv-night .dvx-method.is-on .dvx-method-ico.t-finger {
+  color: #1a1028 !important;
+  background: rgba(26, 16, 40, 0.14) !important;
+}
 
 /* «Davom etish» va boshqa CTA — logo ranglari */
 .dv-day .dv-cta:not(.dv-cta-in):not(.dv-cta-out):not(.dv-cta-done):not(.dv-cta-warn) {

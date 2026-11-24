@@ -130,6 +130,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useI18n } from "../../i18n/I18nProvider";
 import { displayBranchName } from "../../lib/pharmacy-staff-api";
 import { toUzbekLatinUpper } from "../../lib/script-search";
+import { formatPersonName } from "../../lib/person-name";
 import {
   canEditDavomatManual,
   canMarkDavomatExcuse,
@@ -2953,7 +2954,9 @@ export default function DavomatPage() {
                           <td className="px-2 py-2 text-center text-xs tabular-nums text-muted-foreground">
                             {idx + 1}
                           </td>
-                          <td className="px-3 py-2 font-medium text-foreground">{emp.fullName}</td>
+                          <td className="px-3 py-2 font-medium text-foreground">
+                            {formatPersonName(emp.fullName)}
+                          </td>
                           <td className="px-3 py-2 text-muted-foreground">
                             {userRoleLabel(emp.position) || "—"}
                           </td>
@@ -3264,7 +3267,9 @@ export default function DavomatPage() {
                           onClick={() => setSelectedEmpId(selectedEmpId === e.id ? "all" : e.id)}
                         >
                           <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
-                          <td className="px-3 py-2 font-medium text-[#0b3a5c] dark:text-sky-300">{e.fullName}</td>
+                          <td className="px-3 py-2 font-medium text-[#0b3a5c] dark:text-sky-300">
+                            {formatPersonName(e.fullName)}
+                          </td>
                           <td className="px-3 py-2 text-muted-foreground">{e.position}</td>
                           <td className="px-3 py-2">{e.totals.present}</td>
                           <td className="px-3 py-2 text-rose-700 dark:text-rose-400">{e.totals.absent}</td>
@@ -3284,7 +3289,9 @@ export default function DavomatPage() {
               {detailEmployee ? (
                 <Card className="app-glass-card overflow-hidden border shadow-none">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-base">{detailEmployee.fullName} — kunlar</CardTitle>
+                    <CardTitle className="text-base">
+                      {formatPersonName(detailEmployee.fullName)} — kunlar
+                    </CardTitle>
                   </CardHeader>
                   <CardContent className="overflow-x-auto">
                     <table className="w-full border-collapse text-sm">
@@ -4185,8 +4192,13 @@ function PeriodAttendanceGrid({
                         )}
                         style={{ width: NAME_W, minWidth: NAME_W, left: NUM_W }}
                       >
-                        <div className="flex font-medium text-foreground" title={emp.fullName}>
-                          <VerifiedName name={emp.fullName} role={emp.userRole || emp.position} userId={emp.userId} size="xs" />
+                        <div className="flex font-medium text-foreground" title={formatPersonName(emp.fullName)}>
+                          <VerifiedName
+                            name={formatPersonName(emp.fullName)}
+                            role={emp.userRole || emp.position}
+                            userId={emp.userId}
+                            size="xs"
+                          />
                         </div>
                         <div className="truncate text-[10px] text-muted-foreground">
                           {emp.position ? `${userRoleLabel(emp.position)} · ` : ""}

@@ -71,7 +71,7 @@ const VIEW_ROLES = new Set([
 const WRITE_ROLES = new Set(["koordinator", "regional_menejer", "admin"]);
 
 /** Koordinator filialga yaqin bo‘lishi shart (visit geofence bilan bir xil) */
-export const AUDIT_GEOFENCE_METERS = 120;
+export const AUDIT_GEOFENCE_METERS = 200;
 
 function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -1833,17 +1833,9 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
     return;
   }
 
-  // Koordinator faqat o'z filiallariga yozadi
+  // Koordinator: ochiq tashrif (Keldim) bo‘lsa — joyda, cheklistga ruxsat
+  let openNeedsChecklist = false;
   if (req.userRole === "koordinator" && req.userId) {
-    const coordRows = await db
-      .select({ id: employeesTable.id, orgRole: employeesTable.orgRole })
-      .from(employeesTable)
-      .where(eq(employeesTable.userId, req.userId));
-    const owns = coordRows.some((r) => r.id === manager.reportsToId);
-    if (!owns) {
-      res.status(403).json({ error: "Bu filial sizga biriktirilmagan" });
-      return;
-    }
     const visitGate = await assertChecklistAllowedForCoordinator({
       userId: req.userId,
       branchId: managerEmployeeId,
@@ -1855,35 +1847,72 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
       });
       return;
     }
+    openNeedsChecklist = !visitGate.visit.checklistAt;
+
+    // Ochiq Keldim (visitGate.ok) — filial «biriktirilmagan» bo‘lsa ham cheklistga ruxsat
   }
 
-  /** Oyiga 1 filialga max 4 tashrif — tizim o‘zi raqamlaydi */
+  /** Oyiga 1 filialga odatiy 4 tashrif; ochiq Keldim bo‘lsa qo‘shimcha ruxsat */
   const monthPrefix = visitDate.slice(0, 7);
   const monthAudits = await db
-    .select({ id: branchAuditsTable.id, visitDate: branchAuditsTable.visitDate })
+    .select({
+      id: branchAuditsTable.id,
+      visitDate: branchAuditsTable.visitDate,
+      coordinatorId: branchAuditsTable.coordinatorId,
+    })
     .from(branchAuditsTable)
     .where(eq(branchAuditsTable.managerEmployeeId, managerEmployeeId));
   const visitsThisMonth = monthAudits.filter((a) =>
     String(a.visitDate || "").startsWith(monthPrefix),
   );
-  if (visitsThisMonth.length >= 4) {
+  const sameDayAudit = monthAudits.find((a) => String(a.visitDate || "") === visitDate) ?? null;
+
+  // Bugungi audit bor, lekin ochiq tashrifga cheklist ulanmagan — qayta insert emas, ulash
+  if (sameDayAudit && openNeedsChecklist && req.userId) {
+    try {
+      const startedRaw = req.body?.startedAt ? new Date(String(req.body.startedAt)) : null;
+      await attachChecklistToOpenVisit({
+        coordinatorUserId: req.userId,
+        branchId: managerEmployeeId,
+        auditId: sameDayAudit.id,
+        startedAt: startedRaw && Number.isFinite(startedRaw.getTime()) ? startedRaw : null,
+      });
+      const [row] = await db
+        .select()
+        .from(branchAuditsTable)
+        .where(eq(branchAuditsTable.id, sameDayAudit.id))
+        .limit(1);
+      res.status(200).json({
+        ...(await enrich(row || sameDayAudit)),
+        linkedExisting: true,
+        message: "Bugungi cheklist ochiq tashrifga ulangdi — endi «Ketdim» qiling.",
+      });
+      return;
+    } catch (e) {
+      console.error("link existing checklist error:", e);
+    }
+  }
+
+  if (visitsThisMonth.length >= 4 && !openNeedsChecklist) {
     res.status(400).json({
-      error: "Bu oyda ushbu filialga 4 ta tashrif allaqachon saqlangan",
+      error:
+        "Bu oyda ushbu filialga 4 ta tashrif allaqachon saqlangan. Qo‘shimcha uchun avval Face ID bilan «Keldim» qiling — keyin qo‘shimcha tashrif ochiladi.",
       code: "month_visit_limit",
       visitCount: visitsThisMonth.length,
       maxVisits: 4,
     });
     return;
   }
-  const sameDayVisit = monthAudits.some((a) => String(a.visitDate || "") === visitDate);
-  if (sameDayVisit) {
+  if (sameDayAudit && !openNeedsChecklist) {
     res.status(400).json({
-      error: "Bugun uchun bu filialga tashrif bo‘ldi — boshqasini tanlang",
+      error: "Bugun uchun bu filialga tashrif bo‘ldi — boshqasini tanlang yoki «Ketdim» qiling",
       code: "same_day_visit",
     });
     return;
   }
-  const visitName = `${visitsThisMonth.length + 1}-tashrif`;
+  const visitNum = visitsThisMonth.length + 1;
+  const visitName =
+    visitNum > 4 ? `${visitNum}-tashrif (qo‘shimcha)` : `${visitNum}-tashrif`;
 
   let distanceMeters: number | null = null;
   let savedCheckLat: number | null = null;

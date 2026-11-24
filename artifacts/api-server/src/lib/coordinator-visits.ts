@@ -20,9 +20,9 @@ export const COORD_OFFICE_LNG = 69 + 16 / 60 + 22.9 / 3600;
 export const COORD_OFFICE_GEOFENCE_METERS = 100;
 
 /** Cheklist / Keldim / Ketdim / hudud tasdiqlash — yashil zona */
-export const COORD_VISIT_GEOFENCE_METERS = 120;
+export const COORD_VISIT_GEOFENCE_METERS = 200;
 /** Coarse GPS (Android network) uchun qo‘shimcha ruxsat — accuracy dan olinadi, max shu */
-export const COORD_VISIT_GPS_ACCURACY_SLACK_CAP_M = 120;
+export const COORD_VISIT_GPS_ACCURACY_SLACK_CAP_M = 200;
 /** Hududni tasdiqlash muddati: oxirgi tasdiqdan 1 soat ichida, aks holda blok */
 export const COORD_PRESENCE_PERIOD_MS = 60 * 60 * 1000;
 /** Muddat tugashidan shuncha oldin eslatma boradi */
@@ -1004,15 +1004,7 @@ export async function assertChecklistAllowedForCoordinator(opts: {
       error: `Hozir ochiq tashrif: «${prev}». Faqat shu filialda cheklist qila olasiz. Boshqasiga o‘tishdan oldin «Ketdim» qiling.`,
     };
   }
-  if (isVisitPresenceBlocked(open)) {
-    return {
-      ok: false,
-      status: 403,
-      code: "presence_blocked",
-      error:
-        "Siz bugun hududda emas — 10 daqiqa ichida tasdiqlamadingiz. Cheklist bloklangan. «Ruxsat olish» tugmasi orqali adminga so‘rov yuboring.",
-    };
-  }
+  // presence_blocked bo‘lsa ham cheklistga ruxsat — saqlashda GPS tekshiriladi (koordinator joyda)
   return { ok: true, visit: open };
 }
 

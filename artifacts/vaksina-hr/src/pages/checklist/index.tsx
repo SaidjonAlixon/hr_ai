@@ -413,8 +413,11 @@ export default function ChecklistPage() {
 
   const doneVisits = visitsThisMonth.length;
   const monthFull = doneVisits >= MAX_VISITS_PER_MONTH;
-  const nextVisitNum = monthFull ? MAX_VISITS_PER_MONTH : doneVisits + 1;
-  const visitName = `${nextVisitNum}-tashrif`;
+  const nextVisitNum = doneVisits + 1;
+  const visitName =
+    nextVisitNum > MAX_VISITS_PER_MONTH
+      ? `${nextVisitNum}-tashrif (qo‘shimcha)`
+      : `${nextVisitNum}-tashrif`;
 
   const visitedToday = useMemo(() => {
     if (!managerId || !visitDate) return false;
@@ -459,10 +462,15 @@ export default function ChecklistPage() {
   const withinGeofence =
     distanceMeters != null && distanceMeters <= effectiveGeofenceMeters;
 
+  /** Joyda ochiq Keldim, cheklist hali yo‘q — limit to‘lsa ham saqlash mumkin */
+  const openNeedsChecklist =
+    isCoord &&
+    openVisit != null &&
+    String(openVisit.branchId) === managerId &&
+    !openVisit.checklistAt;
+
   const canFillChecklist =
-    !monthFull &&
-    !visitedToday &&
-    !(isCoord && openVisit?.presenceBlocked) &&
+    (openNeedsChecklist || (!monthFull && !visitedToday)) &&
     (hasFullPlatformAccess(user?.role) ||
       (Boolean(selectedBranch) &&
         withinGeofence &&
@@ -892,11 +900,16 @@ export default function ChecklistPage() {
       toast({ title: t("checklist.pickDate"), variant: "destructive" });
       return;
     }
-    if (monthFull) {
-      toast({ title: t("checklist.visitFull"), variant: "destructive" });
+    if (monthFull && !openNeedsChecklist) {
+      toast({
+        title: t("checklist.visitFull"),
+        description:
+          "Qo‘shimcha tashrif uchun avval Face ID bilan «Keldim» qiling — keyin cheklist ochiladi.",
+        variant: "destructive",
+      });
       return;
     }
-    if (visitedToday) {
+    if (visitedToday && !openNeedsChecklist) {
       if (
         isCoord &&
         openVisit &&
@@ -1577,22 +1590,31 @@ export default function ChecklistPage() {
             </Button>
           </div>
 
+          {openNeedsChecklist && (monthFull || visitedToday) ? (
+            <div className="mb-4 rounded-2xl border border-sky-200 bg-sky-50 px-3 py-3 text-sm text-sky-950 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-100">
+              Siz filialdasiz (ochiq «Keldim»). Limit to‘lgan bo‘lsa ham{" "}
+              <span className="font-semibold">qo‘shimcha cheklist</span> saqlashingiz mumkin — keyin
+              «Ketdim» qiling.
+            </div>
+          ) : null}
           {!canFillChecklist && (
-            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
-              {monthFull
-                ? t("checklist.visitFull")
+            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+              {monthFull && !openNeedsChecklist
+                ? `${t("checklist.visitFull")} Qo‘shimcha uchun Face ID «Keldim» qiling.`
                 : !selectedBranch
                   ? t("checklist.gatePick")
-                  : !branchHasCoords
-                    ? t("checklist.gateNoGps")
-                    : gpsError
-                      ? t("checklist.gateNeedPerm")
-                      : distanceMeters != null
-                        ? tf(t, "checklist.gateFar", {
-                            dist: formatDistance(distanceMeters),
-                            m: effectiveGeofenceMeters,
-                          })
-                        : tf(t, "checklist.gateGo", { m: effectiveGeofenceMeters })}
+                  : isCoord && (!openVisit || String(openVisit.branchId) !== managerId)
+                    ? "Avval shu filialda Face ID bilan «Keldim» qiling — keyin cheklist ochiladi."
+                    : !branchHasCoords
+                      ? t("checklist.gateNoGps")
+                      : gpsError
+                        ? t("checklist.gateNeedPerm")
+                        : distanceMeters != null
+                          ? tf(t, "checklist.gateFar", {
+                              dist: formatDistance(distanceMeters),
+                              m: effectiveGeofenceMeters,
+                            })
+                          : tf(t, "checklist.gateGo", { m: effectiveGeofenceMeters })}
             </div>
           )}
 
@@ -1717,8 +1739,7 @@ export default function ChecklistPage() {
             disabled={
               createAudit.isPending ||
               !canWrite ||
-              monthFull ||
-              visitedToday ||
+              (!openNeedsChecklist && (monthFull || visitedToday)) ||
               (user?.role === "koordinator" && !canFillChecklist)
             }
             className="min-w-[160px] rounded-full"
@@ -1746,10 +1767,12 @@ export default function ChecklistPage() {
                   : "text-rose-600 dark:text-rose-400",
               )}
             >
-              {monthFull
+              {monthFull && !openNeedsChecklist
                 ? t("checklist.visitFull")
                 : canFillChecklist
-                  ? t("checklist.inZoneShort")
+                  ? openNeedsChecklist && monthFull
+                    ? "Qo‘shimcha · hududda"
+                    : t("checklist.inZoneShort")
                   : distanceMeters != null
                     ? formatDistance(distanceMeters)
                     : t("checklist.waitingGps")}
@@ -1767,8 +1790,7 @@ export default function ChecklistPage() {
           disabled={
             createAudit.isPending ||
             !canWrite ||
-            monthFull ||
-            visitedToday ||
+            (!openNeedsChecklist && (monthFull || visitedToday)) ||
             (user?.role === "koordinator" && !canFillChecklist)
           }
         >

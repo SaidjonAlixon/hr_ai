@@ -68,9 +68,9 @@ export type BranchAuditInput = {
   startedAt?: string;
 };
 
-export const AUDIT_GEOFENCE_METERS = 120;
+export const AUDIT_GEOFENCE_METERS = 200;
 /** Coarse GPS uchun qo‘shimcha (accuracy dan, max) */
-export const AUDIT_GPS_ACCURACY_SLACK_CAP_M = 120;
+export const AUDIT_GPS_ACCURACY_SLACK_CAP_M = 200;
 
 export function haversineMeters(
   lat1: number,

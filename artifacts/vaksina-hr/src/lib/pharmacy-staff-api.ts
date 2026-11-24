@@ -89,6 +89,15 @@ export function stripGpsSuffix(location: string | null | undefined): string {
     .replace(/\s+/g, " ")
     .trim();
   if (/^-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?$/.test(s)) return "";
+  // Faqat koordinata (41°13'09.3"N 69°16'22.9"E) — filial nomi emas
+  if (parseGpsText(s)) {
+    const leftover = s
+      .replace(/\d{1,3}\s*°\s*\d{1,2}\s*'?\s*\d{0,2}(?:[.,]\d+)?\s*"?\s*[NSnsEWewСсЮюВвЗз]?/gi, "")
+      .replace(/-?\d+(?:[.,]\d+)?/g, "")
+      .replace(/[,;\s|·｜│˚º'"′″]+/g, "")
+      .trim();
+    if (!leftover) return "";
+  }
   return s;
 }
 
@@ -101,6 +110,7 @@ const BRANCH_NAME_FIX: Record<string, string> = {
 
 export function displayBranchName(location: string | null | undefined): string {
   const raw = stripGpsSuffix(location);
+  if (!raw) return "";
   return BRANCH_NAME_FIX[raw.toLowerCase()] || raw;
 }
 

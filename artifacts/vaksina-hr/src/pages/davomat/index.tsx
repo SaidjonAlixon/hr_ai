@@ -536,6 +536,16 @@ function resolvedBranch(
     if (hit) return hit;
     cursor = cursor.reportsToId != null ? byId.get(cursor.reportsToId) : undefined;
   }
+  const dept = String(emp.departmentName || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (dept && !/^filial$/i.test(dept) && branchIdentity(dept)) {
+    return branchIdentity(dept)!;
+  }
+  const kind = classifyDavomatStaff(emp);
+  if (kind === "office") return { key: "asosiy-ofis", label: "Asosiy ofis" };
+  if (kind === "warehouse") return { key: "omborxona", label: "Omborxona" };
+  if (kind === "security") return { key: "xavfsizlik", label: "Xavfsizlik" };
   return { key: "none", label: "Filialsiz" };
 }
 

@@ -260,11 +260,11 @@ export function DavomatPremiumView(p: Props) {
                 <Clock3 className="h-6 w-6" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-medium text-white/80">Joriy vaqt</p>
+                <p className="text-[11px] font-semibold text-white/95">Joriy vaqt</p>
                 <p className="font-mono text-[1.7rem] font-extrabold leading-none tracking-tight tabular-nums sm:text-[1.95rem]">
                   {p.clockLabel}
                 </p>
-                <p className="mt-1 text-[11px] text-white/75">Bugun ham ajoyib kun!</p>
+                <p className="mt-1 text-[11px] font-medium text-white/90">Bugun ham ajoyib kun!</p>
               </div>
               <div className="dvx-clock-split" />
               <div className="shrink-0 text-center">

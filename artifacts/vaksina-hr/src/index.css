@@ -3711,24 +3711,24 @@ body,
   color: var(--dvx-t1);
 }
 .dv-premium.dv-night {
-  --dvx-brand-purple: #9b6ad4;
-  --dvx-brand-purple-deep: #5b2c8a;
-  --dvx-brand-gold: #f5c518;
-  --dvx-brand-gold-deep: #d4a40e;
-  --dvx-bg: #12081f;
-  --dvx-surface: rgba(36, 18, 58, 0.88);
-  --dvx-surface-2: rgba(255, 255, 255, 0.07);
-  --dvx-border: rgba(245, 197, 24, 0.16);
-  --dvx-t1: #f8f4ff;
-  --dvx-t2: rgba(248, 244, 255, 0.76);
-  --dvx-t3: rgba(248, 244, 255, 0.52);
-  --dvx-shadow: 0 12px 30px rgba(0, 0, 0, 0.42);
-  --dvx-accent: #f5c518;
-  --dvx-accent-soft: rgba(245, 197, 24, 0.16);
+  --dvx-brand-purple: #c4a0f0;
+  --dvx-brand-purple-deep: #6e3aad;
+  --dvx-brand-gold: #ffd54a;
+  --dvx-brand-gold-deep: #e8b820;
+  --dvx-bg: #0f0820;
+  --dvx-surface: rgba(48, 28, 78, 0.92);
+  --dvx-surface-2: rgba(255, 255, 255, 0.1);
+  --dvx-border: rgba(255, 213, 74, 0.22);
+  --dvx-t1: #ffffff;
+  --dvx-t2: rgba(255, 255, 255, 0.9);
+  --dvx-t3: rgba(236, 226, 255, 0.78);
+  --dvx-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
+  --dvx-accent: #ffd54a;
+  --dvx-accent-soft: rgba(255, 213, 74, 0.18);
   background:
-    radial-gradient(90% 40% at 0% 0%, rgba(107, 45, 145, 0.42), transparent 58%),
-    radial-gradient(70% 34% at 100% 10%, rgba(245, 197, 24, 0.12), transparent 50%),
-    linear-gradient(180deg, #12081f 0%, #1a0e2e 50%, #0e0618 100%);
+    radial-gradient(85% 38% at 8% 0%, rgba(130, 70, 210, 0.38), transparent 55%),
+    radial-gradient(70% 32% at 100% 8%, rgba(255, 213, 74, 0.14), transparent 48%),
+    linear-gradient(180deg, #140a28 0%, #1c1036 46%, #0f0820 100%);
   color: var(--dvx-t1);
 }
 .dark .dv-premium.dv-day {
@@ -3739,9 +3739,9 @@ body,
 }
 .dark .dv-premium.dv-night {
   background:
-    radial-gradient(90% 40% at 0% 0%, rgba(107, 45, 145, 0.42), transparent 58%),
-    radial-gradient(70% 34% at 100% 10%, rgba(245, 197, 24, 0.12), transparent 50%),
-    linear-gradient(180deg, #12081f 0%, #1a0e2e 50%, #0e0618 100%);
+    radial-gradient(85% 38% at 8% 0%, rgba(130, 70, 210, 0.38), transparent 55%),
+    radial-gradient(70% 32% at 100% 8%, rgba(255, 213, 74, 0.14), transparent 48%),
+    linear-gradient(180deg, #140a28 0%, #1c1036 46%, #0f0820 100%);
 }
 
 .dvx-t1 { color: var(--dvx-t1); }
@@ -3788,8 +3788,8 @@ body,
 }
 .dv-night .dvx-hero-shade {
   background:
-    linear-gradient(90deg, rgba(18, 8, 31, 0.82) 0%, rgba(18, 8, 31, 0.42) 52%, rgba(18, 8, 31, 0) 82%),
-    linear-gradient(180deg, rgba(18, 8, 31, 0) 55%, rgba(18, 8, 31, 0.95) 100%);
+    linear-gradient(90deg, rgba(15, 8, 32, 0.88) 0%, rgba(15, 8, 32, 0.48) 50%, rgba(15, 8, 32, 0) 82%),
+    linear-gradient(180deg, rgba(15, 8, 32, 0) 48%, rgba(15, 8, 32, 0.97) 100%);
 }
 
 .dvx-back {
@@ -3840,9 +3840,23 @@ body,
 }
 .dv-night .dvx-clock {
   background:
-    radial-gradient(120% 120% at 0% 0%, rgba(245, 197, 24, 0.35), transparent 55%),
-    linear-gradient(135deg, #5b2c8a 0%, #3d1a62 55%, #24103f 100%);
-  box-shadow: 0 16px 34px rgba(20, 8, 40, 0.55), inset 0 1px 0 rgba(255, 220, 120, 0.22);
+    radial-gradient(110% 90% at 100% 0%, rgba(255, 213, 74, 0.28), transparent 48%),
+    linear-gradient(145deg, #7a45c4 0%, #5a2f9a 42%, #3a1a6a 100%);
+  border-color: rgba(255, 213, 74, 0.35);
+  box-shadow:
+    0 18px 40px rgba(40, 12, 80, 0.55),
+    0 0 0 1px rgba(255, 213, 74, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+.dv-night .dvx-clock p,
+.dv-night .dvx-clock span {
+  color: #fff !important;
+  opacity: 1 !important;
+}
+.dv-night .dvx-clock .text-white\/75,
+.dv-night .dvx-clock .text-white\/80,
+.dv-night .dvx-clock [class*="text-white/"] {
+  color: rgba(255, 255, 255, 0.92) !important;
 }
 .dvx-clock-icon {
   display: flex;
@@ -3888,8 +3902,25 @@ body,
 }
 .dvx-stat-in { background: linear-gradient(135deg, #36a269 0%, #207a4b 100%); }
 .dvx-stat-out { background: linear-gradient(135deg, #8a3aad 0%, #5b2c8a 100%); }
-.dv-night .dvx-stat-in { background: linear-gradient(135deg, #1f8f5e 0%, #12583a 100%); }
-.dv-night .dvx-stat-out { background: linear-gradient(135deg, #c9960f 0%, #8a6508 100%); }
+.dv-night .dvx-stat-in {
+  background: linear-gradient(135deg, #2fa86e 0%, #1a7a4a 100%);
+  box-shadow: 0 12px 26px rgba(26, 122, 74, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+.dv-night .dvx-stat-out {
+  background: linear-gradient(135deg, #ffd54a 0%, #e0a914 55%, #b8860b 100%);
+  color: #1a1028;
+  box-shadow: 0 12px 26px rgba(184, 134, 11, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+.dv-night .dvx-stat-out .text-white\/75,
+.dv-night .dvx-stat-out .text-white\/80,
+.dv-night .dvx-stat-out [class*="text-white"] {
+  color: rgba(26, 16, 40, 0.85) !important;
+}
+.dv-night .dvx-stat-out .dvx-stat-icon {
+  background: rgba(26, 16, 40, 0.14);
+  border-color: rgba(26, 16, 40, 0.2);
+  color: #1a1028;
+}
 .dvx-stat-icon {
   display: flex;
   height: 2.5rem;
@@ -4084,19 +4115,27 @@ body,
   background: linear-gradient(135deg, #8a3aad 0%, #6b2d91 55%, #4a1d6e 100%);
   box-shadow: 0 14px 28px rgba(107, 45, 145, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
-.dv-night .dvx-method.is-on {
-  background: linear-gradient(135deg, #f5c518 0%, #e0a914 55%, #c9960f 100%);
-  box-shadow: 0 14px 28px rgba(201, 150, 15, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.3);
-  color: #2a1540;
+.dv-night .dvx-method {
+  background: rgba(56, 34, 92, 0.95);
+  border-color: rgba(255, 255, 255, 0.16);
 }
-.dv-night .dvx-method.is-on .dvx-method-title { color: #2a1540; }
-.dv-night .dvx-method.is-on .dvx-method-sub { color: rgba(42, 21, 64, 0.75); }
-.dv-night .dvx-method.is-on .dvx-method-ico { color: #2a1540; background: rgba(42, 21, 64, 0.12); }
-.dv-night .dvx-method.is-on .absolute { color: #2a1540; }
+.dv-night .dvx-method-title { color: #fff; }
+.dv-night .dvx-method-sub { color: rgba(236, 226, 255, 0.82); }
+.dv-night .dvx-method.is-on {
+  background: linear-gradient(135deg, #ffe066 0%, #ffd54a 45%, #e8b820 100%);
+  box-shadow: 0 14px 30px rgba(232, 184, 32, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  color: #1a1028;
+  border-color: rgba(255, 255, 255, 0.35);
+}
+.dv-night .dvx-method.is-on .dvx-method-title { color: #1a1028; font-weight: 800; }
+.dv-night .dvx-method.is-on .dvx-method-sub { color: rgba(26, 16, 40, 0.78); }
+.dv-night .dvx-method.is-on .dvx-method-ico { color: #1a1028; background: rgba(26, 16, 40, 0.12); }
+.dv-night .dvx-method.is-on .absolute { color: #1a1028; }
 .dv-day .dvx-method-ico.t-face { color: #6b2d91; background: rgba(107, 45, 145, 0.14); }
 .dv-day .dvx-method-ico.t-qr { color: #c9960f; background: rgba(232, 185, 35, 0.18); }
-.dv-night .dvx-method-ico.t-face { color: #d4b3f5; background: rgba(155, 106, 212, 0.22); }
-.dv-night .dvx-method-ico.t-qr { color: #f5c518; background: rgba(245, 197, 24, 0.16); }
+.dv-night .dvx-method-ico.t-face { color: #e6d0ff; background: rgba(180, 120, 255, 0.22); }
+.dv-night .dvx-method-ico.t-qr { color: #ffd54a; background: rgba(255, 213, 74, 0.18); }
+.dv-night .dvx-method-ico.t-finger { color: #6eefc4; background: rgba(52, 211, 153, 0.18); }
 
 /* «Davom etish» va boshqa CTA — logo ranglari */
 .dv-day .dv-cta:not(.dv-cta-in):not(.dv-cta-out):not(.dv-cta-done):not(.dv-cta-warn) {
@@ -4104,18 +4143,25 @@ body,
   box-shadow: 0 14px 30px rgba(107, 45, 145, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 .dv-night .dv-cta:not(.dv-cta-in):not(.dv-cta-out):not(.dv-cta-done):not(.dv-cta-warn) {
-  background: linear-gradient(90deg, #f5c518 0%, #e0a914 52%, #c9960f 100%);
-  color: #2a1540;
-  box-shadow: 0 14px 30px rgba(201, 150, 15, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  background: linear-gradient(90deg, #ffe066 0%, #ffd54a 48%, #e8b820 100%);
+  color: #1a1028;
+  box-shadow: 0 16px 34px rgba(232, 184, 32, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.dv-night .dv-cta:not(.dv-cta-in):not(.dv-cta-out):not(.dv-cta-done):not(.dv-cta-warn) span,
+.dv-night .dv-cta:not(.dv-cta-in):not(.dv-cta-out):not(.dv-cta-done):not(.dv-cta-warn) p {
+  color: #1a1028 !important;
+}
+.dv-night .dv-cta:not(.dv-cta-in):not(.dv-cta-out):not(.dv-cta-done):not(.dv-cta-warn) [class*="text-white"] {
+  color: rgba(26, 16, 40, 0.82) !important;
 }
 .dv-day .dv-cta-in { background: linear-gradient(90deg, #3aa86f 0%, #2a8a58 55%, #1f6b45 100%); }
 .dv-day .dv-cta-out { background: linear-gradient(90deg, #8a3aad 0%, #6b2d91 55%, #4a1d6e 100%); }
 .dv-day .dv-cta-warn { background: linear-gradient(90deg, #7a2a5a 0%, #5b1d6e 55%, #3d1450 100%); }
 .dv-night .dv-cta-in { background: linear-gradient(90deg, #2f9e68 0%, #1f7a4e 55%, #145c3a 100%); }
-.dv-night .dv-cta-out { background: linear-gradient(90deg, #e0a914 0%, #c9960f 55%, #9a720a 100%); color: #2a1540; }
-.dv-night .dv-cta-warn { background: linear-gradient(90deg, #6b2d91 0%, #4a1d6e 55%, #2e1148 100%); }
+.dv-night .dv-cta-out { background: linear-gradient(90deg, #ffd54a 0%, #e8b820 55%, #c9960f 100%); color: #1a1028; }
+.dv-night .dv-cta-warn { background: linear-gradient(90deg, #7a45c4 0%, #5a2f9a 55%, #3a1a6a 100%); }
 
-/* Muammo / agent tugmasi — logo binafsha */
+/* Muammo / agent tugmasi */
 .dv-premium .dvx-agent-btn {
   background: linear-gradient(90deg, #8a3aad 0%, #6b2d91 55%, #4a1d6e 100%);
   box-shadow: 0 8px 20px rgba(107, 45, 145, 0.35);
@@ -4123,19 +4169,42 @@ body,
   border: 1px solid rgba(255, 255, 255, 0.18);
 }
 .dv-night .dvx-agent-btn {
-  background: linear-gradient(90deg, #f5c518 0%, #e0a914 55%, #c9960f 100%);
-  box-shadow: 0 8px 20px rgba(201, 150, 15, 0.35);
-  color: #2a1540;
-  border-color: rgba(255, 255, 255, 0.2);
+  background: linear-gradient(90deg, #9b6ad4 0%, #7a45c4 55%, #5a2f9a 100%);
+  box-shadow: 0 10px 24px rgba(90, 47, 154, 0.45);
+  color: #fff;
+  border-color: rgba(255, 213, 74, 0.28);
+  font-weight: 800;
 }
 
 /* Xarita: marker — binafsha / oltin */
 .dv-day .dvx-card .dv-lf-branch-pin { background: linear-gradient(160deg, #8a3aad, #6b2d91); box-shadow: 0 8px 18px rgba(107, 45, 145, 0.5); }
-.dv-night .dvx-card .dv-lf-branch-pin { background: linear-gradient(160deg, #f5c518, #c9960f); box-shadow: 0 8px 18px rgba(201, 150, 15, 0.5); }
+.dv-night .dvx-card .dv-lf-branch-pin { background: linear-gradient(160deg, #ffe066, #e8b820); box-shadow: 0 8px 18px rgba(232, 184, 32, 0.55); }
 .dv-day .dvx-card .dv-map-unlock-chip { background: rgba(42, 21, 64, 0.82); color: #f8f3fc; border-color: rgba(255, 255, 255, 0.2); }
 .dv-day .dvx-card .dv-map-locate.is-on { color: #6b2d91; border-color: rgba(107, 45, 145, 0.5); box-shadow: 0 8px 18px rgba(107, 45, 145, 0.25); }
 
-/* Salomlashuv matni */
-.dv-night .dvx-greet { text-shadow: 0 1px 10px rgba(18, 8, 31, 0.75), 0 0 2px rgba(18, 8, 31, 0.6); }
+/* Salomlashuv — kechasi aniqroq */
+.dv-night .dvx-greet {
+  text-shadow: 0 2px 14px rgba(8, 4, 20, 0.85), 0 0 2px rgba(8, 4, 20, 0.7);
+}
+.dv-night .dvx-greet h1 { color: #fff; }
+.dv-night .dvx-greet p { color: rgba(255, 255, 255, 0.9) !important; }
 .dv-day .dvx-greet { text-shadow: 0 1px 8px rgba(246, 241, 251, 0.95); }
 .dvx-greet h1 { letter-spacing: -0.01em; }
+
+/* Kechki kartalar / panellar — matn kontrast */
+.dv-night .dvx-card-head h2,
+.dv-night .dv-panel-head h2 { color: #fff; }
+.dv-night .dv-range-tab-on {
+  background: linear-gradient(135deg, #ffe066, #e8b820);
+  color: #1a1028;
+  font-weight: 800;
+  box-shadow: 0 4px 14px rgba(232, 184, 32, 0.4);
+}
+.dv-night .dvx-back,
+.dv-night .dvx-date {
+  background: rgba(48, 28, 78, 0.88);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+.dv-night .dvx-date-week { color: #fff; }
+.dv-night .dvx-date-day { color: rgba(255, 255, 255, 0.88); }

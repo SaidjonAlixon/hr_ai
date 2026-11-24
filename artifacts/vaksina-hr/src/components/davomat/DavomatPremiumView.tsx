@@ -299,9 +299,9 @@ export function DavomatPremiumView(p: Props) {
               <span className="flex items-center gap-1.5 text-[13px] font-bold leading-none">
                 {inDone ? "Keldi" : "Keladi"}
                 {inDone ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-100" />
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[#2a1540]/80" />
                 ) : (
-                  <Clock3 className="h-3.5 w-3.5 shrink-0 text-white/75" />
+                  <Clock3 className="h-3.5 w-3.5 shrink-0 opacity-75" />
                 )}
               </span>
               <span className="mt-1 block font-mono text-[1.05rem] font-extrabold leading-none tabular-nums">

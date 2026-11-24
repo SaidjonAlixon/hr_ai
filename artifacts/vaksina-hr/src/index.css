@@ -3692,22 +3692,22 @@ body,
 .dv-premium.dv-day {
   --dvx-brand-purple: #6b2d91;
   --dvx-brand-purple-deep: #4a1d6e;
-  --dvx-brand-gold: #e8b923;
-  --dvx-brand-gold-deep: #c9960f;
-  --dvx-bg: #f6f1fb;
+  --dvx-brand-gold: #f2ba00;
+  --dvx-brand-gold-deep: #d4a000;
+  --dvx-bg: #f7f2fc;
   --dvx-surface: #ffffff;
-  --dvx-surface-2: #f3ecfa;
-  --dvx-border: rgba(107, 45, 145, 0.16);
-  --dvx-t1: #2a1540;
-  --dvx-t2: rgba(42, 21, 64, 0.72);
-  --dvx-t3: rgba(42, 21, 64, 0.5);
-  --dvx-shadow: 0 10px 26px rgba(107, 45, 145, 0.12);
+  --dvx-surface-2: #f4ecfb;
+  --dvx-border: rgba(107, 45, 145, 0.15);
+  --dvx-t1: #241238;
+  --dvx-t2: rgba(36, 18, 56, 0.78);
+  --dvx-t3: rgba(36, 18, 56, 0.58);
+  --dvx-shadow: 0 12px 28px rgba(107, 45, 145, 0.11);
   --dvx-accent: #6b2d91;
   --dvx-accent-soft: rgba(107, 45, 145, 0.12);
   background:
-    radial-gradient(90% 42% at 100% 0%, rgba(232, 185, 35, 0.22), transparent 58%),
-    radial-gradient(70% 36% at 0% 8%, rgba(107, 45, 145, 0.12), transparent 55%),
-    linear-gradient(180deg, #f8f3fc 0%, #f3ecf9 48%, #eee4f6 100%);
+    radial-gradient(88% 40% at 100% 0%, rgba(242, 186, 0, 0.28), transparent 56%),
+    radial-gradient(68% 34% at 0% 6%, rgba(107, 45, 145, 0.14), transparent 54%),
+    linear-gradient(180deg, #faf5ff 0%, #f5eefb 48%, #f0e6f8 100%);
   color: var(--dvx-t1);
 }
 .dv-premium.dv-night {
@@ -3733,9 +3733,9 @@ body,
 }
 .dark .dv-premium.dv-day {
   background:
-    radial-gradient(90% 42% at 100% 0%, rgba(232, 185, 35, 0.22), transparent 58%),
-    radial-gradient(70% 36% at 0% 8%, rgba(107, 45, 145, 0.12), transparent 55%),
-    linear-gradient(180deg, #f8f3fc 0%, #f3ecf9 48%, #eee4f6 100%);
+    radial-gradient(88% 40% at 100% 0%, rgba(242, 186, 0, 0.28), transparent 56%),
+    radial-gradient(68% 34% at 0% 6%, rgba(107, 45, 145, 0.14), transparent 54%),
+    linear-gradient(180deg, #faf5ff 0%, #f5eefb 48%, #f0e6f8 100%);
 }
 .dark .dv-premium.dv-night {
   background:
@@ -3835,8 +3835,13 @@ body,
 }
 .dv-day .dvx-clock {
   background:
-    radial-gradient(120% 120% at 100% 0%, rgba(232, 185, 35, 0.45), transparent 50%),
-    linear-gradient(135deg, #8a3aad 0%, #6b2d91 50%, #4a1d6e 100%);
+    radial-gradient(110% 90% at 100% 0%, rgba(242, 186, 0, 0.5), transparent 48%),
+    linear-gradient(145deg, #8f42b8 0%, #6b2d91 48%, #4a1d6e 100%);
+  border-color: rgba(242, 186, 0, 0.35);
+  box-shadow:
+    0 16px 36px rgba(107, 45, 145, 0.34),
+    0 0 0 1px rgba(242, 186, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 .dv-night .dvx-clock {
   background:
@@ -3879,12 +3884,25 @@ body,
   border-radius: 999px;
   padding: 0.18rem 0.55rem;
   font-size: 9.5px;
-  font-weight: 700;
-  color: #eafff3;
-  background: rgba(22, 120, 72, 0.7);
-  border: 1px solid rgba(167, 243, 208, 0.4);
+  font-weight: 800;
+  color: #2a1540;
+  background: linear-gradient(135deg, #f2ba00, #e0a800);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  box-shadow: 0 2px 8px rgba(212, 160, 0, 0.35);
 }
-.dvx-pill.is-live { background: rgba(16, 185, 129, 0.85); }
+.dv-day .dvx-pill {
+  color: #2a1540;
+  background: linear-gradient(135deg, #f2ba00, #e0a800);
+}
+.dv-night .dvx-pill {
+  color: #1a1028;
+  background: linear-gradient(135deg, #ffd54a, #f2ba00);
+}
+.dvx-pill.is-live {
+  color: #fff;
+  background: linear-gradient(135deg, #8a3aad, #6b2d91);
+  border-color: rgba(255, 255, 255, 0.3);
+}
 
 .dvx-stat {
   position: relative;
@@ -3900,7 +3918,23 @@ body,
   border: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow: 0 12px 26px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
-.dvx-stat-in { background: linear-gradient(135deg, #36a269 0%, #207a4b 100%); }
+/* Keladi — logo oltin (#F2BA00) */
+.dvx-stat-in {
+  background: linear-gradient(135deg, #f7c820 0%, #f2ba00 45%, #d4a000 100%);
+  color: #2a1540;
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 12px 26px rgba(212, 160, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.dv-day .dvx-stat-in .text-white\/75,
+.dv-day .dvx-stat-in .text-white\/80,
+.dv-day .dvx-stat-in [class*="text-white"] {
+  color: rgba(42, 21, 64, 0.82) !important;
+}
+.dv-day .dvx-stat-in .dvx-stat-icon {
+  background: rgba(42, 21, 64, 0.12);
+  border-color: rgba(42, 21, 64, 0.18);
+  color: #2a1540;
+}
 .dvx-stat-out { background: linear-gradient(135deg, #8a3aad 0%, #5b2c8a 100%); }
 .dv-night .dvx-stat-in {
   background: linear-gradient(135deg, #2fa86e 0%, #1a7a4a 100%);
@@ -3973,7 +4007,8 @@ body,
   font-weight: 700;
   line-height: 1.1;
 }
-.dvx-zone.is-ok { color: #0d7a43; background: rgba(34, 170, 98, 0.16); }
+.dvx-zone.is-ok { color: #9a7600; background: rgba(242, 186, 0, 0.2); }
+.dv-day .dvx-zone.is-ok { color: #8a6800; background: rgba(242, 186, 0, 0.22); }
 .dvx-zone.is-bad { color: #b4233f; background: rgba(225, 60, 90, 0.14); }
 .dvx-zone.is-warn { color: #6b2d91; background: rgba(107, 45, 145, 0.14); }
 .dv-night .dvx-zone.is-ok { color: #7ff0b4; background: rgba(34, 197, 94, 0.18); }
@@ -4004,12 +4039,12 @@ body,
 .dvx-card .dv-map-radius p:first-child { font-size: 9px !important; }
 .dvx-card .dv-map-radius p:last-child { font-size: 12px !important; }
 .dv-day .dvx-card .dv-map-radius {
-  background: rgba(255, 255, 255, 0.92);
-  border-color: rgba(34, 170, 98, 0.4);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.14);
+  background: rgba(255, 248, 220, 0.96);
+  border-color: rgba(242, 186, 0, 0.5);
+  box-shadow: 0 6px 16px rgba(212, 160, 0, 0.18);
 }
-.dv-day .dvx-card .dv-map-radius p:first-child { color: rgba(42, 21, 64, 0.6) !important; }
-.dv-day .dvx-card .dv-map-radius p:last-child { color: #0d7a43 !important; }
+.dv-day .dvx-card .dv-map-radius p:first-child { color: rgba(42, 21, 64, 0.62) !important; }
+.dv-day .dvx-card .dv-map-radius p:last-child { color: #b89000 !important; font-weight: 800; }
 .dv-day .dvx-card .dv-map-locate {
   background: rgba(255, 255, 255, 0.94);
   border-color: rgba(107, 45, 145, 0.22);
@@ -4050,7 +4085,8 @@ body,
 }
 .dvx-method-ico.t-face { color: #4f46e5; background: rgba(99, 102, 241, 0.14); }
 .dvx-method-ico.t-qr { color: #7c3aed; background: rgba(139, 92, 246, 0.14); }
-.dvx-method-ico.t-finger { color: #059669; background: rgba(16, 185, 129, 0.15); }
+.dvx-method-ico.t-finger { color: #c9960f; background: rgba(242, 186, 0, 0.16); }
+.dv-day .dvx-method-ico.t-finger { color: #b89000; background: rgba(242, 186, 0, 0.18); }
 .dv-night .dvx-method-ico.t-face { color: #a5b4fc; }
 .dv-night .dvx-method-ico.t-qr { color: #c4b5fd; }
 .dv-night .dvx-method-ico.t-finger { color: #6ee7b7; }
@@ -4132,7 +4168,12 @@ body,
 .dv-night .dvx-method.is-on .dvx-method-ico { color: #1a1028; background: rgba(26, 16, 40, 0.12); }
 .dv-night .dvx-method.is-on .absolute { color: #1a1028; }
 .dv-day .dvx-method-ico.t-face { color: #6b2d91; background: rgba(107, 45, 145, 0.14); }
-.dv-day .dvx-method-ico.t-qr { color: #c9960f; background: rgba(232, 185, 35, 0.18); }
+.dv-day .dvx-method-ico.t-qr { color: #d4a000; background: rgba(242, 186, 0, 0.2); }
+.dv-day .dvx-method.is-on {
+  background: linear-gradient(135deg, #8f42b8 0%, #6b2d91 50%, #4a1d6e 100%);
+  box-shadow: 0 14px 28px rgba(107, 45, 145, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  border-color: rgba(242, 186, 0, 0.35);
+}
 .dv-night .dvx-method-ico.t-face { color: #e6d0ff; background: rgba(180, 120, 255, 0.22); }
 .dv-night .dvx-method-ico.t-qr { color: #ffd54a; background: rgba(255, 213, 74, 0.18); }
 .dv-night .dvx-method-ico.t-finger { color: #6eefc4; background: rgba(52, 211, 153, 0.18); }
@@ -4154,7 +4195,16 @@ body,
 .dv-night .dv-cta:not(.dv-cta-in):not(.dv-cta-out):not(.dv-cta-done):not(.dv-cta-warn) [class*="text-white"] {
   color: rgba(26, 16, 40, 0.82) !important;
 }
-.dv-day .dv-cta-in { background: linear-gradient(90deg, #3aa86f 0%, #2a8a58 55%, #1f6b45 100%); }
+.dv-day .dv-cta-in {
+  background: linear-gradient(90deg, #f7c820 0%, #f2ba00 50%, #d4a000 100%);
+  color: #2a1540;
+  box-shadow: 0 14px 30px rgba(212, 160, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.dv-day .dv-cta-in span,
+.dv-day .dv-cta-in p,
+.dv-day .dv-cta-in [class*="text-white"] {
+  color: #2a1540 !important;
+}
 .dv-day .dv-cta-out { background: linear-gradient(90deg, #8a3aad 0%, #6b2d91 55%, #4a1d6e 100%); }
 .dv-day .dv-cta-warn { background: linear-gradient(90deg, #7a2a5a 0%, #5b1d6e 55%, #3d1450 100%); }
 .dv-night .dv-cta-in { background: linear-gradient(90deg, #2f9e68 0%, #1f7a4e 55%, #145c3a 100%); }

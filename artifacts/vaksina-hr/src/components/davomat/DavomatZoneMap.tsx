@@ -256,11 +256,11 @@ export function DavomatZoneMap({
 
     const circle = L.circle([siteLat, siteLng], {
       radius: allowedMeters,
-      color: "#34d399",
+      color: "#f2ba00",
       weight: 2.5,
       dashArray: "8 7",
-      fillColor: "#10b981",
-      fillOpacity: 0.28,
+      fillColor: "#6b2d91",
+      fillOpacity: 0.18,
       opacity: 0.95,
     }).addTo(map);
     circleRef.current = circle;
@@ -539,7 +539,7 @@ export function DavomatZoneMap({
         </div>
         <div className="dv-map-radius">
           <p className="text-[8px] font-medium uppercase tracking-wide text-white/50">Radius</p>
-          <p className="text-[11px] font-bold tabular-nums leading-tight text-emerald-300">{allowedMeters} m</p>
+          <p className="text-[11px] font-bold tabular-nums leading-tight text-[#b89000] dark:text-[#ffd54a]">{allowedMeters} m</p>
         </div>
       </div>
 

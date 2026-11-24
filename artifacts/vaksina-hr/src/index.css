@@ -3854,7 +3854,7 @@ body,
     inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 .dv-night .dvx-clock p,
-.dv-night .dvx-clock span {
+.dv-night .dvx-clock span:not(.dvx-pill) {
   color: #fff !important;
   opacity: 1 !important;
 }
@@ -3882,24 +3882,28 @@ body,
 .dvx-pill {
   display: inline-block;
   border-radius: 999px;
-  padding: 0.18rem 0.55rem;
-  font-size: 9.5px;
+  padding: 0.22rem 0.65rem;
+  font-size: 10px;
   font-weight: 800;
-  color: #2a1540;
-  background: linear-gradient(135deg, #f2ba00, #e0a800);
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  box-shadow: 0 2px 8px rgba(212, 160, 0, 0.35);
+  letter-spacing: 0.01em;
+  /* Oltin fonda binafsha matn — oq emas, aks holda ko‘rinmaydi */
+  color: #4a1d6e !important;
+  background: linear-gradient(135deg, #ffd34a 0%, #f2ba00 55%, #e0a800 100%);
+  border: 1px solid rgba(74, 29, 110, 0.18);
+  box-shadow: 0 2px 10px rgba(212, 160, 0, 0.4);
 }
 .dv-day .dvx-pill {
-  color: #2a1540;
-  background: linear-gradient(135deg, #f2ba00, #e0a800);
+  color: #4a1d6e !important;
+  background: linear-gradient(135deg, #ffd34a 0%, #f2ba00 55%, #e0a800 100%);
 }
-.dv-night .dvx-pill {
-  color: #1a1028;
-  background: linear-gradient(135deg, #ffd54a, #f2ba00);
+.dv-night .dvx-pill,
+.dv-night .dvx-clock .dvx-pill {
+  color: #3b1560 !important;
+  background: linear-gradient(135deg, #ffe066 0%, #f2ba00 55%, #e8b820 100%);
+  border-color: rgba(59, 21, 96, 0.2);
 }
 .dvx-pill.is-live {
-  color: #fff;
+  color: #fff !important;
   background: linear-gradient(135deg, #8a3aad, #6b2d91);
   border-color: rgba(255, 255, 255, 0.3);
 }

@@ -62,12 +62,21 @@ fi
 mv "$FRONT_DIR/public.next" "$FRONT_DIR/public"
 
 echo "==> API + Wall qayta ishga tushirish"
-if pm2 describe hr-api >/dev/null 2>&1; then
-  pm2 reload deploy/ecosystem.config.cjs --update-env
+# Production PM2 — hrapp foydalanuvchisi ostida (root PM2 bilan chalkashmasin)
+PM2_USER="${DEPLOY_PM2_USER:-hrapp}"
+pm2_as() {
+  if [[ "$(id -un)" == "$PM2_USER" ]]; then
+    "$@"
+  else
+    sudo -u "$PM2_USER" -H "$@"
+  fi
+}
+if pm2_as pm2 describe hr-api >/dev/null 2>&1; then
+  pm2_as pm2 reload "$APP_DIR/deploy/ecosystem.config.cjs" --update-env
 else
-  pm2 start deploy/ecosystem.config.cjs
+  pm2_as bash -lc "cd '$APP_DIR' && pm2 start deploy/ecosystem.config.cjs"
 fi
-pm2 save >/dev/null
+pm2_as pm2 save >/dev/null
 
 echo "==> Tekshiruv"
 api_ok=0
@@ -84,6 +93,6 @@ for i in $(seq 1 20); do
   fi
   sleep 1
 done
-[[ "$api_ok" != "1" ]] && echo "OGOHLANTIRISH: API 20 soniyada javob bermadi — pm2 logs hr-api --lines 100" >&2
-[[ "$wall_ok" != "1" ]] && echo "OGOHLANTIRISH: API Wall 20 soniyada javob bermadi — pm2 logs hr-api-wall --lines 50" >&2
+[[ "$api_ok" != "1" ]] && echo "OGOHLANTIRISH: API 20 soniyada javob bermadi — sudo -u $PM2_USER pm2 logs hr-api --lines 100" >&2
+[[ "$wall_ok" != "1" ]] && echo "OGOHLANTIRISH: API Wall 20 soniyada javob bermadi — sudo -u $PM2_USER pm2 logs hr-api-wall --lines 50" >&2
 exit 1

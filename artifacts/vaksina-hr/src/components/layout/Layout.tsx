@@ -2447,7 +2447,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                   width={72}
                   height={72}
                   decoding="async"
-                  className="h-10 w-10 object-contain"
+                  className="h-10 w-10 rounded-full object-contain"
                 />
               </div>
             ) : null}

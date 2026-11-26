@@ -1,6 +1,5 @@
-/** Open API to‘liq qo‘llanma — Word (.doc) va PDF yuklab olish */
+/** Open API to‘liq qo‘llanma — Word (.doc) yuklab olish */
 
-import { jsPDF } from "jspdf";
 import { buildFullDocText } from "./open-api-docs-content";
 
 function stamp(): string {
@@ -75,88 +74,4 @@ ${paragraphs}
 
   const blob = new Blob(["\ufeff", html], { type: "application/msword;charset=utf-8" });
   downloadBlob(`VAKSINA_Open_API_qollanma_${stamp()}.doc`, blob);
-}
-
-export async function downloadOpenApiPdf(origin = window.location.origin) {
-  const generatedAt = new Date().toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
-  const text = buildFullDocText({ origin, generatedAt });
-  const lines = text.split("\n");
-
-  const pageW = 794; // A4 ~96dpi
-  const pageH = 1123;
-  const margin = 48;
-  const lineH = 18;
-  const maxW = pageW - margin * 2;
-  const font =
-    '"Segoe UI", "Noto Sans", "DejaVu Sans", Arial, "Helvetica Neue", sans-serif';
-
-  const pages: HTMLCanvasElement[] = [];
-  let canvas = document.createElement("canvas");
-  canvas.width = pageW;
-  canvas.height = pageH;
-  let ctx = canvas.getContext("2d")!;
-  const paintBg = () => {
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, pageW, pageH);
-    ctx.fillStyle = "#6b2d91";
-    ctx.fillRect(0, 0, pageW, 8);
-  };
-  paintBg();
-  let y = margin + 8;
-
-  const newPage = () => {
-    pages.push(canvas);
-    canvas = document.createElement("canvas");
-    canvas.width = pageW;
-    canvas.height = pageH;
-    ctx = canvas.getContext("2d")!;
-    paintBg();
-    y = margin;
-  };
-
-  const wrap = (raw: string, size: number, bold = false): string[] => {
-    ctx.font = `${bold ? "700" : "400"} ${size}px ${font}`;
-    const words = raw.split(/\s+/).filter(Boolean);
-    if (!words.length) return [""];
-    const out: string[] = [];
-    let cur = "";
-    for (const w of words) {
-      const test = cur ? `${cur} ${w}` : w;
-      if (ctx.measureText(test).width <= maxW) cur = test;
-      else {
-        if (cur) out.push(cur);
-        cur = w;
-      }
-    }
-    if (cur) out.push(cur);
-    return out;
-  };
-
-  for (const line of lines) {
-    const isTitle = line.startsWith("VAKSINA HR");
-    const isH2 = /^\d+\.\s/.test(line) && line.length < 60;
-    const isCode = line.startsWith("  ") || line.startsWith("GET /");
-    const size = isTitle ? 18 : isH2 ? 13 : isCode ? 10 : 11;
-    const bold = isTitle || isH2;
-    const color = isTitle || isH2 ? "#4c1d95" : isCode ? "#1e293b" : "#0f172a";
-    const chunks = wrap(line || " ", size, bold);
-    for (const chunk of chunks) {
-      if (y + lineH > pageH - margin) newPage();
-      ctx.font = `${bold ? "700" : "400"} ${size}px ${font}`;
-      ctx.fillStyle = color;
-      ctx.fillText(chunk, margin, y);
-      y += lineH + (isH2 ? 4 : 0);
-    }
-    if (!line.trim()) y += 6;
-  }
-  pages.push(canvas);
-
-  const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
-  const pdfW = pdf.internal.pageSize.getWidth();
-  const pdfH = pdf.internal.pageSize.getHeight();
-  pages.forEach((c, i) => {
-    if (i > 0) pdf.addPage();
-    pdf.addImage(c.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, pdfW, pdfH);
-  });
-  pdf.save(`VAKSINA_Open_API_qollanma_${stamp()}.pdf`);
 }

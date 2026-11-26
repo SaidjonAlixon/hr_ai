@@ -1,4 +1,4 @@
-/** VAKSINA Open API — hujjat matnlari (sahifa + Word/PDF) */
+/** VAKSINA Open API — hujjat matnlari (sahifa + Word) */
 
 export type DocEndpoint = {
   path: string;
@@ -47,8 +47,16 @@ export const OPEN_API_ENDPOINTS: DocEndpoint[] = [
     scope: "employees.read",
     summary: "Xodimlar ro‘yxati: F.I.Sh, lavozim, filial, holat. Parol chiqmaydi.",
     params: [
-      { name: "limit", example: "50", note: "1–200, default 50" },
-      { name: "offset", example: "0", note: "Sahifa ofseti" },
+      {
+        name: "limit",
+        example: "50",
+        note: "Bir so‘rovda nechta qator qaytishi (1–200, default 50). Masalan limit=20 → faqat 20 ta xodim",
+      },
+      {
+        name: "offset",
+        example: "0",
+        note: "Nechta qatorni o‘tkazib yuborish (sahifalash). offset=20 → 21-qatordan boshlab",
+      },
     ],
     sampleQuery: "limit=20&offset=0",
     sampleOk: `{
@@ -66,8 +74,8 @@ export const OPEN_API_ENDPOINTS: DocEndpoint[] = [
     params: [
       { name: "from", example: "2026-11-01", note: "YYYY-MM-DD" },
       { name: "to", example: "2026-11-26", note: "YYYY-MM-DD" },
-      { name: "limit", example: "50", note: "1–200" },
-      { name: "offset", example: "0", note: "" },
+      { name: "limit", example: "50", note: "Bir so‘rovda nechta yozuv (1–200)" },
+      { name: "offset", example: "0", note: "O‘tkazib yuboriladigan yozuvlar soni" },
     ],
     sampleQuery: "from=2026-11-01&to=2026-11-26&limit=50",
     sampleOk: `{
@@ -84,8 +92,8 @@ export const OPEN_API_ENDPOINTS: DocEndpoint[] = [
     scope: "branches.read",
     summary: "Dorixona / filial mudirlari, joylashuv (lat/lng), filial raqami.",
     params: [
-      { name: "limit", example: "100", note: "max 300" },
-      { name: "offset", example: "0", note: "" },
+      { name: "limit", example: "100", note: "Bir so‘rovda nechta filial (max 300)" },
+      { name: "offset", example: "0", note: "O‘tkazib yuborish (sahifa)" },
     ],
     sampleQuery: "limit=100",
     sampleOk: `{ "data": [{ "id": 5, "fullName": "Mudir …", "branchNo": 3, "location": "…" }], "limit": 100, "offset": 0 }`,
@@ -95,7 +103,7 @@ export const OPEN_API_ENDPOINTS: DocEndpoint[] = [
     title: "Bo‘limlar",
     scope: "departments.read",
     summary: "Tashkilot bo‘limlari va boshliq ID.",
-    params: [{ name: "limit", example: "100", note: "max 300" }],
+    params: [{ name: "limit", example: "100", note: "Bir so‘rovda nechta bo‘lim (max 300)" }],
     sampleQuery: "limit=100",
     sampleOk: `{ "data": [{ "id": 1, "name": "HR", "headId": 2 }] }`,
   },
@@ -106,8 +114,8 @@ export const OPEN_API_ENDPOINTS: DocEndpoint[] = [
     summary: "Oylik hisob-kitob snapshotlari. month=YYYY-MM bilan filtr.",
     params: [
       { name: "month", example: "2026-11", note: "YYYY-MM" },
-      { name: "limit", example: "50", note: "" },
-      { name: "offset", example: "0", note: "" },
+      { name: "limit", example: "50", note: "Bir so‘rovda nechta qator" },
+      { name: "offset", example: "0", note: "Sahifa ofseti" },
     ],
     sampleQuery: "month=2026-11&limit=50",
     sampleOk: `{ "data": [{ "id": 9, "userId": 3, "month": "2026-11", "totalAmount": "…" }], "month": "2026-11" }`,
@@ -118,8 +126,8 @@ export const OPEN_API_ENDPOINTS: DocEndpoint[] = [
     scope: "candidates.read",
     summary: "Ishga olish pipeline’dagi nomzodlar.",
     params: [
-      { name: "limit", example: "50", note: "" },
-      { name: "offset", example: "0", note: "" },
+      { name: "limit", example: "50", note: "Bir so‘rovda nechta nomzod" },
+      { name: "offset", example: "0", note: "Sahifa ofseti" },
     ],
     sampleQuery: "limit=20",
     sampleOk: `{ "data": [{ "id": 8, "fullName": "…", "stage": "interview", "status": "active" }], "limit": 20, "offset": 0 }`,
@@ -130,8 +138,8 @@ export const OPEN_API_ENDPOINTS: DocEndpoint[] = [
     scope: "vacancies.read",
     summary: "Ochiq / yopiq vakansiyalar.",
     params: [
-      { name: "limit", example: "50", note: "" },
-      { name: "offset", example: "0", note: "" },
+      { name: "limit", example: "50", note: "Bir so‘rovda nechta vakansiya" },
+      { name: "offset", example: "0", note: "Sahifa ofseti" },
     ],
     sampleQuery: "limit=20",
     sampleOk: `{ "data": [{ "id": 4, "title": "Farmatsevt", "status": "open" }], "limit": 20, "offset": 0 }`,
@@ -142,8 +150,8 @@ export const OPEN_API_ENDPOINTS: DocEndpoint[] = [
     scope: "tasks.read",
     summary: "Topshiriqlar: sarlavha, status, muddat, ijrochi.",
     params: [
-      { name: "limit", example: "50", note: "" },
-      { name: "offset", example: "0", note: "" },
+      { name: "limit", example: "50", note: "Bir so‘rovda nechta vazifa" },
+      { name: "offset", example: "0", note: "Sahifa ofseti" },
     ],
     sampleQuery: "limit=20",
     sampleOk: `{ "data": [{ "id": 100, "title": "…", "status": "in_progress", "dueAt": "…" }], "limit": 20, "offset": 0 }`,
@@ -154,8 +162,8 @@ export const OPEN_API_ENDPOINTS: DocEndpoint[] = [
     scope: "users.read",
     summary: "Platforma akkauntlari. Parol hash / session chiqarilmaydi.",
     params: [
-      { name: "limit", example: "50", note: "" },
-      { name: "offset", example: "0", note: "" },
+      { name: "limit", example: "50", note: "Bir so‘rovda nechta foydalanuvchi" },
+      { name: "offset", example: "0", note: "Sahifa ofseti" },
     ],
     sampleQuery: "limit=20",
     sampleOk: `{ "data": [{ "id": 1, "fullName": "…", "role": "admin", "login": "…" }], "limit": 20, "offset": 0 }`,
@@ -167,7 +175,7 @@ export const OPEN_API_ENDPOINTS: DocEndpoint[] = [
     summary: "Intizom hodisalari (oylik). month=YYYY-MM bilan filtr.",
     params: [
       { name: "month", example: "2026-11", note: "YYYY-MM" },
-      { name: "limit", example: "100", note: "max 500" },
+      { name: "limit", example: "100", note: "Bir so‘rovda nechta hodisa (max 500)" },
     ],
     sampleQuery: "month=2026-11&limit=100",
     sampleOk: `{ "data": [{ "id": 3, "user_id": 12, "month": "2026-11", "kind": "late" }], "month": "2026-11" }`,
@@ -231,18 +239,31 @@ export function buildFullDocText(opts: {
   lines.push('      headers={"Authorization":"Bearer vak_XXX"})');
   lines.push("  print(r.json())");
   lines.push("");
-  lines.push("5. QOIDALAR");
+  lines.push("5. LIMIT VA OFFSET NIMA?");
+  lines.push("limit — bir so‘rovda nechta qator (yozuv) qaytishi.");
+  lines.push("  Masalan: ?limit=20 → javobda eng ko‘pi bilan 20 ta element.");
+  lines.push("  Default odatda 50. Katta ro‘yxatni bir yo‘la tortib olish mumkin emas — bo‘lib-bo‘lib olinadi.");
+  lines.push("  Har endpointda maksimal bor (masalan xodimlar 200, filiallar 300).");
+  lines.push("offset — nechta qatorni o‘tkazib yuborish (sahifalash / pagination).");
+  lines.push("  1-sahifa: limit=20&offset=0  (1–20)");
+  lines.push("  2-sahifa: limit=20&offset=20 (21–40)");
+  lines.push("  3-sahifa: limit=20&offset=40 (41–60)");
+  lines.push("Javobdagi limit/offset maydonlari — so‘rovda qo‘llanilgan qiymatlarning tasdig‘i.");
+  lines.push("Ba’zi endpointlarda total ham bor (masalan /employees) — jami nechta yozuv borligini bildiradi.");
+  lines.push("Eslatma: «rate limit» (daqiqada 120 so‘rov) — bu query’dagi limit EMAS; juda ko‘p so‘rov yubormaslik chegarasi.");
+  lines.push("");
+  lines.push("6. QOIDALAR");
   lines.push("- Faqat GET (o‘zgartirish yo‘q)");
   lines.push("- Har endpoint uchun scope kerak (/health va /me — har qanday token)");
-  lines.push("- Rate limit: daqiqada ~120 so‘rov (IP + token)");
+  lines.push("- Rate limit (so‘rov tezligi): daqiqada ~120 so‘rov (IP + token)");
   lines.push("- Sezgir maydonlar (parol, session) javobda yo‘q");
   lines.push("");
-  lines.push("6. XATO KODLARI");
+  lines.push("7. XATO KODLARI");
   for (const e of OPEN_API_ERRORS) {
     lines.push(`HTTP ${e.code} — ${e.title}. ${e.when}`);
   }
   lines.push("");
-  lines.push("7. ENDPOINTLAR");
+  lines.push("8. ENDPOINTLAR");
   for (const ep of OPEN_API_ENDPOINTS) {
     lines.push("");
     lines.push(`GET ${ep.path} — ${ep.title}`);
@@ -259,14 +280,14 @@ export function buildFullDocText(opts: {
     for (const row of ep.sampleOk.split("\n")) lines.push(`    ${row}`);
   }
   lines.push("");
-  lines.push("8. INTEGRATSIYA TARTIBI (qisqa)");
+  lines.push("9. INTEGRATSIYA TARTIBI (qisqa)");
   lines.push("1. Token oling (scope’larni aniqlang).");
   lines.push("2. /health bilan tekshiring (200 bo‘lishi kerak).");
   lines.push("3. /me bilan scope’larni ko‘ring.");
-  lines.push("4. Kerakli GET endpointlarga limit/offset bilan so‘rov yuboring.");
+  lines.push("4. Kerakli GET endpointlarga limit/offset bilan sahifa-sahifa so‘rov yuboring.");
   lines.push("5. 401/403 bo‘lsa token yoki scope’ni tekshiring; 429 bo‘lsa sekinroq so‘rang.");
   lines.push("");
-  lines.push("9. QAYERDAN NIMA TORTISH — TEZKOR JADVAL");
+  lines.push("10. QAYERDAN NIMA TORTISH — TEZKOR JADVAL");
   lines.push("Xodimlar → GET /employees (employees.read)");
   lines.push("Davomat → GET /attendance?from=&to= (attendance.read)");
   lines.push("Filiallar → GET /branches (branches.read)");

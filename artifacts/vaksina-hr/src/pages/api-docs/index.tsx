@@ -7,13 +7,13 @@ import {
   XCircle,
   Download,
   FileText,
-  FileDown,
   Copy,
   KeyRound,
   Shield,
   AlertTriangle,
   Link2,
   ListOrdered,
+  Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +25,7 @@ import {
   OPEN_API_ERRORS,
   type DocEndpoint,
 } from "@/lib/open-api-docs-content";
-import { downloadOpenApiPdf, downloadOpenApiWordDoc } from "@/lib/open-api-docs-export";
+import { downloadOpenApiWordDoc } from "@/lib/open-api-docs-export";
 
 function statusHint(code: number | null): string {
   if (code == null) return "";
@@ -45,7 +45,7 @@ export default function ApiDocsPage() {
   const [selected, setSelected] = useState("/health");
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
-  const [dlBusy, setDlBusy] = useState<"pdf" | "word" | null>(null);
+  const [dlBusy, setDlBusy] = useState(false);
   const [status, setStatus] = useState<number | null>(null);
   const [result, setResult] = useState("");
 
@@ -102,14 +102,13 @@ export default function ApiDocsPage() {
     }
   }
 
-  async function onDownload(kind: "pdf" | "word") {
-    setDlBusy(kind);
+  async function onDownloadWord() {
+    setDlBusy(true);
     try {
-      if (kind === "word") downloadOpenApiWordDoc(origin);
-      else await downloadOpenApiPdf(origin);
+      downloadOpenApiWordDoc(origin);
       toast({
-        title: kind === "word" ? "Word yuklandi" : "PDF yuklandi",
-        description: "To‘liq qo‘llanma faylda: token, URL, endpointlar, xatolar.",
+        title: "Word yuklandi",
+        description: "To‘liq qo‘llanma: token, limit/offset, URL, endpointlar, xatolar.",
       });
     } catch (e) {
       toast({
@@ -118,7 +117,7 @@ export default function ApiDocsPage() {
         variant: "destructive",
       });
     } finally {
-      setDlBusy(null);
+      setDlBusy(false);
     }
   }
 
@@ -137,52 +136,79 @@ export default function ApiDocsPage() {
               Ishlatish uchun bosh admin bergan <code className="rounded bg-violet-100 px-1">vak_…</code> token kerak.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              className="border-violet-200 bg-white"
-              disabled={!!dlBusy}
-              onClick={() => void onDownload("word")}
-            >
-              {dlBusy === "word" ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <FileText className="mr-2 h-4 w-4" />
-              )}
-              Word (.doc)
-            </Button>
-            <Button
-              className="bg-violet-700 hover:bg-violet-800"
-              disabled={!!dlBusy}
-              onClick={() => void onDownload("pdf")}
-            >
-              {dlBusy === "pdf" ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <FileDown className="mr-2 h-4 w-4" />
-              )}
-              PDF yuklab olish
-            </Button>
-          </div>
+          <Button
+            className="bg-violet-700 hover:bg-violet-800"
+            disabled={dlBusy}
+            onClick={() => void onDownloadWord()}
+          >
+            {dlBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
+            Word qo‘llanma (.doc)
+          </Button>
         </div>
 
         <Card className="border-violet-200/80 bg-white/90 shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
               <Download className="h-4 w-4 text-violet-700" />
-              To‘liq hujjatni yuklab oling
+              To‘liq hujjat — Word
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-slate-700">
             <p>
-              <strong>Word</strong> yoki <strong>PDF</strong> da: tokenni qayerdan olish, qayerga so‘rov
-              yuborish, qaysi endpointdan nima tortish, curl/JS/Python misollar, xato kodlari — hammasi bir
-              faylda.
+              <strong>Word (.doc)</strong> da: tokenni qayerdan olish, <strong>limit/offset nima</strong>,
+              qayerga so‘rov yuborish, qaysi endpointdan nima tortish, curl/JS/Python misollar, xato kodlari —
+              hammasi bir faylda.
             </p>
             <p className="text-xs text-muted-foreground">
-              Fayl nomi: <code>VAKSINA_Open_API_qollanma_….doc/.pdf</code> — brauzer «Yuklamalar» papkasiga
-              tushadi.
+              Fayl: <code>VAKSINA_Open_API_qollanma_….doc</code> — brauzer «Yuklamalar» papkasiga tushadi.
             </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-amber-200/80 bg-amber-50/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base text-amber-950">
+              <Layers className="h-4 w-4" />
+              <code className="rounded bg-white px-1.5 py-0.5 text-sm">limit</code> va{" "}
+              <code className="rounded bg-white px-1.5 py-0.5 text-sm">offset</code> nima?
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm leading-relaxed text-slate-800">
+            <div>
+              <p className="font-semibold text-amber-950">limit — bir so‘rovda nechta qator</p>
+              <p className="mt-1 text-slate-700">
+                Server sizga hamma bazani birdan bermaydi. <code>limit</code> — «shu so‘rovda eng ko‘pi bilan
+                shuncha yozuv qaytar». Masalan <code>?limit=20</code> → javobda 20 ta (yoki undan kam, agar
+                shuncha qolmagan bo‘lsa). Default odatda <strong>50</strong>. Har endpointda maksimum bor
+                (xodimlar 200, filiallar 300, intizom 500).
+              </p>
+            </div>
+            <div>
+              <p className="font-semibold text-amber-950">offset — nechtasini o‘tkazib yuborish (sahifa)</p>
+              <p className="mt-1 text-slate-700">
+                Katta ro‘yxatni sahifa-sahifa olasiz. <code>offset</code> — boshidan nechta yozuvni
+                tashlab, keyingilarini olish.
+              </p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-700">
+                <li>
+                  <code>limit=20&amp;offset=0</code> → 1–20-qator (1-sahifa)
+                </li>
+                <li>
+                  <code>limit=20&amp;offset=20</code> → 21–40-qator (2-sahifa)
+                </li>
+                <li>
+                  <code>limit=20&amp;offset=40</code> → 41–60-qator (3-sahifa)
+                </li>
+              </ul>
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-white/80 p-3 text-xs text-slate-700">
+              <p className="font-semibold text-amber-950">Ikki xil «limit» aralashmasin</p>
+              <p className="mt-1">
+                Query’dagi <code>limit</code> — nechta yozuv.{" "}
+                <strong>Rate limit</strong> esa boshqa narsa: daqiqada ~120 ta so‘rovdan oshmasin (aks holda
+                HTTP 429).
+              </p>
+            </div>
           </CardContent>
         </Card>
 
@@ -480,20 +506,19 @@ export default function ApiDocsPage() {
               <li>
                 <code>/me</code> orqali scope va muddatni ko‘ring.
               </li>
-              <li>Yuqoridagi jadvaldan kerakli GET ni tanlang (limit/offset/from/to).</li>
+              <li>
+                Yuqoridagi jadvaldan kerakli GET ni tanlang; katta ro‘yxatni{" "}
+                <code>limit</code>/<code>offset</code> bilan sahifa-sahifa oling.
+              </li>
               <li>
                 Jurnal uchun admin <strong>API Devor</strong> sahifasini ochadi; tashqi trafik uchun{" "}
                 <code>/open-api/v1</code> ham ishlaydi.
               </li>
             </ol>
             <div className="flex flex-wrap gap-2 pt-2">
-              <Button variant="outline" disabled={!!dlBusy} onClick={() => void onDownload("word")}>
-                <FileText className="mr-2 h-4 w-4" />
+              <Button disabled={dlBusy} onClick={() => void onDownloadWord()}>
+                {dlBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
                 Word qo‘llanma
-              </Button>
-              <Button disabled={!!dlBusy} onClick={() => void onDownload("pdf")}>
-                <FileDown className="mr-2 h-4 w-4" />
-                PDF qo‘llanma
               </Button>
             </div>
           </CardContent>

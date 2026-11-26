@@ -179,8 +179,8 @@ async function ensureStickyNotification() {
     const reg = await navigator.serviceWorker.ready;
     await reg.showNotification("VAKSINA · GPS kuzatuv", {
       body: "Lokatsiya orqa fonda ishlamoqda. Ilovani yopmang.",
-      icon: "/faviconni.png",
-      badge: "/faviconni.png",
+      icon: "/favicoin.png",
+      badge: "/favicoin.png",
       tag: "vaksina-gps-keepalive",
       silent: true,
       renotify: false,

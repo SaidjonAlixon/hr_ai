@@ -37,8 +37,8 @@ function closeCallNotifications(id) {
 function showCallNotification(d) {
   return self.registration.showNotification(d.title || "📞 Qo‘ng‘iroq", {
     body: d.body || "Sizga qo‘ng‘iroq qilishmoqda",
-    icon: "/faviconni.png",
-    badge: "/faviconni.png",
+    icon: "/favicoin.png",
+    badge: "/favicoin.png",
     tag: callTag(d.callId),
     renotify: true,
     requireInteraction: true,
@@ -95,8 +95,8 @@ async function handleCallPush(d) {
     if (d.missed && !(await hasFocusedClient())) {
       await self.registration.showNotification(d.title || "📵 Javobsiz qo‘ng‘iroq", {
         body: d.body || "",
-        icon: "/faviconni.png",
-        badge: "/faviconni.png",
+        icon: "/favicoin.png",
+        badge: "/favicoin.png",
         tag: callTag(d.callId),
         data: { kind: "missed", url: "/qongiroq" },
       });
@@ -159,8 +159,8 @@ self.addEventListener("push", (event) => {
     Promise.all([
       self.registration.showNotification(data.title || "VAKSINA HR", {
         body: data.body || "",
-        icon: "/faviconni.png",
-        badge: "/faviconni.png",
+        icon: "/favicoin.png",
+        badge: "/favicoin.png",
         tag: data.tag || "vaksina-hr",
         renotify: true,
         requireInteraction: true,

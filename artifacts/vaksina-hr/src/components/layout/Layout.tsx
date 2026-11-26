@@ -2442,7 +2442,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             {desktopCollapsed ? (
               <div className="mx-auto hidden h-12 w-12 items-center justify-center rounded-xl bg-white/90 shadow-md ring-1 ring-white/80 backdrop-blur-md md:flex">
                 <img
-                  src={`${import.meta.env.BASE_URL}faviconni.png`}
+                  src={`${import.meta.env.BASE_URL}favicoin.png`}
                   alt="VM"
                   width={72}
                   height={72}

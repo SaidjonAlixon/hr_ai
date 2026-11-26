@@ -58,7 +58,7 @@ export const OPEN_API_SCOPES: OpenApiScopeDef[] = [
   {
     id: "users.read",
     label: "Foydalanuvchilar",
-    description: "Platforma akkauntlari (parolsiz)",
+    description: "Platforma akkauntlari (login/parol/admin yo‘q)",
     path: "/users",
   },
   {

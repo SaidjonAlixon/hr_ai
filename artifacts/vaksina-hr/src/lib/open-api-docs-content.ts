@@ -160,13 +160,14 @@ export const OPEN_API_ENDPOINTS: DocEndpoint[] = [
     path: "/users",
     title: "Foydalanuvchilar",
     scope: "users.read",
-    summary: "Platforma akkauntlari. Parol hash / session chiqarilmaydi.",
+    summary:
+      "Platforma akkauntlari. login, parol, telegram va admin akkauntlari hech qachon chiqarilmaydi.",
     params: [
       { name: "limit", example: "50", note: "Bir so‘rovda nechta foydalanuvchi" },
       { name: "offset", example: "0", note: "Sahifa ofseti" },
     ],
     sampleQuery: "limit=20",
-    sampleOk: `{ "data": [{ "id": 1, "fullName": "…", "role": "admin", "login": "…" }], "limit": 20, "offset": 0 }`,
+    sampleOk: `{ "data": [{ "id": 1, "fullName": "…", "role": "hr", "phone": null, "status": "active" }], "limit": 20, "offset": 0 }`,
   },
   {
     path: "/discipline",
@@ -256,7 +257,8 @@ export function buildFullDocText(opts: {
   lines.push("- Faqat GET (o‘zgartirish yo‘q)");
   lines.push("- Har endpoint uchun scope kerak (/health va /me — har qanday token)");
   lines.push("- Rate limit (so‘rov tezligi): daqiqada ~120 so‘rov (IP + token)");
-  lines.push("- Sezgir maydonlar (parol, session) javobda yo‘q");
+  lines.push("- Sezgir maydonlar: login, parol, telegram, session — hech qachon chiqmaydi");
+  lines.push("- Admin akkauntlari (role=admin) /users va /employees dan chiqarib tashlanadi");
   lines.push("");
   lines.push("7. XATO KODLARI");
   for (const e of OPEN_API_ERRORS) {

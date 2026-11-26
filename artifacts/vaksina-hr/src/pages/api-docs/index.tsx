@@ -134,6 +134,9 @@ export default function ApiDocsPage() {
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-violet-900/75">
               Tashqi tizimlar uchun <strong>faqat o‘qish</strong> API. Ma’lumotni o‘zgartirish mumkin emas.
               Ishlatish uchun bosh admin bergan <code className="rounded bg-violet-100 px-1">vak_…</code> token kerak.
+              <span className="mt-1 block text-rose-800/80">
+                Xavfsizlik: <strong>login</strong>, <strong>parol</strong> va <strong>admin</strong> akkauntlari API da hech qachon chiqmaydi.
+              </span>
             </p>
           </div>
           <Button

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, ne, notInArray, or, sql } from "drizzle-orm";
 import {
   attendanceRecordsTable,
   candidatesTable,
@@ -27,6 +27,14 @@ function clampOffset(raw: unknown): number {
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0) return 0;
   return Math.floor(n);
+}
+
+async function adminUserIds(): Promise<number[]> {
+  const rows = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(eq(usersTable.role, "admin"));
+  return rows.map((r) => r.id);
 }
 
 router.use(requireOpenApiToken);
@@ -102,6 +110,11 @@ router.get("/employees", async (req, res) => {
   try {
     const limit = clampLimit(req.query.limit);
     const offset = clampOffset(req.query.offset);
+    const adminIds = await adminUserIds();
+    const notAdminEmp =
+      adminIds.length > 0
+        ? or(isNull(employeesTable.userId), notInArray(employeesTable.userId, adminIds))
+        : sql`true`;
     const rows = await db
       .select({
         id: employeesTable.id,
@@ -117,10 +130,14 @@ router.get("/employees", async (req, res) => {
         assignedBranchId: employeesTable.assignedBranchId,
       })
       .from(employeesTable)
+      .where(notAdminEmp)
       .orderBy(desc(employeesTable.id))
       .limit(limit)
       .offset(offset);
-    const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(employeesTable);
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(employeesTable)
+      .where(notAdminEmp);
     res.json({ data: rows, total: count, limit, offset });
   } catch (err) {
     console.error("open-api /employees", err);
@@ -328,19 +345,19 @@ router.get("/users", async (req, res) => {
   try {
     const limit = clampLimit(req.query.limit);
     const offset = clampOffset(req.query.offset);
+    // login / password / telegram / admin — hech qachon
     const rows = await db
       .select({
         id: usersTable.id,
         fullName: usersTable.fullName,
         role: usersTable.role,
-        login: usersTable.login,
         phone: usersTable.phone,
         status: usersTable.status,
         departmentId: usersTable.departmentId,
-        telegramId: usersTable.telegramId,
         createdAt: usersTable.createdAt,
       })
       .from(usersTable)
+      .where(ne(usersTable.role, "admin"))
       .orderBy(desc(usersTable.id))
       .limit(limit)
       .offset(offset);

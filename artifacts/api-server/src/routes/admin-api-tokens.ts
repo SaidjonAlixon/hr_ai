@@ -208,6 +208,32 @@ router.post("/admin/api-tokens/:id/revoke", requireAuth, async (req: AuthRequest
   }
 });
 
+/** Tokenni butunlay o‘chirish (jurnal yozuvlari bilan) */
+router.delete("/admin/api-tokens/:id", requireAuth, async (req: AuthRequest, res) => {
+  if (!requireBosh(req, res)) return;
+  try {
+    await ensure();
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      res.status(400).json({ error: "ID noto‘g‘ri" });
+      return;
+    }
+    await db.delete(apiAccessLogsTable).where(eq(apiAccessLogsTable.tokenId, id));
+    const [removed] = await db
+      .delete(apiAccessTokensTable)
+      .where(eq(apiAccessTokensTable.id, id))
+      .returning({ id: apiAccessTokensTable.id, name: apiAccessTokensTable.name });
+    if (!removed) {
+      res.status(404).json({ error: "Token topilmadi" });
+      return;
+    }
+    res.json({ ok: true, deleted: removed });
+  } catch (err) {
+    console.error("DELETE /admin/api-tokens/:id", err);
+    res.status(500).json({ error: "O‘chirishda xato" });
+  }
+});
+
 router.get("/admin/api-tokens/logs", requireAuth, async (req: AuthRequest, res) => {
   if (!requireBosh(req, res)) return;
   try {

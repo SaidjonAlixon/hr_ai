@@ -81,6 +81,15 @@ export function revokeApiToken(id: number) {
   return sendJson<{ ok: boolean }>(`/api/admin/api-tokens/${id}/revoke`, "POST", undefined, "Bekor qilishda xato");
 }
 
+export function deleteApiToken(id: number) {
+  return sendJson<{ ok: boolean; deleted: { id: number; name: string } }>(
+    `/api/admin/api-tokens/${id}`,
+    "DELETE",
+    undefined,
+    "O‘chirishda xato",
+  );
+}
+
 export function patchApiToken(
   id: number,
   body: { name?: string; scopes?: string[]; expiresAt?: string | null; note?: string | null },

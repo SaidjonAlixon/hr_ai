@@ -57,7 +57,26 @@ function extractBearer(req: Request): string | null {
     return t || null;
   }
   const key = String(req.headers["x-api-key"] || "").trim();
-  return key || null;
+  if (key) return key;
+  // Brauzer manzil satriga qo‘yish uchun: ?token=vak_… yoki ?access_token=vak_…
+  const q = req.query || {};
+  const fromQ = String(
+    (q as Record<string, unknown>).token ??
+      (q as Record<string, unknown>).access_token ??
+      "",
+  ).trim();
+  return fromQ || null;
+}
+
+const SECRET_QUERY_KEYS = new Set(["token", "access_token", "api_key", "apikey", "key"]);
+
+function safeQuerySummary(query: Request["query"]): string {
+  return Object.keys(query || {})
+    .filter((k) => !SECRET_QUERY_KEYS.has(k.toLowerCase()))
+    .slice(0, 12)
+    .map((k) => `${k}=${String((query as Record<string, unknown>)[k]).slice(0, 40)}`)
+    .join("&")
+    .slice(0, 300);
 }
 
 async function writeLog(opts: {
@@ -108,11 +127,7 @@ export async function requireOpenApiToken(
     req.headers["x-device-label"] || req.headers["x-client-name"] || req.headers["x-api-wall"] || "",
   ).slice(0, 120);
   const relPath = req.path || "/";
-  const querySummary = Object.keys(req.query || {})
-    .slice(0, 12)
-    .map((k) => `${k}=${String((req.query as Record<string, unknown>)[k]).slice(0, 40)}`)
-    .join("&")
-    .slice(0, 300);
+  const querySummary = safeQuerySummary(req.query);
 
   const finishLog = (tokenId: number | null, status: number) => {
     if (!tokenId) return;
@@ -154,7 +169,10 @@ export async function requireOpenApiToken(
 
   const raw = extractBearer(req);
   if (!raw) {
-    res.status(401).json({ error: "Token kerak. Authorization: Bearer <token>" });
+    res.status(401).json({
+      error:
+        "Token kerak. Header: Authorization: Bearer <token> — yoki brauzer uchun URL ga ?token=vak_… qo‘shing",
+    });
     return;
   }
 

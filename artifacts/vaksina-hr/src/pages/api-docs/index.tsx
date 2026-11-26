@@ -66,7 +66,24 @@ export default function ApiDocsPage() {
     setResult("");
   }, [ep.path, ep.sampleQuery]);
 
-  const curl = `curl -sS -H "Authorization: Bearer ${token || "<TOKEN>"}" \\\n  "${base}${ep.path}${query ? `?${query}` : ""}"`;
+  const browserUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    if (query) {
+      for (const part of query.split("&")) {
+        const [k, ...rest] = part.split("=");
+        if (!k) continue;
+        params.set(k, rest.join("=") ?? "");
+      }
+    }
+    params.set("token", token || "vak_TOKEN");
+    return `${base}${ep.path}?${params.toString()}`;
+  }, [base, ep.path, query, token]);
+
+  const plainUrl = useMemo(() => {
+    return `${base}${ep.path}${query ? `?${query}` : ""}`;
+  }, [base, ep.path, query]);
+
+  const curl = `curl -sS -H "Authorization: Bearer ${token || "<TOKEN>"}" \\\n  "${plainUrl}"`;
 
   async function copyText(text: string, label: string) {
     try {
@@ -410,20 +427,84 @@ export default function ApiDocsPage() {
                 <div>
                   <label className="mb-1 block text-xs font-semibold">Query string (sinash)</label>
                   <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="limit=20&offset=0" />
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    <code>limit</code> — bir so‘rovda nechta yozuv; <code>offset</code> — nechtasini
+                    o‘tkazib keyingi sahifani olish.
+                  </p>
                 </div>
 
-                <div className="relative">
-                  <pre className="overflow-x-auto rounded-lg bg-slate-950 p-3 pr-12 text-[11px] text-slate-100">
-                    {curl}
+                <div className="rounded-xl border-2 border-violet-300 bg-violet-50/80 p-3 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="text-xs font-bold text-violet-950">
+                      Brauzer havolasi — nusxa → manzil satriga qo‘ying
+                    </label>
+                    <div className="flex gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 border-violet-300 bg-white"
+                        disabled={!token}
+                        onClick={() => void copyText(browserUrl, "Brauzer havolasi")}
+                      >
+                        <Copy className="mr-1.5 h-3.5 w-3.5" />
+                        Nusxa
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="h-8 bg-violet-700 hover:bg-violet-800"
+                        disabled={!token}
+                        onClick={() => window.open(browserUrl, "_blank", "noopener,noreferrer")}
+                      >
+                        Brauzerda ochish
+                      </Button>
+                    </div>
+                  </div>
+                  <pre className="overflow-x-auto break-all whitespace-pre-wrap rounded-lg bg-white p-3 text-[11px] text-violet-950 ring-1 ring-violet-200">
+                    {browserUrl}
                   </pre>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    className="absolute right-2 top-2 h-7"
-                    onClick={() => void copyText(curl.replace(/\\\n\s*/g, " "), "curl")}
-                  >
-                    <Copy className="h-3.5 w-3.5" />
-                  </Button>
+                  <p className="text-[11px] leading-relaxed text-violet-900/80">
+                    Bu havolada token <code>?token=vak_…</code> sifatida bor — brauzerga qo‘yilsa JSON
+                    natija chiqadi. Token maydonini yuqorida to‘ldiring. Havolani boshqalarga bermang
+                    (tarixda saqlanishi mumkin).
+                  </p>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-600">
+                    Oddiy havola (tokensiz — faqat ko‘rish; brauzerda 401)
+                  </label>
+                  <div className="relative">
+                    <pre className="overflow-x-auto break-all whitespace-pre-wrap rounded-lg bg-slate-100 p-3 pr-12 text-[11px] text-slate-800">
+                      {plainUrl}
+                    </pre>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="absolute right-2 top-2 h-7"
+                      onClick={() => void copyText(plainUrl, "Oddiy havola")}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-600">
+                    curl (dasturchilar / terminal)
+                  </label>
+                  <div className="relative">
+                    <pre className="overflow-x-auto rounded-lg bg-slate-950 p-3 pr-12 text-[11px] text-slate-100">
+                      {curl}
+                    </pre>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="absolute right-2 top-2 h-7"
+                      onClick={() => void copyText(curl.replace(/\\\n\s*/g, " "), "curl")}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2">

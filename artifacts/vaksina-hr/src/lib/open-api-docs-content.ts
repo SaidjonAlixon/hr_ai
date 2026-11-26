@@ -221,9 +221,13 @@ export function buildFullDocText(opts: {
   lines.push("Ikkalasi ham bir xil ma’lumotni beradi. Devor tashqi trafikni alohida kuzatadi.");
   lines.push("");
   lines.push("4. QANDAY ULASH?");
-  lines.push("Har so‘rovda header majburiy:");
+  lines.push("A) Brauzer (eng oson): havolani manzil satriga qo‘ying — token URL da:");
+  lines.push(`  ${base}/employees?limit=20&offset=0&token=vak_XXXXXXXX`);
+  lines.push("  Natija brauzerda JSON bo‘lib chiqadi. Havolani boshqalarga bermang.");
+  lines.push("");
+  lines.push("B) Header (dasturlar uchun tavsiya):");
   lines.push("  Authorization: Bearer vak_XXXXXXXX");
-  lines.push("Yoki: X-Api-Key: vak_XXXXXXXX");
+  lines.push("  Yoki: X-Api-Key: vak_XXXXXXXX");
   lines.push("");
   lines.push("curl misol:");
   lines.push(`  curl -sS -H "Authorization: Bearer vak_XXX" "${base}/health"`);

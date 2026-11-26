@@ -51,6 +51,9 @@ NODE_ENV=production pnpm exec vite build \
 echo "==> API build"
 node ./artifacts/api-server/build.mjs
 
+echo "==> API Wall build"
+node ./artifacts/api-wall/build.mjs
+
 echo "==> Frontendni almashtirish"
 rm -rf "$FRONT_DIR/public.prev"
 if [[ -d "$FRONT_DIR/public" ]]; then
@@ -58,7 +61,7 @@ if [[ -d "$FRONT_DIR/public" ]]; then
 fi
 mv "$FRONT_DIR/public.next" "$FRONT_DIR/public"
 
-echo "==> API qayta ishga tushirish"
+echo "==> API + Wall qayta ishga tushirish"
 if pm2 describe hr-api >/dev/null 2>&1; then
   pm2 reload deploy/ecosystem.config.cjs --update-env
 else
@@ -67,13 +70,20 @@ fi
 pm2 save >/dev/null
 
 echo "==> Tekshiruv"
+api_ok=0
+wall_ok=0
 for i in $(seq 1 20); do
   code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/healthz || true)"
-  if [[ "$code" == "200" ]]; then
+  wcode="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8091/healthz || true)"
+  [[ "$code" == "200" ]] && api_ok=1
+  [[ "$wcode" == "200" ]] && wall_ok=1
+  if [[ "$api_ok" == "1" && "$wall_ok" == "1" ]]; then
     echo "    API ishlayapti (healthz 200)"
+    echo "    API Wall ishlayapti (healthz 200)"
     exit 0
   fi
   sleep 1
 done
-echo "OGOHLANTIRISH: API 20 soniyada javob bermadi — pm2 logs hr-api --lines 100" >&2
+[[ "$api_ok" != "1" ]] && echo "OGOHLANTIRISH: API 20 soniyada javob bermadi — pm2 logs hr-api --lines 100" >&2
+[[ "$wall_ok" != "1" ]] && echo "OGOHLANTIRISH: API Wall 20 soniyada javob bermadi — pm2 logs hr-api-wall --lines 50" >&2
 exit 1

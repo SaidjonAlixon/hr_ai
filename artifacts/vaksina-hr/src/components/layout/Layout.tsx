@@ -61,6 +61,8 @@ import {
   Sparkles,
   Star,
   Scale,
+  KeyRound,
+  Activity,
 } from 'lucide-react';
 import {
   useLogout,
@@ -92,7 +94,7 @@ import { useCall } from '@/lib/calls/engine';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
 import { VerifiedBadge, VerifiedName } from "@/components/VerifiedBadge";
-import { isHrManager, isHrRole, isHrOversight, isHrDirektor, isBlockedForHrDirektor, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewEmployeesFull, canViewDavomat, canViewUlanganlar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome, isSbRole, canManageSmenaFilial, canManageStudents, canSeeAbet, canUseDocumentScanner } from "@/lib/roles";
+import { isHrManager, isHrRole, isHrOversight, isHrDirektor, isBlockedForHrDirektor, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewEmployeesFull, canViewDavomat, canViewUlanganlar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome, isSbRole, canManageSmenaFilial, canManageStudents, canSeeAbet, canUseDocumentScanner, isBoshAdmin } from "@/lib/roles";
 import { AI_CHAT_ENABLED } from "@/lib/chat-flag";
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
@@ -273,6 +275,8 @@ const NAV_SECTIONS: {
       '/admin/scanner',
       '/admin/yordamchi-ai',
       '/admin/ai-telefon',
+      '/admin/api-tokens',
+      '/admin/api-devor',
       '/admin/qurilmalar',
       '/admin/kochma-davomat',
       '/admin/kochma-xarita',
@@ -398,6 +402,8 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/admin/scanner')) return '/admin/scanner';
   if (path.startsWith('/admin/yordamchi-ai')) return '/admin/yordamchi-ai';
   if (path.startsWith('/admin/ai-telefon')) return '/admin/ai-telefon';
+  if (path.startsWith('/admin/api-tokens')) return '/admin/api-tokens';
+  if (path.startsWith('/admin/api-devor')) return '/admin/api-devor';
   if (path.startsWith('/admin/qurilmalar')) return '/admin/qurilmalar';
   if (path.startsWith('/admin/kochma-davomat')) return '/admin/kochma-davomat';
   if (path.startsWith('/admin/kochma-xarita')) return '/admin/kochma-xarita';
@@ -1041,6 +1047,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (location.startsWith('/admin/ai-telefon') && user.role !== 'admin') {
       setLocation('/dashboard');
     }
+    if ((location.startsWith('/admin/api-tokens') || location.startsWith('/admin/api-devor')) && !isBoshAdmin(user)) {
+      setLocation('/dashboard');
+    }
     if (location.startsWith('/oquvchilar') && !canManageStudents(user.role)) {
       setLocation('/dashboard');
     }
@@ -1512,6 +1521,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Skaner', path: '/admin/scanner', icon: ScanLine },
       { name: 'Yordamchi AI', path: '/admin/yordamchi-ai', icon: Sparkles },
       { name: 'AI Telefon', path: '/admin/ai-telefon', icon: PhoneCall },
+      { name: 'API Tokenlar', path: '/admin/api-tokens', icon: KeyRound },
+      { name: 'API Devor', path: '/admin/api-devor', icon: Activity },
       { name: 'Mijozlar baholashi', path: '/mijozlar-baholashi', icon: Star },
       { name: 'Hisobot', path: '/admin/holat', icon: BarChart3 },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
@@ -2048,6 +2059,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     .filter((item) => item.path !== '/admin/holat/xodim' || canViewHolat(userRole))
     .filter((item) => item.path !== '/admin/yordamchi-ai' || (AI_CHAT_ENABLED && userRole === 'admin'))
     .filter((item) => item.path !== '/admin/ai-telefon' || userRole === 'admin')
+    .filter((item) => item.path !== '/admin/api-tokens' || isBoshAdmin(user))
+    .filter((item) => item.path !== '/admin/api-devor' || isBoshAdmin(user))
     .filter((item) => item.path !== '/distribyutsiya' || canViewDistribyutsiya(userRole))
     .filter((item) => item.path !== '/omborxona-ish' || canViewOmborxona(userRole))
     .filter((item) => item.path !== '/davomat/analytics')

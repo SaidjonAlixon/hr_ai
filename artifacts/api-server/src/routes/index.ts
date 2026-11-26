@@ -76,8 +76,13 @@ import customerRatingsRouter from "./customer-ratings";
 import aiAssistantRouter from "./ai-assistant";
 import hikvisionRouter from "./hikvision";
 import adminAiCallsRouter from "./admin-ai-calls";
+import adminApiTokensRouter from "./admin-api-tokens";
+import openApiV1Router from "./open-api-v1";
 
 const router: IRouter = Router();
+
+router.use("/open/v1", openApiV1Router);
+router.use(adminApiTokensRouter);
 
 router.use(healthRouter);
 router.use(disciplineRouter);

@@ -42,3 +42,4 @@ export * from "./warehouse-shifts";
 export * from "./dismissed-staff";
 export * from "./hikvision";
 export * from "./customer-ratings";
+export * from "./api-access";

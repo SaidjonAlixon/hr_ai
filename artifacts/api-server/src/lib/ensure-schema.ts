@@ -1796,6 +1796,11 @@ CREATE INDEX IF NOT EXISTS mobile_att_audit_action_idx ON mobile_attendance_audi
   } catch (err) {
     logger.warn({ err }, "Hikvision schema ensure skipped");
   }
+  try {
+    await ensureApiAccessSchema();
+  } catch (err) {
+    logger.warn({ err }, "API access schema ensure skipped");
+  }
 
   try {
     const { syncAllRoleDepartmentAssignments } = await import("./role-departments");
@@ -2459,6 +2464,54 @@ export async function ensureHikvisionSchema(): Promise<void> {
     logger.info("Hikvision schema ensured");
   } catch (err) {
     logger.warn({ err }, "Hikvision schema ensure failed");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+const API_ACCESS_SQL = `
+CREATE TABLE IF NOT EXISTS api_access_tokens (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  token_prefix TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  scopes JSONB NOT NULL DEFAULT '[]'::jsonb,
+  expires_at TIMESTAMPTZ,
+  revoked_at TIMESTAMPTZ,
+  created_by INTEGER NOT NULL,
+  note TEXT,
+  last_used_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS api_access_tokens_hash_idx ON api_access_tokens (token_hash);
+CREATE INDEX IF NOT EXISTS api_access_tokens_prefix_idx ON api_access_tokens (token_prefix);
+
+CREATE TABLE IF NOT EXISTS api_access_logs (
+  id SERIAL PRIMARY KEY,
+  token_id INTEGER NOT NULL,
+  method TEXT NOT NULL,
+  path TEXT NOT NULL,
+  status INTEGER NOT NULL,
+  ip TEXT,
+  user_agent TEXT,
+  device_label TEXT,
+  query_summary TEXT,
+  duration_ms INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS api_access_logs_token_idx ON api_access_logs (token_id);
+CREATE INDEX IF NOT EXISTS api_access_logs_created_idx ON api_access_logs (created_at);
+CREATE INDEX IF NOT EXISTS api_access_logs_path_idx ON api_access_logs (path);
+`;
+
+export async function ensureApiAccessSchema(): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query(API_ACCESS_SQL);
+    logger.info("API access tokens schema ensured");
+  } catch (err) {
+    logger.warn({ err }, "API access schema ensure failed");
     throw err;
   } finally {
     client.release();

@@ -61,6 +61,8 @@ const HR_DIREKTOR_BLOCKED_PREFIXES = [
   "/admin/scanner",
   "/admin/yordamchi-ai",
   "/admin/ai-telefon",
+  "/admin/api-tokens",
+  "/admin/api-devor",
   "/admin/qurilmalar",
   "/admin/kochma-davomat",
   "/admin/kochma-xarita",

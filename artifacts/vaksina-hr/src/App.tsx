@@ -70,6 +70,9 @@ const AdminTestPage = lazyPage('/admin/test', () => import('./pages/admin/test')
 const AdminScannerPage = lazyPage('/admin/scanner', () => import('./pages/admin/scanner'));
 const YordamchiAiPage = lazyPage('/admin/yordamchi-ai', () => import('./pages/admin/yordamchi-ai'));
 const AiTelefonPage = lazyPage('/admin/ai-telefon', () => import('./pages/admin/ai-telefon'));
+const AdminApiTokensPage = lazyPage('/admin/api-tokens', () => import('./pages/admin/api-tokens'));
+const AdminApiDevorPage = lazyPage('/admin/api-devor', () => import('./pages/admin/api-devor'));
+const ApiDocsPage = lazyPage([], () => import('./pages/api-docs/index'));
 const YordamPage = lazyPage('/yordam', () => import('./pages/yordam'));
 const AdminTushuntirishXatlariPage = lazyPage('/admin/tushuntirish-xatlari', () => import('./pages/admin/tushuntirish-xatlari'));
 const AdminMalumotnomaPage = lazyPage('/admin/malumotnoma', () => import('./pages/admin/malumotnoma'));
@@ -204,6 +207,11 @@ function Router() {
       <Route path="/filiallar">
         <Suspense fallback={<PageFallback />}>
           <PublicFilialMapPage />
+        </Suspense>
+      </Route>
+      <Route path="/api-docs">
+        <Suspense fallback={<PageFallback />}>
+          <ApiDocsPage />
         </Suspense>
       </Route>
       <Route path="/hisobot/tasdiq/:token">
@@ -373,6 +381,8 @@ function Router() {
       <ProtectedRoute path="/admin/scanner" component={AdminScannerPage} />
       <ProtectedRoute path="/admin/yordamchi-ai" component={YordamchiAiPage} />
       <ProtectedRoute path="/admin/ai-telefon" component={AiTelefonPage} />
+      <ProtectedRoute path="/admin/api-tokens" component={AdminApiTokensPage} />
+      <ProtectedRoute path="/admin/api-devor" component={AdminApiDevorPage} />
       <ProtectedRoute path="/admin/tushuntirish-xatlari" component={AdminTushuntirishXatlariPage} />
       <ProtectedRoute path="/admin/malumotnoma" component={AdminMalumotnomaPage} />
       <ProtectedRoute path="/admin/jarimalar" component={AdminJarimalarPage} />

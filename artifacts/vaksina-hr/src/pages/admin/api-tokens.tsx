@@ -81,8 +81,17 @@ export default function AdminApiTokensPage() {
 
   const revokeMut = useMutation({
     mutationFn: revokeApiToken,
-    onSuccess: () => {
-      toast({ title: "Token bekor qilindi", description: "Endi bu token bilan so‘rov ishlamaydi." });
+    onSuccess: (_data, id) => {
+      setPlaintextById((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      if (createdId === id) setCreatedId(null);
+      toast({
+        title: "Token bekor qilindi — shu zahoti ishlamaydi",
+        description: "Bu token bilan endi hech qanday ma’lumot tortib bo‘lmaydi (HTTP 401).",
+      });
       void qc.invalidateQueries({ queryKey: ["api-tokens"] });
     },
     onError: (e: Error) => toast({ title: "Xato", description: e.message, variant: "destructive" }),
@@ -97,7 +106,10 @@ export default function AdminApiTokensPage() {
         return next;
       });
       if (createdId === id) setCreatedId(null);
-      toast({ title: "Token o‘chirildi", description: "Yozuv va uning jurnali bazadan olib tashlandi." });
+      toast({
+        title: "Token o‘chirildi — shu zahoti ishlamaydi",
+        description: "Yozuv, jurnal va kirish huquqi bazadan olib tashlandi.",
+      });
       void qc.invalidateQueries({ queryKey: ["api-tokens"] });
     },
     onError: (e: Error) => toast({ title: "Xato", description: e.message, variant: "destructive" }),
@@ -117,14 +129,20 @@ export default function AdminApiTokensPage() {
   }
 
   function onRevoke(t: ApiTokenRow) {
-    if (!confirm(`«${t.name}» tokenini BEKOR qilasizmi?\n\nToken ishlamay qoladi, lekin ro‘yxatda qoladi.`)) return;
+    if (
+      !confirm(
+        `«${t.name}» tokenini BEKOR qilasizmi?\n\nShu zahoti ishlamaydi — ma’lumot tortib bo‘lmaydi.\nRo‘yxatda «Bekor qilingan» bo‘lib qoladi.`,
+      )
+    ) {
+      return;
+    }
     revokeMut.mutate(t.id);
   }
 
   function onDelete(t: ApiTokenRow) {
     if (
       !confirm(
-        `«${t.name}» tokenini BUTUNLAY O‘CHIRASIZMI?\n\nToken va uning so‘rovlar jurnali bazadan o‘chadi. Bu amalni qaytarib bo‘lmaydi.`,
+        `«${t.name}» tokenini BUTUNLAY O‘CHIRASIZMI?\n\nShu zahoti ishlamaydi.\nToken va so‘rovlar jurnali bazadan o‘chadi. Qaytarib bo‘lmaydi.`,
       )
     ) {
       return;

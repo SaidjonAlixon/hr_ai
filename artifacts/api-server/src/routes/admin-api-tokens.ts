@@ -192,16 +192,22 @@ router.post("/admin/api-tokens/:id/revoke", requireAuth, async (req: AuthRequest
   try {
     await ensure();
     const id = Number(req.params.id);
+    // revokedAt + hashni buzish — eski plaintext shu zahoti hech qachon mos kelmasin
+    const deadHash = sha256(`revoked_${id}_${randomToken(24)}_${Date.now()}`);
     const [updated] = await db
       .update(apiAccessTokensTable)
-      .set({ revokedAt: new Date() })
+      .set({ revokedAt: new Date(), tokenHash: deadHash })
       .where(eq(apiAccessTokensTable.id, id))
       .returning();
     if (!updated) {
       res.status(404).json({ error: "Token topilmadi" });
       return;
     }
-    res.json({ ok: true, token: updated });
+    res.json({
+      ok: true,
+      token: updated,
+      message: "Token shu zahoti o‘chirildi — endi ma’lumot tortib bo‘lmaydi",
+    });
   } catch (err) {
     console.error("POST /admin/api-tokens/:id/revoke", err);
     res.status(500).json({ error: "Bekor qilishda xato" });

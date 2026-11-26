@@ -19,7 +19,9 @@ export type OpenApiRequest = Request & {
 };
 
 const rateBucket = new Map<string, { n: number; reset: number }>();
-const RATE_LIMIT = 120;
+/** Header token: 120/min; brauzer ?token= URL: qattiqroq 60/min */
+const RATE_LIMIT_HEADER = 120;
+const RATE_LIMIT_QUERY = 60;
 const RATE_WINDOW_MS = 60_000;
 
 let schemaReady: Promise<void> | null = null;
@@ -38,14 +40,14 @@ function clientIp(req: Request): string {
   return xf || req.socket.remoteAddress || "";
 }
 
-function checkRate(key: string): boolean {
+function checkRate(key: string, limit: number): boolean {
   const now = Date.now();
   const cur = rateBucket.get(key);
   if (!cur || cur.reset < now) {
     rateBucket.set(key, { n: 1, reset: now + RATE_WINDOW_MS });
     return true;
   }
-  if (cur.n >= RATE_LIMIT) return false;
+  if (cur.n >= limit) return false;
   cur.n += 1;
   return true;
 }
@@ -167,6 +169,9 @@ export async function requireOpenApiToken(
     return;
   }
 
+  const authHeader = String(req.headers.authorization || "").toLowerCase().startsWith("bearer ");
+  const apiKeyHeader = Boolean(String(req.headers["x-api-key"] || "").trim());
+  const fromQuery = !authHeader && !apiKeyHeader;
   const raw = extractBearer(req);
   if (!raw) {
     res.status(401).json({
@@ -176,8 +181,13 @@ export async function requireOpenApiToken(
     return;
   }
 
-  if (!checkRate(`${ip}|${raw.slice(0, 16)}`)) {
-    res.status(429).json({ error: "Juda ko‘p so‘rov — daqiqada 120 tadan oshmasin" });
+  const rateCap = fromQuery ? RATE_LIMIT_QUERY : RATE_LIMIT_HEADER;
+  if (!checkRate(`${ip}|${raw.slice(0, 16)}|${fromQuery ? "q" : "h"}`, rateCap)) {
+    res.status(429).json({
+      error: fromQuery
+        ? "Juda ko‘p so‘rov (brauzer ?token=) — daqiqada 60 tadan oshmasin"
+        : "Juda ko‘p so‘rov — daqiqada 120 tadan oshmasin",
+    });
     return;
   }
 

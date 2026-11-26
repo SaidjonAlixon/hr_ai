@@ -1,11 +1,15 @@
-/** VAKSINA Open API — hujjat matnlari (sahifa + Word) */
+/** VAKSINA Open API — hujjat matnlari UZ + RU (sahifa + Word) */
+
+export type DocLang = "uz" | "ru" | "both";
 
 export type DocEndpoint = {
   path: string;
-  title: string;
+  titleUz: string;
+  titleRu: string;
   scope: string | null;
-  summary: string;
-  params: Array<{ name: string; example: string; note: string }>;
+  summaryUz: string;
+  summaryRu: string;
+  params: Array<{ name: string; example: string; noteUz: string; noteRu: string }>;
   sampleQuery: string;
   sampleOk: string;
 };
@@ -13,298 +17,399 @@ export type DocEndpoint = {
 export const OPEN_API_ENDPOINTS: DocEndpoint[] = [
   {
     path: "/health",
-    title: "Health (ping)",
+    titleUz: "Health (ping)",
+    titleRu: "Health (пинг)",
     scope: null,
-    summary: "Token yaroqlimi — tez tekshirish. Har qanday faol token bilan ishlaydi.",
+    summaryUz: "Token yaroqlimi — tez tekshirish. Har qanday faol token bilan ishlaydi.",
+    summaryRu: "Проверка токена. Работает с любым активным токеном.",
     params: [],
     sampleQuery: "",
-    sampleOk: `{
-  "ok": true,
-  "service": "vaksina-open-api",
-  "version": "v1",
-  "readOnly": true
-}`,
+    sampleOk: `{\n  "ok": true,\n  "service": "vaksina-open-api",\n  "version": "v1",\n  "readOnly": true\n}`,
   },
   {
     path: "/me",
-    title: "Token meta",
+    titleUz: "Token meta",
+    titleRu: "Мета токена",
     scope: null,
-    summary: "Token nomi, scope ro‘yxati, muddat. Integratsiya oldidan tekshirish uchun.",
+    summaryUz: "Token nomi, scope ro‘yxati, muddat.",
+    summaryRu: "Имя токена, список scopes, срок действия.",
     params: [],
     sampleQuery: "",
-    sampleOk: `{
-  "name": "Hisobot bot",
-  "prefix": "vak_a1b2…",
-  "scopes": ["employees.read", "attendance.read"],
-  "expiresAt": "2027-01-01T00:00:00.000Z",
-  "note": null,
-  "readOnly": true
-}`,
+    sampleOk: `{\n  "name": "Hisobot bot",\n  "prefix": "vak_a1b2…",\n  "scopes": ["employees.read"],\n  "expiresAt": null,\n  "readOnly": true\n}`,
   },
   {
     path: "/employees",
-    title: "Xodimlar",
+    titleUz: "Xodimlar",
+    titleRu: "Сотрудники",
     scope: "employees.read",
-    summary: "Xodimlar ro‘yxati: F.I.Sh, lavozim, filial, holat. Parol chiqmaydi.",
+    summaryUz: "Xodimlar: F.I.Sh, lavozim, filial, holat. Login/parol/admin chiqmaydi.",
+    summaryRu: "Сотрудники: Ф.И.О, должность, филиал, статус. Логин/пароль/admin не отдаются.",
     params: [
       {
         name: "limit",
         example: "50",
-        note: "Bir so‘rovda nechta qator qaytishi (1–200, default 50). Masalan limit=20 → faqat 20 ta xodim",
+        noteUz: "Bir so‘rovda nechta qator (1–200, default 50)",
+        noteRu: "Сколько строк за запрос (1–200, по умолчанию 50)",
       },
       {
         name: "offset",
         example: "0",
-        note: "Nechta qatorni o‘tkazib yuborish (sahifalash). offset=20 → 21-qatordan boshlab",
+        noteUz: "Nechtasini o‘tkazib yuborish (sahifa)",
+        noteRu: "Сколько строк пропустить (пагинация)",
       },
     ],
     sampleQuery: "limit=20&offset=0",
-    sampleOk: `{
-  "data": [{ "id": 12, "fullName": "…", "position": "Farmatsevt", "branchNo": 7 }],
-  "total": 340,
-  "limit": 20,
-  "offset": 0
-}`,
+    sampleOk: `{\n  "data": [{ "id": 12, "fullName": "…", "position": "Farmatsevt", "branchNo": 7 }],\n  "total": 340,\n  "limit": 20,\n  "offset": 0\n}`,
   },
   {
     path: "/attendance",
-    title: "Davomat",
+    titleUz: "Davomat",
+    titleRu: "Посещаемость",
     scope: "attendance.read",
-    summary: "Kunlik kelish–ketish yozuvlari. Sana oralig‘ini from/to bilan bering.",
+    summaryUz: "Kunlik kelish–ketish. from/to bilan filtr.",
+    summaryRu: "Ежедневные приходы/уходы. Фильтр from/to.",
     params: [
-      { name: "from", example: "2026-11-01", note: "YYYY-MM-DD" },
-      { name: "to", example: "2026-11-26", note: "YYYY-MM-DD" },
-      { name: "limit", example: "50", note: "Bir so‘rovda nechta yozuv (1–200)" },
-      { name: "offset", example: "0", note: "O‘tkazib yuboriladigan yozuvlar soni" },
+      { name: "from", example: "2026-11-01", noteUz: "YYYY-MM-DD", noteRu: "YYYY-MM-DD" },
+      { name: "to", example: "2026-11-26", noteUz: "YYYY-MM-DD", noteRu: "YYYY-MM-DD" },
+      { name: "limit", example: "50", noteUz: "1–200", noteRu: "1–200" },
+      { name: "offset", example: "0", noteUz: "Sahifa", noteRu: "Пагинация" },
     ],
     sampleQuery: "from=2026-11-01&to=2026-11-26&limit=50",
-    sampleOk: `{
-  "data": [{ "id": 1, "employeeId": 12, "workDate": "2026-11-26", "checkInAt": "…" }],
-  "limit": 50,
-  "offset": 0,
-  "from": "2026-11-01",
-  "to": "2026-11-26"
-}`,
+    sampleOk: `{\n  "data": [{ "id": 1, "employeeId": 12, "workDate": "2026-11-26" }],\n  "limit": 50,\n  "offset": 0\n}`,
   },
   {
     path: "/branches",
-    title: "Filiallar",
+    titleUz: "Filiallar",
+    titleRu: "Филиалы",
     scope: "branches.read",
-    summary: "Dorixona / filial mudirlari, joylashuv (lat/lng), filial raqami.",
+    summaryUz: "Filial mudirlari va joylashuv.",
+    summaryRu: "Менеджеры филиалов и координаты.",
     params: [
-      { name: "limit", example: "100", note: "Bir so‘rovda nechta filial (max 300)" },
-      { name: "offset", example: "0", note: "O‘tkazib yuborish (sahifa)" },
+      { name: "limit", example: "100", noteUz: "max 300", noteRu: "макс. 300" },
+      { name: "offset", example: "0", noteUz: "Sahifa", noteRu: "Пагинация" },
     ],
     sampleQuery: "limit=100",
-    sampleOk: `{ "data": [{ "id": 5, "fullName": "Mudir …", "branchNo": 3, "location": "…" }], "limit": 100, "offset": 0 }`,
+    sampleOk: `{ "data": [{ "id": 5, "fullName": "…", "branchNo": 3 }], "limit": 100, "offset": 0 }`,
   },
   {
     path: "/departments",
-    title: "Bo‘limlar",
+    titleUz: "Bo‘limlar",
+    titleRu: "Отделы",
     scope: "departments.read",
-    summary: "Tashkilot bo‘limlari va boshliq ID.",
-    params: [{ name: "limit", example: "100", note: "Bir so‘rovda nechta bo‘lim (max 300)" }],
+    summaryUz: "Tashkilot bo‘limlari.",
+    summaryRu: "Отделы организации.",
+    params: [{ name: "limit", example: "100", noteUz: "max 300", noteRu: "макс. 300" }],
     sampleQuery: "limit=100",
     sampleOk: `{ "data": [{ "id": 1, "name": "HR", "headId": 2 }] }`,
   },
   {
     path: "/payroll",
-    title: "Oylik",
+    titleUz: "Oylik",
+    titleRu: "Зарплата",
     scope: "payroll.read",
-    summary: "Oylik hisob-kitob snapshotlari. month=YYYY-MM bilan filtr.",
+    summaryUz: "Oylik snapshot. month=YYYY-MM.",
+    summaryRu: "Снимок зарплаты. month=YYYY-MM.",
     params: [
-      { name: "month", example: "2026-11", note: "YYYY-MM" },
-      { name: "limit", example: "50", note: "Bir so‘rovda nechta qator" },
-      { name: "offset", example: "0", note: "Sahifa ofseti" },
+      { name: "month", example: "2026-11", noteUz: "YYYY-MM", noteRu: "YYYY-MM" },
+      { name: "limit", example: "50", noteUz: "Sahifa o‘lchami", noteRu: "Размер страницы" },
+      { name: "offset", example: "0", noteUz: "Ofset", noteRu: "Смещение" },
     ],
     sampleQuery: "month=2026-11&limit=50",
-    sampleOk: `{ "data": [{ "id": 9, "userId": 3, "month": "2026-11", "totalAmount": "…" }], "month": "2026-11" }`,
+    sampleOk: `{ "data": [{ "id": 9, "userId": 3, "month": "2026-11" }], "month": "2026-11" }`,
   },
   {
     path: "/candidates",
-    title: "Nomzodlar",
+    titleUz: "Nomzodlar",
+    titleRu: "Кандидаты",
     scope: "candidates.read",
-    summary: "Ishga olish pipeline’dagi nomzodlar.",
+    summaryUz: "Ishga olish nomzodlari.",
+    summaryRu: "Кандидаты на найм.",
     params: [
-      { name: "limit", example: "50", note: "Bir so‘rovda nechta nomzod" },
-      { name: "offset", example: "0", note: "Sahifa ofseti" },
+      { name: "limit", example: "50", noteUz: "Sahifa", noteRu: "Страница" },
+      { name: "offset", example: "0", noteUz: "Ofset", noteRu: "Смещение" },
     ],
     sampleQuery: "limit=20",
-    sampleOk: `{ "data": [{ "id": 8, "fullName": "…", "stage": "interview", "status": "active" }], "limit": 20, "offset": 0 }`,
+    sampleOk: `{ "data": [{ "id": 8, "fullName": "…", "stage": "interview" }], "limit": 20, "offset": 0 }`,
   },
   {
     path: "/vacancies",
-    title: "Vakansiyalar",
+    titleUz: "Vakansiyalar",
+    titleRu: "Вакансии",
     scope: "vacancies.read",
-    summary: "Ochiq / yopiq vakansiyalar.",
+    summaryUz: "Ochiq / yopiq vakansiyalar.",
+    summaryRu: "Открытые / закрытые вакансии.",
     params: [
-      { name: "limit", example: "50", note: "Bir so‘rovda nechta vakansiya" },
-      { name: "offset", example: "0", note: "Sahifa ofseti" },
+      { name: "limit", example: "50", noteUz: "Sahifa", noteRu: "Страница" },
+      { name: "offset", example: "0", noteUz: "Ofset", noteRu: "Смещение" },
     ],
     sampleQuery: "limit=20",
     sampleOk: `{ "data": [{ "id": 4, "title": "Farmatsevt", "status": "open" }], "limit": 20, "offset": 0 }`,
   },
   {
     path: "/tasks",
-    title: "Vazifalar",
+    titleUz: "Vazifalar",
+    titleRu: "Задачи",
     scope: "tasks.read",
-    summary: "Topshiriqlar: sarlavha, status, muddat, ijrochi.",
+    summaryUz: "Topshiriqlar ro‘yxati.",
+    summaryRu: "Список задач.",
     params: [
-      { name: "limit", example: "50", note: "Bir so‘rovda nechta vazifa" },
-      { name: "offset", example: "0", note: "Sahifa ofseti" },
+      { name: "limit", example: "50", noteUz: "Sahifa", noteRu: "Страница" },
+      { name: "offset", example: "0", noteUz: "Ofset", noteRu: "Смещение" },
     ],
     sampleQuery: "limit=20",
-    sampleOk: `{ "data": [{ "id": 100, "title": "…", "status": "in_progress", "dueAt": "…" }], "limit": 20, "offset": 0 }`,
+    sampleOk: `{ "data": [{ "id": 100, "title": "…", "status": "in_progress" }], "limit": 20, "offset": 0 }`,
   },
   {
     path: "/users",
-    title: "Foydalanuvchilar",
+    titleUz: "Foydalanuvchilar",
+    titleRu: "Пользователи",
     scope: "users.read",
-    summary:
-      "Platforma akkauntlari. login, parol, telegram va admin akkauntlari hech qachon chiqarilmaydi.",
+    summaryUz: "Akkauntlar. login, parol, telegram, admin — hech qachon chiqmaydi.",
+    summaryRu: "Аккаунты. login, пароль, telegram, admin — никогда не отдаются.",
     params: [
-      { name: "limit", example: "50", note: "Bir so‘rovda nechta foydalanuvchi" },
-      { name: "offset", example: "0", note: "Sahifa ofseti" },
+      { name: "limit", example: "50", noteUz: "Sahifa", noteRu: "Страница" },
+      { name: "offset", example: "0", noteUz: "Ofset", noteRu: "Смещение" },
     ],
     sampleQuery: "limit=20",
-    sampleOk: `{ "data": [{ "id": 1, "fullName": "…", "role": "hr", "phone": null, "status": "active" }], "limit": 20, "offset": 0 }`,
+    sampleOk: `{ "data": [{ "id": 1, "fullName": "…", "role": "hr", "status": "active" }], "limit": 20, "offset": 0 }`,
   },
   {
     path: "/discipline",
-    title: "Intizom",
+    titleUz: "Intizom",
+    titleRu: "Дисциплина",
     scope: "discipline.read",
-    summary: "Intizom hodisalari (oylik). month=YYYY-MM bilan filtr.",
+    summaryUz: "Intizom hodisalari. month=YYYY-MM.",
+    summaryRu: "Дисциплинарные события. month=YYYY-MM.",
     params: [
-      { name: "month", example: "2026-11", note: "YYYY-MM" },
-      { name: "limit", example: "100", note: "Bir so‘rovda nechta hodisa (max 500)" },
+      { name: "month", example: "2026-11", noteUz: "YYYY-MM", noteRu: "YYYY-MM" },
+      { name: "limit", example: "100", noteUz: "max 500", noteRu: "макс. 500" },
     ],
     sampleQuery: "month=2026-11&limit=100",
     sampleOk: `{ "data": [{ "id": 3, "user_id": 12, "month": "2026-11", "kind": "late" }], "month": "2026-11" }`,
   },
 ];
 
+/** UI uchun qulay alias */
+export type DocEndpointView = DocEndpoint & { title: string; summary: string };
+
+export function viewEndpoint(ep: DocEndpoint, lang: DocLang): DocEndpointView {
+  const uz = lang !== "ru";
+  return {
+    ...ep,
+    title: uz ? ep.titleUz : ep.titleRu,
+    summary: uz ? ep.summaryUz : ep.summaryRu,
+  };
+}
+
 export const OPEN_API_ERRORS = [
-  { code: 401, title: "Token yo‘q / noto‘g‘ri / muddati o‘tgan / bekor", when: "Authorization header yo‘q yoki token yaroqsiz" },
-  { code: 403, title: "Scope yo‘q", when: "Token bu endpoint uchun ruxsat etilmagan" },
-  { code: 405, title: "Faqat GET", when: "POST/PUT/PATCH/DELETE yuborilgan" },
-  { code: 429, title: "Juda ko‘p so‘rov", when: "Daqiqada 120 tadan oshgan (IP+token)" },
-  { code: 500, title: "Server xatosi", when: "Ichki xato — qayta urinib ko‘ring" },
-  { code: 503, title: "Sxema tayyor emas", when: "Jadval hali yaratilmagan (kamdan-kam)" },
+  {
+    code: 401,
+    titleUz: "Token yo‘q / noto‘g‘ri / muddati o‘tgan / bekor",
+    titleRu: "Нет токена / неверный / истёк / отозван",
+    whenUz: "Authorization yo‘q yoki token yaroqsiz",
+    whenRu: "Нет Authorization или токен недействителен",
+  },
+  {
+    code: 403,
+    titleUz: "Scope yo‘q",
+    titleRu: "Нет scope",
+    whenUz: "Token bu endpoint uchun ruxsat etilmagan",
+    whenRu: "У токена нет права на этот endpoint",
+  },
+  {
+    code: 405,
+    titleUz: "Faqat GET",
+    titleRu: "Только GET",
+    whenUz: "POST/PUT/PATCH/DELETE yuborilgan — o‘zgartirish taqiqlangan",
+    whenRu: "Отправлен POST/PUT/PATCH/DELETE — изменение запрещено",
+  },
+  {
+    code: 429,
+    titleUz: "Juda ko‘p so‘rov",
+    titleRu: "Слишком много запросов",
+    whenUz: "Daqiqada 60–120 dan oshgan (IP+token)",
+    whenRu: "Больше 60–120 запросов в минуту (IP+token)",
+  },
+  {
+    code: 500,
+    titleUz: "Server xatosi",
+    titleRu: "Ошибка сервера",
+    whenUz: "Ichki xato",
+    whenRu: "Внутренняя ошибка",
+  },
 ];
 
-export function buildFullDocText(opts: {
-  origin: string;
-  generatedAt: string;
-}) {
+export function buildFullDocHtml(opts: { origin: string; generatedAt: string }): string {
   const base = `${opts.origin}/api/open/v1`;
   const wall = `${opts.origin}/open-api/v1`;
-  const lines: string[] = [];
-  lines.push("VAKSINA HR — Open API (read-only) to‘liq qo‘llanma");
-  lines.push(`Yaratilgan: ${opts.generatedAt}`);
-  lines.push("");
-  lines.push("1. NIMA BU?");
-  lines.push(
-    "Tashqi tizimlar (hisobot, BI, bot, Excel) uchun faqat o‘qish API. Ma’lumotni o‘zgartirish mumkin emas — faqat GET.",
-  );
-  lines.push("");
-  lines.push("2. TOKENNI QAYERDAN OLISH?");
-  lines.push("1) Bosh admin sifatida platformaga kiring (vaksinahr.uz).");
-  lines.push("2) Chap menyudan «API Tokenlar» oching.");
-  lines.push("3) Nom, muddat (yoki doimiy), kerakli scope’larni belgilang → Yaratish.");
-  lines.push("4) Ekranda bir marta ko‘rsatilgan vak_… tokenni nusxa oling va xavfsiz saqlang.");
-  lines.push("5) Keyin bekor qilish: «API Tokenlar» → Bekor. Jurnal: «API Devor».");
-  lines.push("Muhim: plaintext token faqat yaratishda bir marta ko‘rinadi.");
-  lines.push("");
-  lines.push("3. QAYERGA SO‘ROV YUBORISH?");
-  lines.push(`Asosiy (tavsiya, sayt orqali): ${base}`);
-  lines.push(`Devor (tashqi proxy): ${wall}`);
-  lines.push("Ikkalasi ham bir xil ma’lumotni beradi. Devor tashqi trafikni alohida kuzatadi.");
-  lines.push("");
-  lines.push("4. QANDAY ULASH?");
-  lines.push("A) Brauzer (eng oson): havolani manzil satriga qo‘ying — token URL da:");
-  lines.push(`  ${base}/employees?limit=20&offset=0&token=vak_XXXXXXXX`);
-  lines.push("  Natija brauzerda JSON bo‘lib chiqadi. Havolani boshqalarga bermang.");
-  lines.push("");
-  lines.push("B) Header (dasturlar uchun tavsiya):");
-  lines.push("  Authorization: Bearer vak_XXXXXXXX");
-  lines.push("  Yoki: X-Api-Key: vak_XXXXXXXX");
-  lines.push("");
-  lines.push("curl misol:");
-  lines.push(`  curl -sS -H "Authorization: Bearer vak_XXX" "${base}/health"`);
-  lines.push("");
-  lines.push("JavaScript (fetch) misol:");
-  lines.push(`  const r = await fetch("${base}/employees?limit=20", {`);
-  lines.push(`    headers: { Authorization: "Bearer vak_XXX" }`);
-  lines.push("  });");
-  lines.push("  const j = await r.json();");
-  lines.push("");
-  lines.push("Python misol:");
-  lines.push("  import requests");
-  lines.push(`  r = requests.get("${base}/attendance", params={"from":"2026-11-01","to":"2026-11-26"},`);
-  lines.push('      headers={"Authorization":"Bearer vak_XXX"})');
-  lines.push("  print(r.json())");
-  lines.push("");
-  lines.push("5. LIMIT VA OFFSET NIMA?");
-  lines.push("limit — bir so‘rovda nechta qator (yozuv) qaytishi.");
-  lines.push("  Masalan: ?limit=20 → javobda eng ko‘pi bilan 20 ta element.");
-  lines.push("  Default odatda 50. Katta ro‘yxatni bir yo‘la tortib olish mumkin emas — bo‘lib-bo‘lib olinadi.");
-  lines.push("  Har endpointda maksimal bor (masalan xodimlar 200, filiallar 300).");
-  lines.push("offset — nechta qatorni o‘tkazib yuborish (sahifalash / pagination).");
-  lines.push("  1-sahifa: limit=20&offset=0  (1–20)");
-  lines.push("  2-sahifa: limit=20&offset=20 (21–40)");
-  lines.push("  3-sahifa: limit=20&offset=40 (41–60)");
-  lines.push("Javobdagi limit/offset maydonlari — so‘rovda qo‘llanilgan qiymatlarning tasdig‘i.");
-  lines.push("Ba’zi endpointlarda total ham bor (masalan /employees) — jami nechta yozuv borligini bildiradi.");
-  lines.push("Eslatma: «rate limit» (daqiqada 120 so‘rov) — bu query’dagi limit EMAS; juda ko‘p so‘rov yubormaslik chegarasi.");
-  lines.push("");
-  lines.push("6. QOIDALAR");
-  lines.push("- Faqat GET (o‘zgartirish yo‘q)");
-  lines.push("- Har endpoint uchun scope kerak (/health va /me — har qanday token)");
-  lines.push("- Rate limit (so‘rov tezligi): daqiqada ~120 so‘rov (IP + token)");
-  lines.push("- Sezgir maydonlar: login, parol, telegram, session — hech qachon chiqmaydi");
-  lines.push("- Admin akkauntlari (role=admin) /users va /employees dan chiqarib tashlanadi");
-  lines.push("");
-  lines.push("7. XATO KODLARI");
-  for (const e of OPEN_API_ERRORS) {
-    lines.push(`HTTP ${e.code} — ${e.title}. ${e.when}`);
-  }
-  lines.push("");
-  lines.push("8. ENDPOINTLAR");
-  for (const ep of OPEN_API_ENDPOINTS) {
-    lines.push("");
-    lines.push(`GET ${ep.path} — ${ep.title}`);
-    lines.push(`  Scope: ${ep.scope || "har qanday yaroqli token"}`);
-    lines.push(`  ${ep.summary}`);
-    if (ep.params.length) {
-      lines.push("  Query:");
-      for (const p of ep.params) {
-        lines.push(`    - ${p.name}=${p.example}${p.note ? ` (${p.note})` : ""}`);
-      }
-    }
-    lines.push(`  Misol URL: ${base}${ep.path}${ep.sampleQuery ? `?${ep.sampleQuery}` : ""}`);
-    lines.push("  Misol javob:");
-    for (const row of ep.sampleOk.split("\n")) lines.push(`    ${row}`);
-  }
-  lines.push("");
-  lines.push("9. INTEGRATSIYA TARTIBI (qisqa)");
-  lines.push("1. Token oling (scope’larni aniqlang).");
-  lines.push("2. /health bilan tekshiring (200 bo‘lishi kerak).");
-  lines.push("3. /me bilan scope’larni ko‘ring.");
-  lines.push("4. Kerakli GET endpointlarga limit/offset bilan sahifa-sahifa so‘rov yuboring.");
-  lines.push("5. 401/403 bo‘lsa token yoki scope’ni tekshiring; 429 bo‘lsa sekinroq so‘rang.");
-  lines.push("");
-  lines.push("10. QAYERDAN NIMA TORTISH — TEZKOR JADVAL");
-  lines.push("Xodimlar → GET /employees (employees.read)");
-  lines.push("Davomat → GET /attendance?from=&to= (attendance.read)");
-  lines.push("Filiallar → GET /branches (branches.read)");
-  lines.push("Bo‘limlar → GET /departments (departments.read)");
-  lines.push("Oylik → GET /payroll?month=YYYY-MM (payroll.read)");
-  lines.push("Nomzodlar → GET /candidates (candidates.read)");
-  lines.push("Vakansiyalar → GET /vacancies (vacancies.read)");
-  lines.push("Vazifalar → GET /tasks (tasks.read)");
-  lines.push("Foydalanuvchilar → GET /users (users.read)");
-  lines.push("Intizom → GET /discipline?month=YYYY-MM (discipline.read)");
-  lines.push("");
-  lines.push("Yordam: platformadagi /api-docs sahifasi (sinash paneli).");
-  return lines.join("\n");
+
+  const rows = OPEN_API_ENDPOINTS.map(
+    (ep) => `
+    <tr>
+      <td style="padding:8pt;border:1pt solid #ddd;vertical-align:top">
+        <b>UZ:</b> ${esc(ep.titleUz)}<br/>
+        <b>RU:</b> ${esc(ep.titleRu)}
+      </td>
+      <td style="padding:8pt;border:1pt solid #ddd;font-family:Consolas;font-size:9pt">GET ${esc(ep.path)}</td>
+      <td style="padding:8pt;border:1pt solid #ddd;font-family:Consolas;font-size:9pt">${esc(ep.scope || "any token")}</td>
+      <td style="padding:8pt;border:1pt solid #ddd;font-size:9.5pt">
+        <div><b>UZ:</b> ${esc(ep.summaryUz)}</div>
+        <div style="margin-top:4pt"><b>RU:</b> ${esc(ep.summaryRu)}</div>
+        ${
+          ep.params.length
+            ? `<div style="margin-top:6pt;color:#555">${ep.params
+                .map(
+                  (p) =>
+                    `<code>${esc(p.name)}</code>=${esc(p.example)} — UZ: ${esc(p.noteUz)} / RU: ${esc(p.noteRu)}`,
+                )
+                .join("<br/>")}</div>`
+            : ""
+        }
+        <div style="margin-top:6pt;font-family:Consolas;font-size:8.5pt;color:#4c1d95">${esc(base)}${esc(ep.path)}${ep.sampleQuery ? `?${esc(ep.sampleQuery)}` : ""}</div>
+      </td>
+    </tr>`,
+  ).join("");
+
+  const errRows = OPEN_API_ERRORS.map(
+    (e) => `
+    <tr>
+      <td style="padding:8pt;border:1pt solid #ddd;font-weight:bold">${e.code}</td>
+      <td style="padding:8pt;border:1pt solid #ddd"><b>UZ:</b> ${esc(e.titleUz)}<br/><span style="color:#666">${esc(e.whenUz)}</span></td>
+      <td style="padding:8pt;border:1pt solid #ddd"><b>RU:</b> ${esc(e.titleRu)}<br/><span style="color:#666">${esc(e.whenRu)}</span></td>
+    </tr>`,
+  ).join("");
+
+  return `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8"/>
+<title>VAKSINA Open API — UZ/RU</title>
+<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->
+<style>
+  @page { size: A4 landscape; margin: 1.4cm 1.6cm 1.4cm 1.6cm; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; font-size: 11pt; line-height: 1.45; }
+  h1 { color: #2e1065; font-size: 20pt; margin: 0 0 8pt; }
+  h2 { color: #4c1d95; font-size: 13pt; margin: 16pt 0 8pt; border-bottom: 1.5pt solid #ddd6fe; padding-bottom: 4pt; }
+  .box { background: #f5f3ff; border: 1pt solid #ddd6fe; border-radius: 6pt; padding: 10pt 12pt; margin: 8pt 0; }
+  .warn { background: #fff7ed; border-color: #fed7aa; }
+  .ok { background: #ecfdf5; border-color: #a7f3d0; }
+  table { border-collapse: collapse; width: 100%; margin: 8pt 0 12pt; }
+  th { background: #2e1065; color: #fff; padding: 8pt; text-align: left; font-size: 9.5pt; }
+  code, .mono { font-family: Consolas, monospace; }
+  .muted { color: #64748b; font-size: 9.5pt; }
+  .two { display: table; width: 100%; }
+  .two > div { display: table-cell; width: 50%; vertical-align: top; padding-right: 12pt; }
+</style>
+</head>
+<body>
+  <h1>VAKSINA HR — Open API (read-only) / Открытый API (только чтение)</h1>
+  <p class="muted">Yaratilgan / Создано: ${esc(opts.generatedAt)} · UZ + RU</p>
+
+  <div class="box ok">
+    <b>UZ xavfsizlik:</b> Faqat GET. Login, parol, session, admin akkauntlari chiqmaydi. Token hash DB da. Bekor/o‘chirish — shu zahoti 401.<br/>
+    <b>RU безопасность:</b> Только GET. Логин, пароль, session, admin-аккаунты не отдаются. В БД только hash. Отзыв/удаление — сразу 401.
+  </div>
+
+  <h2>1. Nima bu? / Что это?</h2>
+  <div class="two">
+    <div><b>O‘zbekcha.</b> Tashqi tizimlar (1C, BI, bot, Excel) uchun faqat o‘qish API. Ma’lumotni o‘zgartirish mumkin emas.</div>
+    <div><b>Русский.</b> API только для чтения внешними системами (1C, BI, бот, Excel). Изменение данных невозможно.</div>
+  </div>
+
+  <h2>2. Token / Токен</h2>
+  <div class="two">
+    <div>
+      <b>UZ:</b> Bosh admin → «API Tokenlar» → nom, scope, muddat → Yaratish → <code>vak_…</code> ni bir marta nusxa oling.
+      Bekor/O‘chirish: shu zahoti ishlamaydi. Jurnal: «API Devor».
+    </div>
+    <div>
+      <b>RU:</b> Главный админ → «API Tokenlar» → имя, scope, срок → Создать → скопируйте <code>vak_…</code> один раз.
+      Отзыв/Удаление: сразу не работает. Журнал: «API Devor».
+    </div>
+  </div>
+
+  <h2>3. URL</h2>
+  <p><b>Asosiy / Основной:</b> <span class="mono">${esc(base)}</span></p>
+  <p><b>Devor / Прокси:</b> <span class="mono">${esc(wall)}</span></p>
+
+  <h2>4. Ulash / Подключение</h2>
+  <div class="box">
+    <b>Brauzer / Браузер:</b><br/>
+    <span class="mono">${esc(base)}/employees?limit=20&amp;offset=0&amp;token=vak_XXXXXXXX</span><br/>
+    <span class="muted">Havolani begonalarga bermang / Не делитесь ссылкой.</span>
+  </div>
+  <p><b>Header (tavsiya / рекомендуется):</b> <code>Authorization: Bearer vak_XXXXXXXX</code></p>
+  <p class="mono">curl -sS -H "Authorization: Bearer vak_XXX" "${esc(base)}/health"</p>
+
+  <h2>5. limit / offset</h2>
+  <div class="two">
+    <div>
+      <b>UZ — limit:</b> bir so‘rovda nechta yozuv (default 50). Katta ro‘yxatni bo‘lib olish.<br/>
+      <b>offset:</b> nechtasini o‘tkazib keyingi sahifa. 1: offset=0, 2: offset=20 (limit=20).<br/>
+      <b>Rate limit:</b> daqiqada ~60–120 so‘rov — bu query limit EMAS (HTTP 429).
+    </div>
+    <div>
+      <b>RU — limit:</b> сколько записей за запрос (по умолчанию 50). Большие списки — постранично.<br/>
+      <b>offset:</b> сколько пропустить. Стр.1: offset=0, стр.2: offset=20 (limit=20).<br/>
+      <b>Rate limit:</b> ~60–120 запросов/мин — это НЕ query limit (HTTP 429).
+    </div>
+  </div>
+
+  <h2>6. Qoidalar / Правила (hakerlardan himoya)</h2>
+  <ul>
+    <li>UZ: Faqat GET — POST/PUT/DELETE 405. RU: Только GET — POST/PUT/DELETE → 405.</li>
+    <li>UZ: Scope majburiy. RU: Scope обязателен.</li>
+    <li>UZ: login/parol/admin yo‘q. RU: login/пароль/admin недоступны.</li>
+    <li>UZ: Token bekor → hash buziladi, darhol 401. RU: Отзыв → hash сбрасывается, сразу 401.</li>
+    <li>UZ: Hujjatni ko‘rish hujumni ochmaydi — tokensiz hech narsa. RU: Просмотр docs не даёт доступа — без токена ничего.</li>
+  </ul>
+
+  <h2>7. Xato kodlari / Коды ошибок</h2>
+  <table>
+    <tr><th style="width:70px">HTTP</th><th>O‘zbekcha</th><th>Русский</th></tr>
+    ${errRows}
+  </table>
+
+  <h2>8. Endpointlar / Эндпоинты</h2>
+  <table>
+    <tr>
+      <th style="width:18%">Nom / Название</th>
+      <th style="width:16%">Path</th>
+      <th style="width:14%">Scope</th>
+      <th>Tavsif / Описание + parametrlar</th>
+    </tr>
+    ${rows}
+  </table>
+
+  <h2>9. Tezkor jadval / Быстрая таблица</h2>
+  <table>
+    <tr><th>UZ</th><th>RU</th><th>GET</th><th>Scope</th></tr>
+    ${OPEN_API_ENDPOINTS.filter((e) => e.scope)
+      .map(
+        (e) =>
+          `<tr><td style="padding:6pt;border:1pt solid #ddd">${esc(e.titleUz)}</td><td style="padding:6pt;border:1pt solid #ddd">${esc(e.titleRu)}</td><td style="padding:6pt;border:1pt solid #ddd;font-family:Consolas;font-size:9pt">${esc(e.path)}</td><td style="padding:6pt;border:1pt solid #ddd;font-family:Consolas;font-size:9pt">${esc(e.scope!)}</td></tr>`,
+      )
+      .join("")}
+  </table>
+
+  <div class="box warn">
+    <b>UZ:</b> Hujjat ochiq — lekin ma’lumot faqat yaroqli token bilan. Tokenni oshkor qilmang.<br/>
+    <b>RU:</b> Документация открыта — данные только с валидным токеном. Не раскрывайте токен.
+  </div>
+  <p class="muted">© VAKSINA HR · Open API v1 · UZ/RU</p>
+</body>
+</html>`;
+}
+
+function esc(s: string): string {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Eski matn eksporti (fallback) */
+export function buildFullDocText(opts: { origin: string; generatedAt: string }) {
+  return buildFullDocHtml(opts).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }

@@ -1,6 +1,7 @@
 /** VAKSINA Open API — hujjat matnlari UZ + RU (sahifa + Word) */
 
 export type DocLang = "uz" | "ru" | "both";
+export type DocLangSingle = "uz" | "ru";
 
 export type DocEndpoint = {
   path: string;
@@ -239,164 +240,412 @@ export const OPEN_API_ERRORS = [
   },
 ];
 
-export function buildFullDocHtml(opts: { origin: string; generatedAt: string }): string {
+const COPY = {
+  uz: {
+    title: "VAKSINA HR — Open API (faqat o‘qish)",
+    langTag: "O‘zbekcha",
+    created: "Yaratilgan",
+    security:
+      "Xavfsizlik: faqat GET. Login, parol, session, admin akkauntlari chiqmaydi. Token DB da faqat hash. Bekor/o‘chirish — shu zahoti 401.",
+    s1: "1. Nima bu?",
+    s1body:
+      "Tashqi tizimlar (1C, BI, bot, Excel) uchun faqat o‘qish API. Ma’lumotni o‘zgartirish mumkin emas.",
+    s2: "2. Token olish",
+    s2body:
+      "Bosh admin → «API Tokenlar» → nom, scope, muddat → Yaratish → vak_… ni bir marta nusxa oling. Bekor/O‘chirish: shu zahoti ishlamaydi. Jurnal: «API Devor».",
+    s3: "3. URL manzillar",
+    mainUrl: "Asosiy",
+    wallUrl: "Devor (proxy)",
+    s4: "4. Ulash",
+    browser: "Brauzer (tez sinov)",
+    browserWarn: "Havolani begonalarga bermang — token URL da ko‘rinadi.",
+    headerRec: "Header (tavsiya etiladi)",
+    s5: "5. limit va offset",
+    s5limit:
+      "limit — bir so‘rovda nechta yozuv (odatda 50). Katta ro‘yxatni bo‘lib olish uchun.",
+    s5offset:
+      "offset — nechtasini o‘tkazib keyingi sahifa. 1-sahifa: offset=0; 2-sahifa: offset=20 (limit=20).",
+    s5rate:
+      "Rate limit — daqiqada ~60–120 so‘rov (HTTP 429). Bu query dagi limit emas.",
+    s6: "6. Himoya qoidalari",
+    rules: [
+      "Faqat GET — POST / PUT / PATCH / DELETE → 405.",
+      "Scope majburiy — ruxsatsiz endpoint → 403.",
+      "login / parol / admin akkauntlari hech qachon chiqmaydi.",
+      "Token bekor yoki o‘chirilsa — hash buziladi, darhol 401.",
+      "Hujjatni ko‘rish hujum emas — tokensiz hech narsa olinmaydi.",
+    ],
+    s7: "7. Xato kodlari",
+    thHttp: "HTTP",
+    thMeaning: "Ma’nosi",
+    thWhen: "Qachon",
+    s8: "8. Endpointlar (batafsil)",
+    thName: "Bo‘lim",
+    thPath: "So‘rov",
+    thScope: "Scope",
+    params: "Parametrlar",
+    sample: "Namuna URL",
+    s9: "9. Tezkor ro‘yxat",
+    footerWarn:
+      "Hujjat ochiq — lekin ma’lumot faqat yaroqli token bilan. Tokenni oshkor qilmang.",
+    footer: "© VAKSINA HR · Open API v1 · UZ",
+    anyToken: "har qanday token",
+  },
+  ru: {
+    title: "VAKSINA HR — Open API (только чтение)",
+    langTag: "Русский",
+    created: "Создано",
+    security:
+      "Безопасность: только GET. Логин, пароль, session, admin-аккаунты не отдаются. В БД только hash токена. Отзыв/удаление — сразу 401.",
+    s1: "1. Что это?",
+    s1body:
+      "API только для чтения внешними системами (1C, BI, бот, Excel). Изменение данных невозможно.",
+    s2: "2. Получение токена",
+    s2body:
+      "Главный админ → «API Tokenlar» → имя, scope, срок → Создать → скопируйте vak_… один раз. Отзыв/Удаление: сразу не работает. Журнал: «API Devor».",
+    s3: "3. URL-адреса",
+    mainUrl: "Основной",
+    wallUrl: "Прокси (Devor)",
+    s4: "4. Подключение",
+    browser: "Браузер (быстрый тест)",
+    browserWarn: "Не делитесь ссылкой — токен виден в URL.",
+    headerRec: "Header (рекомендуется)",
+    s5: "5. limit и offset",
+    s5limit:
+      "limit — сколько записей за один запрос (обычно 50). Большие списки — постранично.",
+    s5offset:
+      "offset — сколько строк пропустить. Стр.1: offset=0; стр.2: offset=20 (limit=20).",
+    s5rate:
+      "Rate limit — ~60–120 запросов в минуту (HTTP 429). Это НЕ query-параметр limit.",
+    s6: "6. Правила защиты",
+    rules: [
+      "Только GET — POST / PUT / PATCH / DELETE → 405.",
+      "Scope обязателен — без права → 403.",
+      "login / пароль / admin-аккаунты никогда не отдаются.",
+      "Отзыв или удаление токена — hash сбрасывается, сразу 401.",
+      "Просмотр документации не даёт доступа — без токена данных нет.",
+    ],
+    s7: "7. Коды ошибок",
+    thHttp: "HTTP",
+    thMeaning: "Значение",
+    thWhen: "Когда",
+    s8: "8. Эндпоинты (подробно)",
+    thName: "Раздел",
+    thPath: "Запрос",
+    thScope: "Scope",
+    params: "Параметры",
+    sample: "Пример URL",
+    s9: "9. Краткий список",
+    footerWarn:
+      "Документация открыта — данные только с валидным токеном. Не раскрывайте токен.",
+    footer: "© VAKSINA HR · Open API v1 · RU",
+    anyToken: "любой токен",
+  },
+} as const;
+
+export function buildFullDocHtml(opts: {
+  origin: string;
+  generatedAt: string;
+  lang?: DocLangSingle;
+}): string {
+  const lang: DocLangSingle = opts.lang === "ru" ? "ru" : "uz";
+  const t = COPY[lang];
   const base = `${opts.origin}/api/open/v1`;
   const wall = `${opts.origin}/open-api/v1`;
 
-  const rows = OPEN_API_ENDPOINTS.map(
-    (ep) => `
-    <tr>
-      <td style="padding:8pt;border:1pt solid #ddd;vertical-align:top">
-        <b>UZ:</b> ${esc(ep.titleUz)}<br/>
-        <b>RU:</b> ${esc(ep.titleRu)}
-      </td>
-      <td style="padding:8pt;border:1pt solid #ddd;font-family:Consolas;font-size:9pt">GET ${esc(ep.path)}</td>
-      <td style="padding:8pt;border:1pt solid #ddd;font-family:Consolas;font-size:9pt">${esc(ep.scope || "any token")}</td>
-      <td style="padding:8pt;border:1pt solid #ddd;font-size:9.5pt">
-        <div><b>UZ:</b> ${esc(ep.summaryUz)}</div>
-        <div style="margin-top:4pt"><b>RU:</b> ${esc(ep.summaryRu)}</div>
-        ${
-          ep.params.length
-            ? `<div style="margin-top:6pt;color:#555">${ep.params
-                .map(
-                  (p) =>
-                    `<code>${esc(p.name)}</code>=${esc(p.example)} — UZ: ${esc(p.noteUz)} / RU: ${esc(p.noteRu)}`,
-                )
-                .join("<br/>")}</div>`
-            : ""
-        }
-        <div style="margin-top:6pt;font-family:Consolas;font-size:8.5pt;color:#4c1d95">${esc(base)}${esc(ep.path)}${ep.sampleQuery ? `?${esc(ep.sampleQuery)}` : ""}</div>
-      </td>
-    </tr>`,
-  ).join("");
+  const errRows = OPEN_API_ERRORS.map((e) => {
+    const title = lang === "ru" ? e.titleRu : e.titleUz;
+    const when = lang === "ru" ? e.whenRu : e.whenUz;
+    return `<tr>
+      <td class="c-code">${e.code}</td>
+      <td class="c-cell">${esc(title)}</td>
+      <td class="c-cell">${esc(when)}</td>
+    </tr>`;
+  }).join("");
 
-  const errRows = OPEN_API_ERRORS.map(
-    (e) => `
-    <tr>
-      <td style="padding:8pt;border:1pt solid #ddd;font-weight:bold">${e.code}</td>
-      <td style="padding:8pt;border:1pt solid #ddd"><b>UZ:</b> ${esc(e.titleUz)}<br/><span style="color:#666">${esc(e.whenUz)}</span></td>
-      <td style="padding:8pt;border:1pt solid #ddd"><b>RU:</b> ${esc(e.titleRu)}<br/><span style="color:#666">${esc(e.whenRu)}</span></td>
-    </tr>`,
-  ).join("");
+  const endpointBlocks = OPEN_API_ENDPOINTS.map((ep, i) => {
+    const title = lang === "ru" ? ep.titleRu : ep.titleUz;
+    const summary = lang === "ru" ? ep.summaryRu : ep.summaryUz;
+    const scope = ep.scope || t.anyToken;
+    const sampleUrl = `${base}${ep.path}${ep.sampleQuery ? `?${ep.sampleQuery}` : ""}`;
+    const paramsHtml = ep.params.length
+      ? `<table class="inner">
+          <tr><th>${esc(t.params)}</th><th>example</th><th></th></tr>
+          ${ep.params
+            .map((p) => {
+              const note = lang === "ru" ? p.noteRu : p.noteUz;
+              return `<tr>
+                <td class="mono">${esc(p.name)}</td>
+                <td class="mono">${esc(p.example)}</td>
+                <td>${esc(note)}</td>
+              </tr>`;
+            })
+            .join("")}
+        </table>`
+      : "";
+
+    return `
+    <table class="ep">
+      <tr>
+        <td class="ep-num" width="36">${i + 1}</td>
+        <td class="ep-title">${esc(title)}</td>
+        <td class="ep-meta" width="280">
+          <div class="mono">GET ${esc(ep.path)}</div>
+          <div class="mono muted">${esc(scope)}</div>
+        </td>
+      </tr>
+      <tr>
+        <td colspan="3" class="ep-body">
+          <p class="sum">${esc(summary)}</p>
+          ${paramsHtml}
+          <p class="sample-label">${esc(t.sample)}</p>
+          <p class="url">${esc(sampleUrl)}</p>
+        </td>
+      </tr>
+    </table>`;
+  }).join("");
+
+  const quickRows = OPEN_API_ENDPOINTS.map((ep) => {
+    const title = lang === "ru" ? ep.titleRu : ep.titleUz;
+    return `<tr>
+      <td class="c-cell">${esc(title)}</td>
+      <td class="mono c-cell">GET ${esc(ep.path)}</td>
+      <td class="mono c-cell">${esc(ep.scope || t.anyToken)}</td>
+    </tr>`;
+  }).join("");
 
   return `<!DOCTYPE html>
-<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
 <head>
 <meta charset="utf-8"/>
-<title>VAKSINA Open API — UZ/RU</title>
-<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<title>${esc(t.title)}</title>
+<!--[if gte mso 9]>
+<xml>
+  <w:WordDocument>
+    <w:View>Print</w:View>
+    <w:Zoom>100</w:Zoom>
+    <w:DoNotOptimizeForBrowser/>
+  </w:WordDocument>
+</xml>
+<![endif]-->
 <style>
-  @page { size: A4 landscape; margin: 1.4cm 1.6cm 1.4cm 1.6cm; }
-  body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; font-size: 11pt; line-height: 1.45; }
-  h1 { color: #2e1065; font-size: 20pt; margin: 0 0 8pt; }
-  h2 { color: #4c1d95; font-size: 13pt; margin: 16pt 0 8pt; border-bottom: 1.5pt solid #ddd6fe; padding-bottom: 4pt; }
-  .box { background: #f5f3ff; border: 1pt solid #ddd6fe; border-radius: 6pt; padding: 10pt 12pt; margin: 8pt 0; }
-  .warn { background: #fff7ed; border-color: #fed7aa; }
-  .ok { background: #ecfdf5; border-color: #a7f3d0; }
-  table { border-collapse: collapse; width: 100%; margin: 8pt 0 12pt; }
-  th { background: #2e1065; color: #fff; padding: 8pt; text-align: left; font-size: 9.5pt; }
-  code, .mono { font-family: Consolas, monospace; }
+  /* Word: oddiy jadval + word-wrap — matn katakdan chiqib ketmasin */
+  @page WordSection1 {
+    size: 297mm 210mm;
+    margin: 1.5cm 1.6cm 1.5cm 1.6cm;
+  }
+  div.WordSection1 { page: WordSection1; }
+  body {
+    font-family: Arial, "Segoe UI", sans-serif;
+    color: #0f172a;
+    font-size: 11pt;
+    line-height: 1.4;
+    margin: 0;
+  }
+  h1 { color: #2e1065; font-size: 18pt; margin: 0 0 6pt 0; }
+  h2 {
+    color: #4c1d95;
+    font-size: 13pt;
+    margin: 14pt 0 6pt 0;
+    border-bottom: 1.5pt solid #c4b5fd;
+    padding-bottom: 3pt;
+  }
+  p { margin: 0 0 6pt 0; }
+  ul { margin: 4pt 0 8pt 18pt; padding: 0; }
+  li { margin: 0 0 3pt 0; }
   .muted { color: #64748b; font-size: 9.5pt; }
-  .two { display: table; width: 100%; }
-  .two > div { display: table-cell; width: 50%; vertical-align: top; padding-right: 12pt; }
+  .mono { font-family: Consolas, "Courier New", monospace; font-size: 9pt; }
+  .box {
+    border: 1pt solid #c4b5fd;
+    background: #f5f3ff;
+    padding: 8pt 10pt;
+    margin: 6pt 0 10pt 0;
+  }
+  .box.ok { border-color: #6ee7b7; background: #ecfdf5; }
+  .box.warn { border-color: #fdba74; background: #fff7ed; }
+  table.grid {
+    border-collapse: collapse;
+    width: 100%;
+    table-layout: fixed;
+    margin: 6pt 0 10pt 0;
+  }
+  table.grid th {
+    background: #2e1065;
+    color: #fff;
+    padding: 6pt 7pt;
+    text-align: left;
+    font-size: 9.5pt;
+    border: 1pt solid #2e1065;
+  }
+  table.grid td.c-code {
+    width: 56px;
+    font-weight: bold;
+    text-align: center;
+    vertical-align: top;
+    padding: 6pt;
+    border: 1pt solid #d4d4d8;
+  }
+  table.grid td.c-cell {
+    vertical-align: top;
+    padding: 6pt 7pt;
+    border: 1pt solid #d4d4d8;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+  table.ep {
+    border-collapse: collapse;
+    width: 100%;
+    table-layout: fixed;
+    margin: 0 0 10pt 0;
+    border: 1pt solid #c4b5fd;
+  }
+  table.ep td.ep-num {
+    background: #2e1065;
+    color: #fff;
+    font-weight: bold;
+    text-align: center;
+    vertical-align: middle;
+    padding: 8pt 4pt;
+    border: 1pt solid #2e1065;
+  }
+  table.ep td.ep-title {
+    background: #ede9fe;
+    font-weight: bold;
+    font-size: 11pt;
+    vertical-align: middle;
+    padding: 8pt 10pt;
+    border: 1pt solid #c4b5fd;
+    word-wrap: break-word;
+  }
+  table.ep td.ep-meta {
+    background: #f8fafc;
+    vertical-align: middle;
+    padding: 6pt 8pt;
+    border: 1pt solid #c4b5fd;
+    word-wrap: break-word;
+  }
+  table.ep td.ep-body {
+    padding: 8pt 10pt;
+    border: 1pt solid #c4b5fd;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+  }
+  table.ep p.sum { margin: 0 0 6pt 0; }
+  table.ep p.sample-label {
+    margin: 8pt 0 2pt 0;
+    font-size: 9pt;
+    color: #64748b;
+    font-weight: bold;
+  }
+  p.url, table.ep p.url {
+    margin: 0;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 8.5pt;
+    color: #4c1d95;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+  }
+  table.inner {
+    border-collapse: collapse;
+    width: 100%;
+    table-layout: fixed;
+    margin: 4pt 0;
+  }
+  table.inner th {
+    background: #f1f5f9;
+    color: #334155;
+    font-size: 8.5pt;
+    text-align: left;
+    padding: 4pt 6pt;
+    border: 1pt solid #e2e8f0;
+  }
+  table.inner td {
+    font-size: 9pt;
+    padding: 4pt 6pt;
+    border: 1pt solid #e2e8f0;
+    vertical-align: top;
+    word-wrap: break-word;
+  }
 </style>
 </head>
 <body>
-  <h1>VAKSINA HR — Open API (read-only) / Открытый API (только чтение)</h1>
-  <p class="muted">Yaratilgan / Создано: ${esc(opts.generatedAt)} · UZ + RU</p>
+<div class="WordSection1">
 
-  <div class="box ok">
-    <b>UZ xavfsizlik:</b> Faqat GET. Login, parol, session, admin akkauntlari chiqmaydi. Token hash DB da. Bekor/o‘chirish — shu zahoti 401.<br/>
-    <b>RU безопасность:</b> Только GET. Логин, пароль, session, admin-аккаунты не отдаются. В БД только hash. Отзыв/удаление — сразу 401.
-  </div>
+  <h1>${esc(t.title)}</h1>
+  <p class="muted">${esc(t.created)}: ${esc(opts.generatedAt)} · ${esc(t.langTag)}</p>
 
-  <h2>1. Nima bu? / Что это?</h2>
-  <div class="two">
-    <div><b>O‘zbekcha.</b> Tashqi tizimlar (1C, BI, bot, Excel) uchun faqat o‘qish API. Ma’lumotni o‘zgartirish mumkin emas.</div>
-    <div><b>Русский.</b> API только для чтения внешними системами (1C, BI, бот, Excel). Изменение данных невозможно.</div>
-  </div>
+  <div class="box ok">${esc(t.security)}</div>
 
-  <h2>2. Token / Токен</h2>
-  <div class="two">
-    <div>
-      <b>UZ:</b> Bosh admin → «API Tokenlar» → nom, scope, muddat → Yaratish → <code>vak_…</code> ni bir marta nusxa oling.
-      Bekor/O‘chirish: shu zahoti ishlamaydi. Jurnal: «API Devor».
-    </div>
-    <div>
-      <b>RU:</b> Главный админ → «API Tokenlar» → имя, scope, срок → Создать → скопируйте <code>vak_…</code> один раз.
-      Отзыв/Удаление: сразу не работает. Журнал: «API Devor».
-    </div>
-  </div>
+  <h2>${esc(t.s1)}</h2>
+  <p>${esc(t.s1body)}</p>
 
-  <h2>3. URL</h2>
-  <p><b>Asosiy / Основной:</b> <span class="mono">${esc(base)}</span></p>
-  <p><b>Devor / Прокси:</b> <span class="mono">${esc(wall)}</span></p>
+  <h2>${esc(t.s2)}</h2>
+  <p>${esc(t.s2body)}</p>
 
-  <h2>4. Ulash / Подключение</h2>
+  <h2>${esc(t.s3)}</h2>
+  <table class="grid">
+    <tr>
+      <th style="width:22%">${esc(t.mainUrl)}</th>
+      <td class="c-cell mono">${esc(base)}</td>
+    </tr>
+    <tr>
+      <th>${esc(t.wallUrl)}</th>
+      <td class="c-cell mono">${esc(wall)}</td>
+    </tr>
+  </table>
+
+  <h2>${esc(t.s4)}</h2>
   <div class="box">
-    <b>Brauzer / Браузер:</b><br/>
-    <span class="mono">${esc(base)}/employees?limit=20&amp;offset=0&amp;token=vak_XXXXXXXX</span><br/>
-    <span class="muted">Havolani begonalarga bermang / Не делитесь ссылкой.</span>
+    <p><b>${esc(t.browser)}</b></p>
+    <p class="url mono">${esc(base)}/employees?limit=20&amp;offset=0&amp;token=vak_XXXXXXXX</p>
+    <p class="muted">${esc(t.browserWarn)}</p>
   </div>
-  <p><b>Header (tavsiya / рекомендуется):</b> <code>Authorization: Bearer vak_XXXXXXXX</code></p>
+  <p><b>${esc(t.headerRec)}:</b></p>
+  <p class="mono">Authorization: Bearer vak_XXXXXXXX</p>
   <p class="mono">curl -sS -H "Authorization: Bearer vak_XXX" "${esc(base)}/health"</p>
 
-  <h2>5. limit / offset</h2>
-  <div class="two">
-    <div>
-      <b>UZ — limit:</b> bir so‘rovda nechta yozuv (default 50). Katta ro‘yxatni bo‘lib olish.<br/>
-      <b>offset:</b> nechtasini o‘tkazib keyingi sahifa. 1: offset=0, 2: offset=20 (limit=20).<br/>
-      <b>Rate limit:</b> daqiqada ~60–120 so‘rov — bu query limit EMAS (HTTP 429).
-    </div>
-    <div>
-      <b>RU — limit:</b> сколько записей за запрос (по умолчанию 50). Большие списки — постранично.<br/>
-      <b>offset:</b> сколько пропустить. Стр.1: offset=0, стр.2: offset=20 (limit=20).<br/>
-      <b>Rate limit:</b> ~60–120 запросов/мин — это НЕ query limit (HTTP 429).
-    </div>
-  </div>
-
-  <h2>6. Qoidalar / Правила (hakerlardan himoya)</h2>
+  <h2>${esc(t.s5)}</h2>
   <ul>
-    <li>UZ: Faqat GET — POST/PUT/DELETE 405. RU: Только GET — POST/PUT/DELETE → 405.</li>
-    <li>UZ: Scope majburiy. RU: Scope обязателен.</li>
-    <li>UZ: login/parol/admin yo‘q. RU: login/пароль/admin недоступны.</li>
-    <li>UZ: Token bekor → hash buziladi, darhol 401. RU: Отзыв → hash сбрасывается, сразу 401.</li>
-    <li>UZ: Hujjatni ko‘rish hujumni ochmaydi — tokensiz hech narsa. RU: Просмотр docs не даёт доступа — без токена ничего.</li>
+    <li>${esc(t.s5limit)}</li>
+    <li>${esc(t.s5offset)}</li>
+    <li>${esc(t.s5rate)}</li>
   </ul>
 
-  <h2>7. Xato kodlari / Коды ошибок</h2>
-  <table>
-    <tr><th style="width:70px">HTTP</th><th>O‘zbekcha</th><th>Русский</th></tr>
+  <h2>${esc(t.s6)}</h2>
+  <ul>
+    ${t.rules.map((r) => `<li>${esc(r)}</li>`).join("\n    ")}
+  </ul>
+
+  <h2>${esc(t.s7)}</h2>
+  <table class="grid">
+    <tr>
+      <th style="width:56px">${esc(t.thHttp)}</th>
+      <th style="width:38%">${esc(t.thMeaning)}</th>
+      <th>${esc(t.thWhen)}</th>
+    </tr>
     ${errRows}
   </table>
 
-  <h2>8. Endpointlar / Эндпоинты</h2>
-  <table>
+  <h2>${esc(t.s8)}</h2>
+  ${endpointBlocks}
+
+  <h2>${esc(t.s9)}</h2>
+  <table class="grid">
     <tr>
-      <th style="width:18%">Nom / Название</th>
-      <th style="width:16%">Path</th>
-      <th style="width:14%">Scope</th>
-      <th>Tavsif / Описание + parametrlar</th>
+      <th style="width:28%">${esc(t.thName)}</th>
+      <th style="width:36%">${esc(t.thPath)}</th>
+      <th>${esc(t.thScope)}</th>
     </tr>
-    ${rows}
+    ${quickRows}
   </table>
 
-  <h2>9. Tezkor jadval / Быстрая таблица</h2>
-  <table>
-    <tr><th>UZ</th><th>RU</th><th>GET</th><th>Scope</th></tr>
-    ${OPEN_API_ENDPOINTS.filter((e) => e.scope)
-      .map(
-        (e) =>
-          `<tr><td style="padding:6pt;border:1pt solid #ddd">${esc(e.titleUz)}</td><td style="padding:6pt;border:1pt solid #ddd">${esc(e.titleRu)}</td><td style="padding:6pt;border:1pt solid #ddd;font-family:Consolas;font-size:9pt">${esc(e.path)}</td><td style="padding:6pt;border:1pt solid #ddd;font-family:Consolas;font-size:9pt">${esc(e.scope!)}</td></tr>`,
-      )
-      .join("")}
-  </table>
+  <div class="box warn">${esc(t.footerWarn)}</div>
+  <p class="muted">${esc(t.footer)}</p>
 
-  <div class="box warn">
-    <b>UZ:</b> Hujjat ochiq — lekin ma’lumot faqat yaroqli token bilan. Tokenni oshkor qilmang.<br/>
-    <b>RU:</b> Документация открыта — данные только с валидным токеном. Не раскрывайте токен.
-  </div>
-  <p class="muted">© VAKSINA HR · Open API v1 · UZ/RU</p>
+</div>
 </body>
 </html>`;
 }
@@ -410,6 +659,10 @@ function esc(s: string): string {
 }
 
 /** Eski matn eksporti (fallback) */
-export function buildFullDocText(opts: { origin: string; generatedAt: string }) {
+export function buildFullDocText(opts: {
+  origin: string;
+  generatedAt: string;
+  lang?: DocLangSingle;
+}) {
   return buildFullDocHtml(opts).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }

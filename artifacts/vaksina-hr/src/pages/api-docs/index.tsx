@@ -27,6 +27,7 @@ import {
   viewEndpoint,
 } from "@/lib/open-api-docs-content";
 import { downloadOpenApiWordDoc } from "@/lib/open-api-docs-export";
+import type { DocLangSingle } from "@/lib/open-api-docs-content";
 
 function statusHint(code: number | null, lang: DocLang): string {
   const ru = lang === "ru";
@@ -123,13 +124,23 @@ export default function ApiDocsPage() {
     }
   }
 
-  async function onDownloadWord() {
+  async function onDownloadWord(docLang: DocLangSingle) {
     setDlBusy(true);
     try {
-      downloadOpenApiWordDoc(origin);
+      downloadOpenApiWordDoc(origin, docLang);
       toast({
-        title: lang === "ru" ? "Word скачан (UZ+RU)" : "Word yuklandi (UZ+RU)",
-        description: lang === "ru" ? "Широкий landscape, две стороны." : "Keng landscape, ikki til.",
+        title:
+          docLang === "ru"
+            ? "Word скачан (RU)"
+            : lang === "ru"
+              ? "Word скачан (UZ)"
+              : "Word yuklandi (UZ)",
+        description:
+          docLang === "ru"
+            ? "Отдельный русский документ, таблицы выровнены."
+            : lang === "ru"
+              ? "Отдельный узбекский документ, таблицы выровнены."
+              : "Alohida o‘zbekcha hujjat, jadvallar tekis.",
       });
     } catch (e) {
       toast({
@@ -179,9 +190,21 @@ export default function ApiDocsPage() {
                 {l === "uz" ? "O‘zbek" : l === "ru" ? "Русский" : "UZ + RU"}
               </Button>
             ))}
-            <Button className="bg-violet-700 hover:bg-violet-800" disabled={dlBusy} onClick={() => void onDownloadWord()}>
+            <Button
+              className="bg-violet-700 hover:bg-violet-800"
+              disabled={dlBusy}
+              onClick={() => void onDownloadWord("uz")}
+            >
               {dlBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
-              Word UZ+RU (.doc)
+              Word UZ
+            </Button>
+            <Button
+              className="bg-indigo-700 hover:bg-indigo-800"
+              disabled={dlBusy}
+              onClick={() => void onDownloadWord("ru")}
+            >
+              {dlBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
+              Word RU
             </Button>
           </div>
         </div>
@@ -190,14 +213,26 @@ export default function ApiDocsPage() {
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
               <Download className="h-4 w-4 text-violet-700" />
-              {t("To‘liq hujjat — Word (keng, UZ+RU)", "Полный документ — Word (широкий, UZ+RU)")}
+              {t("To‘liq hujjat — Word (UZ alohida, RU alohida)", "Полный документ — Word (UZ отдельно, RU отдельно)")}
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-sm text-slate-700">
-            {t(
-              "Landscape Word: ikki til yonma-yon, keng maydon, barcha endpointlar, limit/offset, xavfsizlik, xato kodlari.",
-              "Landscape Word: два языка, широкие поля, все эндпоинты, limit/offset, безопасность, коды ошибок.",
-            )}
+          <CardContent className="space-y-3 text-sm text-slate-700">
+            <p>
+              {t(
+                "Har bir til o‘z .doc faylida. Landscape, keng maydon, bo‘limlar bo‘yicha aniq jadvallar — matn katakdan chiqib ketmaydi.",
+                "Каждый язык в своём .doc. Landscape, широкие поля, аккуратные таблицы по разделам — текст не выходит за ячейки.",
+              )}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" disabled={dlBusy} onClick={() => void onDownloadWord("uz")}>
+                <FileText className="mr-2 h-4 w-4" />
+                Word O‘zbekcha (.doc)
+              </Button>
+              <Button size="sm" variant="secondary" disabled={dlBusy} onClick={() => void onDownloadWord("ru")}>
+                <FileText className="mr-2 h-4 w-4" />
+                Word Русский (.doc)
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
@@ -518,10 +553,16 @@ export default function ApiDocsPage() {
                 "Не раскрывайте токен. Отзыв/удаление — сразу не работает.",
               )}
             </p>
-            <Button disabled={dlBusy} onClick={() => void onDownloadWord()}>
-              <FileText className="mr-2 h-4 w-4" />
-              Word UZ+RU
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" disabled={dlBusy} onClick={() => void onDownloadWord("uz")}>
+                <FileText className="mr-2 h-4 w-4" />
+                Word UZ
+              </Button>
+              <Button size="sm" variant="secondary" disabled={dlBusy} onClick={() => void onDownloadWord("ru")}>
+                <FileText className="mr-2 h-4 w-4" />
+                Word RU
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>

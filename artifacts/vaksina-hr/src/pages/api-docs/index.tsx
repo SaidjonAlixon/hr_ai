@@ -171,12 +171,6 @@ export default function ApiDocsPage() {
               )}{" "}
               <code className="rounded bg-violet-100 px-1">vak_…</code>
             </p>
-            <p className="mt-2 text-sm font-medium text-rose-800/90">
-              {t(
-                "Xavfsizlik: login, parol, admin akkauntlari API da hech qachon chiqmaydi. Hujjatni ko‘rish hujum emas — tokensiz hech narsa olinmaydi.",
-                "Безопасность: login, пароль, admin никогда не отдаются. Просмотр docs ≠ доступ — без токена данных нет.",
-              )}
-            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {(["uz", "ru", "both"] as const).map((l) => (
